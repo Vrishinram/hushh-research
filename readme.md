@@ -207,7 +207,7 @@ hushh-research/
 │   ├── ios/                   # Native iOS (Swift)
 │   └── android/               # Native Android (Kotlin)
 │
-├── 🐍 consent-protocol/       # Python Backend + Protocol
+├── 🐍 consent-protocol/       # Python Backend + Protocol [GIT SUBTREE]
 │   ├── server.py              # FastAPI endpoints
 │   ├── hushh_mcp/
 │   │   ├── agents/            # Food, Professional, Kai
@@ -220,6 +220,26 @@ hushh-research/
     ├── business/              # Product & market
     └── vision/                # Long-term roadmap
 ```
+
+### Git Subtree: consent-protocol
+
+The `consent-protocol/` directory is a **git subtree** linked to the upstream repository at [hushh-labs/consent-protocol](https://github.com/hushh-labs/consent-protocol). This is the single source of truth for the backend.
+
+**Bidirectional sync:**
+
+```bash
+# Pull upstream changes into monorepo
+git subtree pull --prefix=consent-protocol consent-upstream main --squash
+
+# Push monorepo backend changes to upstream
+git subtree push --prefix=consent-protocol consent-upstream main
+```
+
+**Why subtree vs submodule:**
+- Works as a normal directory (no special checkout steps)
+- All code is committed into the monorepo (no broken references)
+- CI, imports, and dev workflows work seamlessly
+- Other frontends can consume the upstream repo directly
 
 ---
 
