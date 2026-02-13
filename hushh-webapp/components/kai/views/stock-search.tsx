@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronsUpDown, Search, Sparkles, TrendingUp } from "lucide-react";
+import { ChevronsUpDown, Search } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -20,8 +20,9 @@ import {
 } from "@/components/ui/popover";
 import { useMediaQuery } from "@/lib/morphy-ux/use-media-query";
 import { Drawer, DrawerContent, DrawerTrigger } from "@/components/ui/drawer";
+import { ApiService } from "@/lib/services/api-service";
 
-// Top 50 popular stocks for instant suggestion
+// Top 50 popular stocks for instant suggestion (offline fallback)
 const TOP_STOCKS = [
   { value: "AAPL", label: "Apple Inc." },
   { value: "MSFT", label: "Microsoft Corp." },
@@ -83,6 +84,13 @@ function isTickerLike(text: string): boolean {
   return /^[A-Z]{1,5}$/.test(text);
 }
 
+type TickerSearchResult = {
+  ticker: string;
+  title?: string | null;
+  cik?: string | number | null;
+  exchange?: string | null;
+};
+
 export function StockSearch({
   onSelect,
   className,
@@ -92,7 +100,56 @@ export function StockSearch({
 }) {
   const [open, setOpen] = React.useState(false);
   const [search, setSearch] = React.useState("");
+  const [remoteResults, setRemoteResults] = React.useState<TickerSearchResult[]>([]);
+  const [remoteLoading, setRemoteLoading] = React.useState(false);
   const isDesktop = useMediaQuery("(min-width: 768px)");
+
+  // Measure trigger width so popover content matches exactly.
+  const triggerRef = React.useRef<HTMLButtonElement | null>(null);
+  const [triggerWidth, setTriggerWidth] = React.useState<number>(288);
+
+  React.useEffect(() => {
+    if (!isDesktop) return;
+    const el = triggerRef.current;
+    if (!el) return;
+    const measure = () => setTriggerWidth(el.getBoundingClientRect().width);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isDesktop]);
+
+  // Fetch tickers from backend (Supabase-backed) for real SEC-wide search.
+  // Debounced to avoid hammering the API while typing.
+  React.useEffect(() => {
+    const q = search.trim();
+    if (!q) {
+      setRemoteResults([]);
+      setRemoteLoading(false);
+      return;
+    }
+
+    const handle = setTimeout(async () => {
+      try {
+        setRemoteLoading(true);
+        const resp = await ApiService.apiFetch(`/api/tickers/search?q=${encodeURIComponent(q)}&limit=25`, {
+          method: "GET",
+        });
+        if (!resp.ok) {
+          setRemoteResults([]);
+          return;
+        }
+        const json = (await resp.json()) as TickerSearchResult[];
+        setRemoteResults(Array.isArray(json) ? json : []);
+      } catch {
+        setRemoteResults([]);
+      } finally {
+        setRemoteLoading(false);
+      }
+    }, 200);
+
+    return () => clearTimeout(handle);
+  }, [search]);
 
   // Derive escape-hatch ticker: show when typed value is a valid ticker
   // that doesn't exactly match any entry in TOP_STOCKS
@@ -113,16 +170,44 @@ export function StockSearch({
   // Shared content for Popover (Desktop) and Drawer (Mobile)
   const SearchContent = (
     <Command
-      className="rounded-lg border shadow-md"
-      shouldFilter={true}
+      className="rounded-xl border shadow-md"
+      // We rely on our own backend search results, so avoid client filtering that
+      // can hide results when value strings differ.
+      shouldFilter={false}
     >
       <CommandInput
         placeholder="Search ticker (e.g. AAPL)..."
         value={search}
         onValueChange={setSearch}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            const trimmed = search.trim().toUpperCase();
+            if (trimmed && isTickerLike(trimmed)) {
+              handleSelect(trimmed);
+            }
+          }
+        }}
       />
-      <CommandList className="max-h-[300px] overflow-y-auto">
-        <CommandEmpty>No results found.</CommandEmpty>
+      <CommandList className="max-h-72 overflow-y-auto">
+        <CommandEmpty>{remoteLoading ? "Searching…" : "No results found."}</CommandEmpty>
+
+        {/* Remote results (SEC-wide). Shown when user types anything. */}
+        {remoteResults.length > 0 && (
+          <CommandGroup heading="All SEC tickers">
+            {remoteResults.map((r) => (
+              <CommandItem
+                key={`${r.ticker}-${r.cik ?? ""}`}
+                value={`${r.ticker} ${r.title ?? ""}`}
+                onSelect={() => handleSelect(r.ticker)}
+                className="cursor-pointer"
+              >
+                <span className="font-bold w-16">{r.ticker}</span>
+                <span className="mx-2 text-muted-foreground/40">—</span>
+                <span className="text-muted-foreground truncate">{r.title ?? ""}</span>
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        )}
 
         {/* Escape hatch: type any ticker not in the list */}
         {escapeTicker && (
@@ -133,7 +218,6 @@ export function StockSearch({
               className="cursor-pointer"
               forceMount
             >
-              <Sparkles className="mr-2 h-4 w-4 text-primary" />
               <span className="font-bold">Analyze {escapeTicker}</span>
             </CommandItem>
           </CommandGroup>
@@ -147,8 +231,8 @@ export function StockSearch({
               onSelect={() => handleSelect(stock.value)}
               className="cursor-pointer"
             >
-              <TrendingUp className="mr-2 h-4 w-4 text-muted-foreground" />
               <span className="font-bold w-12">{stock.value}</span>
+              <span className="mx-2 text-muted-foreground/40">—</span>
               <span className="text-muted-foreground truncate">{stock.label}</span>
             </CommandItem>
           ))}
@@ -162,10 +246,11 @@ export function StockSearch({
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button
+            ref={triggerRef}
             variant="outline"
             role="combobox"
             aria-expanded={open}
-            className={cn("w-[250px] justify-between text-muted-foreground", className)}
+            className={cn("w-full max-w-md lg:max-w-lg justify-between text-muted-foreground", className)}
           >
             <span className="flex items-center">
                 <Search className="mr-2 h-4 w-4" />
@@ -174,7 +259,11 @@ export function StockSearch({
             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-[300px] p-0" align="start">
+        <PopoverContent
+          style={{ ['--stock-search-width' as any]: `${triggerWidth}px` }}
+          className="w-[var(--stock-search-width)] p-0"
+          align="start"
+        >
           {SearchContent}
         </PopoverContent>
       </Popover>
@@ -188,7 +277,7 @@ export function StockSearch({
           variant="outline"
           role="combobox"
           aria-expanded={open}
-          className={cn("w-full justify-between text-muted-foreground", className)}
+          className={cn("w-full max-w-md lg:max-w-lg justify-between text-muted-foreground", className)}
         >
           <span className="flex items-center">
             <Search className="mr-2 h-4 w-4" />

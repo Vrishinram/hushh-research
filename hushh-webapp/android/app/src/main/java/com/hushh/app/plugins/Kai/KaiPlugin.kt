@@ -2,6 +2,7 @@ package com.hushh.app.plugins.Kai
 
 import com.getcapacitor.*
 import com.getcapacitor.annotation.CapacitorPlugin
+import com.hushh.app.plugins.shared.BackendUrl
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -64,12 +65,7 @@ class KaiPlugin : Plugin() {
     }
 
     private fun normalizeBackendUrl(raw: String): String {
-        // Android emulator: convert localhost to 10.0.2.2
-        return if (raw.contains("localhost")) {
-            raw.replace("localhost", "10.0.2.2")
-        } else {
-            raw
-        }
+        return BackendUrl.normalize(raw)
     }
     
     @PluginMethod
@@ -577,6 +573,7 @@ class KaiPlugin : Plugin() {
 
     companion object {
         private const val PORTFOLIO_STREAM_EVENT = "portfolioStreamEvent"
+        private const val KAI_STREAM_EVENT = "kaiStreamEvent"
     }
 
     /** Emit one SSE event to JS (same shape as iOS: event.data = parsed object). */
@@ -584,6 +581,70 @@ class KaiPlugin : Plugin() {
         val wrap = JSObject()
         wrap.put("data", parsed)
         notifyListeners(PORTFOLIO_STREAM_EVENT, wrap)
+    }
+
+    /** Emit one Kai SSE event to JS (same shape: event.data = parsed object). */
+    private fun emitKaiStreamEvent(parsed: JSObject) {
+        val wrap = JSObject()
+        wrap.put("data", parsed)
+        notifyListeners(KAI_STREAM_EVENT, wrap)
+    }
+
+    @PluginMethod
+    fun streamKaiAnalysis(call: PluginCall) {
+        val bodyObj = call.getObject("body") ?: run {
+            call.reject("Missing body")
+            return
+        }
+        val vaultOwnerToken = call.getString("vaultOwnerToken") ?: run {
+            call.reject("Missing vaultOwnerToken")
+            return
+        }
+
+        val backendUrl = getBackendUrl(call)
+        val url = "$backendUrl/api/kai/analyze/stream"
+        val bodyStr = bodyObj.toString()
+        val requestBody = bodyStr.toRequestBody("application/json".toMediaType())
+        val request = Request.Builder()
+            .url(url)
+            .post(requestBody)
+            .addHeader("Authorization", "Bearer $vaultOwnerToken")
+            .build()
+
+        val pluginCall = call
+        Thread {
+            try {
+                val response = httpClient.newCall(request).execute()
+                if (!response.isSuccessful) {
+                    activity.runOnUiThread { pluginCall.reject("HTTP ${response.code}") }
+                    return@Thread
+                }
+                val body = response.body ?: run {
+                    activity.runOnUiThread { pluginCall.reject("No response body") }
+                    return@Thread
+                }
+                body.byteStream().use { stream ->
+                    BufferedReader(InputStreamReader(stream)).use { reader ->
+                        var line: String?
+                        while (reader.readLine().also { line = it } != null) {
+                            val l = line!!
+                            if (l.startsWith("data: ")) {
+                                try {
+                                    val jsonStr = l.substring(6)
+                                    emitKaiStreamEvent(JSObject(jsonStr))
+                                } catch (_: Exception) {
+                                    /* skip */
+                                }
+                            }
+                        }
+                    }
+                }
+                activity.runOnUiThread { pluginCall.resolve(JSObject().put("success", true)) }
+            } catch (e: Exception) {
+                android.util.Log.e(TAG, "streamKaiAnalysis error", e)
+                activity.runOnUiThread { pluginCall.reject("Stream error: ${e.message}") }
+            }
+        }.start()
     }
 
     @PluginMethod

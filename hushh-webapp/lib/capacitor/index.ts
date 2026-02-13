@@ -166,7 +166,8 @@ export interface HushhConsentPlugin {
    */
   issueVaultOwnerToken(options: {
     userId: string;
-    authToken: string; // Firebase ID token
+    authToken?: string; // Firebase ID token (legacy name)
+    idToken?: string; // Firebase ID token (preferred)
   }): Promise<{
     token: string;
     expiresAt: number;
@@ -637,7 +638,7 @@ export interface HushhIdentityPlugin {
    * Auto-detect investor from Firebase displayName.
    * Calls /api/identity/auto-detect on backend.
    */
-  autoDetect(options: { authToken: string }): Promise<{
+  autoDetect(options: { authToken?: string; idToken?: string }): Promise<{
     detected: boolean;
     display_name: string | null;
     matches: InvestorMatch[];
@@ -722,7 +723,8 @@ export interface HushhOnboardingPlugin {
    */
   checkOnboardingStatus(options: {
     userId: string;
-    authToken?: string; // Firebase ID token
+    authToken?: string; // Firebase ID token (legacy name)
+    idToken?: string; // Firebase ID token (preferred)
   }): Promise<OnboardingStatusResult>;
 
   /**
@@ -731,7 +733,8 @@ export interface HushhOnboardingPlugin {
    */
   completeOnboarding(options: {
     userId: string;
-    authToken?: string; // Firebase ID token
+    authToken?: string; // Firebase ID token (legacy name)
+    idToken?: string; // Firebase ID token (preferred)
   }): Promise<{ success: boolean }>;
 }
 
@@ -740,6 +743,46 @@ export const HushhOnboarding = registerPlugin<HushhOnboardingPlugin>(
   {
     web: () =>
       import("./plugins/onboarding-web").then((m) => new m.HushhOnboardingWeb()),
+  }
+);
+
+// ==================== HushhNotificationsPlugin ====================
+// Push notification token registration (FCM/APNs)
+
+export interface HushhNotificationsPlugin {
+  /**
+   * Register push notification token for consent notifications.
+   * Next.js source of truth: POST /api/notifications/register
+   * Backend: POST /api/notifications/register
+   */
+  registerPushToken(options: {
+    userId: string;
+    token: string;
+    platform: "web" | "ios" | "android";
+    idToken: string; // Firebase ID token
+    backendUrl?: string;
+  }): Promise<{ success: boolean }>;
+
+  /**
+   * Unregister push notification token(s).
+   * Next.js source of truth: DELETE /api/notifications/unregister
+   * Backend: DELETE /api/notifications/unregister
+   */
+  unregisterPushToken(options: {
+    userId: string;
+    idToken: string; // Firebase ID token
+    platform?: "web" | "ios" | "android";
+    backendUrl?: string;
+  }): Promise<{ success: boolean }>;
+}
+
+export const HushhNotifications = registerPlugin<HushhNotificationsPlugin>(
+  "HushhNotifications",
+  {
+    web: () =>
+      import("./plugins/notifications-web").then(
+        (m) => new m.HushhNotificationsWeb()
+      ),
   }
 );
 

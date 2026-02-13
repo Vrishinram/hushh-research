@@ -2,6 +2,7 @@ package com.hushh.app.plugins.WorldModel
 
 import com.getcapacitor.*
 import com.getcapacitor.annotation.CapacitorPlugin
+import com.hushh.app.plugins.shared.BackendUrl
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -75,12 +76,7 @@ class WorldModelPlugin : Plugin() {
     }
 
     private fun normalizeBackendUrl(raw: String): String {
-        // Android emulator: convert localhost to 10.0.2.2
-        return if (raw.contains("localhost")) {
-            raw.replace("localhost", "10.0.2.2")
-        } else {
-            raw
-        }
+        return BackendUrl.normalize(raw)
     }
 
     private fun getAuthToken(call: PluginCall): String? {

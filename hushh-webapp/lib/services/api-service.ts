@@ -21,8 +21,8 @@
  */
 
 import { Capacitor } from "@capacitor/core";
-import { HushhVault, HushhAuth, HushhConsent } from "@/lib/capacitor";
-import { Kai, PORTFOLIO_STREAM_EVENT } from "@/lib/capacitor/kai";
+import { HushhVault, HushhAuth, HushhConsent, HushhNotifications } from "@/lib/capacitor";
+import { Kai, PORTFOLIO_STREAM_EVENT, KAI_STREAM_EVENT } from "@/lib/capacitor/kai";
 import { AuthService } from "@/lib/services/auth-service";
 
 // API Base URL configuration
@@ -467,6 +467,26 @@ export class ApiService {
     platform: "web" | "ios" | "android",
     idToken: string
   ): Promise<Response> {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const result = await HushhNotifications.registerPushToken({
+          userId,
+          token,
+          platform,
+          idToken,
+        });
+        return new Response(JSON.stringify(result), {
+          status: result.success ? 200 : 500,
+          headers: { "Content-Type": "application/json" },
+        });
+      } catch (e) {
+        console.warn("[ApiService] Native registerPushToken error:", e);
+        return new Response(
+          JSON.stringify({ error: (e as Error).message || "Native error" }),
+          { status: 500, headers: { "Content-Type": "application/json" } }
+        );
+      }
+    }
     return apiFetch("/api/notifications/register", {
       method: "POST",
       headers: {
@@ -489,6 +509,25 @@ export class ApiService {
     idToken: string,
     platform?: "web" | "ios" | "android"
   ): Promise<Response> {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const result = await HushhNotifications.unregisterPushToken({
+          userId,
+          idToken,
+          ...(platform ? { platform } : {}),
+        });
+        return new Response(JSON.stringify(result), {
+          status: result.success ? 200 : 500,
+          headers: { "Content-Type": "application/json" },
+        });
+      } catch (e) {
+        console.warn("[ApiService] Native unregisterPushToken error:", e);
+        return new Response(
+          JSON.stringify({ error: (e as Error).message || "Native error" }),
+          { status: 500, headers: { "Content-Type": "application/json" } }
+        );
+      }
+    }
     return apiFetch("/api/notifications/unregister", {
       method: "DELETE",
       headers: {
@@ -1550,16 +1589,22 @@ export class ApiService {
           );
         }
 
-        const response = await fetch(`${API_BASE}/api/kai/analyze`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${vaultOwnerToken}`,
-          },
-          body: JSON.stringify(body),
+        // Use the native Kai plugin (consistent with Tri-Flow and avoids WebView networking quirks).
+        const result = await Kai.analyze({
+          userId: data.userId,
+          ticker: data.ticker.toUpperCase(),
+          // Backend still expects consent_token in body for some routes; plugin supports it.
+          consentToken: "",
+          riskProfile: body.risk_profile,
+          processingMode: body.processing_mode,
+          context: data.context,
+          vaultOwnerToken,
         });
 
-        return response;
+        return new Response(JSON.stringify(result), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
       } catch (error) {
         console.error("[ApiService] Native analyzeStock error:", error);
         return new Response(JSON.stringify({ error: (error as Error).message }), {
@@ -1606,7 +1651,7 @@ export class ApiService {
       risk_profile: data.riskProfile,
     };
 
-    // Native: use Kai plugin for real-time SSE (WKWebView buffers fetch() response body)
+    // Native: use Kai plugin and expose a ReadableStream of SSE text
     if (Capacitor.isNativePlatform()) {
       try {
         const vaultOwnerToken = data.vaultOwnerToken || this.getVaultOwnerToken();
@@ -1617,14 +1662,56 @@ export class ApiService {
           );
         }
 
-        // Stream from Kai plugin directly (no SSE normalization needed)
-        const result = await Kai.streamKaiAnalysis({
-          body: body as Record<string, unknown>,
-          vaultOwnerToken,
+        const encoder = new TextEncoder();
+        let sawTerminalEvent = false;
+
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            Kai.addListener(KAI_STREAM_EVENT, (event: { data?: Record<string, unknown> }) => {
+              const payload = event?.data !== undefined ? event.data : (event as unknown as Record<string, unknown>);
+              try {
+                const maybeType = (payload as any)?.event || (payload as any)?.type;
+                if (maybeType === "decision" || maybeType === "complete" || maybeType === "error") {
+                  sawTerminalEvent = true;
+                }
+              } catch {
+                // ignore
+              }
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify(payload)}\n`)
+              );
+            }).then((listener) => {
+              Kai.streamKaiAnalysis({
+                body: body as Record<string, unknown>,
+                vaultOwnerToken,
+              })
+                .then(() => {
+                  const close = () => {
+                    try {
+                      listener.remove();
+                    } finally {
+                      controller.close();
+                    }
+                  };
+
+                  const fallbackMs = 1500;
+                  if (sawTerminalEvent) {
+                    setTimeout(close, 100);
+                  } else {
+                    setTimeout(close, fallbackMs);
+                  }
+                })
+                .catch((e) => {
+                  listener.remove();
+                  controller.error(e);
+                });
+            });
+          },
         });
-        return new Response(JSON.stringify(result), {
+
+        return new Response(stream, {
           status: 200,
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "text/event-stream" },
         });
       } catch (error) {
         console.error("[ApiService] Native streamKaiAnalysis error:", error);

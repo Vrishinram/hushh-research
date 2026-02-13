@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { ImportProgressView, ImportStage } from "./views/import-progress-view";
+import { ApiService } from "@/lib/services/api-service";
 
 // ============================================================================
 // TYPES
@@ -78,23 +79,18 @@ export function KaiAgentStreamingView({
 
         abortControllerRef.current = new AbortController();
 
-        // Call the streaming API
-        const response = await fetch(
-          `${process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000"}/api/kai/analyze/stream`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${vaultOwnerToken}`,
-            },
-            body: JSON.stringify({
-              user_id: userId,
-              ticker: ticker.toUpperCase(),
-              risk_profile: riskProfile,
-            }),
-            signal: abortControllerRef.current.signal,
-          }
-        );
+        // Call the streaming API via ApiService to ensure platform-aware
+        // base URL handling (Android emulator) and native streaming behavior.
+        const response = await ApiService.streamKaiAnalysis({
+          userId,
+          ticker,
+          riskProfile,
+          vaultOwnerToken,
+        });
+
+        if (abortControllerRef.current.signal.aborted) {
+          throw new DOMException("Aborted", "AbortError");
+        }
 
         if (!response.ok) {
           throw new Error(`API error: ${response.status}`);
@@ -203,8 +199,25 @@ export function KaiAgentStreamingView({
 
     startStreaming();
 
+    // Production-grade disconnect: abort on force-close, mobile swipe-away
+    const abortStream = () => abortControllerRef.current?.abort();
+    window.addEventListener('beforeunload', abortStream);
+
+    let visibilityTimeout: NodeJS.Timeout | undefined;
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        visibilityTimeout = setTimeout(abortStream, 5000);
+      } else {
+        clearTimeout(visibilityTimeout);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
     return () => {
       abortControllerRef.current?.abort();
+      window.removeEventListener('beforeunload', abortStream);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      clearTimeout(visibilityTimeout);
     };
   }, [agent, ticker, userId, riskProfile, vaultOwnerToken]);
 

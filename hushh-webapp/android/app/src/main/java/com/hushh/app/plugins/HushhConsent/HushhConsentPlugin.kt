@@ -7,6 +7,7 @@ import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
+import com.hushh.app.plugins.shared.BackendUrl
 import java.security.InvalidKeyException
 import java.security.NoSuchAlgorithmException
 import javax.crypto.Mac
@@ -39,8 +40,7 @@ class HushhConsentPlugin : Plugin() {
     private val defaultBackendUrl = "https://consent-protocol-1006304528804.us-central1.run.app"
 
     private fun normalizeBackendUrl(raw: String): String {
-        // Android emulator: localhost points to the emulator itself; use host alias 10.0.2.2 instead.
-        return if (raw.contains("localhost")) raw.replace("localhost", "10.0.2.2") else raw
+        return BackendUrl.normalize(raw)
     }
 
     private fun getBackendUrl(call: PluginCall? = null): String {

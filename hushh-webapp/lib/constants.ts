@@ -60,7 +60,17 @@ export const API_TIMEOUTS = {
  */
 export const API_CONFIG = {
   /** Backend base URL */
-  BASE_URL: process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000",
+  BASE_URL:
+    typeof window !== "undefined" &&
+    // Avoid importing Capacitor here to keep constants lightweight.
+    // If running in an Android WebView and env points at localhost, map to 10.0.2.2.
+    /Android/i.test(navigator.userAgent) &&
+    (process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000").includes("localhost")
+      ? (process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000").replace(
+          "localhost",
+          "10.0.2.2"
+        )
+      : process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000",
   /** SSE endpoint for consent notifications */
   SSE_CONSENT_EVENTS: "/api/consent/events",
 } as const;

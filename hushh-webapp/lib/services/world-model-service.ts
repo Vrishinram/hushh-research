@@ -273,13 +273,14 @@ export class WorldModelService {
    */
   static async getAttributes(
     userId: string,
-    domain?: string
+    domain?: string,
+    vaultOwnerToken?: string
   ): Promise<EncryptedAttribute[]> {
     if (Capacitor.isNativePlatform()) {
       const nativeResult = await HushhWorldModel.getAttributes({
         userId,
         domain,
-        vaultOwnerToken: this.getVaultOwnerToken(),
+        vaultOwnerToken: this.getVaultOwnerToken(vaultOwnerToken),
       });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const raw = nativeResult as any;
@@ -303,7 +304,7 @@ export class WorldModelService {
       : `/api/world-model/attributes/${userId}`;
 
     const response = await ApiService.apiFetch(url, {
-      headers: this.getAuthHeaders(),
+      headers: this.getAuthHeaders(vaultOwnerToken),
     });
 
     if (!response.ok) {

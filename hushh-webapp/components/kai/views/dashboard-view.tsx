@@ -40,6 +40,8 @@ import {
   DollarSign,
   BarChart3,
   Activity,
+  Search,
+  History,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/lib/morphy-ux/card";
@@ -68,7 +70,8 @@ import { YtdSummaryCard, type YtdData } from "../cards/ytd-summary-card";
 import { KPICard } from "../cards/kpi-card";
 import { TopMoversCard } from "../cards/top-movers-card";
 import { PortfolioMetricsCard } from "../cards/portfolio-metrics-card";
-import { StockSearch } from "./stock-search";
+import { StockSearch } from "@/components/kai/views/stock-search";
+
 
 // =============================================================================
 // TYPES
@@ -175,6 +178,7 @@ interface DashboardViewProps {
   onAnalyzeLosers?: () => void;
   onReupload?: () => void;
   onClearData?: () => void;
+  onViewHistory?: () => void;
 }
 
 // =============================================================================
@@ -213,6 +217,7 @@ export function DashboardView({
   onAnalyzeLosers,
   onReupload,
   onClearData,
+  onViewHistory,
 }: DashboardViewProps) {
   const { vaultOwnerToken } = useVault();
   
@@ -480,13 +485,27 @@ export function DashboardView({
           )}
         </div>
 
+        <div className="hidden md:block flex-1 max-w-sm mx-4">
+           <StockSearch 
+             onSelect={(ticker) => handleAnalyzeStock(ticker)} 
+             className="w-full"
+           />
+        </div>
+
         <div className="flex items-center gap-2">
-            {/* New Autocomplete Search */}
-            <StockSearch 
-                onSelect={handleAnalyzeStock} 
-                className="w-[200px] md:w-[300px]"
-            />
-            
+            <div className="md:hidden">
+              <MorphyButton
+                variant="muted"
+                size="icon"
+                className="rounded-2xl bg-muted/50 hover:bg-muted border border-border/50 transition-all"
+                onClick={() => {
+                  // Prompt user or show search modal?
+                  const ticker = prompt("Enter stock ticker to analyze:");
+                  if (ticker) handleAnalyzeStock(ticker);
+                }}
+                icon={{ icon: Search }}
+              />
+            </div>
             <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
               <MorphyButton 
@@ -515,6 +534,12 @@ export function DashboardView({
                 <Settings className="w-4 h-4 mr-2" />
                 Manage Portfolio
               </DropdownMenuItem>
+              {onViewHistory && (
+                <DropdownMenuItem onClick={onViewHistory} className="cursor-pointer">
+                  <History className="w-4 h-4 mr-2" />
+                  Analysis History
+                </DropdownMenuItem>
+              )}
               {onClearData && (
                 <>
                   <DropdownMenuSeparator />

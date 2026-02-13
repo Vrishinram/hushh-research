@@ -19,6 +19,9 @@ import {
   type AnalysisHistoryEntry,
   type AnalysisHistoryMap,
 } from "@/lib/services/kai-history-service";
+import { DataTable } from "@/components/ui/data-table";
+import { getColumns, type HistoryEntryWithVersion } from "./columns";
+import { toast } from "sonner";
 
 // ============================================================================
 // Props
@@ -27,6 +30,7 @@ import {
 export interface AnalysisHistoryDashboardProps {
   userId: string;
   vaultKey: string;
+  vaultOwnerToken?: string;
   onSelectTicker: (ticker: string) => void;
   onViewHistory: (entry: AnalysisHistoryEntry) => void;
 }
@@ -93,9 +97,26 @@ function decisionStyles(decision: string): {
 }
 
 /** Flatten AnalysisHistoryMap → sorted flat list (newest first) */
-function flattenHistory(map: AnalysisHistoryMap): AnalysisHistoryEntry[] {
-  const entries = Object.values(map).flat();
-  return entries.sort(
+/** Flatten AnalysisHistoryMap → sorted flat list (newest first) with versioning */
+function processHistory(map: AnalysisHistoryMap): HistoryEntryWithVersion[] {
+  const result: HistoryEntryWithVersion[] = [];
+
+  Object.entries(map).forEach(([ticker, entries]) => {
+    // Sort entries for this ticker by date ASC to assign version numbers
+    const sortedByDateAsc = [...entries].sort(
+      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+
+    sortedByDateAsc.forEach((entry, index) => {
+      result.push({
+        ...entry,
+        version: index + 1,
+      });
+    });
+  });
+
+  // Return all entries sorted by date DESC (newest overall first)
+  return result.sort(
     (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
   );
 }
@@ -224,10 +245,11 @@ function EmptyState({ onSelectTicker }: { onSelectTicker: (t: string) => void })
 export function AnalysisHistoryDashboard({
   userId,
   vaultKey,
+  vaultOwnerToken,
   onSelectTicker,
   onViewHistory,
 }: AnalysisHistoryDashboardProps) {
-  const [entries, setEntries] = useState<AnalysisHistoryEntry[]>([]);
+  const [entries, setEntries] = useState<HistoryEntryWithVersion[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchHistory = useCallback(async () => {
@@ -236,8 +258,9 @@ export function AnalysisHistoryDashboard({
       const historyMap = await KaiHistoryService.getAllHistory({
         userId,
         vaultKey,
+        vaultOwnerToken,
       });
-      setEntries(flattenHistory(historyMap));
+      setEntries(processHistory(historyMap));
     } catch (err) {
       console.error("[AnalysisHistoryDashboard] Failed to load history:", err);
       setEntries([]);
@@ -245,6 +268,48 @@ export function AnalysisHistoryDashboard({
       setLoading(false);
     }
   }, [userId, vaultKey]);
+
+  // ----- Delete Handlers -----
+
+  const handleDeleteEntry = useCallback(async (entry: AnalysisHistoryEntry) => {
+    const success = await KaiHistoryService.deleteEntry({
+      userId,
+      vaultKey,
+      vaultOwnerToken,
+      ticker: entry.ticker,
+      timestamp: entry.timestamp,
+    });
+
+    if (success) {
+      toast.success("Analysis deleted");
+      fetchHistory();
+    } else {
+      toast.error("Failed to delete analysis");
+    }
+  }, [userId, vaultKey, vaultOwnerToken, fetchHistory]);
+
+  const handleDeleteTicker = useCallback(async (ticker: string) => {
+    const success = await KaiHistoryService.deleteTickerHistory({
+      userId,
+      vaultKey,
+      vaultOwnerToken,
+      ticker,
+    });
+
+    if (success) {
+      toast.success(`All history for ${ticker} deleted`);
+      fetchHistory();
+    } else {
+      toast.error(`Failed to delete history for ${ticker}`);
+    }
+  }, [userId, vaultKey, vaultOwnerToken, fetchHistory]);
+
+  // ----- Columns -----
+  const columns = getColumns({
+    onView: onViewHistory,
+    onDelete: handleDeleteEntry,
+    onDeleteTicker: handleDeleteTicker,
+  });
 
   useEffect(() => {
     if (userId && vaultKey) {
@@ -257,13 +322,13 @@ export function AnalysisHistoryDashboard({
   // ----- Loading state -----
   if (loading) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 px-4 sm:px-6 pb-safe max-w-4xl mx-auto">
         {/* Search skeleton */}
         <div className="flex items-center gap-3">
           <Skeleton className="h-9 w-[250px] rounded-md" />
         </div>
         {/* Card skeletons */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
           {Array.from({ length: 4 }).map((_, i) => (
             <HistoryCardSkeleton key={i} />
           ))}
@@ -279,7 +344,7 @@ export function AnalysisHistoryDashboard({
 
   // ----- Populated state -----
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 px-4 sm:px-6 pb-safe max-w-4xl mx-auto">
       {/* Header with search */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex items-center gap-2">
@@ -291,18 +356,18 @@ export function AnalysisHistoryDashboard({
             {entries.length}
           </Badge>
         </div>
-        <StockSearch onSelect={onSelectTicker} />
+        <StockSearch onSelect={onSelectTicker} className="max-w-sm" />
       </div>
 
       {/* Card grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {entries.map((entry, idx) => (
-          <HistoryCard
-            key={`${entry.ticker}-${entry.timestamp}-${idx}`}
-            entry={entry}
-            onClick={() => onViewHistory(entry)}
-          />
-        ))}
+      {/* Data Table replacing Card Grid */}
+      <div className="bg-background/40 backdrop-blur-xl border rounded-xl overflow-hidden shadow-sm">
+        <DataTable 
+          columns={columns} 
+          data={entries} 
+          searchKey="ticker"
+          searchPlaceholder="Filter by ticker..."
+        />
       </div>
     </div>
   );

@@ -381,12 +381,12 @@ export function StreamingProgressView({
         )}
       </div>
 
-      {/* AI Thoughts (Reasoning) */}
-      {(isActive || thoughts.length > 0) && (
+      {/* AI Thoughts (Reasoning) - Show streamed text during active, thoughts array when complete */}
+      {(isActive || thoughts.length > 0 || streamedText) && (
         <StreamingAccordion
           id={`thoughts-${title.toLowerCase().replace(/\s+/g, "-")}`}
           title="Reasoning"
-          text={thoughtsText || (isActive ? "Reasoning about data..." : "")}
+          text={isActive ? streamedText : thoughtsText}
           isStreaming={isActive}
           isComplete={isComplete}
           icon={isComplete ? "brain" : "spinner"}
@@ -395,17 +395,15 @@ export function StreamingProgressView({
         />
       )}
 
-      {/* Main Output / Insight */}
-      {(streamedText || isComplete) && (
+      {/* Main Output / Insight - Only show final summary when complete */}
+      {isComplete && streamedText && (
         <div
           className={cn(
             "rounded-md border p-2.5 text-xs leading-relaxed",
-            isComplete
-              ? "bg-emerald-500/5 border-emerald-500/20 text-foreground"
-              : "bg-muted/30 border-border text-muted-foreground"
+            "bg-emerald-500/5 border-emerald-500/20 text-foreground"
           )}
         >
-          {streamedText || (isActive ? "Generating insights..." : "Waiting for analysis...")}
+          {streamedText}
         </div>
       )}
 

@@ -25,16 +25,20 @@ export class HushhIdentityWeb extends WebPlugin implements HushhIdentityPlugin {
    * Auto-detect investor from Firebase displayName.
    * Uses Next.js API route proxy.
    */
-  async autoDetect(options: { authToken: string }): Promise<{
+  async autoDetect(options: { authToken?: string; idToken?: string }): Promise<{
     detected: boolean;
     display_name: string | null;
     matches: InvestorMatch[];
   }> {
     try {
+      const token = options.idToken || options.authToken;
+      if (!token) {
+        return { detected: false, display_name: null, matches: [] };
+      }
       const response = await fetch(`${API_BASE_PATH}/api/identity/auto-detect`, {
         method: "GET",
         headers: {
-          Authorization: `Bearer ${options.authToken}`,
+          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
       });

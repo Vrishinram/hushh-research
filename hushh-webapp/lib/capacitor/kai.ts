@@ -31,7 +31,12 @@ export interface KaiPlugin {
     /**
      * Firebase ID token (bootstrap auth) required by backend for /api/kai/consent/grant.
      */
-    authToken: string;
+    authToken?: string;
+    /**
+     * Preferred name for Firebase ID token.
+     * Alias of authToken for migration.
+     */
+    idToken?: string;
     /**
      * Deprecated: VAULT_OWNER token is not accepted by the backend for this endpoint.
      * Kept only for backward compatibility during migration.
@@ -251,6 +256,9 @@ export interface KaiPlugin {
 
 /** Event name for native portfolio SSE events (import + analyze-losers). */
 export const PORTFOLIO_STREAM_EVENT = "portfolioStreamEvent";
+
+/** Event name for native Kai analysis SSE events (debate stream). */
+export const KAI_STREAM_EVENT = "kaiStreamEvent";
 
 export const Kai = registerPlugin<KaiPlugin>("Kai", {
   web: () => import("./plugins/kai-web").then((m) => new m.KaiWeb()),

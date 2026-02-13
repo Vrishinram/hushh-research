@@ -81,8 +81,9 @@ export class IdentityService {
       // - Web: calls identity-web.ts (Next.js proxy)
       // - Native: calls HushhIdentityPlugin (direct backend)
       console.log("[IdentityService] 📡 Calling HushhIdentity.autoDetect...");
-      const result = await HushhIdentity.autoDetect({
-        authToken: firebaseToken,
+        const result = await HushhIdentity.autoDetect({
+          idToken: firebaseToken,
+          authToken: firebaseToken,
       });
 
       // Transform snake_case to camelCase

@@ -50,6 +50,7 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin, URLSessionDataDelegate {
     private var streamCall: CAPPluginCall?
     private var streamBuffer = ""
     private var streamTask: URLSessionDataTask?
+        private var activeStreamKind: String = "portfolio"
     
     // MARK: - Configuration
     
@@ -684,9 +685,10 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin, URLSessionDataDelegate {
         }.resume()
     }
     
-    // MARK: - Portfolio streaming (real-time SSE on iOS; avoids WKWebView fetch buffering)
+    // MARK: - Streaming (real-time SSE on iOS; avoids WKWebView fetch buffering)
     
     private static let kPortfolioStreamEvent = "portfolioStreamEvent"
+    private static let kKaiStreamEvent = "kaiStreamEvent"
     
     private func makeStreamSession() -> URLSession {
         let config = URLSessionConfiguration.default
@@ -698,6 +700,12 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin, URLSessionDataDelegate {
     private func emitSSEEvent(_ data: [String: Any]) {
         DispatchQueue.main.async { [weak self] in
             self?.notifyListeners(KaiPlugin.kPortfolioStreamEvent, data: data)
+        }
+    }
+
+    private func emitKaiSSEEvent(_ data: [String: Any]) {
+        DispatchQueue.main.async { [weak self] in
+            self?.notifyListeners(KaiPlugin.kKaiStreamEvent, data: data)
         }
     }
     
@@ -714,14 +722,37 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin, URLSessionDataDelegate {
             let jsonStr = String(trimmed.dropFirst(6))
             guard let jsonData = jsonStr.data(using: .utf8),
                   let obj = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else { continue }
+            // Default to portfolio stream event for existing streaming flows.
             emitSSEEvent(obj)
+        }
+    }
+
+    private func parseSSELinesAndEmitKai() {
+        let lines = streamBuffer.split(separator: "\n", omittingEmptySubsequences: false)
+        guard !lines.isEmpty else { return }
+        let fullLines = lines.dropLast(1).map { String($0) }
+        let last = String(lines.last ?? "")
+        streamBuffer = last
+
+        for line in fullLines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix("data: ") else { continue }
+            let jsonStr = String(trimmed.dropFirst(6))
+            guard let jsonData = jsonStr.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else { continue }
+            emitKaiSSEEvent(obj)
         }
     }
     
     public func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
         if let str = String(data: data, encoding: .utf8) {
             streamBuffer += str
-            parseSSELinesAndEmit()
+            // The active stream decides which parser to use.
+            if activeStreamKind == "kai" {
+                parseSSELinesAndEmitKai()
+            } else {
+                parseSSELinesAndEmit()
+            }
         }
     }
     
@@ -732,7 +763,11 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin, URLSessionDataDelegate {
         
         // Process any remaining buffer before clearing
         if !streamBuffer.isEmpty {
-            parseSSELinesAndEmit()
+            if activeStreamKind == "kai" {
+                parseSSELinesAndEmitKai()
+            } else {
+                parseSSELinesAndEmit()
+            }
         }
         streamBuffer = ""
         
@@ -751,6 +786,7 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin, URLSessionDataDelegate {
     }
     
     @objc func streamPortfolioImport(_ call: CAPPluginCall) {
+        activeStreamKind = "portfolio"
         guard let userId = call.getString("userId"),
               let fileName = call.getString("fileName"),
               let mimeType = call.getString("mimeType"),
@@ -792,6 +828,41 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin, URLSessionDataDelegate {
         body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
         request.httpBody = body
         
+        streamCall = call
+        streamBuffer = ""
+        streamSession = makeStreamSession()
+        streamTask = streamSession?.dataTask(with: request)
+        streamTask?.resume()
+    }
+
+    @objc func streamKaiAnalysis(_ call: CAPPluginCall) {
+        guard let vaultOwnerToken = call.getString("vaultOwnerToken") else {
+            call.reject("Missing vaultOwnerToken")
+            return
+        }
+        guard let body = call.getObject("body") else {
+            call.reject("Missing body")
+            return
+        }
+        if streamCall != nil {
+            call.reject("A stream is already in progress")
+            return
+        }
+
+        activeStreamKind = "kai"
+        let backendUrl = getBackendUrl(call)
+        let urlStr = "\(backendUrl)/api/kai/analyze/stream"
+        guard let url = URL(string: urlStr) else {
+            call.reject("Invalid URL: \(urlStr)")
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(vaultOwnerToken)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
         streamCall = call
         streamBuffer = ""
         streamSession = makeStreamSession()

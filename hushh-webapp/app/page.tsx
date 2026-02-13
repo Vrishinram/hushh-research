@@ -28,10 +28,7 @@ function SharedHeader() {
   return (
     <div className="text-center space-y-5">
       <h1
-        className="text-4xl font-extrabold tracking-tight bg-clip-text text-transparent"
-        style={{
-          backgroundImage: "linear-gradient(to right, #e91e63, #9c27b0)",
-        }}
+        className="text-4xl font-extrabold tracking-tight hushh-gradient-text"
       >
         Welcome to
       </h1>

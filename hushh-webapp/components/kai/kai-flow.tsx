@@ -399,6 +399,10 @@ export function KaiFlow({
     router.push("/kai/dashboard/portfolio-health");
   }, [flowData.portfolioData, router, userId]);
 
+  const handleViewHistory = useCallback(() => {
+    router.push("/kai/dashboard/analysis");
+  }, [router]);
+
   // Check World Model for financial data on mount
   useEffect(() => {
     async function checkFinancialData() {
@@ -535,6 +539,29 @@ export function KaiFlow({
       onHoldingsLoaded(flowData.holdings);
     }
   }, [flowData.holdings, onHoldingsLoaded]);
+
+  // Production-grade disconnect: abort active streams on force-close, mobile swipe-away
+  useEffect(() => {
+    const abortStream = () => abortControllerRef.current?.abort();
+    window.addEventListener('beforeunload', abortStream);
+
+    let visibilityTimeout: NodeJS.Timeout | undefined;
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        visibilityTimeout = setTimeout(abortStream, 5000);
+      } else {
+        clearTimeout(visibilityTimeout);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      abortStream();
+      window.removeEventListener('beforeunload', abortStream);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      clearTimeout(visibilityTimeout);
+    };
+  }, []);
 
   // Handle file upload with SSE streaming
   const handleFileUpload = useCallback(
@@ -1032,6 +1059,7 @@ export function KaiFlow({
           onAnalyzeLosers={handleAnalyzeLosers}
           onReupload={handleReimport}
           onClearData={handleClearData}
+          onViewHistory={handleViewHistory}
         />
       )}
 

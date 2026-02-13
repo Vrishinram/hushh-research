@@ -80,11 +80,22 @@ export default function KaiPage() {
     console.log("[Kai] Flow state:", state);
     setFlowState(state);
   };
+
+  // Handle search bar commands
+  const handleCommand = (command: string, params?: Record<string, unknown>) => {
+    if (command === "analyze" && params?.symbol) {
+      const symbol = String(params.symbol);
+      // Navigate to analysis page with ticker
+      window.location.href = `/kai/dashboard/analysis?ticker=${symbol.toUpperCase()}`;
+    }
+  };
  
   return (
     <div className="relative w-full">
-      {/* Main Content - KaiFlow handles all states - Added pb-40 for search bar clearance */}
-      <div className="w-full px-4 py-4 sm:px-6 sm:py-6">
+      {/* Main Content - KaiFlow handles all states */}
+      <div className="w-full px-4 py-4 sm:px-6 sm:py-6 pb-32">
+
+
  
         <KaiFlow
           userId={user.uid}
@@ -96,19 +107,12 @@ export default function KaiPage() {
         />
       </div>
  
-      {/* Search Bar - Only show on dashboard state */}
-      {flowState === "dashboard" && (
-        <KaiSearchBar
-          onCommand={(cmd, params) => {
-            if (cmd === "analyze" && params?.symbol) {
-              // Handle analyze command
-              console.log("Analyze:", params.symbol);
-            }
-          }}
-          holdings={[]} // Pass actual holdings if available
-          disabled={false}
-        />
-      )}
+      {/* Fixed search bar above bottom navbar */}
+      <KaiSearchBar
+        onCommand={handleCommand}
+        holdings={_holdings}
+        disabled={!vaultOwnerToken || flowState === "checking"}
+      />
     </div>
   );
 }

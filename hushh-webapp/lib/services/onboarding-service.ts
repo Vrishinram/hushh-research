@@ -21,10 +21,11 @@ export class OnboardingService {
   static async checkOnboardingStatus(userId: string): Promise<boolean> {
     try {
       await waitForBridgeReady();
-      const authToken = (await AuthService.getIdToken()) ?? undefined;
+      const idToken = (await AuthService.getIdToken()) ?? undefined;
       const result = await HushhOnboarding.checkOnboardingStatus({
         userId,
-        authToken,
+        idToken,
+        authToken: idToken,
       });
       return result.completed;
     } catch (error) {
@@ -41,10 +42,11 @@ export class OnboardingService {
    */
   static async completeOnboarding(userId: string): Promise<boolean> {
     try {
-      const authToken = (await AuthService.getIdToken()) ?? undefined;
+      const idToken = (await AuthService.getIdToken()) ?? undefined;
       const result = await HushhOnboarding.completeOnboarding({
         userId,
-        authToken,
+        idToken,
+        authToken: idToken,
       });
       return result.success;
     } catch (error) {

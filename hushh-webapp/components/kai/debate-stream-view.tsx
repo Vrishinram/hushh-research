@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Loader2, AlertCircle, RefreshCw, X, WifiOff, ShieldAlert, Clock, CheckCircle2 } from "lucide-react";
@@ -13,6 +13,8 @@ import { toast } from "sonner";
 import { Card, CardContent } from "@/lib/morphy-ux/card";
 import { HushhLoader } from "@/components/ui/hushh-loader";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { ApiService } from "@/lib/services/api-service";
 
 // ============================================================================
 // Types
@@ -143,11 +145,61 @@ export function DebateStreamView({ ticker, userId, riskProfile: riskProfileProp,
     JSON.parse(JSON.stringify(INITIAL_ROUND_STATE))
   );
 
+  // Refs for robust state tracking inside async stream
+  const round1StatesRef = useRef<Record<string, AgentState>>(JSON.parse(JSON.stringify(INITIAL_ROUND_STATE)));
+  const round2StatesRef = useRef<Record<string, AgentState>>(JSON.parse(JSON.stringify(INITIAL_ROUND_STATE)));
+
   // UI Control
   const [activeAgent, setActiveAgent] = useState("fundamental");
   const [collapsedRounds, setCollapsedRounds] = useState<Record<number, boolean>>({ 1: false, 2: true });
 
   const [decision, setDecision] = useState<any>(null);
+
+  // ---- Overall progress computation ----
+  const AGENTS = ["fundamental", "sentiment", "valuation"] as const;
+
+  const overallProgress = useMemo(() => {
+    let progress = 0;
+    // Round 1: each agent complete = +14%, active/streaming = +7%
+    for (const agent of AGENTS) {
+      const s = round1States[agent]?.stage;
+      if (s === "complete") progress += 14;
+      else if (s === "active") progress += 7;
+    }
+    // Round 2: same weighting
+    for (const agent of AGENTS) {
+      const s = round2States[agent]?.stage;
+      if (s === "complete") progress += 14;
+      else if (s === "active") progress += 7;
+    }
+    // Decision phase bump
+    if (decision) progress = 100;
+    else if (activeRound > 1 && round2States.valuation?.stage === "complete") {
+      progress = Math.max(progress, 90); // awaiting decision
+    }
+    return Math.min(progress, 100);
+  }, [round1States, round2States, decision, activeRound]);
+
+  const progressLabel = useMemo(() => {
+    if (decision) return "Analysis complete";
+    const agentLabels: Record<string, string> = {
+      fundamental: "Fundamental",
+      sentiment: "Sentiment",
+      valuation: "Valuation",
+    };
+    // Find the currently active agent
+    const states = activeRound === 1 ? round1States : round2States;
+    for (const agent of AGENTS) {
+      if (states[agent]?.stage === "active") {
+        return `Round ${activeRound} — ${agentLabels[agent]} Agent`;
+      }
+    }
+    // If no agent is active, check if all are complete
+    const allComplete = AGENTS.every((a) => states[a]?.stage === "complete");
+    if (allComplete && activeRound === 1) return "Round 1 complete — transitioning…";
+    if (allComplete && activeRound === 2) return "Forming consensus…";
+    return `Round ${activeRound} — Analyzing…`;
+  }, [round1States, round2States, activeRound, decision]);
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const hasStartedRef = useRef(false);
@@ -156,6 +208,13 @@ export function DebateStreamView({ ticker, userId, riskProfile: riskProfileProp,
 
   // Helper to update specific agent state in current round
   const updateAgentState = useCallback((round: 1 | 2, agent: string, update: Partial<AgentState>) => {
+    // Update Ref (Source of Truth for Stream)
+    const ref = round === 1 ? round1StatesRef : round2StatesRef;
+    if (ref.current[agent]) {
+       ref.current[agent] = { ...ref.current[agent], ...update };
+    }
+
+    // Update React State
     const setter = round === 1 ? setRound1States : setRound2States;
     setter((prev) => {
       const currentState = prev[agent];
@@ -191,6 +250,9 @@ export function DebateStreamView({ ticker, userId, riskProfile: riskProfileProp,
     setCollapsedRounds({ 1: false, 2: true });
     setDecision(null);
     setRetryCountdown(null);
+    // Reset refs
+    round1StatesRef.current = JSON.parse(JSON.stringify(INITIAL_ROUND_STATE));
+    round2StatesRef.current = JSON.parse(JSON.stringify(INITIAL_ROUND_STATE));
   }, []);
 
   // Start stream with retry logic
@@ -216,24 +278,22 @@ export function DebateStreamView({ ticker, userId, riskProfile: riskProfileProp,
 
         const riskProfile = riskProfileProp || "balanced";
 
-        // Start SSE connection
-        const response = await fetch(
-          `${process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000"}/api/kai/analyze/stream`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${vaultOwnerToken}`,
-            },
-            body: JSON.stringify({
-              user_id: userId,
-              ticker: ticker.toUpperCase(),
-              risk_profile: riskProfile,
-              context: context,
-            }),
-            signal: abortControllerRef.current.signal,
-          }
-        );
+        // Start SSE connection via ApiService.
+        // This centralizes Android localhost→10.0.2.2 normalization and
+        // uses native plugins on iOS/Android when available.
+        const response = await ApiService.streamKaiAnalysis({
+          userId,
+          ticker,
+          riskProfile,
+          vaultOwnerToken,
+        });
+
+        // If the user closes/back while the native plugin is still streaming,
+        // we still abort UI processing; plugin continues but listener cleanup
+        // is handled within ApiService.
+        if (abortControllerRef.current.signal.aborted) {
+          throw new DOMException("Aborted", "AbortError");
+        }
 
         if (!response.ok) {
           const status = response.status;
@@ -324,11 +384,23 @@ export function DebateStreamView({ ticker, userId, riskProfile: riskProfileProp,
                     }
                     break;
 
-                  case "agent_token":
                     {
                       const r = currentPhase === "debate" ? 2 : 1;
                       const ag = data.agent;
                       const txt = data.text || "";
+                      
+                      // Update Ref
+                      const ref = r === 1 ? round1StatesRef : round2StatesRef;
+                      const runRef = ref.current;
+                      if (runRef) {
+                         const agState = runRef[ag];
+                         if (agState) {
+                            // @ts-ignore
+                            agState.text = (agState.text || "") + txt;
+                         }
+                      }
+
+                      // Update React State
                       const setter = r === 1 ? setRound1States : setRound2States;
                       setter((prev) => ({
                         ...prev,
@@ -408,6 +480,10 @@ export function DebateStreamView({ ticker, userId, riskProfile: riskProfileProp,
                           agent_votes: data.agent_votes || {},
                           final_statement: data.final_statement || "",
                           raw_card: data.raw_card || {},
+                          debate_transcript: {
+                             round1: round1StatesRef.current,
+                             round2: round2StatesRef.current,
+                          },
                         },
                       }).then(() => {
                         // Invalidate caches after decision is persisted
@@ -487,6 +563,21 @@ export function DebateStreamView({ ticker, userId, riskProfile: riskProfileProp,
   useEffect(() => {
     startStream();
 
+    // Production-grade disconnect: abort on force-close, mobile swipe-away
+    const abortStream = () => abortControllerRef.current?.abort();
+    window.addEventListener('beforeunload', abortStream);
+
+    let visibilityTimeout: NodeJS.Timeout | undefined;
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        // Mobile: abort after 5s in background (catches swipe-away)
+        visibilityTimeout = setTimeout(abortStream, 5000);
+      } else {
+        clearTimeout(visibilityTimeout);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
     return () => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
@@ -494,6 +585,9 @@ export function DebateStreamView({ ticker, userId, riskProfile: riskProfileProp,
       if (retryTimerRef.current) {
         clearTimeout(retryTimerRef.current);
       }
+      window.removeEventListener('beforeunload', abortStream);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      clearTimeout(visibilityTimeout);
     };
   }, [startStream]);
 
@@ -555,7 +649,7 @@ export function DebateStreamView({ ticker, userId, riskProfile: riskProfileProp,
         <div className="absolute inset-0 backdrop-blur-md bg-background/40" />
 
         {/* Content */}
-        <div className="relative px-4 pt-3 pb-4">
+        <div className="relative px-4 pt-3 pb-2">
           {/* Breadcrumb */}
           <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground mb-2">
             <span className="hover:text-foreground transition-colors cursor-pointer">Kai</span>
@@ -565,9 +659,12 @@ export function DebateStreamView({ ticker, userId, riskProfile: riskProfileProp,
             <span className="text-foreground font-medium">Analysis</span>
           </div>
 
-          {/* Hero row: Ticker + status + close */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
+          {/* Hero row: Centered ticker with close button on right */}
+          <div className="grid grid-cols-[40px_1fr_40px] items-center">
+            {/* Left spacer */}
+            <div />
+            {/* Center: Ticker + status */}
+            <div className="flex flex-col items-center gap-1">
               <h1 className="text-3xl font-black tracking-tighter text-foreground">{ticker}</h1>
               {/* Status badge */}
               {decision ? (
@@ -584,10 +681,28 @@ export function DebateStreamView({ ticker, userId, riskProfile: riskProfileProp,
                 </Badge>
               ) : null}
             </div>
-            <Button variant="ghost" size="icon" onClick={handleClose} className="shrink-0 rounded-full h-8 w-8">
-              <X className="w-4 h-4" />
-            </Button>
+            {/* Right: Close button */}
+            <div className="flex justify-end">
+              <Button variant="ghost" size="icon" onClick={handleClose} className="shrink-0 rounded-full h-8 w-8">
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
           </div>
+
+          {/* Overall Progress Bar */}
+          {!decision && loading && (
+            <div className="mt-3">
+              <Progress value={overallProgress} className="h-1.5 rounded-full" />
+              <p className="text-[10px] text-muted-foreground mt-1 text-center">
+                {progressLabel}
+              </p>
+            </div>
+          )}
+          {decision && (
+            <div className="mt-3">
+              <Progress value={100} className="h-1.5 rounded-full" />
+            </div>
+          )}
         </div>
       </div>
 
@@ -600,7 +715,7 @@ export function DebateStreamView({ ticker, userId, riskProfile: riskProfileProp,
 
       {/* Content - Scrollable */}
       <ScrollArea className="flex-1 p-4">
-        <div className="space-y-6 pb-10 max-w-3xl mx-auto">
+        <div className="space-y-6 pb-10 pb-safe max-w-3xl mx-auto px-4 sm:px-6">
           {/* Round 1 */}
           <RoundTabsCard
             roundNumber={1}

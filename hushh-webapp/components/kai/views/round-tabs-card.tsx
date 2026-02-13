@@ -218,7 +218,12 @@ export function RoundTabsCard({
             {AGENT_ORDER.map((agent) => {
               const config = AGENT_CONFIG[agent];
               return (
-                <TabsContent key={agent} value={agent} className="mt-0 focus-visible:ring-0">
+                <TabsContent
+                  key={agent}
+                  value={agent}
+                  forceMount
+                  className="mt-0 focus-visible:ring-0 data-[state=inactive]:hidden"
+                >
                   <AgentAnalysisCard
                     agentName={`${config.label} Agent`}
                     icon={config.icon}

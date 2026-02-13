@@ -93,8 +93,8 @@ export async function grantKaiConsent(
   scopes?: string[]
 ): Promise<GrantConsentResponse> {
   // grantConsent is a bootstrap operation - backend requires Firebase ID token.
-  const authToken = await AuthService.getIdToken();
-  if (!authToken) {
+  const idToken = await AuthService.getIdToken();
+  if (!idToken) {
     throw new Error("Missing Firebase ID token for Kai consent grant");
   }
 
@@ -105,7 +105,9 @@ export async function grantKaiConsent(
       "attr.financial.risk_profile", // Replaces vault.read.risk_profile
       "agent.kai.analyze",
     ],
-    authToken,
+    idToken,
+    // Back-compat for native implementations still expecting authToken
+    authToken: idToken,
   });
 }
 
@@ -403,10 +405,9 @@ export async function getStockContext(
     return cached;
   }
   
-  const response = await fetch("/api/world-model/get-context", {
+  const response = await ApiService.apiFetch("/api/world-model/get-context", {
     method: "POST",
     headers: {
-      "Content-Type": "application/json",
       Authorization: `Bearer ${vaultOwnerToken}`,
     },
     body: JSON.stringify({

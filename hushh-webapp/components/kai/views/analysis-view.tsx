@@ -107,23 +107,37 @@ export function AnalysisView({
   };
 
   return (
-    <div className="w-full space-y-6 pb-36">
-      {/* Header */}
-      <div className="flex items-center gap-4">
-        <MorphyButton
-          variant="muted"
-          size="icon"
-          onClick={onBack}
-          className="h-10 w-10 rounded-full"
-          aria-label="Back to Dashboard"
-          icon={{ icon: ArrowLeft }}
+    <div className="flex flex-col h-full bg-transparent relative">
+      {/* Header - Masked gradient + sticky nav */}
+      <div className="flex-none sticky top-0 z-10 overflow-hidden mb-4">
+        {/* Masked gradient background */}
+        <div
+          className="absolute inset-0 morphy-app-bg opacity-80"
+          style={{ maskImage: "linear-gradient(to bottom, black 60%, transparent)", WebkitMaskImage: "linear-gradient(to bottom, black 60%, transparent)" }}
         />
+        <div className="absolute inset-0 backdrop-blur-md bg-background/40" />
 
-        <div>
-          <h1 className="text-2xl font-bold">{result.symbol}</h1>
-          <p className="text-sm text-muted-foreground">Investment Analysis</p>
+        {/* Content */}
+        <div className="relative px-4 pt-3 pb-2 md:max-w-2xl md:mx-auto">
+          <div className="flex items-center gap-4">
+            <MorphyButton
+              variant="muted"
+              size="icon"
+              onClick={onBack}
+              className="h-10 w-10 rounded-full bg-background/50 hover:bg-background/80"
+              aria-label="Back to Dashboard"
+              icon={{ icon: ArrowLeft }}
+            />
+
+            <div>
+              <h1 className="text-2xl font-bold tracking-tighter">{result.symbol}</h1>
+              <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Investment Analysis</p>
+            </div>
+          </div>
         </div>
       </div>
+
+      <div className="px-4 pb-36 max-w-2xl mx-auto w-full space-y-6">
 
       {/* Decision Card */}
       <Card variant="none" effect="glass" showRipple={false}>
@@ -284,6 +298,7 @@ export function AnalysisView({
         </MorphyButton>
       </div>
 
+    </div>
     </div>
   );
 }

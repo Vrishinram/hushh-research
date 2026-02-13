@@ -75,23 +75,44 @@ export function OnboardingTour({ onComplete, onSkip }: OnboardingTourProps) {
     return () => setMounted(false);
   }, []);
 
-  // Find and highlight the current step's target element
+  // Find and highlight the current step's target element.
+  // On Android, layout/nav can mount slightly later; retry a few times.
   useEffect(() => {
     const step = TOUR_STEPS[currentStep];
     if (!step) return;
 
-    // Small delay to allow element to render/animate if needed
-    const timer = setTimeout(() => {
-      const element = document.querySelector(step.targetSelector) as HTMLElement;
+    let cancelled = false;
+    let attempts = 0;
+    const maxAttempts = 20; // ~2s total
+
+    const tryFind = () => {
+      if (cancelled) return;
+      const element = document.querySelector(step.targetSelector) as HTMLElement | null;
       if (element) {
         setHighlightedElement(element);
-        element.scrollIntoView({ behavior: "smooth", block: "center" });
-      } else {
-        console.warn(`[OnboardingTour] Target not found: ${step.targetSelector}`);
+        try {
+          element.scrollIntoView({ behavior: "smooth", block: "center" });
+        } catch {
+          // ignore
+        }
+        return;
       }
-    }, 100);
+
+      attempts += 1;
+      if (attempts >= maxAttempts) {
+        console.warn(`[OnboardingTour] Target not found after retries: ${step.targetSelector}`);
+        setHighlightedElement(null);
+        return;
+      }
+
+      setTimeout(tryFind, 100);
+    };
+
+    // initial small delay to allow first paint
+    const timer = setTimeout(tryFind, 120);
 
     return () => {
+      cancelled = true;
       clearTimeout(timer);
       setHighlightedElement(null);
     };

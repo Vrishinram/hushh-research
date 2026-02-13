@@ -6,6 +6,7 @@ import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
+import com.hushh.app.plugins.shared.BackendUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -36,7 +37,7 @@ class HushhOnboardingPlugin : Plugin() {
     private val defaultBackendUrl = "https://consent-protocol-1006304528804.us-central1.run.app"
 
     private fun normalizeBackendUrl(raw: String): String {
-        return if (raw.contains("localhost")) raw.replace("localhost", "10.0.2.2") else raw
+        return BackendUrl.normalize(raw)
     }
 
     private fun getBackendUrl(call: PluginCall? = null): String {
