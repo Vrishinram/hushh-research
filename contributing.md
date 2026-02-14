@@ -32,16 +32,54 @@ Hushh is a cross-platform application. **Every feature** that touches backend da
 
 ## 🚀 Getting Started
 
-**New to contributing?** Start with our [Contributor Onboarding Guide](docs/guides/contributor_onboarding.md) for a step-by-step walkthrough.
+**New to contributing?** Start with our [Getting Started Guide](getting_started.md) for a step-by-step environment setup, then come back here for workflow guidelines.
 
 **Quick setup:**
-- Read our [Getting Started Guide](getting_started.md) to set up your development environment
+```bash
+git clone https://github.com/hushh-labs/hushh-research.git
+cd hushh-research
+make setup        # installs git hooks + adds consent-upstream remote
+make verify-setup # confirm everything is configured
+```
 - You will need:
   - Node.js v20+
   - Python 3.13+
   - PostgreSQL
   - Xcode (for iOS)
   - Android Studio (for Android)
+
+---
+
+## 🔄 Subtree Workflow (consent-protocol)
+
+The `consent-protocol/` directory is a **git subtree** linked to a standalone upstream repo. Changes made here must eventually be synced back. Git hooks enforce this automatically — here's the workflow:
+
+### Day-to-day Development
+1. **Sync before starting work** on `consent-protocol/`:
+   ```bash
+   make sync-protocol   # pull latest from upstream
+   ```
+2. **Make your changes** and commit normally — the pre-commit hook runs lint checks automatically.
+3. **Push your branch** — the pre-push hook verifies upstream is in sync and blocks if not.
+4. **After your PR is merged to main**, sync back to the standalone repo:
+   ```bash
+   make push-protocol   # push changes to upstream (checks sync first)
+   ```
+
+### What the Hooks Enforce
+| Hook | Trigger | What it does |
+|------|---------|-------------|
+| **pre-commit** | `git commit` with consent-protocol files | Runs ruff lint + format check |
+| **pre-push** | `git push` with consent-protocol files | Blocks if upstream has unpulled commits |
+
+### Available Commands
+```bash
+make sync-protocol        # Pull upstream → monorepo
+make push-protocol        # Push monorepo → upstream (checks sync first)
+make push-protocol-force  # Push without sync check (escape hatch)
+make check-protocol-sync  # Check sync status without pushing
+make verify-setup         # Verify hooks and remotes are configured
+```
 
 ---
 
@@ -58,7 +96,7 @@ Hushh is a cross-platform application. **Every feature** that touches backend da
     ```bash
     ./scripts/test-ci-local.sh
     ```
-    This ensures your changes will pass GitHub Actions CI. See [CI Configuration Reference](docs/reference/ci.md) and [Contributor Onboarding — Step 3](docs/guides/contributor_onboarding.md#step-3-test-ci-locally-critical) for details.
+    This ensures your changes will pass GitHub Actions CI. See [CI Configuration Reference](docs/reference/ci.md) for details.
 6.  **Test Locally**: Verify the change on all supported platforms (simulators/emulators).
 7.  **Submit a Pull Request**: targeted at the `main` branch.
     - `main` is protected: PRs require approval and CI checks.
@@ -107,8 +145,8 @@ Attach a screen recording or screenshot of the feature in action.
 
 ## 📚 Documentation
 
-- **[Contributor Onboarding Guide](docs/guides/contributor_onboarding.md)**: Step-by-step first contribution walkthrough
 - **[Getting Started Guide](getting_started.md)**: Environment setup
+- **[Contributing Guide](contributing.md)**: Workflow and guidelines (this file)
 - **[Project Context Map](docs/project_context_map.md)**: Understanding the codebase
 - **[Feature Checklist](docs/guides/feature_checklist.md)**: Building new features
 - **[Route Contracts](docs/reference/route_contracts.md)**: API contract documentation

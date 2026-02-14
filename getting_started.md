@@ -39,7 +39,10 @@ Hushh is a **consent-first personal data agent system** with:
 git clone https://github.com/hushh-labs/hushh-research.git
 cd hushh-research
 
-# Install frontend dependencies
+# First-time setup: installs git hooks + adds consent-upstream remote
+make setup
+
+# Install frontend dependencies (also auto-installs hooks via "prepare")
 cd hushh-webapp
 npm install
 
@@ -49,6 +52,12 @@ python3 -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
+
+> **Important:** `make setup` installs pre-commit and pre-push hooks that enforce
+> linting and subtree sync checks for `consent-protocol/`. These hooks run
+> automatically — you don't need to think about them after the initial setup.
+> Run `make verify-setup` at any time to confirm everything is configured.
+
 Use **.venv** only. If you have both `venv` and `.venv`, remove `venv` and use `.venv` to avoid two environments.
 
 ---

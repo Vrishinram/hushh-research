@@ -4,6 +4,7 @@
   "license": "MIT",
   "private": true,
   "scripts": {
+    "prepare": "cd .. && sh scripts/setup-hooks.sh",
     "dev": "next dev",
     "build": "next build --webpack",
     "start": "next start",

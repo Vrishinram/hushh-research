@@ -3,7 +3,7 @@
 # Usage: make <target>
 # Run `make help` for available targets.
 
-.PHONY: help dev dev-frontend dev-backend lint test ci-local sync-protocol push-protocol setup
+.PHONY: help dev dev-frontend dev-backend lint test ci-local sync-protocol push-protocol setup verify-setup
 
 # === Help ==================================================================
 
@@ -43,11 +43,40 @@ push-protocol-force: ## Push consent-protocol to upstream (skip sync check)
 	git subtree push --prefix=consent-protocol consent-upstream main
 	@echo "Done. Upstream consent-protocol repo is now updated."
 
-setup: ## First-time setup (add upstream remote)
-	@git remote add consent-upstream https://github.com/hushh-labs/consent-protocol.git 2>/dev/null && \
-		echo "Remote 'consent-upstream' added." || \
-		echo "Remote 'consent-upstream' already configured."
-	@echo "Run 'make sync-protocol' to pull the latest backend."
+setup: ## First-time setup (hooks + remote + verification)
+	@sh scripts/setup-hooks.sh
+	@echo ""
+	@$(MAKE) --no-print-directory verify-setup
+
+verify-setup: ## Verify your dev environment is correctly configured
+	@echo ""
+	@echo "==============================================="
+	@echo " Hushh Research — Setup Verification"
+	@echo "==============================================="
+	@echo ""
+	@printf "  Git hooks path:        "; \
+	HP=$$(git config core.hooksPath 2>/dev/null || echo ""); \
+	if [ "$$HP" = ".githooks" ]; then printf "\033[32m✅ .githooks\033[0m\n"; \
+	else printf "\033[31m❌ not set (run: make setup)\033[0m\n"; fi
+	@printf "  pre-commit hook:       "; \
+	if [ -x .githooks/pre-commit ]; then printf "\033[32m✅ installed\033[0m\n"; \
+	else printf "\033[31m❌ missing or not executable\033[0m\n"; fi
+	@printf "  pre-push hook:         "; \
+	if [ -x .githooks/pre-push ]; then printf "\033[32m✅ installed\033[0m\n"; \
+	else printf "\033[31m❌ missing or not executable\033[0m\n"; fi
+	@printf "  consent-upstream:      "; \
+	if git remote | grep -q "consent-upstream"; then printf "\033[32m✅ configured\033[0m\n"; \
+	else printf "\033[31m❌ not configured (run: make setup)\033[0m\n"; fi
+	@printf "  python3:               "; \
+	if command -v python3 >/dev/null 2>&1; then printf "\033[32m✅ $$(python3 --version 2>&1)\033[0m\n"; \
+	else printf "\033[31m❌ not found\033[0m\n"; fi
+	@printf "  ruff:                  "; \
+	if python3 -m ruff --version >/dev/null 2>&1; then printf "\033[32m✅ $$(python3 -m ruff --version 2>&1)\033[0m\n"; \
+	else printf "\033[31m❌ not found (pip3 install ruff)\033[0m\n"; fi
+	@printf "  node:                  "; \
+	if command -v node >/dev/null 2>&1; then printf "\033[32m✅ $$(node --version 2>&1)\033[0m\n"; \
+	else printf "\033[31m❌ not found\033[0m\n"; fi
+	@echo ""
 
 # === Development ===========================================================
 
