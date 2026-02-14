@@ -99,9 +99,21 @@ esac
 
 if [ -n "$CP_FILES" ]; then
   echo "[pre-push] Running quick lint on consent-protocol..."
-  if command -v python3 >/dev/null 2>&1; then
+
+  # Prefer the consent-protocol venv's Python (where ruff is installed),
+  # fall back to system python3. Use .venv/bin/python3 (relative to
+  # consent-protocol/) since the subshell below cd's into that directory.
+  if [ -x "consent-protocol/.venv/bin/python3" ]; then
+    LINT_PYTHON=".venv/bin/python3"
+  elif command -v python3 >/dev/null 2>&1; then
+    LINT_PYTHON="python3"
+  else
+    LINT_PYTHON=""
+  fi
+
+  if [ -n "$LINT_PYTHON" ]; then
     # Run in a subshell so `cd` doesn't affect the caller on failure
-    (cd consent-protocol && python3 -m ruff check . && python3 -m ruff format --check .) || {
+    (cd consent-protocol && "$LINT_PYTHON" -m ruff check . && "$LINT_PYTHON" -m ruff format --check .) || {
       echo ""
       echo "[pre-push] Lint failed. Run: cd consent-protocol && make fix"
       exit 1
