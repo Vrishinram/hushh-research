@@ -9,9 +9,18 @@ if git diff --cached --name-only | grep -q "^consent-protocol/"; then
 
   # Quick lint check on consent-protocol (fast, ~2s)
   echo "[pre-commit] Running quick lint on consent-protocol..."
-  cd consent-protocol && ruff check . && ruff format --check . || {
+  
+  # Use python3 directly to avoid pyenv issues
+  # Check once before cd to ensure python3 is available
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "[pre-commit] ERROR: python3 not found. Please install Python 3."
+    exit 1
+  fi
+  
+  cd consent-protocol && python3 -m ruff check . && python3 -m ruff format --check . || {
     echo ""
     echo "[pre-commit] Lint failed. Run: cd consent-protocol && make fix"
+    echo "[pre-commit] If ruff is not found, install it: pip3 install ruff"
     exit 1
   }
   cd ..
