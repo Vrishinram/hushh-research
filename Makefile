@@ -18,7 +18,27 @@ sync-protocol: ## Pull latest consent-protocol from upstream
 	git subtree pull --prefix=consent-protocol consent-upstream main --squash
 	@echo "Done. consent-protocol/ is now in sync with upstream."
 
-push-protocol: ## Push consent-protocol changes to upstream
+check-protocol-sync: ## Check if consent-protocol is in sync with upstream (non-blocking)
+	@echo "Checking consent-protocol upstream sync status..."
+	@git fetch consent-upstream main --quiet 2>/dev/null || { echo "⚠  Could not fetch consent-upstream. Is the remote configured? Run: make setup"; exit 1; }
+	@AHEAD=$$(git rev-list HEAD..consent-upstream/main --count 2>/dev/null || echo "0"); \
+	if [ "$$AHEAD" -gt 0 ]; then \
+		echo ""; \
+		echo "❌ consent-upstream/main is $$AHEAD commit(s) ahead of your subtree."; \
+		echo "   Run: make sync-protocol"; \
+		echo ""; \
+		exit 1; \
+	else \
+		echo "✅ consent-protocol is in sync with upstream."; \
+	fi
+
+push-protocol: check-protocol-sync ## Push consent-protocol changes to upstream (syncs first)
+	@echo "Pushing consent-protocol/ to upstream..."
+	git subtree push --prefix=consent-protocol consent-upstream main
+	@echo "Done. Upstream consent-protocol repo is now updated."
+
+push-protocol-force: ## Push consent-protocol to upstream (skip sync check)
+	@echo "⚠  Skipping upstream sync check (force mode)..."
 	@echo "Pushing consent-protocol/ to upstream..."
 	git subtree push --prefix=consent-protocol consent-upstream main
 	@echo "Done. Upstream consent-protocol repo is now updated."

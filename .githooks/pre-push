@@ -1,0 +1,82 @@
+#!/bin/sh
+# .githooks/pre-push -- Subtree sync guard + CI checks
+#
+# Ensures consent-protocol subtree is in sync with upstream before pushing.
+# Install: git config core.hooksPath .githooks
+
+set -e
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 1. Subtree drift detection
+#    If the push includes consent-protocol changes, verify upstream is merged.
+# ─────────────────────────────────────────────────────────────────────────────
+
+REMOTE="$1"
+URL="$2"
+
+# Only run subtree check when pushing to origin (not consent-upstream itself)
+if echo "$URL" | grep -q "hushh-research"; then
+  # Check if any consent-protocol files are in the commits being pushed
+  PUSH_RANGE=""
+  while read local_ref local_sha remote_ref remote_sha; do
+    if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
+      # New branch
+      PUSH_RANGE="$local_sha"
+    else
+      PUSH_RANGE="$remote_sha..$local_sha"
+    fi
+  done
+
+  if [ -n "$PUSH_RANGE" ]; then
+    CP_FILES=$(git diff --name-only "$PUSH_RANGE" 2>/dev/null | grep "^consent-protocol/" || true)
+
+    if [ -n "$CP_FILES" ]; then
+      printf "\n\033[33m[pre-push]\033[0m Push contains consent-protocol changes.\n"
+
+      # Fetch upstream to compare (quick, metadata only)
+      if git remote | grep -q "consent-upstream"; then
+        git fetch consent-upstream main --quiet 2>/dev/null || {
+          printf "\033[33m[pre-push]\033[0m WARNING: Could not fetch consent-upstream. Skipping sync check.\n"
+          printf "         Run \033[36mmake sync-protocol\033[0m manually after push.\n\n"
+        }
+
+        # Check if upstream has commits we haven't merged
+        UPSTREAM_AHEAD=$(git rev-list HEAD..consent-upstream/main --count 2>/dev/null || echo "0")
+
+        if [ "$UPSTREAM_AHEAD" -gt 0 ]; then
+          printf "\n\033[31m[pre-push] BLOCKED\033[0m consent-upstream/main is %s commit(s) ahead.\n" "$UPSTREAM_AHEAD"
+          printf "         You must sync before pushing consent-protocol changes.\n\n"
+          printf "  Run:\n"
+          printf "    \033[36mmake sync-protocol\033[0m    # pull upstream changes\n"
+          printf "    \033[36m# resolve conflicts if any\033[0m\n"
+          printf "    \033[36mgit push\033[0m              # try again\n\n"
+          exit 1
+        else
+          printf "\033[32m[pre-push]\033[0m Upstream is in sync. ✓\n"
+          printf "         Remember to run \033[36mmake push-protocol\033[0m after PR merge.\n\n"
+        fi
+      else
+        printf "\033[33m[pre-push]\033[0m WARNING: consent-upstream remote not configured.\n"
+        printf "         Run \033[36mmake setup\033[0m to add it.\n\n"
+      fi
+    fi
+  fi
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2. Quick lint gate on consent-protocol (only if files changed)
+# ─────────────────────────────────────────────────────────────────────────────
+
+if [ -n "$CP_FILES" ]; then
+  echo "[pre-push] Running quick lint on consent-protocol..."
+  if command -v python3 >/dev/null 2>&1; then
+    cd consent-protocol && python3 -m ruff check . && python3 -m ruff format --check . || {
+      echo ""
+      echo "[pre-push] Lint failed. Run: cd consent-protocol && make fix"
+      exit 1
+    }
+    cd ..
+  else
+    echo "[pre-push] WARNING: python3 not found, skipping lint."
+  fi
+fi

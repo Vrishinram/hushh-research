@@ -244,7 +244,21 @@ jobs:
             exit 0
           }
           if [ "$UPSTREAM_TREE" != "$LOCAL_TREE" ]; then
-            echo "::warning::consent-protocol/ may be behind upstream. Run: make sync-protocol"
+            echo ""
+            echo "============================================="
+            echo "⚠  SUBTREE DRIFT DETECTED"
+            echo "============================================="
+            echo "consent-protocol/ tree does not match upstream."
+            echo ""
+            echo "This means either:"
+            echo "  1. Upstream has commits not yet pulled into this repo"
+            echo "  2. This repo has commits not yet pushed to upstream"
+            echo ""
+            echo "To fix:"
+            echo "  make sync-protocol   # pull upstream into monorepo"
+            echo "  make push-protocol   # push monorepo changes to upstream"
+            echo ""
+            echo "::warning::consent-protocol/ is out of sync with upstream. Run: make sync-protocol"
           else
-            echo "consent-protocol/ is in sync with upstream."
+            echo "✅ consent-protocol/ is in sync with upstream."
           fi
