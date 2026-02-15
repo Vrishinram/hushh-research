@@ -798,14 +798,14 @@ export function KaiFlow({
         // Create abort controller for cancellation with timeout
         abortControllerRef.current = new AbortController();
         
-        // Strict user-facing timeout for import streaming.
+        // Strict user-facing timeout for import streaming (matches backend import ceiling).
         timeoutId = setTimeout(() => {
           if (abortControllerRef.current) {
             abortControllerRef.current.abort();
-            setError("Import timed out after 120 seconds. Please retry.");
+            setError("Import timed out after 180 seconds. Please retry.");
             toast.error("Import timed out. Please try again.");
           }
-        }, 120 * 1000);
+        }, 180 * 1000);
 
         // Build form data
         const formData = new FormData();
@@ -1058,7 +1058,7 @@ export function KaiFlow({
           },
           {
             signal: abortControllerRef.current.signal,
-            idleTimeoutMs: 120000,
+            idleTimeoutMs: 180000,
             requireTerminal: true,
           }
         );

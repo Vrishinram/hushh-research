@@ -378,12 +378,6 @@ export function StreamingProgressView({
         <span className="text-xs text-muted-foreground">
           {statusMessage || (isActive ? "Reasoning..." : isComplete ? "Complete" : isError ? "Failed" : "Waiting...")}
         </span>
-        {isActive && (
-          <span className="relative flex h-2 w-2 ml-auto shrink-0">
-            <span className={cn("animate-ping absolute inline-flex h-full w-full rounded-full opacity-75", accentColor.replace("text-", "bg-"))} />
-            <span className={cn("relative inline-flex rounded-full h-2 w-2", accentColor.replace("text-", "bg-"))} />
-          </span>
-        )}
       </div>
 
       {/* AI Thoughts (Reasoning) - Show streamed text during active, thoughts array when complete */}

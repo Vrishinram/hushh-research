@@ -414,7 +414,7 @@ export default function PortfolioHealthPage() {
           },
           {
             signal: abortControllerRef.current.signal,
-            idleTimeoutMs: 120000,
+            idleTimeoutMs: 180000,
             requireTerminal: true,
           }
         );

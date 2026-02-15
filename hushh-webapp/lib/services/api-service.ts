@@ -473,11 +473,13 @@ export class ApiService {
   ): Promise<Response> {
     if (Capacitor.isNativePlatform()) {
       try {
+        const backendUrl = this.getDirectBackendUrl();
         const result = await HushhNotifications.registerPushToken({
           userId,
           token,
           platform,
           idToken,
+          backendUrl,
         });
         return new Response(JSON.stringify(result), {
           status: result.success ? 200 : 500,
@@ -515,10 +517,12 @@ export class ApiService {
   ): Promise<Response> {
     if (Capacitor.isNativePlatform()) {
       try {
+        const backendUrl = this.getDirectBackendUrl();
         const result = await HushhNotifications.unregisterPushToken({
           userId,
           idToken,
           ...(platform ? { platform } : {}),
+          backendUrl,
         });
         return new Response(JSON.stringify(result), {
           status: result.success ? 200 : 500,

@@ -80,12 +80,12 @@ const TOP_STOCKS = [
 
 /** Returns true when `text` looks like a valid 1-5 letter ticker */
 function isTickerLike(text: string): boolean {
-  return /^[A-Z]{1,5}$/.test(text.toUpperCase());
+  return /^[A-Z0-9]{1,5}(?:[.-][A-Z0-9]{1,3})?$/.test(text.toUpperCase());
 }
 
 /** Returns true if text contains invalid characters for a ticker */
 function hasInvalidChars(text: string): boolean {
-  return !/^[A-Za-z]*$/.test(text);
+  return !/^[A-Za-z0-9.-]*$/.test(text);
 }
 
 type StockSearchItem = {
