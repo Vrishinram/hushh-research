@@ -16,7 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Sparkles } from "lucide-react";
+import { Loader2, Sparkles } from "lucide-react";
 import type { KaiIntroProfile } from "@/lib/services/kai-intro-service";
 
 type KaiIntroCompletePayload = {
@@ -68,7 +68,17 @@ export function KaiIntroModal({
 
   const progressLabel = useMemo(() => `Step ${step} of 2`, [step]);
 
-  async function submitAndClose(payload: KaiIntroCompletePayload) {
+  async function submitAndClose(
+    payload: KaiIntroCompletePayload,
+    options?: { closeImmediately?: boolean }
+  ) {
+    if (options?.closeImmediately) {
+      onOpenChange(false);
+      void Promise.resolve(onComplete(payload)).catch(() => {
+        // onComplete handles user-facing errors/toasts
+      });
+      return;
+    }
     try {
       setSaving(true);
       await onComplete(payload);
@@ -87,7 +97,7 @@ export function KaiIntroModal({
       intro_seen: true,
       investment_horizon: horizon || null,
       investment_style: style || null,
-    });
+    }, { closeImmediately: true });
   }
 
   async function handleSkipAll() {
@@ -95,7 +105,7 @@ export function KaiIntroModal({
       intro_seen: true,
       investment_horizon: horizon || null,
       investment_style: style || null,
-    });
+    }, { closeImmediately: true });
   }
 
   async function handlePrimaryAction() {
@@ -176,7 +186,16 @@ export function KaiIntroModal({
             </Button>
           </div>
           <Button onClick={handlePrimaryAction} disabled={saving}>
-            {step === 1 ? "Continue" : "Save and continue"}
+            {saving ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                Saving...
+              </>
+            ) : step === 1 ? (
+              "Continue"
+            ) : (
+              "Save and continue"
+            )}
           </Button>
         </div>
       </DialogContent>

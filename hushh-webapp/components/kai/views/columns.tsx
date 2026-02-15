@@ -35,6 +35,56 @@ export const getColumns = ({
   onViewVersions,
 }: ColumnsProps): ColumnDef<HistoryEntryWithVersion>[] => [
   {
+    id: "actions",
+    header: "",
+    cell: ({ row }) => {
+      const entry = row.original;
+
+      return (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              className="h-8 w-8 p-0"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <span className="sr-only">Open menu</span>
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuLabel>Actions</DropdownMenuLabel>
+            <DropdownMenuItem onClick={() => onView(entry)}>
+              <Eye className="mr-2 h-4 w-4" />
+              View Analysis
+            </DropdownMenuItem>
+            {onViewVersions && (
+              <DropdownMenuItem onClick={() => onViewVersions(entry.ticker)}>
+                <ArrowRight className="mr-2 h-4 w-4" />
+                View Previous Versions
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={() => onDelete(entry)}
+              className="text-red-600 dark:text-red-400 focus:text-red-600 focus:bg-red-500/10"
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Delete Entry
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => onDeleteTicker(entry.ticker)}
+              className="text-red-600 dark:text-red-400 focus:text-red-600 focus:bg-red-500/10"
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Delete All {entry.ticker}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      );
+    },
+  },
+  {
     accessorKey: "ticker",
     header: "Ticker",
     cell: ({ row }) => {
@@ -96,51 +146,6 @@ export const getColumns = ({
         <span className="text-sm text-muted-foreground">
           {format(new Date(row.original.timestamp), "MMM d, h:mm a")}
         </span>
-      );
-    },
-  },
-  {
-    id: "actions",
-    cell: ({ row }) => {
-      const entry = row.original;
-
-      return (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="h-8 w-8 p-0">
-              <span className="sr-only">Open menu</span>
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuLabel>Actions</DropdownMenuLabel>
-            <DropdownMenuItem onClick={() => onView(entry)}>
-              <Eye className="mr-2 h-4 w-4" />
-              View Analysis
-            </DropdownMenuItem>
-            {onViewVersions && (
-              <DropdownMenuItem onClick={() => onViewVersions(entry.ticker)}>
-                <ArrowRight className="mr-2 h-4 w-4" />
-                View Previous Versions
-              </DropdownMenuItem>
-            )}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={() => onDelete(entry)}
-              className="text-red-600 dark:text-red-400 focus:text-red-600 focus:bg-red-500/10"
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              Delete Entry
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() => onDeleteTicker(entry.ticker)}
-              className="text-red-600 dark:text-red-400 focus:text-red-600 focus:bg-red-500/10"
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              Delete All {entry.ticker}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
       );
     },
   },

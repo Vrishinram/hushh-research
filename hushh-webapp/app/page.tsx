@@ -5,13 +5,13 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { Button, Card, CardContent } from "@/lib/morphy-ux/morphy";
 import { Shield, Lock, ArrowRight, AlertCircle, TrendingUp } from "lucide-react";
 import { AuthService } from "@/lib/services/auth-service";
+import { ApiService } from "@/lib/services/api-service";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { getRedirectResult, signInWithEmailAndPassword } from "firebase/auth";
+import { getRedirectResult } from "firebase/auth";
 import { auth } from "@/lib/firebase/config";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { HushhLoader } from "@/components/ui/hushh-loader";
 import { useStepProgress } from "@/lib/progress/step-progress-context";
-import { isAppReviewMode, REVIEWER_EMAIL, REVIEWER_PASSWORD } from "@/lib/config";
 import { isAndroid } from "@/lib/capacitor/platform";
 
 // Global utility for resetting welcome screen (accessible from browser console)
@@ -125,6 +125,11 @@ function LoginScreenContent() {
 
   // State
   const [error, setError] = useState<string | null>(null);
+  const [reviewModeConfig, setReviewModeConfig] = useState<{
+    enabled: boolean;
+    reviewer_email?: string;
+    reviewer_password?: string;
+  }>({ enabled: false });
 
   // Use Reactive Auth State
   const { user, loading: authLoading, setNativeUser } = useAuth();
@@ -166,6 +171,45 @@ function LoginScreenContent() {
       router.push(redirectPath);
     }
   }, [redirectPath, user, authLoading, completeStep]); // FIXED: Removed router/setNativeUser - stable refs
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await ApiService.apiFetch("/api/app-config/review-mode", {
+          method: "GET",
+          cache: "no-store",
+        });
+        if (!response.ok) {
+          if (!cancelled) setReviewModeConfig({ enabled: false });
+          return;
+        }
+        const data = (await response.json()) as {
+          enabled?: unknown;
+          reviewer_email?: unknown;
+          reviewer_password?: unknown;
+        };
+        if (!cancelled) {
+          setReviewModeConfig({
+            enabled: data.enabled === true,
+            reviewer_email:
+              typeof data.reviewer_email === "string" ? data.reviewer_email : undefined,
+            reviewer_password:
+              typeof data.reviewer_password === "string"
+                ? data.reviewer_password
+                : undefined,
+          });
+        }
+      } catch {
+        if (!cancelled) {
+          setReviewModeConfig({ enabled: false });
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Show spinner while checking session OR if user authenticated (while redirecting)
   if (authLoading || user) {
@@ -236,11 +280,16 @@ function LoginScreenContent() {
       setError(null);
       console.log("[Login] Reviewer login initiated");
 
-      // Sign in with email/password using dedicated test account
-      const authResult = await signInWithEmailAndPassword(
-        auth,
-        REVIEWER_EMAIL,
-        REVIEWER_PASSWORD
+      const reviewerEmail = reviewModeConfig.reviewer_email || "";
+      const reviewerPassword = reviewModeConfig.reviewer_password || "";
+      if (!reviewModeConfig.enabled || !reviewerEmail || !reviewerPassword) {
+        throw new Error("Reviewer mode is not enabled");
+      }
+
+      // Use platform-aware auth flow so native apps behave exactly like web.
+      const authResult = await AuthService.signInWithEmailAndPassword(
+        reviewerEmail,
+        reviewerPassword,
       );
       const user = authResult.user;
 
@@ -274,7 +323,7 @@ function LoginScreenContent() {
         <div className="p-2 space-y-4">
           {/* Review Mode Alert */}
           {/* Review Mode Alert */}
-          {isAppReviewMode() && (
+          {reviewModeConfig.enabled && (
             <Card variant="none" effect="glass" className="border-yellow-500/30">
               <CardContent className="flex items-center gap-3 p-3 text-sm font-medium">
                 <Shield className="h-5 w-5 text-yellow-600 dark:text-yellow-400 shrink-0" />
@@ -394,8 +443,8 @@ function LoginScreenContent() {
                 </>
               )}
 
-              {/* Reviewer Button - Only shown in APP_REVIEW_MODE */}
-              {isAppReviewMode() && (
+              {/* Reviewer Button - only shown when backend enables app review mode */}
+              {reviewModeConfig.enabled && (
                 <Button
                   variant="link"
                   effect="glass"
