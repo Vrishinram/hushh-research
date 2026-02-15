@@ -10,14 +10,15 @@ Authentication:
 - Requires VAULT_OWNER token (consent-first architecture)
 """
 
+import asyncio
 import json
 import logging
 from decimal import Decimal
 from typing import Any, Optional, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from sse_starlette.sse import EventSourceResponse
 
 from api.middleware import require_vault_owner_token
 from hushh_mcp.services.renaissance_service import get_renaissance_service
@@ -627,8 +628,10 @@ async def analyze_portfolio_losers_stream(
     - 'complete' events: Final parsed JSON result
     - 'error' events: Error messages
 
-    **Disconnection Optimization**:
-    - Client disconnects → `raw_request.is_disconnected()` → LLM stops processing
+    **Disconnection Handling (Production-Grade)**:
+    - Layer 1: sse_starlette ping every 15s detects dead connections (app crash, force-close)
+    - Layer 2: asyncio.timeout(180) hard ceiling prevents runaway LLM calls
+    - Layer 3: raw_request.is_disconnected() checked per-chunk for fast cleanup
     """
     if token_data["user_id"] != request.user_id:
         raise HTTPException(
@@ -636,111 +639,133 @@ async def analyze_portfolio_losers_stream(
         )
 
     async def generate():
+        HARD_TIMEOUT_SECONDS = 180  # 3-minute hard ceiling
+
         try:
-            # Stage 1: Building context
-            yield f"data: {json.dumps({'type': 'stage', 'stage': 'analyzing', 'message': 'Analyzing portfolio positions...'})}\n\n"
+            async with asyncio.timeout(HARD_TIMEOUT_SECONDS):
+                # Stage 1: Building context
+                yield f"data: {json.dumps({'type': 'stage', 'stage': 'analyzing', 'message': 'Analyzing portfolio positions...'})}\n\n"
 
-            (
-                losers_filtered,
-                criteria_context,
-                criteria_rows,
-                replacement_pool,
-                per_loser_context,
-                optimize_from_losers,
-                total_mv,
-            ) = await _build_optimization_context(request)
+                (
+                    losers_filtered,
+                    criteria_context,
+                    criteria_rows,
+                    replacement_pool,
+                    per_loser_context,
+                    optimize_from_losers,
+                    total_mv,
+                ) = await _build_optimization_context(request)
 
-            portfolio_snapshot = {
-                "threshold_pct": request.threshold_pct,
-                "max_positions": request.max_positions,
-                "mode": "losers" if optimize_from_losers else "full_portfolio",
-                "total_positions_market_value": total_mv,
-                "positions": per_loser_context,
-            }
+                portfolio_snapshot = {
+                    "threshold_pct": request.threshold_pct,
+                    "max_positions": request.max_positions,
+                    "mode": "losers" if optimize_from_losers else "full_portfolio",
+                    "total_positions_market_value": total_mv,
+                    "positions": per_loser_context,
+                }
 
-            prompt = _build_optimization_prompt(
-                criteria_context, criteria_rows, replacement_pool, portfolio_snapshot
+                prompt = _build_optimization_prompt(
+                    criteria_context, criteria_rows, replacement_pool, portfolio_snapshot
+                )
+
+                # Stage 2: LLM reasoning
+                yield f"data: {json.dumps({'type': 'stage', 'stage': 'thinking', 'message': 'AI reasoning about portfolio health...'})}\n\n"
+
+                from google import genai
+                from google.genai import types as genai_types
+                from google.genai.types import HttpOptions
+
+                from hushh_mcp.constants import GEMINI_MODEL
+
+                client = genai.Client(http_options=HttpOptions(api_version="v1"))
+                model_to_use = GEMINI_MODEL
+                logger.info(f"Optimize Portfolio Stream: Using Vertex AI with model {model_to_use}")
+
+                # Configure with LOW thinking level for better reasoning
+                config = genai_types.GenerateContentConfig(
+                    temperature=1,
+                    max_output_tokens=8192,
+                    thinking_config=genai_types.ThinkingConfig(
+                        include_thoughts=True,
+                        thinking_level=genai_types.ThinkingLevel.MEDIUM,
+                    ),
+                )
+
+                # Stream the response
+                full_response = ""
+                thought_count = 0
+                chunk_count = 0
+
+                # Get the stream object first (must await the coroutine)
+                stream = await client.aio.models.generate_content_stream(
+                    model=model_to_use,
+                    contents=prompt,
+                    config=config,
+                )
+
+                client_disconnected = False
+
+                # Then iterate over the stream
+                async for chunk in stream:
+                    # Check if client disconnected
+                    if await raw_request.is_disconnected():
+                        logger.info(
+                            "[Losers Analysis] Client disconnected, stopping streaming — saving compute"
+                        )
+                        client_disconnected = True
+                        break
+
+                    # Check for thought summaries (Gemini thinking mode)
+                    if hasattr(chunk, "candidates") and chunk.candidates:
+                        for candidate in chunk.candidates:
+                            if hasattr(candidate, "content") and candidate.content:
+                                for part in candidate.content.parts:
+                                    # Check for thought content
+                                    if hasattr(part, "thought") and part.thought:
+                                        thought_count += 1
+                                        yield f"data: {json.dumps({'type': 'thinking', 'thought': part.text, 'count': thought_count})}\n\n"
+                                    # Regular text content
+                                    elif hasattr(part, "text") and part.text:
+                                        chunk_count += 1
+                                        full_response += part.text
+                                        yield f"data: {json.dumps({'type': 'chunk', 'text': part.text, 'count': chunk_count})}\n\n"
+
+                # Skip all post-processing if client disconnected — no point parsing for nobody
+                if client_disconnected:
+                    logger.info(
+                        "[Losers Analysis] Skipping post-processing, client gone — LLM compute saved"
+                    )
+                    return
+
+                # Stage 3: Extracting results
+                yield f"data: {json.dumps({'type': 'stage', 'stage': 'extracting', 'message': 'Extracting optimization recommendations...'})}\n\n"
+
+                # Parse the final JSON
+                try:
+                    payload = _extract_json_object(full_response)
+                    payload.setdefault("criteria_context", criteria_context)
+
+                    yield f"data: {json.dumps({'type': 'complete', 'data': payload})}\n\n"
+                except Exception as parse_error:
+                    logger.error(f"Failed to parse LLM response: {parse_error}")
+                    yield f"data: {json.dumps({'type': 'error', 'message': 'Failed to parse AI response', 'raw': full_response[:500]})}\n\n"
+
+            # end of asyncio.timeout context
+
+        except asyncio.TimeoutError:
+            logger.warning(
+                f"[Losers Analysis] Hard timeout ({HARD_TIMEOUT_SECONDS}s) reached, stopping LLM"
             )
-
-            # Stage 2: LLM reasoning
-            yield f"data: {json.dumps({'type': 'stage', 'stage': 'thinking', 'message': 'AI reasoning about portfolio health...'})}\n\n"
-
-            from google import genai
-            from google.genai import types as genai_types
-            from google.genai.types import HttpOptions
-
-            from hushh_mcp.constants import GEMINI_MODEL
-
-            client = genai.Client(http_options=HttpOptions(api_version="v1"))
-            model_to_use = GEMINI_MODEL
-            logger.info(f"Optimize Portfolio Stream: Using Vertex AI with model {model_to_use}")
-
-            # Configure with LOW thinking level for better reasoning
-            config = genai_types.GenerateContentConfig(
-                temperature=1,
-                max_output_tokens=8192,
-                thinking_config=genai_types.ThinkingConfig(
-                    include_thoughts=True,
-                    thinking_level=genai_types.ThinkingLevel.MEDIUM,
-                ),
-            )
-
-            # Stream the response
-            full_response = ""
-            thought_count = 0
-            chunk_count = 0
-
-            # Get the stream object first (must await the coroutine)
-            stream = await client.aio.models.generate_content_stream(
-                model=model_to_use,
-                contents=prompt,
-                config=config,
-            )
-
-            # Then iterate over the stream
-            async for chunk in stream:
-                # Check if client disconnected
-                if await raw_request.is_disconnected():
-                    logger.info("[Losers Analysis] Client disconnected, stopping streaming...")
-                    break
-
-                # Check for thought summaries (Gemini thinking mode)
-                if hasattr(chunk, "candidates") and chunk.candidates:
-                    for candidate in chunk.candidates:
-                        if hasattr(candidate, "content") and candidate.content:
-                            for part in candidate.content.parts:
-                                # Check for thought content
-                                if hasattr(part, "thought") and part.thought:
-                                    thought_count += 1
-                                    yield f"data: {json.dumps({'type': 'thinking', 'thought': part.text, 'count': thought_count})}\n\n"
-                                # Regular text content
-                                elif hasattr(part, "text") and part.text:
-                                    chunk_count += 1
-                                    full_response += part.text
-                                    yield f"data: {json.dumps({'type': 'chunk', 'text': part.text, 'count': chunk_count})}\n\n"
-
-            # Stage 3: Extracting results
-            yield f"data: {json.dumps({'type': 'stage', 'stage': 'extracting', 'message': 'Extracting optimization recommendations...'})}\n\n"
-
-            # Parse the final JSON
-            try:
-                payload = _extract_json_object(full_response)
-                payload.setdefault("criteria_context", criteria_context)
-
-                yield f"data: {json.dumps({'type': 'complete', 'data': payload})}\n\n"
-            except Exception as parse_error:
-                logger.error(f"Failed to parse LLM response: {parse_error}")
-                yield f"data: {json.dumps({'type': 'error', 'message': 'Failed to parse AI response', 'raw': full_response[:500]})}\n\n"
-
+            yield f"data: {json.dumps({'type': 'error', 'message': f'Analysis timed out after {HARD_TIMEOUT_SECONDS}s. Please try again.'})}\n\n"
         except HTTPException as http_err:
             yield f"data: {json.dumps({'type': 'error', 'message': http_err.detail})}\n\n"
         except Exception as e:
             logger.error(f"Streaming losers analysis failed: {e}")
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
 
-    return StreamingResponse(
+    return EventSourceResponse(
         generate(),
-        media_type="text/event-stream",
+        ping=15,  # Send ping every 15s — detects dead connections (app crash, force-close, network drop)
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
