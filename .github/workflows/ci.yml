@@ -58,8 +58,12 @@ jobs:
         if: github.event_name != 'workflow_dispatch'
         with:
           filters: |
-            frontend: hushh-webapp/**
-            backend: consent-protocol/**
+            frontend:
+              - 'hushh-webapp/**'
+              - '.github/workflows/ci.yml'
+            backend:
+              - 'consent-protocol/**'
+              - '.github/workflows/ci.yml'
 
       - id: manual
         if: github.event_name == 'workflow_dispatch'
