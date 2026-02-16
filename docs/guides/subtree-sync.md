@@ -18,21 +18,23 @@ They share the same code but have **independent commit histories** — squash me
 flatten upstream commits into a single merge commit, which means git cannot natively
 tell whether you're "up to date" or not.
 
-### The Bookmark
+### Sync Baseline
 
-To solve that, we track sync state with a **local git ref**:
+To solve that, we track sync state with two signals:
 
 ```
 refs/subtree-sync/consent-protocol = <SHA of last-synced upstream commit>
+git-subtree-split in commit message = <last squash-pull upstream SHA>
 ```
 
-This ref is **local-only** (never pushed). Each developer's bookmark tracks their
-own sync state. It's updated automatically by `make sync-protocol`.
+The bookmark ref is **local-only** (never pushed), while `git-subtree-split` is
+branch-aware commit metadata that survives merges. The hook now reconciles both
+signals and auto-heals stale local bookmarks when branch content is already synced.
 
 **Why not `git rev-list HEAD..upstream/main`?**
 Because `--squash` subtree pulls don't link commit ancestry. After a squash pull,
 `git rev-list` still reports upstream as "ahead" even though the content is synced.
-The bookmark approach compares SHA identity instead of commit ancestry.
+The dual-baseline approach compares known upstream SHAs instead of subtree ancestry.
 
 ---
 
@@ -45,12 +47,12 @@ make setup              # explicit setup (recommended)
 cd hushh-webapp && npm install   # "prepare" lifecycle hook triggers setup
 ```
 
-Both run `scripts/setup-hooks.sh`, which is idempotent (safe to run repeatedly):
+Both run `scripts/setup-hooks.sh`, which delegates to `consent-protocol/ops/monorepo/setup.sh` and is idempotent (safe to run repeatedly):
 
 1. Sets `core.hooksPath = .githooks`
 2. Makes all hooks executable (`chmod +x`)
 3. Adds `consent-upstream` remote pointing to the standalone repo
-4. Fetches upstream HEAD and stores it as the initial sync bookmark
+4. Fetches upstream HEAD and initializes a sync bookmark (history-aware)
 
 Verify everything is configured:
 
@@ -108,7 +110,7 @@ git push
     │  ● URL matches *hushh-research* → check activates   │
     │  ● Diff shows consent-protocol/ files in push range │
     │  ● Fetches consent-upstream/main                    │
-    │  ● Bookmark == upstream HEAD                        │
+    │  ● Uses bookmark + git-subtree-split baseline       │
     │    → "Upstream is in sync. ✓"                       │
     │  ● Runs ruff lint gate                              │
     │    ├─ PASS → push succeeds ✅                       │
@@ -137,14 +139,14 @@ Someone pushed to the standalone repo while you were working:
        │
   ┌─ pre-push ──────────────────────────────────────────────────┐
   │  ● Fetches consent-upstream/main → def456                   │
-  │  ● Bookmark (abc123) ≠ upstream (def456)                    │
+  │  ● Effective sync baseline is abc123                        │
   │  ● Counts: 1 commit(s) ahead                               │
   │                                                             │
   │  ┌───────────────────────────────────────────────────────┐  │
   │  │  [pre-push] BLOCKED                                   │  │
-  │  │  consent-upstream/main is 1 commit(s) ahead           │  │
-  │  │  Last synced:      abc123                             │  │
-  │  │  Current upstream: def456                             │  │
+  │  │  consent-upstream/main is 1 commit(s) ahead          │  │
+  │  │  Sync baseline:   abc123                             │  │
+  │  │  Current upstream:def456                             │  │
   │  │                                                       │  │
   │  │  Run:                                                 │  │
   │  │    make sync-protocol    # pull + update bookmark     │  │
@@ -178,16 +180,21 @@ make push-protocol-force # escape hatch: skip sync check
 
 ## Edge Cases
 
-### No Bookmark (First-Time Developer)
+### No Baseline Metadata (First-Time Developer)
 
 ```
-pre-push: show-ref → NOT FOUND
-→ YELLOW WARNING: "No sync bookmark found (first time?)"
-→ Push proceeds (non-blocking)
+pre-push: bookmark missing + no subtree split metadata
+→ YELLOW WARNING in hook mode
+→ RED failure in `make check-protocol-sync` mode
 ```
 
-Intentionally non-blocking so existing devs aren't locked out. After one
-`make sync-protocol`, the bookmark is set and enforcement activates.
+After one `make sync-protocol`, both local bookmark and history metadata become usable.
+
+### Branch Switch / Merge With Stale Local Bookmark
+
+If branch A synced subtree and branch B did not, merging A into B can leave B's
+local bookmark stale. The hook detects this via `git-subtree-split` metadata and
+updates the local bookmark automatically when the upstream baseline is already present.
 
 ### No Internet / Fetch Fails
 
@@ -242,11 +249,15 @@ git push to *hushh-research*
   │   ├─ NO → warn, pass
   │   └─ YES ↓
   │
-  ├─ bookmark ref exists?
-  │   ├─ NO → warn (first time), pass
-  │   └─ YES ↓
+  ├─ derive effective baseline from:
+  │   ├─ local bookmark ref
+  │   └─ git-subtree-split metadata
   │
-  ├─ bookmark == upstream HEAD?
+  ├─ baseline missing?
+  │   ├─ YES → warn (hook mode) / fail (check mode)
+  │   └─ NO ↓
+  │
+  ├─ baseline == upstream HEAD?
   │   ├─ YES → ✅ "in sync", continue to lint
   │   └─ NO  → ❌ BLOCKED, exit 1
   │
@@ -255,8 +266,8 @@ git push to *hushh-research*
       └─ NO  → BLOCKED, exit 1
 ```
 
-**Hard blocks** (exit 1): bookmark mismatch, lint check fail, lint format fail.
-**Soft warnings** (pass through): no bookmark, no remote, no internet, non-hushh URL.
+**Hard blocks** (exit 1): upstream ahead of effective baseline, lint check fail, lint format fail.
+**Soft warnings** (pass through in hook mode): missing remote, no internet, non-hushh URL.
 
 ---
 
@@ -277,10 +288,11 @@ git push to *hushh-research*
 
 | File | Purpose |
 |------|---------|
-| `.githooks/pre-commit` | Lint gate on commit (ruff check + format) |
-| `.githooks/pre-push` | Subtree drift detection + lint on push |
-| `scripts/setup-hooks.sh` | Idempotent hook/remote/bookmark installer |
-| `Makefile` | `sync-protocol`, `push-protocol`, `setup`, `verify-setup` targets |
+| `.githooks/pre-commit` | Wrapper to delegated hook in `consent-protocol/ops/monorepo/` |
+| `.githooks/pre-push` | Wrapper to delegated hook in `consent-protocol/ops/monorepo/` |
+| `scripts/setup-hooks.sh` | Wrapper to delegated setup in `consent-protocol/ops/monorepo/` |
+| `consent-protocol/ops/monorepo/*` | Source of truth for subtree hook/setup/make logic |
+| `Makefile` | Includes shared subtree targets from `consent-protocol/ops/monorepo/protocol.mk` |
 | `hushh-webapp/package.json` | `"prepare"` script triggers `setup-hooks.sh` on `npm install` |
 | `.github/workflows/ci.yml` | `subtree-sync-check` job (tree comparison in CI) |
 

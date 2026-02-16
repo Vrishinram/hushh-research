@@ -231,6 +231,8 @@ The `consent-protocol/` directory is a **git subtree** linked to the upstream re
 - CI, imports, and dev workflows work seamlessly
 - Other frontends can consume the upstream repo directly
 
+The subtree workflow source-of-truth lives in `consent-protocol/ops/monorepo/` (hooks/setup/make targets), and the root monorepo delegates to those scripts.
+
 ---
 
 ## 🔄 Developer Workflow
