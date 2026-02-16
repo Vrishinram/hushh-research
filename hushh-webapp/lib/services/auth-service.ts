@@ -37,6 +37,20 @@ export interface AuthResult {
  * Platform-aware authentication service
  */
 export class AuthService {
+  private static debugLog(...args: unknown[]) {
+    if (process.env.NODE_ENV !== "production") {
+      console.log(...args);
+    }
+  }
+
+  private static debugError(label: string, error?: unknown) {
+    if (process.env.NODE_ENV !== "production" && error !== undefined) {
+      console.error(label, error);
+      return;
+    }
+    console.error(label);
+  }
+
   /**
    * Sign in with Google using the appropriate method for the current platform.
    *
@@ -60,7 +74,7 @@ export class AuthService {
    */
   static async signInWithEmailAndPassword(email: string, password: string): Promise<AuthResult> {
     if (Capacitor.isNativePlatform()) {
-      console.log("🍎 [AuthService] Starting native Email/Password Sign-In");
+      this.debugLog("🍎 [AuthService] Starting native Email/Password Sign-In");
       const toastId = toast.loading("Signing in as reviewer...");
 
       try {
@@ -76,7 +90,7 @@ export class AuthService {
         const idTokenResult = await FirebaseAuthentication.getIdToken();
         const idToken = idTokenResult.token || "";
 
-        console.log("✅ [AuthService] Native email/password complete:", result.user.uid);
+        this.debugLog("✅ [AuthService] Native email/password complete");
         
         // Wait for JS SDK to see the change (usually happens automatically but we can force)
         let firebaseUser = auth.currentUser;
@@ -94,7 +108,7 @@ export class AuthService {
           idToken,
         };
       } catch (error: any) {
-        console.error("❌ [AuthService] Native email/password failed:", error);
+        this.debugError("❌ [AuthService] Native email/password failed", error);
         toast.error(error.message || "Failed to sign in", { id: toastId });
         throw error;
       }
@@ -134,21 +148,21 @@ export class AuthService {
    * Falls back to web auth if native plugin is not available
    */
   private static async nativeGoogleSignIn(): Promise<AuthResult> {
-    console.log(
+    this.debugLog(
       "🍎 [AuthService] Starting native Google Sign-In via HushhAuth Plugin"
     );
     const toastId = toast.loading("Signing in with Google...");
 
     try {
       // Step 1: Native sign-in using Custom HushhAuth plugin
-      console.log("🍎 [AuthService] Calling HushhAuth.signIn()...");
+      this.debugLog("🍎 [AuthService] Calling HushhAuth.signIn()...");
 
       const result = await HushhAuth.signIn();
 
-      console.log("✅ [AuthService] Native sign-in returned result");
+      this.debugLog("✅ [AuthService] Native sign-in returned result");
 
       if (!result.user || !result.idToken) {
-        console.error("❌ [AuthService] Invalid response from native sign-in");
+        this.debugError("❌ [AuthService] Invalid response from native sign-in");
         toast.error("Invalid native auth response", { id: toastId });
         throw new Error("Invalid response from native sign-in");
       }
@@ -159,10 +173,7 @@ export class AuthService {
       const accessToken = result.accessToken;
       const nativeAuthUser = result.user; // AuthUser type
 
-      console.log(
-        "✅ [AuthService] Got ID token:",
-        idToken ? "YES (len: " + idToken.length + ")" : "NO"
-      );
+      this.debugLog("✅ [AuthService] Got native ID token");
 
       // Step 3: Sync with Firebase JS SDK if needed
       // The native plugin already signed in to Firebase on the native layer.
@@ -170,7 +181,7 @@ export class AuthService {
       let firebaseUser = auth.currentUser;
 
       if (!firebaseUser) {
-        console.log("🔄 [AuthService] Syncing with Firebase JS SDK...");
+        this.debugLog("🔄 [AuthService] Syncing with Firebase JS SDK...");
 
         // We need a credential to sign in the JS SDK.
         // We have the Google ID Token and Access Token from the native result.
@@ -188,18 +199,15 @@ export class AuthService {
             timeoutPromise,
           ])) as any;
           firebaseUser = firebaseResult.user;
-          console.log(
-            "✅ [AuthService] Firebase JS SDK synced, UID:",
-            firebaseUser?.uid
-          );
+          this.debugLog("✅ [AuthService] Firebase JS SDK synced");
         } catch (syncError) {
-          console.warn(
-            "⚠️ [AuthService] JS SDK Sync Failed/Timed Out:",
+          this.debugError(
+            "⚠️ [AuthService] JS SDK Sync Failed/Timed Out",
             syncError
           );
           // Don't show error toast to user as this is a background sync issue
           // toast.error("JS SDK Sync Failed (proceeding with native user)");
-          console.log("⚠️ Proceeding with Native User anyway.");
+          this.debugLog("⚠️ Proceeding with Native User anyway.");
         }
       }
 
@@ -219,14 +227,14 @@ export class AuthService {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
 
-      console.error("❌ [AuthService] nativeGoogleSignIn error:", errorMessage);
+      this.debugError("❌ [AuthService] nativeGoogleSignIn error");
 
       // If native plugin not implemented, fall back to web auth
       if (
         errorMessage.includes("not implemented") ||
         errorMessage.includes("not available")
       ) {
-        console.warn(
+        this.debugLog(
           "⚠️ [AuthService] Native plugin not available, falling back to web auth"
         );
         toast.dismiss(toastId); // Dismiss loading before switching
@@ -234,7 +242,7 @@ export class AuthService {
       }
 
       toast.error("Sign in failed: " + errorMessage, { id: toastId });
-      console.error("❌ [AuthService] Native sign-in failed:", error);
+      this.debugError("❌ [AuthService] Native sign-in failed", error);
       throw error;
     }
   }
@@ -294,7 +302,7 @@ export class AuthService {
    * This is ALSO the fallback for native if the native plugin fails
    */
   private static async webGoogleSignIn(): Promise<AuthResult> {
-    console.log(
+    this.debugLog(
       "🌐 [AuthService] Starting web Google Sign-In (Firebase popup)"
     );
 
@@ -312,7 +320,7 @@ export class AuthService {
       const idToken = await result.user.getIdToken();
       const accessToken = credential.accessToken || "";
 
-      console.log("✅ [AuthService] Web sign-in complete:", result.user.email);
+      this.debugLog("✅ [AuthService] Web sign-in complete");
 
       return {
         user: result.user,
@@ -320,7 +328,7 @@ export class AuthService {
         accessToken,
       };
     } catch (error) {
-      console.error("❌ [AuthService] Web sign-in failed:", error);
+      this.debugError("❌ [AuthService] Web sign-in failed", error);
       throw error;
     }
   }
@@ -353,16 +361,16 @@ export class AuthService {
    * Falls back to web auth if native plugin is not available
    */
   private static async nativeAppleSignIn(): Promise<AuthResult> {
-    console.log("🍎 [AuthService] Starting native Apple Sign-In via HushhAuth Plugin");
+    this.debugLog("🍎 [AuthService] Starting native Apple Sign-In via HushhAuth Plugin");
     const toastId = toast.loading("Signing in with Apple...");
 
     try {
       const result = await HushhAuth.signInWithApple();
 
-      console.log("✅ [AuthService] Native Apple sign-in returned result");
+      this.debugLog("✅ [AuthService] Native Apple sign-in returned result");
 
       if (!result.user || !result.idToken) {
-        console.error("❌ [AuthService] Invalid response from native Apple sign-in");
+        this.debugError("❌ [AuthService] Invalid response from native Apple sign-in");
         toast.error("Invalid native auth response", { id: toastId });
         throw new Error("Invalid response from native Apple sign-in");
       }
@@ -370,17 +378,14 @@ export class AuthService {
       const idToken = result.idToken;
       const nativeAuthUser = result.user;
 
-      console.log(
-        "✅ [AuthService] Got Apple ID token:",
-        idToken ? "YES (len: " + idToken.length + ")" : "NO"
-      );
+      this.debugLog("✅ [AuthService] Got Apple ID token");
 
       // Sync with Firebase JS SDK if needed
       // The native plugin already signed in to Firebase on the native layer.
       let firebaseUser = auth.currentUser;
 
       if (!firebaseUser) {
-        console.log("🔄 [AuthService] Syncing Apple credential with Firebase JS SDK...");
+        this.debugLog("🔄 [AuthService] Syncing Apple credential with Firebase JS SDK...");
 
         try {
           // The native plugin already handled Firebase sign-in
@@ -403,17 +408,14 @@ export class AuthService {
           const firebaseResult = await syncPromise;
           firebaseUser = firebaseResult.user;
           
-          console.log(
-            "✅ [AuthService] Firebase JS SDK synced, UID:",
-            firebaseUser?.uid
-          );
+          this.debugLog("✅ [AuthService] Firebase JS SDK synced");
         } catch (syncError) {
-          console.warn(
-            "⚠️ [AuthService] JS SDK Sync Failed/Timed Out:",
+          this.debugError(
+            "⚠️ [AuthService] JS SDK Sync Failed/Timed Out",
             syncError
           );
           // Don't show error toast - native auth succeeded, JS sync is optional
-          console.log("⚠️ Proceeding with Native User anyway.");
+          this.debugLog("⚠️ Proceeding with Native User anyway.");
         }
       }
 
@@ -430,7 +432,7 @@ export class AuthService {
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : String(error);
 
-      console.error("❌ [AuthService] nativeAppleSignIn error:", errorMessage);
+      this.debugError("❌ [AuthService] nativeAppleSignIn error");
 
       // Check for user cancellation
       if (errorMessage.includes("USER_CANCELLED") || errorMessage.includes("cancelled") || errorMessage.includes("canceled")) {
@@ -443,7 +445,7 @@ export class AuthService {
         errorMessage.includes("not implemented") ||
         errorMessage.includes("not available")
       ) {
-        console.warn(
+        this.debugLog(
           "⚠️ [AuthService] Native Apple plugin not available, falling back to web auth"
         );
         toast.dismiss(toastId);
@@ -506,7 +508,7 @@ export class AuthService {
    * This is ALSO the fallback for native if the native plugin fails
    */
   private static async webAppleSignIn(): Promise<AuthResult> {
-    console.log("🌐 [AuthService] Starting web Apple Sign-In (Firebase popup)");
+    this.debugLog("🌐 [AuthService] Starting web Apple Sign-In (Firebase popup)");
 
     try {
       const provider = new OAuthProvider("apple.com");
@@ -516,17 +518,14 @@ export class AuthService {
       const result = await signInWithPopup(auth, provider);
       const idToken = await result.user.getIdToken();
 
-      console.log(
-        "✅ [AuthService] Apple web sign-in complete:",
-        result.user.email || "(hidden email)"
-      );
+      this.debugLog("✅ [AuthService] Apple web sign-in complete");
 
       return {
         user: result.user,
         idToken,
       };
     } catch (error) {
-      console.error("❌ [AuthService] Apple web sign-in failed:", error);
+      this.debugError("❌ [AuthService] Apple web sign-in failed", error);
       throw error;
     }
   }
@@ -536,7 +535,7 @@ export class AuthService {
    * Uses @capacitor-firebase/authentication for uniform behavior
    */
   static async signOut(): Promise<void> {
-    console.log("🚪 [AuthService] Signing out...");
+    this.debugLog("🚪 [AuthService] Signing out...");
 
     try {
       // Sign out using Custom HushhAuth plugin
@@ -545,9 +544,9 @@ export class AuthService {
       // Also sign out from Firebase JS SDK for web consistency
       await firebaseSignOut(auth);
 
-      console.log("✅ [AuthService] Sign-out complete");
+      this.debugLog("✅ [AuthService] Sign-out complete");
     } catch (error) {
-      console.error("❌ [AuthService] Sign-out error:", error);
+      this.debugError("❌ [AuthService] Sign-out error", error);
       toast.error("SignOut Failed: " + error);
       throw error;
     }
@@ -625,7 +624,7 @@ export class AuthService {
       try {
         return await firebaseUser.getIdToken();
       } catch {
-        console.warn("[AuthService] Failed to get Firebase ID token");
+        this.debugError("[AuthService] Failed to get Firebase ID token");
       }
     }
 
@@ -651,11 +650,11 @@ export class AuthService {
       const result = await FirebaseAuthentication.getCurrentUser();
 
       if (!result.user) {
-        console.log("🍎 [AuthService] No session found");
+        this.debugLog("🍎 [AuthService] No session found");
         return null;
       }
 
-      console.log("🍎 [AuthService] Restoring session for:", result.user.email);
+      this.debugLog("🍎 [AuthService] Restoring session");
 
       // Get ID token
       const tokenResult = await FirebaseAuthentication.getIdToken();
@@ -663,10 +662,7 @@ export class AuthService {
 
       // Check if Firebase JS SDK has the user
       if (auth.currentUser) {
-        console.log(
-          "✅ [AuthService] Firebase JS SDK user available, UID:",
-          auth.currentUser.uid
-        );
+        this.debugLog("✅ [AuthService] Firebase JS SDK user available");
         return auth.currentUser;
       }
 
@@ -679,10 +675,10 @@ export class AuthService {
 
       const restoredUser = this.createUserFromNative(result.user, idToken, providerId);
 
-      console.log("🍎 [AuthService] Session restored! UID:", restoredUser.uid);
+      this.debugLog("🍎 [AuthService] Session restored");
       return restoredUser;
     } catch (error) {
-      console.error("🍎 [AuthService] Failed to restore session:", error);
+      this.debugError("🍎 [AuthService] Failed to restore session", error);
       return null;
     }
   }

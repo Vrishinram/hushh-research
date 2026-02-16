@@ -11,6 +11,7 @@
  *
  * This maintains zero-knowledge: server never sees plaintext.
  */
+import { base64ToBytes, bytesToBase64 } from "@/lib/vault/base64";
 
 /**
  * Generate a random 256-bit (32-byte) export key
@@ -63,9 +64,9 @@ export async function encryptForExport(
   const tag = new Uint8Array(encrypted.slice(-16));
 
   return {
-    ciphertext: btoa(String.fromCharCode(...ciphertext)),
-    iv: btoa(String.fromCharCode(...iv)),
-    tag: btoa(String.fromCharCode(...tag)),
+    ciphertext: bytesToBase64(ciphertext),
+    iv: bytesToBase64(iv),
+    tag: bytesToBase64(tag),
   };
 }
 
@@ -93,11 +94,9 @@ export async function decryptExport(
   );
 
   // Decode base64
-  const ciphertextBytes = Uint8Array.from(atob(ciphertext), (c) =>
-    c.charCodeAt(0)
-  );
-  const ivBytes = Uint8Array.from(atob(iv), (c) => c.charCodeAt(0));
-  const tagBytes = Uint8Array.from(atob(tag), (c) => c.charCodeAt(0));
+  const ciphertextBytes = base64ToBytes(ciphertext);
+  const ivBytes = base64ToBytes(iv);
+  const tagBytes = base64ToBytes(tag);
 
   // Combine ciphertext and tag for decryption
   const combined = new Uint8Array(ciphertextBytes.length + tagBytes.length);

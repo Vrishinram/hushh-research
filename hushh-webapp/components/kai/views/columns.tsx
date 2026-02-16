@@ -41,7 +41,7 @@ export const getColumns = ({
       const entry = row.original;
 
       return (
-        <DropdownMenu>
+        <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"

@@ -6,6 +6,7 @@
  * Encrypts data with vault key before sending to server.
  * Uses AES-256-GCM (same as consent-protocol backend).
  */
+import { bytesToBase64 } from "@/lib/vault/base64";
 
 export interface EncryptedPayload {
   ciphertext: string;
@@ -44,9 +45,9 @@ export async function encryptData(
   const tag = new Uint8Array(encrypted.slice(-16));
 
   return {
-    ciphertext: btoa(String.fromCharCode(...ciphertext)),
-    iv: btoa(String.fromCharCode(...iv)),
-    tag: btoa(String.fromCharCode(...tag)),
+    ciphertext: bytesToBase64(ciphertext),
+    iv: bytesToBase64(iv),
+    tag: bytesToBase64(tag),
     encoding: "base64",
     algorithm: "aes-256-gcm"
   };
@@ -67,7 +68,7 @@ function safeBase64Decode(str: string): Uint8Array {
     const binaryString = atob(base64);
     return Uint8Array.from(binaryString, c => c.charCodeAt(0));
   } catch (_e) {
-    console.error("Failed to decode Base64 string:", str);
+    console.error("Failed to decode Base64 string");
     throw new Error("Invalid Base64 string format");
   }
 }

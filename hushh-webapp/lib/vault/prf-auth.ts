@@ -16,6 +16,7 @@
  *   - Vault encryption: AES-256-GCM with PRF-derived key
  *   - No localStorage: Vault key only in memory
  */
+import { base64ToBytes, bytesToBase64 } from "@/lib/vault/base64";
 
 // PRF Support Matrix (as of 2024):
 // Chrome + Google Password Manager = ✅ PRF supported
@@ -200,8 +201,8 @@ async function wrapVaultKey(
   );
 
   return {
-    wrappedKey: btoa(String.fromCharCode(...new Uint8Array(wrappedKeyBuffer))),
-    iv: btoa(String.fromCharCode(...iv)),
+    wrappedKey: bytesToBase64(new Uint8Array(wrappedKeyBuffer)),
+    iv: bytesToBase64(iv),
   };
 }
 
@@ -238,10 +239,8 @@ export async function unwrapVaultKey(
   );
 
   // Decode wrapped key and IV
-  const wrappedKeyBuffer = Uint8Array.from(atob(wrappedKey), (c) =>
-    c.charCodeAt(0)
-  );
-  const ivBuffer = Uint8Array.from(atob(iv), (c) => c.charCodeAt(0));
+  const wrappedKeyBuffer = base64ToBytes(wrappedKey);
+  const ivBuffer = base64ToBytes(iv);
 
   // Unwrap the vault key
   const vaultKey = await crypto.subtle.unwrapKey(
@@ -273,7 +272,7 @@ export async function registerWithPrf(
   wrappedIv: string;
 }> {
   const prfSalt = generateSalt();
-  const prfSaltB64 = btoa(String.fromCharCode(...prfSalt));
+  const prfSaltB64 = bytesToBase64(prfSalt);
 
   // PRF input - used to get deterministic output from passkey
   const prfInput = new TextEncoder().encode(`hushh-vault-prf-${userId}`);
@@ -345,9 +344,7 @@ export async function registerWithPrf(
   const { wrappedKey, iv } = await wrapVaultKey(vaultKey, recoveryKey);
 
   // Get credential ID
-  const credentialId = btoa(
-    String.fromCharCode(...new Uint8Array(credential.rawId))
-  );
+  const credentialId = bytesToBase64(new Uint8Array(credential.rawId));
 
   return {
     credentialId,
@@ -370,7 +367,7 @@ export async function authenticateWithPrf(
   vaultKeyHex: string;
   credentialId: string;
 }> {
-  const prfSaltBytes = Uint8Array.from(atob(prfSalt), (c) => c.charCodeAt(0));
+  const prfSaltBytes = base64ToBytes(prfSalt);
   const prfInput = new TextEncoder().encode(`hushh-vault-prf-${userId}`);
   const challenge = crypto.getRandomValues(new Uint8Array(32));
   const rpId = getRpId();
@@ -386,7 +383,7 @@ export async function authenticateWithPrf(
     allowCredentials: credentialId
       ? [
           {
-            id: Uint8Array.from(atob(credentialId), (c) => c.charCodeAt(0)),
+            id: base64ToBytes(credentialId),
             type: "public-key",
           },
         ]
@@ -424,8 +421,6 @@ export async function authenticateWithPrf(
 
   return {
     vaultKeyHex,
-    credentialId: btoa(
-      String.fromCharCode(...new Uint8Array(credential.rawId))
-    ),
+    credentialId: bytesToBase64(new Uint8Array(credential.rawId)),
   };
 }

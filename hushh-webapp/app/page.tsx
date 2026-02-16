@@ -122,6 +122,18 @@ function LoginScreenContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectPath = searchParams.get("redirect") || "/kai";
+  const debugLog = (...args: unknown[]) => {
+    if (process.env.NODE_ENV !== "production") {
+      console.log(...args);
+    }
+  };
+  const debugError = (label: string, error?: unknown) => {
+    if (process.env.NODE_ENV !== "production" && error !== undefined) {
+      console.error(label, error);
+      return;
+    }
+    console.error(label);
+  };
 
   // State
   const [error, setError] = useState<string | null>(null);
@@ -150,7 +162,7 @@ function LoginScreenContent() {
     getRedirectResult(auth)
       .then((result) => {
         if (result?.user) {
-          console.log(
+          debugLog(
             "[Login] Redirect result found, navigating to:",
             redirectPath
           );
@@ -160,12 +172,12 @@ function LoginScreenContent() {
         }
       })
       .catch((err) => {
-        console.error("Redirect auth error:", err);
+        debugError("Redirect auth error", err);
       });
 
     // Check active session
     if (user) {
-      console.log("[Login] User authenticated, navigating to:", redirectPath);
+      debugLog("[Login] User authenticated, navigating to:", redirectPath);
       router.push(redirectPath);
     }
   }, [redirectPath, user, authLoading, completeStep]); // FIXED: Removed router/setNativeUser - stable refs
@@ -211,11 +223,11 @@ function LoginScreenContent() {
       const authResult = await AuthService.signInWithGoogle();
       const user = authResult.user;
 
-      console.log("[Login] signInWithGoogle returned user:", user?.uid);
+      debugLog("[Login] signInWithGoogle returned user");
 
       if (user) {
         // IMMEDIATE REDIRECT
-        console.log("[Login] Navigating to:", redirectPath);
+        debugLog("[Login] Navigating to:", redirectPath);
 
         // CRITICAL: Manually set user in context to avoid race condition
         // where VaultLockGuard on dashboard sees 'null' before Context updates
@@ -223,11 +235,11 @@ function LoginScreenContent() {
 
         router.push(redirectPath);
       } else {
-        console.error("[Login] No user returned from signInWithGoogle");
+        debugError("[Login] No user returned from signInWithGoogle");
         setError("Login succeeded but no user returned");
       }
     } catch (err: any) {
-      console.error("Login failed:", err);
+      debugError("Login failed", err);
       setError(err.message || "Failed to sign in");
     }
   };
@@ -239,11 +251,11 @@ function LoginScreenContent() {
       const authResult = await AuthService.signInWithApple();
       const user = authResult.user;
 
-      console.log("[Login] signInWithApple returned user:", user?.uid);
+      debugLog("[Login] signInWithApple returned user");
 
       if (user) {
         // IMMEDIATE REDIRECT
-        console.log("[Login] Navigating to:", redirectPath);
+        debugLog("[Login] Navigating to:", redirectPath);
 
         // CRITICAL: Manually set user in context to avoid race condition
         // where VaultLockGuard on dashboard sees 'null' before Context updates
@@ -251,11 +263,11 @@ function LoginScreenContent() {
 
         router.push(redirectPath);
       } else {
-        console.error("[Login] No user returned from signInWithApple");
+        debugError("[Login] No user returned from signInWithApple");
         setError("Login succeeded but no user returned");
       }
     } catch (err: any) {
-      console.error("Apple Login failed:", err);
+      debugError("Apple Login failed", err);
       // Don't show error for user cancellation
       if (!err.message?.includes("cancelled") && !err.message?.includes("canceled")) {
         setError(err.message || "Failed to sign in with Apple");
@@ -266,7 +278,7 @@ function LoginScreenContent() {
   const handleReviewerLogin = async () => {
     try {
       setError(null);
-      console.log("[Login] Reviewer login initiated");
+      debugLog("[Login] Reviewer login initiated");
 
       if (!reviewModeConfig.enabled) {
         throw new Error("Reviewer mode is not enabled");
@@ -289,22 +301,22 @@ function LoginScreenContent() {
       const authResult = await AuthService.signInWithCustomToken(sessionPayload.token);
       const user = authResult.user;
 
-      console.log("[Login] Reviewer login returned user:", user?.uid);
+      debugLog("[Login] Reviewer login returned user");
 
       if (user) {
         // IMMEDIATE REDIRECT
-        console.log("[Login] Navigating to:", redirectPath);
+        debugLog("[Login] Navigating to:", redirectPath);
 
         // CRITICAL: Manually set user in context to avoid race condition
         setNativeUser(user);
 
         router.push(redirectPath);
       } else {
-        console.error("[Login] No user returned from reviewer login");
+        debugError("[Login] No user returned from reviewer login");
         setError("Reviewer login failed - no user returned");
       }
     } catch (err: any) {
-      console.error("Reviewer login failed:", err);
+      debugError("Reviewer login failed", err);
       setError(err.message || "Failed to sign in as reviewer");
     }
   };

@@ -1,4 +1,5 @@
 // lib/vault/passphrase-key.ts
+import { base64ToBytes, bytesToBase64 } from "@/lib/vault/base64";
 
 /**
  * Passphrase-Based Key Derivation (Fallback)
@@ -125,17 +126,13 @@ export async function createVaultWithPassphrase(passphrase: string): Promise<{
     vaultKeyHex,
     recoveryKey,
     // Passphrase encrypted
-    encryptedVaultKey: btoa(
-      String.fromCharCode(...new Uint8Array(encryptedVaultKeyBuffer))
-    ),
-    salt: btoa(String.fromCharCode(...salt)),
-    iv: btoa(String.fromCharCode(...iv)),
+    encryptedVaultKey: bytesToBase64(new Uint8Array(encryptedVaultKeyBuffer)),
+    salt: bytesToBase64(salt),
+    iv: bytesToBase64(iv),
     // Recovery encrypted
-    recoveryEncryptedVaultKey: btoa(
-      String.fromCharCode(...new Uint8Array(recoveryEncryptedBuffer))
-    ),
-    recoverySalt: btoa(String.fromCharCode(...recoverySalt)),
-    recoveryIv: btoa(String.fromCharCode(...recoveryIv)),
+    recoveryEncryptedVaultKey: bytesToBase64(new Uint8Array(recoveryEncryptedBuffer)),
+    recoverySalt: bytesToBase64(recoverySalt),
+    recoveryIv: bytesToBase64(recoveryIv),
   };
 }
 
@@ -149,11 +146,9 @@ export async function unlockVaultWithPassphrase(
   iv: string
 ): Promise<string> {
   // Decode from base64
-  const saltBytes = Uint8Array.from(atob(salt), (c) => c.charCodeAt(0));
-  const ivBytes = Uint8Array.from(atob(iv), (c) => c.charCodeAt(0));
-  const encryptedBytes = Uint8Array.from(atob(encryptedVaultKey), (c) =>
-    c.charCodeAt(0)
-  );
+  const saltBytes = base64ToBytes(salt);
+  const ivBytes = base64ToBytes(iv);
+  const encryptedBytes = base64ToBytes(encryptedVaultKey);
 
   // Derive key from passphrase
   const decryptionKey = await deriveKeyFromPassphrase(passphrase, saltBytes);
@@ -197,11 +192,9 @@ export async function unlockVaultWithRecoveryKey(
   recoveryIv: string
 ): Promise<string> {
   // Decode from base64
-  const saltBytes = Uint8Array.from(atob(recoverySalt), (c) => c.charCodeAt(0));
-  const ivBytes = Uint8Array.from(atob(recoveryIv), (c) => c.charCodeAt(0));
-  const encryptedBytes = Uint8Array.from(atob(recoveryEncryptedVaultKey), (c) =>
-    c.charCodeAt(0)
-  );
+  const saltBytes = base64ToBytes(recoverySalt);
+  const ivBytes = base64ToBytes(recoveryIv);
+  const encryptedBytes = base64ToBytes(recoveryEncryptedVaultKey);
 
   // Derive key from recovery key using stored salt
   const unwrapKey = await deriveKeyFromPassphrase(recoveryKey, saltBytes);

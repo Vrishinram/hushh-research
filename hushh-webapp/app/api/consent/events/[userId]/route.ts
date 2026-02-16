@@ -52,7 +52,7 @@ export async function GET(
           backendMessage: responseText || undefined,
         };
       }
-      console.error("[API] Consent SSE backend error:", backendResponse.status, payload);
+      console.error("[API] Consent SSE backend error", backendResponse.status);
       return NextResponse.json(
         payload,
         { status: backendResponse.status }
@@ -76,7 +76,10 @@ export async function GET(
       },
     });
   } catch (error) {
-    console.error("[API] Consent SSE proxy error:", error);
+    console.error("[API] Consent SSE proxy error");
+    if (process.env.NODE_ENV !== "production") {
+      console.error(error);
+    }
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

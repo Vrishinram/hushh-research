@@ -27,7 +27,8 @@ See also: [deploy/README.md](../../deploy/README.md), [consent-protocol/.env.exa
 | `DB_HOST` | same | Yes | |
 | `DB_PORT` | same | No (default 5432) | |
 | `DB_NAME` | same | No (default postgres) | |
-| `FRONTEND_URL` | `server.py` | Yes (prod CORS) | |
+| `FRONTEND_URL` | `server.py` | Yes (prod CORS fallback) | |
+| `CORS_ALLOWED_ORIGINS` | `server.py` | Yes (prod recommended) | Explicit comma-separated CORS allowlist |
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | `api/utils/firebase_admin.py` | Yes (auth) | |
 | `GOOGLE_API_KEY` | `hushh_mcp/config.py`, services | Yes (Gemini/Vertex) | |
 | `DEFAULT_CONSENT_TOKEN_EXPIRY_MS` | `hushh_mcp/config.py` | No | |
@@ -42,6 +43,8 @@ See also: [deploy/README.md](../../deploy/README.md), [consent-protocol/.env.exa
 | `REVIEWER_UID` | `api/routes/health.py` (`POST /api/app-config/review-mode/session`) | Required when app review is enabled | Firebase UID used for custom token minting |
 | `CONSENT_SSE_ENABLED` | `api/routes/sse.py` | No | Default off in production unless explicitly enabled |
 | `SYNC_REMOTE_ENABLED` | `api/routes/sync.py` | No | Default false; `/api/sync/*` returns 501 when disabled |
+| `DEVELOPER_API_ENABLED` | `api/routes/developer.py`, `mcp_modules/config.py` | No | Production default false; disables `/api/v1/*` |
+| `DEVELOPER_REGISTRY_JSON` | `api/routes/developer.py` | Non-prod when enabled | Runtime developer registry for `/api/v1/request-consent` |
 | `MCP_DEVELOPER_TOKEN` | `api/routes/session.py` (`/api/user/lookup`) | Recommended | Required for protected service-to-service lookup |
 
 **Migrations/scripts:** Use **DB_*** only (same as runtime). `db/migrate.py` uses `db.connection.get_database_url()` and `get_database_ssl()`. No `DATABASE_URL` anywhere.
@@ -73,7 +76,8 @@ See also: [deploy/README.md](../../deploy/README.md), [consent-protocol/.env.exa
 | `DB_HOST` | Yes | No | Local: `.env`; Prod: Cloud Run env | Pooler host |
 | `DB_PORT` | No | No | Local: `.env`; Prod: Cloud Run env (default 5432) | |
 | `DB_NAME` | No | No | Local: `.env`; Prod: Cloud Run env (default postgres) | |
-| `FRONTEND_URL` | Yes | Yes (prod) | Local: `.env`; Prod: Secret Manager | CORS |
+| `FRONTEND_URL` | Yes | Yes (prod) | Local: `.env`; Prod: Secret Manager | CORS fallback source |
+| `CORS_ALLOWED_ORIGINS` | Yes (prod recommended) | No | Local: `.env`; Prod: Cloud Run env | Explicit CORS allowlist (comma-separated) |
 | `GOOGLE_API_KEY` | Yes (for Gemini) | Yes | Local: `.env`; Prod: Secret Manager | Or GEMINI_API_KEY |
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | Yes (auth) | Yes | Local: `.env`; Prod: Secret Manager | JSON string |
 | `ENVIRONMENT` | No | No | Default development; Prod: Cloud Run | production / development |
@@ -90,6 +94,8 @@ See also: [deploy/README.md](../../deploy/README.md), [consent-protocol/.env.exa
 | `REVIEWER_UID` | If app review | Yes (prod) | Local: `.env`; Prod: Secret Manager | Reviewer Firebase UID for custom token minting |
 | `CONSENT_SSE_ENABLED` | No | No | Local: `.env`; Prod: Cloud Run env | Keep false in production (FCM-first) |
 | `SYNC_REMOTE_ENABLED` | No | No | Local: `.env`; Prod: Cloud Run env | Keep false in production |
+| `DEVELOPER_API_ENABLED` | No | No | Local: `.env`; Prod: Cloud Run env | Keep false in production |
+| `DEVELOPER_REGISTRY_JSON` | Non-prod when enabled | No | Local/non-prod env | Runtime developer registry JSON |
 | `MCP_DEVELOPER_TOKEN` | Recommended | Yes (prod) | Local: `.env`; Prod: Secret Manager | Service auth for `/api/user/lookup` |
 
 **CI (GitHub Actions):** Backend tests use `TESTING=true`, dummy `SECRET_KEY`, and dummy `VAULT_ENCRYPTION_KEY`; no `.env` file required.
@@ -100,6 +106,7 @@ These are used by MCP modules (`mcp_modules/`) for MCP server functionality, not
 
 - `CONSENT_API_URL` - MCP server FastAPI URL (defaults to `http://localhost:8000`)
 - `PRODUCTION_MODE` - MCP server production mode flag
+- `DEVELOPER_API_ENABLED` - MCP view of `/api/v1/*` availability (default false in production)
 - `MCP_DEVELOPER_TOKEN` - MCP developer token for service-auth protected lookup
 
 **Note:** These are not required for Cloud Run backend deployment; only needed when running the MCP server locally.
@@ -155,7 +162,7 @@ Secret Manager must hold **exactly** the keys the code uses. No extra secrets; n
 | `REVIEWER_UID` | `REVIEWER_UID` (api/routes/health.py) |
 | `MCP_DEVELOPER_TOKEN` | `MCP_DEVELOPER_TOKEN` (api/routes/session.py) |
 
-**Not in Secret Manager (set as Cloud Run env vars in cloudbuild):** `DB_HOST`, `DB_PORT`, `DB_NAME`, `ENVIRONMENT`, `GOOGLE_GENAI_USE_VERTEXAI`, `APP_REVIEW_MODE`, `CONSENT_SSE_ENABLED`, `SYNC_REMOTE_ENABLED`.
+**Not in Secret Manager (set as Cloud Run env vars in cloudbuild):** `DB_HOST`, `DB_PORT`, `DB_NAME`, `ENVIRONMENT`, `GOOGLE_GENAI_USE_VERTEXAI`, `APP_REVIEW_MODE`, `CONSENT_SSE_ENABLED`, `SYNC_REMOTE_ENABLED`, `DEVELOPER_API_ENABLED`, `CORS_ALLOWED_ORIGINS`, `DEVELOPER_REGISTRY_JSON` (non-prod only).
 
 **Strict parity:** `DATABASE_URL` is not used anywhere. Migrations (`db/migrate.py`) use **DB_*** only, via `db.connection.get_database_url()`. Do **not** create or keep `DATABASE_URL` in Secret Manager; delete it if present.
 

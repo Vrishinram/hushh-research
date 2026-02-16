@@ -20,6 +20,7 @@ on:
 env:
   NODE_VERSION: "20"
   PYTHON_VERSION: "3.13"
+  WEB_LINT_WARNING_BUDGET: "150"
 
 jobs:
   secret-scan:
@@ -122,7 +123,7 @@ jobs:
         run: npm run typecheck
 
       - name: Lint
-        run: npm run lint
+        run: npm run lint -- --max-warnings=${{ env.WEB_LINT_WARNING_BUDGET }}
 
       - name: Build (web standalone)
         run: npm run build
@@ -149,6 +150,17 @@ jobs:
 
       - name: Security audit
         run: npm audit --audit-level=high
+
+      - name: Security audit report (tracking artifact)
+        if: always()
+        run: npm audit --json > npm-audit-report.json || true
+
+      - name: Upload security audit artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-npm-audit-report
+          path: hushh-webapp/npm-audit-report.json
 
       - name: Run frontend tests
         run: npm test

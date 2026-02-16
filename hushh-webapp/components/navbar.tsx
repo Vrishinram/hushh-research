@@ -9,9 +9,9 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { TrendingUp, Bell, User, Mic } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
-import { ApiService } from "@/lib/services/api-service";
 import { useKaiSession } from "@/lib/stores/kai-session-store";
-import { useVault } from "@/lib/vault/vault-context";
+import { usePendingConsentCount } from "@/components/consent/notification-provider";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 interface NavItem {
   label: string;
@@ -20,48 +20,10 @@ interface NavItem {
   badge?: number;
 }
 
-// Hook to get pending consent count
-function usePendingConsents(): number {
-  const [count, setCount] = useState(0);
-  const { isAuthenticated, user } = useAuth();
-  const { getVaultOwnerToken } = useVault();
-
-  useEffect(() => {
-    if (!isAuthenticated || !user?.uid) {
-      setCount(0);
-      return;
-    }
-
-    const fetchCount = async () => {
-      try {
-        const vaultOwnerToken = getVaultOwnerToken();
-        if (!vaultOwnerToken) return;
-
-        const res = await ApiService.getPendingConsents(user.uid, vaultOwnerToken);
-        if (!res.ok) return;
-        const data = await res.json().catch(() => ({}));
-        setCount(data.pending?.length || 0);
-      } catch {
-        // Ignore errors
-      }
-    };
-
-    fetchCount();
-    const interval = setInterval(fetchCount, 30000);
-    return () => clearInterval(interval);
-  }, [isAuthenticated, user?.uid, getVaultOwnerToken]);
-
-  return count;
-}
-
-import { ThemeToggle } from "@/components/theme-toggle";
-
-// ... existing imports
-
 export const Navbar = () => {
   const pathname = usePathname();
   const { isAuthenticated } = useAuth();
-  const pendingConsents = usePendingConsents();
+  const pendingConsents = usePendingConsentCount();
 
   // Sticky Kai path (last visited /kai or /kai/dashboard/*)
   const lastKaiPath = useKaiSession((s) => s.lastKaiPath);

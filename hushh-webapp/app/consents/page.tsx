@@ -350,6 +350,12 @@ const formatScopeLocal = (
   };
 };
 
+const normalizeScopeLocal = (scope: string): string =>
+  scope.trim().toLowerCase().replace(/_/g, ".");
+
+const isVaultOwnerScope = (scope: string): boolean =>
+  normalizeScopeLocal(scope) === "vault.owner";
+
 // ============================================================================
 
 // AppAuditLog component - groups by app and shows Drawer for event details
@@ -661,9 +667,20 @@ export default function ConsentsPage() {
       const response = await ApiService.getActiveConsents(uid, token);
       if (response.ok) {
         const data = await response.json();
-        const activeData = data.active || [];
-        setActiveConsents(activeData);
-        cache.set(cacheKey, activeData, CACHE_TTL.SHORT);
+        const activeData = (data.active || []) as ActiveConsent[];
+        const ownerConsents = activeData
+          .filter((consent) => isVaultOwnerScope(consent.scope))
+          .sort((a, b) => (b.issued_at || 0) - (a.issued_at || 0));
+        const latestOwnerConsent = ownerConsents[0] || null;
+        const externalConsents = activeData.filter(
+          (consent) => !isVaultOwnerScope(consent.scope)
+        );
+        const dedupedActiveData = latestOwnerConsent
+          ? [latestOwnerConsent, ...externalConsents]
+          : externalConsents;
+
+        setActiveConsents(dedupedActiveData);
+        cache.set(cacheKey, dedupedActiveData, CACHE_TTL.SHORT);
       }
     } catch (err) {
       console.error("Error fetching active consents:", err);
@@ -919,7 +936,7 @@ export default function ConsentsPage() {
     const scopeLower = scope.toLowerCase();
     
     // Owner/Full access - purple/violet
-    if (scopeLower.includes("owner") || scopeLower === "vault_owner")
+    if (isVaultOwnerScope(scope))
       return "bg-purple-500/20 text-purple-700 dark:text-purple-300 border-purple-500/30";
     
     // Financial scopes - green
@@ -941,6 +958,17 @@ export default function ConsentsPage() {
     // Default - neutral with good contrast
     return "bg-slate-500/20 text-slate-700 dark:text-slate-300 border-slate-500/30";
   };
+
+  const ownerActiveConsent =
+    activeConsents
+      .filter((consent) => isVaultOwnerScope(consent.scope))
+      .sort((a, b) => (b.issued_at || 0) - (a.issued_at || 0))[0] || null;
+  const externalActiveConsents = activeConsents.filter(
+    (consent) => !isVaultOwnerScope(consent.scope)
+  );
+  const ownerScope = ownerActiveConsent?.scope || session?.scope || "vault.owner";
+  const ownerExpiresAt = ownerActiveConsent?.expires_at || session?.expiresAt || null;
+  const ownerIssuedAt = ownerActiveConsent?.issued_at || null;
 
   if (loading) {
     return null;
@@ -1098,7 +1126,7 @@ export default function ConsentsPage() {
         {/* Active Session Tab */}
         <TabsContent value="session" className="space-y-4 mt-4">
           {/* 1. Owner Session Card */}
-          {session && (
+          {(session || ownerActiveConsent) && (
             <Card className="border-l-4 border-l-purple-500 bg-purple-500/5">
               <CardHeader className="pb-2">
                 <div className="flex items-start justify-between">
@@ -1108,12 +1136,14 @@ export default function ConsentsPage() {
                       Owner Session
                     </CardTitle>
                     <p className="text-sm text-muted-foreground">
-                      Authenticated via verified request
+                      {ownerActiveConsent?.developer
+                        ? `Granted to ${ownerActiveConsent.developer}`
+                        : "Authenticated via verified request"}
                     </p>
                   </div>
-                  <Badge className={`${getScopeColor(session.scope)} flex items-center gap-1`}>
-                    {renderIcon(formatScopeLocal(session.scope).icon)}
-                    {formatScopeLocal(session.scope).label}
+                  <Badge className={`${getScopeColor(ownerScope)} flex items-center gap-1`}>
+                    {renderIcon(formatScopeLocal(ownerScope).icon)}
+                    {formatScopeLocal(ownerScope).label}
                   </Badge>
                 </div>
               </CardHeader>
@@ -1125,28 +1155,45 @@ export default function ConsentsPage() {
                     </p>
                     <p className="text-lg font-semibold flex items-center gap-2">
                       <Clock className="h-4 w-4" />
-                      {session.expiresAt
-                        ? getTimeRemaining(session.expiresAt)
+                      {ownerExpiresAt
+                        ? getTimeRemaining(ownerExpiresAt)
                         : "N/A"}
                     </p>
                   </div>
                   <div className="p-3 rounded-lg bg-background/50">
                     <p className="text-xs text-muted-foreground">Expires At</p>
                     <p className="text-sm font-medium">
-                      {session.expiresAt
-                        ? new Date(session.expiresAt).toLocaleTimeString()
+                      {ownerExpiresAt
+                        ? new Date(ownerExpiresAt).toLocaleString()
                         : "N/A"}
                     </p>
                   </div>
                 </div>
+                <div className="p-3 rounded-lg bg-background/50">
+                  <p className="text-xs text-muted-foreground">Granted At</p>
+                  <p className="text-sm font-medium">
+                    {ownerIssuedAt ? new Date(ownerIssuedAt).toLocaleString() : "N/A"}
+                  </p>
+                </div>
+                <Button
+                  variant="none"
+                  onClick={() => handleRevoke(ownerScope)}
+                  disabled={actionLoading === `revoke-${ownerScope}`}
+                  className="w-full border border-destructive text-destructive hover:bg-destructive/10 cursor-pointer"
+                >
+                  <Ban className="h-4 w-4 mr-2" />
+                  {actionLoading === `revoke-${ownerScope}`
+                    ? "Revoking..."
+                    : "Revoke Owner Session"}
+                </Button>
               </CardContent>
             </Card>
           )}
 
           {/* 2. Active External Consents */}
-          {activeConsents.length > 0 ? (
+          {externalActiveConsents.length > 0 ? (
             <div className="space-y-4">
-              {activeConsents.map((consent, index) => {
+              {externalActiveConsents.map((consent, index) => {
                 const scopeInfo = formatScopeLocal(consent.scope);
                 const timeRemaining = consent.expires_at
                   ? getTimeRemaining(consent.expires_at)
@@ -1227,7 +1274,7 @@ export default function ConsentsPage() {
               })}
             </div>
           ) : (
-            !session && (
+            !session && !ownerActiveConsent && (
               <Card>
                 <CardContent className="py-12 text-center">
                   <Key className="h-12 w-12 mx-auto text-gray-400 mb-4" />

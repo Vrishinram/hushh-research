@@ -39,8 +39,8 @@ POST /api/consent/vault-owner-token  (Firebase Bearer)
 | ------ | ---- | ----------- |
 | GET | `/health` | Detailed health check with agent list |
 | GET | `/api/kai/health` | Kai subsystem health |
-| GET | `/api/v1` | Developer API root |
-| GET | `/api/v1/list-scopes` | List all available consent scopes |
+| GET | `/api/v1` | Developer API root (non-production only; `410` in production) |
+| GET | `/api/v1/list-scopes` | List all available consent scopes (non-production only; `410` in production) |
 | GET | `/api/investors/search?q={name}` | Fuzzy search investors by name |
 | GET | `/api/investors/{investor_id}` | Full investor profile by ID |
 | GET | `/api/investors/cik/{cik}` | Investor profile by SEC CIK |
@@ -48,6 +48,14 @@ POST /api/consent/vault-owner-token  (Firebase Bearer)
 | POST | `/api/validate-token` | Validate a consent token |
 | GET | `/api/app-config/review-mode` | Review mode toggle (enabled only) |
 | POST | `/api/app-config/review-mode/session` | Mint Firebase custom token for `REVIEWER_UID` when review mode enabled |
+
+### Debug (Dev Only)
+
+| Method | Path | Description |
+| ------ | ---- | ----------- |
+| GET | `/debug/diagnostics` | Registered route diagnostics (returns `404` in production) |
+| GET | `/debug/consent-listener` | Consent listener diagnostics (returns `404` in production) |
+| GET | `/api/_debug/firebase` | Firebase debug endpoint (returns `404` in production) |
 
 ### Firebase Auth (Bootstrap)
 
@@ -182,6 +190,11 @@ External developers (MCP agents, third-party apps) use the `/api/v1` endpoints:
    → Returns: { ciphertext, iv, tag, export_key }
    → Developer decrypts with export_key
 ```
+
+Production policy:
+- All `/api/v1/*` endpoints return `410` with:
+- `{"error_code":"DEVELOPER_API_DISABLED_IN_PRODUCTION","message":"Developer API is disabled in production."}`
+- Non-production can enable `/api/v1/*` via `DEVELOPER_API_ENABLED=true` with runtime registry `DEVELOPER_REGISTRY_JSON`.
 
 ### Available Scopes
 

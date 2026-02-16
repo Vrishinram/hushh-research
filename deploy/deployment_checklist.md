@@ -60,7 +60,7 @@
   - [x] `REVIEWER_UID`
   - [x] `MCP_DEVELOPER_TOKEN`
   
-  **Note:** `DB_HOST`, `DB_PORT`, `DB_NAME`, `APP_REVIEW_MODE`, `CONSENT_SSE_ENABLED`, and `SYNC_REMOTE_ENABLED` are Cloud Run env vars (not secrets). Do not use `DATABASE_URL`; migrations use DB_* only. Delete `DATABASE_URL` from Secret Manager for strict parity.
+  **Note:** `DB_HOST`, `DB_PORT`, `DB_NAME`, `APP_REVIEW_MODE`, `CONSENT_SSE_ENABLED`, `SYNC_REMOTE_ENABLED`, `DEVELOPER_API_ENABLED`, and `CORS_ALLOWED_ORIGINS` are Cloud Run env vars (not secrets). Do not use `DATABASE_URL`; migrations use DB_* only. Delete `DATABASE_URL` from Secret Manager for strict parity.
 
 ---
 
@@ -91,6 +91,7 @@
   ```
 
 - [x] Backend env: Cloud Run sets `ENVIRONMENT=production` and `GOOGLE_GENAI_USE_VERTEXAI=True` (Vertex AI for Gemini)
+- [x] Regulated defaults verified: `APP_REVIEW_MODE=false`, `DEVELOPER_API_ENABLED=false`, `CONSENT_SSE_ENABLED=false`, `SYNC_REMOTE_ENABLED=false`
 
 ---
 
@@ -124,7 +125,7 @@
 
 ## CORS Configuration
 
-- [x] Update backend CORS with frontend URL
+- [x] Update backend CORS allowlist with frontend URL (`CORS_ALLOWED_ORIGINS`)
 
   ```powershell
   cd deploy
