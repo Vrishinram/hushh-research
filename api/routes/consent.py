@@ -69,7 +69,7 @@ async def get_pending_consents(
 
     service = ConsentDBService()
     pending_from_db = await service.get_pending_requests(userId)
-    logger.info(f"📋 Found {len(pending_from_db)} pending requests in DB for {userId}")
+    logger.info("consent.pending_fetched count=%s", len(pending_from_db))
     return {"pending": pending_from_db}
 
 
@@ -98,8 +98,8 @@ async def approve_consent(
     if token_data["user_id"] != userId:
         raise HTTPException(status_code=403, detail="User ID does not match authenticated user")
 
-    logger.info(f"✅ User {userId} approving consent request {requestId}")
-    logger.info(f"   Export data present: {bool(encryptedData)}")
+    logger.info("consent.approve_requested")
+    logger.info("consent.approve_export_attached=%s", bool(encryptedData))
 
     # Get pending request from database
     service = ConsentDBService()
@@ -113,12 +113,11 @@ async def approve_consent(
     try:
         _consent_scope = resolve_scope_to_enum(requested_scope)
     except Exception as e:
-        logger.error(f"Failed to resolve scope {requested_scope}: {e}")
+        logger.error("consent.scope_resolution_failed: %s", e)
         raise HTTPException(status_code=400, detail=f"Invalid scope: {requested_scope}")
 
-    # Get developer token from metadata or use developer name
+    # Optional metadata on pending request (used for expiry hints)
     metadata = pending_request.get("metadata", {})
-    developer_token = metadata.get("developer_token", pending_request["developer"])
     expiry_hours = metadata.get("expiry_hours", 24)
 
     # MODULAR COMPLIANCE CHECK: Idempotency
@@ -126,29 +125,23 @@ async def approve_consent(
     # This prevents duplication and ensures a clean audit log.
 
     service = ConsentDBService()
-    active_tokens = await service.get_active_tokens(userId)
+    active_tokens = await service.get_active_tokens(
+        userId,
+        agent_id=pending_request["developer"],
+        scope=requested_scope,
+    )
     existing_token = None
 
-    # 1. Filter active tokens for the requested scope and agent (match on requested scope string, e.g. attr.food.*)
+    # 1. Filter active tokens for the requested scope and agent.
     for t in active_tokens:
-        if t.get("scope") != requested_scope:
-            continue
-
-        # Check Agent Match (Normalize developer token format)
-        t_agent = t.get("agent_id") or t.get("developer")
-        req_agent = f"developer:{developer_token}"
-
-        # Simple match or exact match
-        if t_agent == req_agent or t_agent == developer_token:
-            # Check Expiry (ensure it has reasonable life left, e.g., > 1 hour)
-            expires_at = t.get("expires_at", 0)
-            if expires_at > (time.time() * 1000) + (60 * 60 * 1000):
-                existing_token = t
-                break
+        expires_at = t.get("expires_at", 0)
+        if expires_at > (time.time() * 1000) + (60 * 60 * 1000):
+            existing_token = t
+            break
 
     if existing_token:
         # IDEMPOTENT RETURN: Reuse existing token
-        logger.info(f"♻️ Idempotent: Reusing existing active token for {requested_scope}")
+        logger.info("consent.token_reused scope=%s", requested_scope)
 
         # Log REUSE event for audit trail (optional, but good for tracking)
         # await consent_db.insert_event(..., action="TOKEN_REUSED", ...)
@@ -169,7 +162,9 @@ async def approve_consent(
     # The enum was validated above, but the token must preserve the exact scope
     token = issue_token(
         user_id=userId,
-        agent_id=f"developer:{developer_token}",
+        # Keep token agent_id aligned with consent_audit agent_id so DB revocation
+        # checks are deterministic across instances.
+        agent_id=pending_request["developer"],
         scope=requested_scope,  # ✅ Pass string, not enum
         expires_in_ms=expiry_hours * 60 * 60 * 1000,
     )
@@ -210,7 +205,7 @@ async def approve_consent(
         request_id=requestId,
         expires_at=token.expires_at,
     )
-    logger.info("✅ CONSENT_GRANTED event saved to DB")
+    logger.info("consent.granted_event_saved")
 
     # Return token with export key for MCP decryption
     return {
@@ -237,7 +232,7 @@ async def deny_consent(
     if token_data["user_id"] != userId:
         raise HTTPException(status_code=403, detail="User ID does not match authenticated user")
 
-    logger.info(f"❌ User {userId} denying consent request {requestId}")
+    logger.info("consent.deny_requested")
 
     # Get pending request from database
     service = ConsentDBService()
@@ -254,7 +249,7 @@ async def deny_consent(
         action="CONSENT_DENIED",
         request_id=requestId,
     )
-    logger.info("❌ CONSENT_DENIED event saved to DB")
+    logger.info("consent.denied_event_saved")
 
     return {"status": "denied", "message": f"Consent denied to {pending_request['developer']}"}
 
@@ -276,7 +271,7 @@ async def cancel_consent(
     if token_data["user_id"] != payload.userId:
         raise HTTPException(status_code=403, detail="User ID does not match authenticated user")
 
-    logger.info(f"🛑 User {payload.userId} cancelling consent request {payload.requestId}")
+    logger.info("consent.cancel_requested")
 
     service = ConsentDBService()
     pending_request = await service.get_pending_by_request_id(payload.userId, payload.requestId)
@@ -352,9 +347,7 @@ async def issue_vault_owner_token(request: Request):
                     # If we blindly reuse it, downstream calls fail with "Invalid signature".
                     candidate_token = t.get("token_id")
                     if not candidate_token:
-                        logger.warning(
-                            f"⚠️ VAULT_OWNER reuse candidate missing token_id for {user_id}; issuing new token"
-                        )
+                        logger.warning("vault_owner.reuse_missing_token_id")
                         break
 
                     is_valid, reason, payload = validate_token(
@@ -362,14 +355,12 @@ async def issue_vault_owner_token(request: Request):
                     )
                     if not is_valid or not payload:
                         logger.warning(
-                            "⚠️ Stored VAULT_OWNER token failed validation; issuing new token. "
-                            f"user_id={user_id} reason={reason}"
+                            "vault_owner.stored_token_invalid reason=%s",
+                            reason,
                         )
                         break
 
-                    logger.info(
-                        f"♻️ Reusing active VAULT_OWNER token for {user_id} (expires: {expires_at})"
-                    )
+                    logger.info("vault_owner.token_reused expires_at=%s", expires_at)
                     return {
                         "token": candidate_token,
                         "expiresAt": expires_at,
@@ -377,7 +368,7 @@ async def issue_vault_owner_token(request: Request):
                     }
 
         # No valid token found - issue new one
-        logger.info(f"🔑 Issuing NEW VAULT_OWNER token for {user_id} (24h expiry)")
+        logger.info("vault_owner.issue_new_token")
 
         # Issue new token (24-hour expiry)
         token_obj = issue_token(
@@ -398,18 +389,15 @@ async def issue_vault_owner_token(request: Request):
             expires_at=token_obj.expires_at,
         )
 
-        logger.info(f"✅ VAULT_OWNER token issued and stored for {user_id}")
+        logger.info("vault_owner.token_issued")
 
         return {"token": token_obj.token, "expiresAt": token_obj.expires_at, "scope": "vault.owner"}
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"❌ VAULT_OWNER token issuance failed: {e}")
-        import traceback
-
-        logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("vault_owner.issue_failed")
+        raise HTTPException(status_code=500, detail="Failed to issue vault owner token")
 
 
 @router.post("/revoke")
@@ -439,16 +427,15 @@ async def revoke_consent(
         if token_data["user_id"] != userId:
             raise HTTPException(status_code=403, detail="User ID does not match authenticated user")
 
-        logger.info(f"🔒 User {userId} revoking consent for scope: {scope}")
+        logger.info("consent.revoke_requested scope=%s", scope)
 
         # Get the active token for this scope
         service = ConsentDBService()
         active_tokens = await service.get_active_tokens(userId)
-        logger.info(f"📋 Found {len(active_tokens)} active tokens for user")
+        logger.info("consent.revoke_active_token_count=%s", len(active_tokens))
 
         token_to_revoke = None
         for token in active_tokens:
-            logger.info(f"   Token scope: {token.get('scope')}, looking for: {scope}")
             if token.get("scope") == scope:
                 token_to_revoke = token
                 break
@@ -479,9 +466,7 @@ async def revoke_consent(
         agent_id = token_to_revoke.get("agent_id") or token_to_revoke.get("developer") or "Unknown"
         request_id = token_to_revoke.get("request_id")
 
-        logger.info(
-            f"🔒 Revoking - new token_id: {revoke_token_id}, agent: {agent_id}, request_id: {request_id}"
-        )
+        logger.info("consent.revoke_persist_event")
 
         # Log REVOKED event to database (link to original request_id for trail)
         service = ConsentDBService()
@@ -493,7 +478,7 @@ async def revoke_consent(
             token_id=revoke_token_id,
             request_id=request_id,
         )
-        logger.info(f"✅ REVOKED event saved to DB for scope: {scope}")
+        logger.info("consent.revoked_event_saved scope=%s", scope)
 
         # Return special flag for VAULT_OWNER revocation so client knows to lock vault
         is_vault_owner = scope == "vault.owner" or scope == "VAULT_OWNER"
@@ -507,11 +492,9 @@ async def revoke_consent(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Revoke error: {type(e).__name__}: {e}")
-        import traceback
-
-        logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+        logger.error("consent.revoke_failed: %s", type(e).__name__)
+        logger.exception("consent.revoke_failed_trace")
+        raise HTTPException(status_code=500, detail="Internal error")
 
 
 @router.get("/data")
@@ -525,13 +508,13 @@ async def get_consent_export_data(consent_token: str):
 
     Data is retrieved from database (source of truth) with in-memory cache fallback.
     """
-    logger.info(f"📦 Export data request for token: {consent_token[:30]}...")
+    logger.info("consent.export_requested")
 
     # Validate the consent token
     valid, reason, token_obj = validate_token(consent_token)
     if not valid:
-        logger.warning(f"❌ Token validation failed: {reason}")
-        raise HTTPException(status_code=401, detail=f"Invalid token: {reason}")
+        logger.warning("consent.export_invalid_token reason=%s", reason)
+        raise HTTPException(status_code=401, detail="Invalid token")
 
     # Try in-memory cache first (fast path)
     if consent_token in _consent_exports:
@@ -559,7 +542,7 @@ async def get_consent_export_data(consent_token: str):
     # Cache for future requests
     _consent_exports[consent_token] = export_data
 
-    logger.info(f"✅ Returning encrypted export from DB for scope: {export_data.get('scope')}")
+    logger.info("consent.export_served_from_db")
 
     return {
         "status": "success",

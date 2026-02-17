@@ -5,6 +5,12 @@ MCP Server configuration.
 
 import os
 
+
+def _env_truthy(name: str, fallback: str = "false") -> bool:
+    raw = str(os.environ.get(name, fallback)).strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
 # FastAPI backend URL (for consent API calls)
 FASTAPI_URL = os.environ.get("CONSENT_API_URL", "http://localhost:8000")
 
@@ -13,19 +19,16 @@ FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 
 # Production mode: requires user approval via dashboard
 PRODUCTION_MODE = os.environ.get("PRODUCTION_MODE", "true").lower() == "true"
+ENVIRONMENT = str(os.environ.get("ENVIRONMENT", "development")).strip().lower()
+DEVELOPER_API_ENABLED = (
+    False if ENVIRONMENT == "production" else _env_truthy("DEVELOPER_API_ENABLED", "true")
+)
 
 # MCP developer token (registered in FastAPI)
-MCP_DEVELOPER_TOKEN = os.environ.get("MCP_DEVELOPER_TOKEN", "mcp_dev_claude_desktop")
-
-# ============================================================================
-# CONSENT POLLING CONFIGURATION
-# ============================================================================
+MCP_DEVELOPER_TOKEN = str(os.environ.get("MCP_DEVELOPER_TOKEN", "")).strip()
 
 # How long to wait for user to approve consent (in seconds)
 CONSENT_TIMEOUT_SECONDS = int(os.environ.get("CONSENT_TIMEOUT_SECONDS", "120"))
-
-# How often to poll for consent approval (in seconds)
-CONSENT_POLL_INTERVAL_SECONDS = int(os.environ.get("CONSENT_POLL_INTERVAL_SECONDS", "5"))
 
 # ============================================================================
 # SERVER INFO
@@ -54,7 +57,7 @@ SERVER_INFO = {
         },
         {
             "name": "check_consent_status",
-            "purpose": "Poll status of a pending consent request until granted or denied",
+            "purpose": "Check status of a pending consent request",
         },
         {
             "name": "get_food_preferences",

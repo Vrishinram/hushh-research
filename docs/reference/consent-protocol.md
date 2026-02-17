@@ -85,6 +85,19 @@ Hushh Approach  ✅  if (validateToken(VAULT_OWNER)) { allow(); }
 
 **Key Principle**: VAULT_OWNER token proves both identity AND consent. Firebase is ONLY used to bootstrap the VAULT_OWNER token issuance.
 
+### Automated Test Token Policy
+
+- Automated test suites must use fixture-issued tokens from `consent-protocol/tests/conftest.py`.
+- `consent-protocol/tests/dev_test_token.py` is for manual/debug workflows only.
+- CI must not depend on `.env` token helpers or `MCP_DEVELOPER_TOKEN` for consent-route coverage.
+
+### Streaming Contract Policy
+
+- All Kai streaming routes use canonical SSE envelopes (`schema_version`, `stream_id`, `stream_kind`, `seq`, `event`, `terminal`, `payload`).
+- Route producers must emit explicit `event:` frames with envelope `event` parity.
+- No legacy stream shape support is permitted for new work.
+- Contract reference: `docs/reference/streaming-contract.md`.
+
 ---
 
 ## Route Categories
@@ -129,6 +142,10 @@ GET  /api/consent/active                # MCP: List active tokens
 POST /api/consent/request-consent       # MCP: Request token
 GET  /api/consent/pending               # Dashboard: View pending
 POST /api/consent/pending/approve      # Dashboard: Approve request
+
+# Kai personalization storage
+# Optional intro data is stored in encrypted world-model domain `kai_profile`.
+# No `/api/kai/preferences/*` endpoints exist.
 
 # MCP Server Data Access
 # MCP tools access vault data via the consent-gated endpoint:
@@ -186,9 +203,9 @@ def validate_token(token_str, expected_scope=None):
     return True, None, token_obj
 ```
 
-### Frontend Token Storage (Memory-Only)
+### Frontend Credential Storage (Memory-Only for Secrets)
 
-**CRITICAL SECURITY MODEL**: Both vault key AND VAULT_OWNER token are stored in React state (Zustand / memory only). No `sessionStorage` or `localStorage` is used anywhere in the codebase. This prevents XSS attacks from stealing credentials.
+**CRITICAL SECURITY MODEL**: Both vault key and VAULT_OWNER token are stored in React state (Zustand / memory only). Browser storage may still be used for selected non-sensitive UI/cache data.
 
 ```typescript
 // hushh-webapp/lib/vault/vault-context.tsx
@@ -200,13 +217,13 @@ const unlockVault = useCallback(
     setVaultOwnerToken(token);
     setTokenExpiresAt(expiresAt);
 
-    // Zero-storage: nothing written to sessionStorage or localStorage
+    // Sensitive credentials stay in memory; no storage persistence for key/token
   },
   [],
 );
 ```
 
-**Zero-Storage Policy**: No sensitive or non-sensitive data is stored in `sessionStorage` or `localStorage`. All state lives in React memory (Zustand stores, React context) and is evicted on tab close.
+**Storage Policy**: Sensitive credentials remain memory-only. Non-sensitive cache/settings values may use `localStorage`/`sessionStorage` where explicitly documented.
 
 ### Service Layer Token Access
 
@@ -445,15 +462,15 @@ CREATE INDEX idx_consent_audit_pending ON consent_audit(user_id) WHERE action = 
 │  Vault Key        → React State (VaultContext / Zustand)    │
 │  VAULT_OWNER Token → React State (VaultContext / Zustand)   │
 ├─────────────────────────────────────────────────────────────┤
-│  Zero-Storage: No sessionStorage / localStorage used        │
-│  All state evicted on tab close                             │
+│  Secrets in memory: vault key/token are not persisted       │
+│  Non-sensitive cache/settings may use browser storage       │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 **Why this matters**:
-- XSS attacks can read `sessionStorage` and `localStorage` -- we use neither
+- XSS attacks can read `sessionStorage` and `localStorage`
 - XSS attacks CANNOT read React component state
-- Token theft via XSS is impossible with memory-only storage
+- Sensitive credential theft via storage APIs is prevented by memory-only key/token handling
 
 **Service layer pattern**:
 - Services MUST receive token as explicit parameter
