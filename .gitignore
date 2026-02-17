@@ -4,6 +4,10 @@ hushh-adk-agents/
 consent-protocol-old/
 hushh_starter_idea.md
 
+# Editor/IDE
+.idea/
+.cursor/
+
 # Cloud SQL
 cloud-sql-proxy.exe
 cloud-sql-proxy
@@ -14,6 +18,13 @@ cloud-sql-proxy.exe
 service-account.json
 firebase-service-account.json
 **/firebase-service-account.json
+
+# Local env files (never commit real envs)
+.env
+.env.*
+!.env.example
+!.env.*.example
+
 consent-protocol/.DS_Store
 .DS_Store
 docs/vision/kai/index.html
@@ -35,6 +46,11 @@ env/
 venv/
 .venv/
 Pipfile.lock
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+.coverage
+.coverage.*
 
 # System
 .DS_Store
