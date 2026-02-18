@@ -14,6 +14,7 @@
 import { useMemo } from "react";
 import { TrendingUp, TrendingDown } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/lib/morphy-ux/card";
+import { Icon } from "@/lib/morphy-ux/ui";
 
 interface Holding {
   symbol: string;
@@ -76,7 +77,7 @@ export function TopMoversCard({
           {/* Gainers Column */}
           <div className="space-y-2">
             <div className="flex items-center gap-1.5 text-xs text-emerald-500 font-medium">
-              <TrendingUp className="w-5 h-5" />
+              <Icon icon={TrendingUp} size="md" />
               <span>Gainers</span>
             </div>
             {gainers.length > 0 ? (
@@ -101,7 +102,7 @@ export function TopMoversCard({
           {/* Losers Column */}
           <div className="space-y-2">
             <div className="flex items-center gap-1.5 text-xs text-red-500 font-medium">
-              <TrendingDown className="w-5 h-5" />
+              <Icon icon={TrendingDown} size="md" />
               <span>Losers</span>
             </div>
             {losers.length > 0 ? (

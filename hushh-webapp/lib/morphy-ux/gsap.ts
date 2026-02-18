@@ -11,6 +11,8 @@ type GSAPCore = {
     fromVars: Record<string, unknown>,
     toVars: Record<string, unknown>
   ) => unknown;
+  set?: (target: unknown, vars: Record<string, unknown>) => unknown;
+  context?: (fn: () => void, scope?: Element | string) => { revert: () => void };
   registerPlugin?: (...plugins: unknown[]) => void;
 };
 

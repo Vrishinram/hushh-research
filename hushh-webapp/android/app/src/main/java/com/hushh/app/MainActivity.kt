@@ -9,7 +9,6 @@ import com.hushh.app.plugins.HushhVault.HushhVaultPlugin
 import com.hushh.app.plugins.HushhKeystore.HushhKeystorePlugin
 import com.hushh.app.plugins.HushhSettings.HushhSettingsPlugin
 import com.hushh.app.plugins.HushhSync.HushhSyncPlugin
-import com.hushh.app.plugins.HushhOnboarding.HushhOnboardingPlugin
 import com.hushh.app.plugins.HushhAccount.HushhAccountPlugin
 import com.hushh.app.plugins.HushhNotifications.HushhNotificationsPlugin
 import com.hushh.app.plugins.Kai.KaiPlugin
@@ -24,7 +23,6 @@ class MainActivity : BridgeActivity() {
         registerPlugin(HushhVaultPlugin::class.java)
         registerPlugin(HushhConsentPlugin::class.java)
         registerPlugin(HushhSyncPlugin::class.java)
-        registerPlugin(HushhOnboardingPlugin::class.java)
         registerPlugin(HushhSettingsPlugin::class.java)
         registerPlugin(HushhKeystorePlugin::class.java)
         registerPlugin(HushhNotificationsPlugin::class.java)
@@ -32,7 +30,7 @@ class MainActivity : BridgeActivity() {
         registerPlugin(WorldModelPlugin::class.java) // World Model plugin
         registerPlugin(HushhAccountPlugin::class.java) // Account management (deletion)
         
-        Log.d("MainActivity", "✅ [MainActivity] All 11 plugins registered successfully")
+        Log.d("MainActivity", "✅ [MainActivity] All 10 plugins registered successfully")
         
         super.onCreate(savedInstanceState)
     }

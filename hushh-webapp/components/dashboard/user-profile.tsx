@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Card,
+  Button,
   CardContent,
   CardHeader,
 } from "@/lib/morphy-ux/morphy";
@@ -33,6 +34,7 @@ import {
   DomainSummary,
 } from "@/lib/services/world-model-service";
 import { useAuth } from "@/hooks/use-auth";
+import { Icon } from "@/lib/morphy-ux/ui";
 
 interface UserData {
   uid: string;
@@ -47,7 +49,7 @@ interface UserData {
 }
 
 // Icon mapping for domains
-const DOMAIN_ICONS: Record<string, React.ElementType> = {
+const DOMAIN_ICONS: Record<string, import("lucide-react").LucideIcon> = {
   financial: Wallet,
   subscriptions: CreditCard,
   health: Heart,
@@ -82,43 +84,49 @@ function DomainCard({
   const IconComponent = DOMAIN_ICONS[iconName] || DOMAIN_ICONS[domain.key] || Folder;
 
   return (
-    <button
-      onClick={onClick}
-      className="w-full text-left p-4 rounded-ios-lg crystal-glass hover:bg-muted/80 transition-all duration-200 group"
+    <Card
+      asChild
+      variant="none"
+      effect="glass"
+      interactive
+      showRipple={false}
+      className="p-0"
     >
-      <div className="flex items-start gap-3">
-        <div
-          className="p-2 rounded-ios-md"
-          style={{ backgroundColor: `${domain.color}20` }}
-        >
-          <IconComponent
-            className="h-5 w-5"
-            style={{ color: domain.color }}
-          />
+      <button
+        onClick={onClick}
+        className="w-full text-left p-4 rounded-2xl hover:bg-muted/30 transition-colors duration-200 group"
+      >
+        <div className="flex items-start gap-3">
+          <div
+            className="p-2 rounded-xl"
+            style={{ backgroundColor: `${domain.color}20` }}
+          >
+            <Icon icon={IconComponent} size="md" style={{ color: domain.color }} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-sm group-hover:text-primary transition-colors">
+              {domain.displayName}
+            </h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {domain.attributeCount} attribute{domain.attributeCount !== 1 ? "s" : ""}
+            </p>
+            {Object.keys(domain.summary).length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1">
+                {Object.entries(domain.summary).slice(0, 2).map(([key, value]) => (
+                  <Badge
+                    key={key}
+                    variant="secondary"
+                    className="text-xs px-2 py-0.5"
+                  >
+                    {String(value)}
+                  </Badge>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
-        <div className="flex-1 min-w-0">
-          <h3 className="font-semibold text-sm group-hover:text-primary transition-colors">
-            {domain.displayName}
-          </h3>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {domain.attributeCount} attribute{domain.attributeCount !== 1 ? "s" : ""}
-          </p>
-          {Object.keys(domain.summary).length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-1">
-              {Object.entries(domain.summary).slice(0, 2).map(([key, value]) => (
-                <Badge
-                  key={key}
-                  variant="secondary"
-                  className="text-xs px-2 py-0.5"
-                >
-                  {String(value)}
-                </Badge>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </button>
+      </button>
+    </Card>
   );
 }
 
@@ -129,18 +137,20 @@ function EmptyState() {
   return (
     <div className="text-center py-8 px-4">
       <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center">
-        <MessageSquare className="h-8 w-8 text-primary" />
+        <Icon icon={MessageSquare} size={32} className="text-primary" />
       </div>
       <h3 className="font-semibold text-lg mb-2">No data yet</h3>
       <p className="text-sm text-muted-foreground mb-4">
         Start chatting with Kai to build your profile
       </p>
-      <button
+      <Button
         onClick={() => router.push("/chat")}
-        className="crystal-btn-gold px-6 py-2 text-sm"
+        variant="blue-gradient"
+        effect="fill"
+        size="lg"
       >
         Ask Agent Kai
-      </button>
+      </Button>
     </div>
   );
 }
@@ -213,7 +223,7 @@ export function UserProfile() {
   return (
     <div className="space-y-6">
       {/* User Info Card */}
-      <Card className="crystal-glass">
+      <Card variant="none" effect="glass" showRipple={false}>
         <CardHeader>
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-4">
@@ -236,7 +246,7 @@ export function UserProfile() {
                   </p>
                   {userData.emailVerified ? (
                     <Badge className="bg-green-500 flex items-center gap-1">
-                      <ShieldCheck className="h-3 w-3" />
+                      <Icon icon={ShieldCheck} size={12} />
                       Verified
                     </Badge>
                   ) : (
@@ -244,7 +254,7 @@ export function UserProfile() {
                       variant="secondary"
                       className="flex items-center gap-1"
                     >
-                      <Shield className="h-3 w-3" />
+                      <Icon icon={Shield} size={12} />
                       Unverified
                     </Badge>
                   )}
@@ -261,9 +271,9 @@ export function UserProfile() {
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Account Info */}
-            <div className="p-4 rounded-ios-lg bg-muted/50">
+            <div className="p-4 rounded-2xl bg-muted/50">
               <div className="flex items-center gap-2 mb-2">
-                <Calendar className="h-4 w-4 text-muted-foreground" />
+                <Icon icon={Calendar} size="sm" className="text-muted-foreground" />
                 <span className="text-sm font-medium">Member Since</span>
               </div>
               <p className="text-sm text-muted-foreground">
@@ -272,9 +282,9 @@ export function UserProfile() {
             </div>
 
             {/* Last Sign In */}
-            <div className="p-4 rounded-ios-lg bg-muted/50">
+            <div className="p-4 rounded-2xl bg-muted/50">
               <div className="flex items-center gap-2 mb-2">
-                <Clock className="h-4 w-4 text-muted-foreground" />
+                <Icon icon={Clock} size="sm" className="text-muted-foreground" />
                 <span className="text-sm font-medium">Last Sign In</span>
               </div>
               <p className="text-sm text-muted-foreground">
@@ -283,14 +293,14 @@ export function UserProfile() {
             </div>
 
             {/* Total Attributes */}
-            <div className="p-4 rounded-ios-lg bg-muted/50">
+            <div className="p-4 rounded-2xl bg-muted/50">
               <div className="flex items-center gap-2 mb-2">
-                <Folder className="h-4 w-4 text-muted-foreground" />
+                <Icon icon={Folder} size="sm" className="text-muted-foreground" />
                 <span className="text-sm font-medium">Data Points</span>
               </div>
               <p className="text-sm text-muted-foreground">
                 {loading ? (
-                  <Loader2 className="h-4 w-4 animate-spin inline" />
+                  <Icon icon={Loader2} size="sm" className="animate-spin inline" />
                 ) : (
                   `${totalAttributes} attributes`
                 )}
@@ -301,7 +311,7 @@ export function UserProfile() {
       </Card>
 
       {/* World Model Domains */}
-      <Card className="crystal-glass">
+      <Card variant="none" effect="glass" showRipple={false}>
         <CardHeader>
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-semibold">Your Data Domains</h3>
@@ -315,7 +325,7 @@ export function UserProfile() {
         <CardContent>
           {loading ? (
             <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <Icon icon={Loader2} size={32} className="animate-spin text-primary" />
             </div>
           ) : domains.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">

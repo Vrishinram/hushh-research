@@ -585,44 +585,6 @@ export const HushhSync = registerPlugin<HushhSyncPlugin>("HushhSync", {
   web: () => import("./plugins/sync-web").then((m) => new m.HushhSyncWeb()),
 });
 
-// ==================== HushhOnboardingPlugin ====================
-// Tracking onboarding tour completion status
-
-export interface OnboardingStatusResult {
-  completed: boolean;
-  completedAt: string | null;
-}
-
-export interface HushhOnboardingPlugin {
-  /**
-   * Check if user has completed onboarding tour.
-   * Calls /api/onboarding/status on backend.
-   */
-  checkOnboardingStatus(options: {
-    userId: string;
-    authToken?: string; // Firebase ID token (legacy name)
-    idToken?: string; // Firebase ID token (preferred)
-  }): Promise<OnboardingStatusResult>;
-
-  /**
-   * Mark user's onboarding as complete.
-   * Calls /api/onboarding/complete on backend.
-   */
-  completeOnboarding(options: {
-    userId: string;
-    authToken?: string; // Firebase ID token (legacy name)
-    idToken?: string; // Firebase ID token (preferred)
-  }): Promise<{ success: boolean }>;
-}
-
-export const HushhOnboarding = registerPlugin<HushhOnboardingPlugin>(
-  "HushhOnboarding",
-  {
-    web: () =>
-      import("./plugins/onboarding-web").then((m) => new m.HushhOnboardingWeb()),
-  }
-);
-
 // ==================== HushhNotificationsPlugin ====================
 // Push notification token registration (FCM/APNs)
 

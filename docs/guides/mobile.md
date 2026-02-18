@@ -7,7 +7,7 @@
 
 ## Overview
 
-The Hushh mobile app uses **Next.js static export** in a native WebView, with **8 native plugins** handling security-critical operations. Both iOS and Android achieve feature parity through aligned plugin implementations.
+The Hushh mobile app uses **Next.js static export** in a native WebView, with **native plugins** handling security-critical operations. Both iOS and Android achieve feature parity through aligned plugin implementations.
 
 ### Dev mode (hot reload) vs plugin parity
 
@@ -38,10 +38,10 @@ Required env:
 │  └──────────────────────────────────────────────────────────┘  │
 │                          ↓ Capacitor.call()                     │
 │  ┌──────────────────────────────────────────────────────────┐  │
-│  │       Native Plugins (12 per platform)                    │  │
-│  │  HushhAuth · HushhVault · HushhConsent · HushhIdentity   │  │
-│  │  Kai · HushhSync · HushhSettings · HushhKeystore         │  │
-│  │  WorldModel · HushhOnboarding · HushhAccount · Notifications │
+│  │       Native Plugins (10 per platform)                    │  │
+│  │  HushhAuth · HushhVault · HushhConsent · Kai             │  │
+│  │  HushhSync · HushhSettings · HushhKeystore · WorldModel  │  │
+│  │  HushhAccount · HushhNotifications                       │  │
 │  └──────────────────────────────────────────────────────────┘  │
 │                          ↓ Native HTTP                          │
 │  ┌──────────────────────────────────────────────────────────┐  │
@@ -53,22 +53,20 @@ Required env:
 
 ---
 
-## Native Plugins (12 Verified)
+## Native Plugins (10 Verified)
 
-All 12 plugins exist on both platforms with matching methods:
+All 10 plugins exist on both platforms with matching methods:
 
 | Plugin            | jsName          | Purpose                        | iOS                         | Android                  |
 | ----------------- | --------------- | ------------------------------ | --------------------------- | ------------------------ |
 | **HushhAuth**     | `HushhAuth`     | Google/Apple Sign-In, Firebase | `HushhAuthPlugin.swift`     | `HushhAuthPlugin.kt`     |
 | **HushhVault**    | `HushhVault`    | Encryption, vault operations   | `HushhVaultPlugin.swift`    | `HushhVaultPlugin.kt`    |
 | **HushhConsent**  | `HushhConsent`  | Token management, consent flow | `HushhConsentPlugin.swift`  | `HushhConsentPlugin.kt`  |
-| **HushhIdentity** | `HushhIdentity` | Investor identity resolution   | `HushhIdentityPlugin.swift` | `HushhIdentityPlugin.kt` |
 | **Kai**           | `Kai`           | Investment analysis agent      | `KaiPlugin.swift`           | `KaiPlugin.kt`           |
 | **HushhSync**     | `HushhSync`     | Cloud synchronization          | `HushhSyncPlugin.swift`     | `HushhSyncPlugin.kt`     |
 | **HushhSettings** | `HushhSettings` | App preferences                | `HushhSettingsPlugin.swift` | `HushhSettingsPlugin.kt` |
 | **HushhKeystore** | `HushhKeychain` | Secure key storage             | `HushhKeystorePlugin.swift` | `HushhKeystorePlugin.kt` |
 | **WorldModel**    | `WorldModel`    | Domain metadata/index access   | `WorldModelPlugin.swift`    | `WorldModelPlugin.kt`    |
-| **HushhOnboarding** | `HushhOnboarding` | Onboarding tour state       | `HushhOnboardingPlugin.swift` | `HushhOnboardingPlugin.kt` |
 | **HushhAccount**  | `HushhAccount`  | Account lifecycle actions      | `HushhAccountPlugin.swift`  | `HushhAccountPlugin.kt`  |
 | **HushhNotifications** | `HushhNotifications` | Push token registration | `HushhNotificationsPlugin.swift` | `HushhNotificationsPlugin.kt` |
 
@@ -116,14 +114,6 @@ All 12 plugins exist on both platforms with matching methods:
 | `createTrustLink()`      | Create A2A delegation link             |
 | `verifyTrustLink()`      | Verify TrustLink signature             |
 
-### HushhIdentity
-
-| Method                  | Description                    |
-| ----------------------- | ------------------------------ |
-| `searchInvestors()`     | Search investor profiles       |
-| `getInvestor()`         | Get investor by ID             |
-| `syncInvestorProfile()` | Sync investor profile to vault |
-
 ### Kai
 
 | Method                 | Description               |
@@ -167,14 +157,17 @@ ios/App/App/
 ├── AppDelegate.swift           # Firebase.configure()
 ├── MyViewController.swift      # Plugin registration
 └── Plugins/
+    ├── HushhAccountPlugin.swift
     ├── HushhAuthPlugin.swift
-    ├── HushhVaultPlugin.swift
     ├── HushhConsentPlugin.swift
-    ├── HushhIdentityPlugin.swift
-    ├── KaiPlugin.swift
-    ├── HushhSyncPlugin.swift
+    ├── HushhKeystorePlugin.swift
+    ├── HushhNotificationsPlugin.swift
+    ├── HushhProxyClient.swift
     ├── HushhSettingsPlugin.swift
-    └── HushhKeystorePlugin.swift
+    ├── HushhSyncPlugin.swift
+    ├── HushhVaultPlugin.swift
+    ├── KaiPlugin.swift
+    └── WorldModelPlugin.swift
 ```
 
 ### Android
@@ -183,14 +176,17 @@ ios/App/App/
 android/app/src/main/java/com/hushh/app/
 ├── MainActivity.kt             # Plugin registration
 └── plugins/
+    ├── HushhAccount/HushhAccountPlugin.kt
     ├── HushhAuth/HushhAuthPlugin.kt
-    ├── HushhVault/HushhVaultPlugin.kt
     ├── HushhConsent/HushhConsentPlugin.kt
-    ├── HushhIdentity/HushhIdentityPlugin.kt
-    ├── Kai/KaiPlugin.kt
-    ├── HushhSync/HushhSyncPlugin.kt
+    ├── HushhKeystore/HushhKeystorePlugin.kt
+    ├── HushhNotifications/HushhNotificationsPlugin.kt
     ├── HushhSettings/HushhSettingsPlugin.kt
-    └── HushhKeystore/HushhKeystorePlugin.kt
+    ├── HushhSync/HushhSyncPlugin.kt
+    ├── HushhVault/HushhVaultPlugin.kt
+    ├── Kai/KaiPlugin.kt
+    ├── WorldModel/WorldModelPlugin.kt
+    └── shared/BackendUrl.kt
 ```
 
 ### TypeScript Layer
@@ -201,14 +197,17 @@ lib/
 │   ├── index.ts          # Plugin registration & interfaces
 │   ├── types.ts          # Type definitions
 │   └── plugins/          # Web fallbacks
+│       ├── agent-web.ts
 │       ├── auth-web.ts
-│       ├── vault-web.ts
 │       ├── consent-web.ts
-│       ├── identity-web.ts
+│       ├── database-web.ts
 │       ├── kai-web.ts
+│       ├── keychain-web.ts
+│       ├── notifications-web.ts
 │       ├── sync-web.ts
 │       ├── settings-web.ts
-│       └── keychain-web.ts
+│       ├── vault-web.ts
+│       └── world-model-web.ts
 └── services/
     ├── api-service.ts    # Platform-aware API routing
     ├── auth-service.ts   # Native auth abstraction
@@ -232,12 +231,13 @@ class MyViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(HushhAuthPlugin())
         bridge?.registerPluginInstance(HushhVaultPlugin())
         bridge?.registerPluginInstance(HushhConsentPlugin())
-        bridge?.registerPluginInstance(HushhIdentityPlugin())
         bridge?.registerPluginInstance(KaiPlugin())
         bridge?.registerPluginInstance(HushhSyncPlugin())
         bridge?.registerPluginInstance(HushhSettingsPlugin())
         bridge?.registerPluginInstance(HushhKeystorePlugin())
         bridge?.registerPluginInstance(WorldModelPlugin())
+        bridge?.registerPluginInstance(HushhAccountPlugin())
+        bridge?.registerPluginInstance(HushhNotificationsPlugin())
     }
 }
 ```
@@ -260,12 +260,13 @@ class MainActivity : BridgeActivity() {
         registerPlugin(HushhAuthPlugin::class.java)
         registerPlugin(HushhVaultPlugin::class.java)
         registerPlugin(HushhConsentPlugin::class.java)
-        registerPlugin(HushhIdentityPlugin::class.java)
-        registerPlugin(KaiPlugin::class.java)
         registerPlugin(HushhSyncPlugin::class.java)
         registerPlugin(HushhSettingsPlugin::class.java)
         registerPlugin(HushhKeystorePlugin::class.java)
+        registerPlugin(HushhNotificationsPlugin::class.java)
+        registerPlugin(KaiPlugin::class.java)
         registerPlugin(WorldModelPlugin::class.java)
+        registerPlugin(HushhAccountPlugin::class.java)
         super.onCreate(savedInstanceState)
     }
 }

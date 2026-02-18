@@ -29,6 +29,7 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import { Card, CardContent } from "@/lib/morphy-ux/card";
+import { Icon } from "@/lib/morphy-ux/ui";
 
 // =============================================================================
 // TYPES
@@ -103,7 +104,7 @@ function PeriodSummaryFallback({
     <div className="space-y-4">
       {statementPeriod && (
         <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-          <Calendar className="w-4 h-4" />
+          <Icon icon={Calendar} size="sm" />
           <span>{statementPeriod}</span>
         </div>
       )}
@@ -123,11 +124,11 @@ function PeriodSummaryFallback({
         "flex items-center justify-center gap-2 py-3 rounded-lg",
         isPositive ? "bg-emerald-500/10" : "bg-red-500/10"
       )}>
-        {isPositive ? (
-          <TrendingUp className={cn("w-5 h-5", isPositive ? "text-emerald-500" : "text-red-500")} />
-        ) : (
-          <TrendingDown className={cn("w-5 h-5", isPositive ? "text-emerald-500" : "text-red-500")} />
-        )}
+        <Icon
+          icon={isPositive ? TrendingUp : TrendingDown}
+          size="md"
+          className={isPositive ? "text-emerald-500" : "text-red-500"}
+        />
         <span className={cn(
           "font-medium",
           isPositive ? "text-emerald-500" : "text-red-500"
@@ -201,7 +202,7 @@ export function PortfolioHistoryChart({
     <>
       {!inline && statementPeriod && (
         <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground mb-4">
-          <Calendar className="w-4 h-4" />
+          <Icon icon={Calendar} size="sm" />
           <span>{statementPeriod}</span>
         </div>
       )}

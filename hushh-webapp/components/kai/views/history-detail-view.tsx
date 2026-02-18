@@ -14,6 +14,7 @@ import { useMemo } from "react";
 import { ArrowLeft, RefreshCw, Clock } from "lucide-react";
 import { Card, CardContent } from "@/lib/morphy-ux/card";
 import { Button } from "@/lib/morphy-ux/button";
+import { Icon } from "@/lib/morphy-ux/ui";
 import { DecisionCard, type DecisionResult } from "./decision-card";
 import { RoundTabsCard } from "./round-tabs-card";
 import type { AgentState } from "../debate-stream-view";
@@ -94,11 +95,7 @@ export function HistoryDetailView({
     <div className="flex flex-col h-full bg-transparent relative">
       {/* Header - Masked gradient + sticky nav */}
       <div className="flex-none sticky top-0 z-10 overflow-hidden mb-4">
-        {/* Masked gradient background */}
-        <div
-          className="absolute inset-0 morphy-app-bg opacity-80"
-          style={{ maskImage: "linear-gradient(to bottom, black 60%, transparent)", WebkitMaskImage: "linear-gradient(to bottom, black 60%, transparent)" }}
-        />
+        {/* Root layout owns the app gradient; keep header readable with a subtle surface only. */}
         <div className="absolute inset-0 backdrop-blur-md bg-background/40" />
 
         {/* Content */}
@@ -112,7 +109,7 @@ export function HistoryDetailView({
                 aria-label="Back to history"
                 className="rounded-full hover:bg-background/20"
               >
-                <ArrowLeft className="h-4 w-4" />
+                <Icon icon={ArrowLeft} size="sm" />
             </Button>
             
             <div className="flex items-center gap-2">
@@ -133,7 +130,7 @@ export function HistoryDetailView({
                   {entry.ticker}
                 </h1>
                 <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground mt-1">
-                   <Clock className="h-3 w-3 shrink-0" />
+                   <Icon icon={Clock} size={12} className="shrink-0" />
                    <span>{formatTimestamp(entry.timestamp)}</span>
                 </div>
               </div>
@@ -144,7 +141,7 @@ export function HistoryDetailView({
                 onClick={() => onReanalyze(entry.ticker)}
                 className="h-8 text-xs"
               >
-                <RefreshCw className="h-3 w-3 mr-1.5" />
+                <Icon icon={RefreshCw} size={12} className="mr-1.5" />
                 Re-analyze
               </Button>
            </div>
@@ -158,7 +155,7 @@ export function HistoryDetailView({
       <Card variant="none" effect="glass">
         <CardContent className="p-3 sm:p-4">
           <div className="flex items-center gap-2 text-xs text-zinc-400">
-            <Clock className="h-3.5 w-3.5 text-blue-400" />
+            <Icon icon={Clock} size="xs" className="text-blue-400" />
             <span className="font-body-quicksand">
               Stored result from {formatTimestamp(entry.timestamp)} — not a live analysis
             </span>

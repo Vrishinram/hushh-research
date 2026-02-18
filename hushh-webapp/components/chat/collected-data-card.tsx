@@ -13,6 +13,7 @@ import { formatCollectedData } from "@/lib/format-message";
 import { cn } from "@/lib/utils";
 import { FileText, ChevronDown, ChevronUp } from "lucide-react";
 import { useState } from "react";
+import { Icon } from "@/lib/morphy-ux/ui";
 
 interface CollectedDataCardProps {
   data: Record<string, unknown>;
@@ -46,7 +47,7 @@ export function CollectedDataCard({
         onClick={() => setIsExpanded(!isExpanded)}
       >
         <div className="flex items-center gap-2">
-          <FileText className="h-4 w-4 text-emerald-600" />
+          <Icon icon={FileText} size="sm" className="text-emerald-600" />
           <CardTitle className="text-sm font-medium">
             Collected Data
           </CardTitle>
@@ -55,9 +56,9 @@ export function CollectedDataCard({
           </Badge>
         </div>
         {isExpanded ? (
-          <ChevronUp className="h-4 w-4 text-muted-foreground" />
+          <Icon icon={ChevronUp} size="sm" className="text-muted-foreground" />
         ) : (
-          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          <Icon icon={ChevronDown} size="sm" className="text-muted-foreground" />
         )}
       </CardHeader>
       

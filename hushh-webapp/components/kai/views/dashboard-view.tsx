@@ -46,6 +46,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/lib/morphy-ux/card";
 import { Button as MorphyButton } from "@/lib/morphy-ux/button";
+import { Icon } from "@/lib/morphy-ux/ui";
 
 import { Badge } from "@/components/ui/badge";
 import {
@@ -516,29 +517,29 @@ export function DashboardView({
             <DropdownMenuContent align="end" className="w-48" sideOffset={5} avoidCollisions={false}>
               {onAnalyzeLosers && (
                 <DropdownMenuItem onClick={onAnalyzeLosers} className="cursor-pointer">
-                  <Activity className="w-4 h-4 mr-2" />
+                  <Icon icon={Activity} size="sm" className="mr-2" />
                   Optimize Portfolio
                 </DropdownMenuItem>
               )}
               {onReupload && (
                 <DropdownMenuItem onClick={onReupload} className="cursor-pointer">
-                  <Upload className="w-4 h-4 mr-2" />
+                  <Icon icon={Upload} size="sm" className="mr-2" />
                   Upload New Statement
                 </DropdownMenuItem>
               )}
               <DropdownMenuItem onClick={onManagePortfolio} className="cursor-pointer">
-                <Settings className="w-4 h-4 mr-2" />
+                <Icon icon={Settings} size="sm" className="mr-2" />
                 Manage Portfolio
               </DropdownMenuItem>
               {onPersonalizeKai && (
                 <DropdownMenuItem onClick={onPersonalizeKai} className="cursor-pointer">
-                  <Shield className="w-4 h-4 mr-2" />
-                  Personalize Kai
+                  <Icon icon={Shield} size="sm" className="mr-2" />
+                  Risk profile & preferences
                 </DropdownMenuItem>
               )}
               {onViewHistory && (
                 <DropdownMenuItem onClick={onViewHistory} className="cursor-pointer">
-                  <History className="w-4 h-4 mr-2" />
+                  <Icon icon={History} size="sm" className="mr-2" />
                   Analysis History
                 </DropdownMenuItem>
               )}
@@ -549,7 +550,7 @@ export function DashboardView({
                     onClick={onClearData} 
                     className="cursor-pointer text-red-600 dark:text-red-400 focus:text-red-600 dark:focus:text-red-400"
                   >
-                    <Trash2 className="w-4 h-4 mr-2" />
+                    <Icon icon={Trash2} size="sm" className="mr-2" />
                     Clear All Data
                   </DropdownMenuItem>
                 </>
@@ -575,9 +576,9 @@ export function DashboardView({
               )}
             >
               {isPositive ? (
-                <TrendingUp className="w-4 h-4" />
+                <Icon icon={TrendingUp} size="sm" />
               ) : (
-                <TrendingDown className="w-4 h-4" />
+                <Icon icon={TrendingDown} size="sm" />
               )}
               <span className="bg-emerald-500/10 dark:bg-emerald-500/20 px-3 py-1 rounded-full border border-emerald-500/20">
                 {formatCurrency(Math.abs(changeInValue))} ({formatPercent(changePercent)})
@@ -649,7 +650,7 @@ export function DashboardView({
         <Card variant="none" effect="glass" showRipple={false}>
           <CardHeader className="pb-1 pt-3 px-4">
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <PieChartIcon className="w-4 h-4" />
+              <Icon icon={PieChartIcon} size="sm" />
               Allocation
             </CardTitle>
           </CardHeader>
@@ -673,7 +674,7 @@ export function DashboardView({
           <Card variant="none" effect="glass" showRipple={false}>
             <CardHeader className="pb-1 pt-3 px-4">
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <DollarSign className="w-4 h-4 text-muted-foreground" />
+                <Icon icon={DollarSign} size="sm" className="text-muted-foreground" />
                 Income
               </CardTitle>
             </CardHeader>
@@ -695,7 +696,7 @@ export function DashboardView({
             <Card variant="none" effect="glass" showRipple={false}>
               <CardHeader className="pb-1 pt-3 px-4">
                 <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <TrendingUp className="w-4 h-4 text-muted-foreground" />
+                  <Icon icon={TrendingUp} size="sm" className="text-muted-foreground" />
                   Top Movers
                 </CardTitle>
               </CardHeader>
@@ -714,7 +715,7 @@ export function DashboardView({
       {holdings.length === 0 && totalValue > 0 && (
         <Card variant="muted" effect="glass" showRipple={false}>
           <CardContent className="p-4 text-center">
-            <Wallet className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
+            <Icon icon={Wallet} size={32} className="mx-auto mb-2 text-muted-foreground" />
             <p className="text-sm font-medium mb-1">No Holdings Data</p>
             <p className="text-xs text-muted-foreground mb-3">
               Individual holdings weren't extracted.
@@ -743,7 +744,7 @@ export function DashboardView({
             <Card variant="none" effect="glass" showRipple={false}>
               <CardHeader className="pb-1 pt-3 px-4">
                 <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <BarChart3 className="w-5 h-5 text-muted-foreground" />
+                  <Icon icon={BarChart3} size="md" className="text-muted-foreground" />
                   Realized G/L
                 </CardTitle>
               </CardHeader>
@@ -791,7 +792,7 @@ export function DashboardView({
             <Card variant="none" effect="glass" showRipple={false}>
               <CardHeader className="pb-1 pt-3 px-4">
                 <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <BarChart3 className="w-5 h-5 text-muted-foreground" />
+                  <Icon icon={BarChart3} size="md" className="text-muted-foreground" />
                   Realized G/L
                 </CardTitle>
               </CardHeader>
@@ -820,7 +821,7 @@ export function DashboardView({
         <Card variant="muted" effect="glass" className="border-amber-500/30">
           <CardHeader className="pb-1 pt-3 px-4">
             <CardTitle className="text-sm font-semibold flex items-center gap-2 text-amber-600 dark:text-amber-400">
-              <AlertTriangle className="w-5 h-5" />
+              <Icon icon={AlertTriangle} size="md" />
               Special Positions
             </CardTitle>
           </CardHeader>
@@ -872,7 +873,7 @@ export function DashboardView({
             className="p-2 rounded-full hover:bg-muted transition-colors"
             aria-label="Manage Portfolio"
           >
-            <Settings className="w-5 h-5 text-muted-foreground" />
+            <Icon icon={Settings} size="md" className="text-muted-foreground" />
           </button>
         </div>
 
@@ -948,7 +949,11 @@ export function DashboardView({
                           </p>
                         )}
                       </div>
-                      <ChevronRight className="w-5 h-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                      <Icon
+                        icon={ChevronRight}
+                        size="md"
+                        className="text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+                      />
                     </div>
                   </button>
                 );
@@ -982,7 +987,7 @@ export function DashboardView({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                <Link2 className="w-6 h-6 text-primary" />
+                <Icon icon={Link2} size="lg" className="text-primary" />
               </div>
               <div>
                 <h3 className="font-medium text-sm">Connect with Plaid</h3>

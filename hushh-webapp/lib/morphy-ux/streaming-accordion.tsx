@@ -27,9 +27,11 @@
 import { useRef, useEffect, useState, useCallback } from "react";
 import * as AccordionPrimitive from "@radix-ui/react-accordion";
 import { ChevronDownIcon, Sparkles, Loader2, Database, CheckCircle2 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 import { cn } from "./cn";
 import { StreamingCursor } from "./streaming-cursor";
+import { Icon } from "@/lib/morphy-ux/ui/icon";
 import {
   createParserContext,
   formatJsonChunk,
@@ -375,16 +377,29 @@ export function StreamingAccordion({
   // ============================================================================
   // Render
   // ============================================================================
-  // Determine icon component - handle both string literals and React components
-  const IconComponent = 
-    typeof icon === 'string' ? (
-      icon === "brain" ? (isComplete ? CheckCircle2 : Loader2) : 
-      icon === "sparkles" ? Sparkles : 
-      icon === "database" ? (isComplete ? CheckCircle2 : Database) :
-      icon === "spinner" ? (isComplete ? CheckCircle2 : Loader2) : 
-      icon === "check" ? CheckCircle2 :
-      null
-    ) : icon as any;
+  // Determine icon - handle both string literals and custom React nodes.
+  const lucideIcon: LucideIcon | null =
+    typeof icon === "string"
+      ? icon === "brain"
+        ? isComplete
+          ? CheckCircle2
+          : Loader2
+        : icon === "sparkles"
+          ? Sparkles
+          : icon === "database"
+            ? isComplete
+              ? CheckCircle2
+              : Database
+            : icon === "spinner"
+              ? isComplete
+                ? CheckCircle2
+                : Loader2
+              : icon === "check"
+                ? CheckCircle2
+                : null
+      : null;
+
+  const customIconNode = typeof icon === "string" ? null : icon;
 
   const isEmpty = !displayText || displayText.length === 0;
 
@@ -407,21 +422,29 @@ export function StreamingAccordion({
             )}
           >
             <div className="flex items-center gap-2">
-              {IconComponent && (
-                <IconComponent
+              {lucideIcon ? (
+                <Icon
+                  icon={lucideIcon}
+                  size="sm"
                   className={cn(
-                    "w-4 h-4",
-                    isStreaming && typeof icon === 'string' && (icon === "spinner" || icon === "brain") ? "animate-spin" : "",
-                    isStreaming && typeof icon === 'string' && "text-primary",
+                    isStreaming && typeof icon === "string" && (icon === "spinner" || icon === "brain")
+                      ? "animate-spin"
+                      : "",
+                    isStreaming && typeof icon === "string" ? "text-primary" : "",
                     iconClassName
                   )}
                 />
-
+              ) : (
+                customIconNode
               )}
 
               <span>{title}</span>
             </div>
-            <ChevronDownIcon className="chevron text-muted-foreground size-4 shrink-0 transition-transform duration-200" />
+            <Icon
+              icon={ChevronDownIcon}
+              size="sm"
+              className="chevron text-muted-foreground shrink-0 transition-transform duration-200"
+            />
           </AccordionPrimitive.Trigger>
         </AccordionPrimitive.Header>
 

@@ -4,10 +4,7 @@ import { useEffect, useMemo, useState, useRef } from "react";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { useVault } from "@/lib/vault/vault-context";
 import { ApiService } from "@/lib/services/api-service";
-import {
-  KaiIntroService,
-  type KaiIntroProfile,
-} from "@/lib/services/kai-intro-service";
+import { KaiProfileService, type KaiProfileV2 } from "@/lib/services/kai-profile-service";
 import { useKaiSession } from "@/lib/stores/kai-session-store";
 import { consumeCanonicalKaiStream } from "@/lib/streaming/kai-stream-client";
 import type { KaiStreamEnvelope } from "@/lib/streaming/kai-stream-types";
@@ -20,6 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
+import { Icon } from "@/lib/morphy-ux/ui";
 import { 
   Radar, RadarChart, PolarGrid, PolarAngleAxis, 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, 
@@ -141,7 +139,7 @@ export default function PortfolioHealthPage() {
   const [progressPct, setProgressPct] = useState<number>(5);
   const [statusMessage, setStatusMessage] = useState("Preparing portfolio optimization...");
   const abortControllerRef = useRef<AbortController | null>(null);
-  const [introProfile, setIntroProfile] = useState<KaiIntroProfile | null>(null);
+  const [kaiProfile, setKaiProfile] = useState<KaiProfileV2 | null>(null);
 
   // New streaming states for granular control
   const [thoughts, setThoughts] = useState<string[]>([]);
@@ -171,22 +169,22 @@ export default function PortfolioHealthPage() {
 
     async function loadProfile() {
       if (!user?.uid || !vaultKey || !vaultOwnerToken) {
-        setIntroProfile(null);
+        setKaiProfile(null);
         return;
       }
 
       try {
-        const profile = await KaiIntroService.getProfile({
+        const profile = await KaiProfileService.getProfile({
           userId: user.uid,
           vaultKey,
           vaultOwnerToken,
         });
         if (!cancelled) {
-          setIntroProfile(profile);
+          setKaiProfile(profile);
         }
       } catch {
         if (!cancelled) {
-          setIntroProfile(null);
+          setKaiProfile(null);
         }
       }
     }
@@ -288,8 +286,14 @@ export default function PortfolioHealthPage() {
         abortControllerRef.current = new AbortController();
 
         const userPreferences = {
-          investment_horizon: introProfile?.investment_horizon ?? null,
-          investment_style: introProfile?.investment_style ?? null,
+          risk_profile: kaiProfile?.preferences.risk_profile ?? null,
+          risk_score: kaiProfile?.preferences.risk_score ?? null,
+          investment_horizon: kaiProfile?.preferences.investment_horizon ?? null,
+          investment_horizon_anchor_at:
+            kaiProfile?.preferences.investment_horizon_anchor_at ?? null,
+          drawdown_response: kaiProfile?.preferences.drawdown_response ?? null,
+          volatility_preference:
+            kaiProfile?.preferences.volatility_preference ?? null,
           holdings_count: contextStats.holdingsCount,
           losers_count: contextStats.losersCount,
           top3_concentration_pct: Number(contextStats.top3WeightPct.toFixed(2)),
@@ -449,7 +453,7 @@ export default function PortfolioHealthPage() {
     user,
     vaultOwnerToken,
     setBusyOperation,
-    introProfile,
+    kaiProfile,
     contextStats.holdingsCount,
     contextStats.losersCount,
     contextStats.top3WeightPct,
@@ -518,7 +522,7 @@ export default function PortfolioHealthPage() {
     <div className="w-full mx-auto space-y-4 px-4 py-4 sm:px-6 sm:py-6 md:max-w-5xl">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <Activity className="w-5 h-5 text-emerald-500" />
+          <Icon icon={Activity} size="md" className="text-emerald-500" />
           <div>
             <h1 className="text-xl font-semibold">Portfolio Optimization</h1>
           </div>
@@ -532,11 +536,11 @@ export default function PortfolioHealthPage() {
             <Badge variant="secondary">{contextStats.losersCount} flagged losers</Badge>
             <Badge variant="secondary">Top 3 concentration {contextStats.top3WeightPct.toFixed(1)}%</Badge>
             <Badge variant="secondary">{contextStats.sectorCount || 0} sectors</Badge>
-            {introProfile?.investment_horizon && (
-              <Badge variant="outline">Horizon: {introProfile.investment_horizon}</Badge>
+            {kaiProfile?.preferences.risk_profile && (
+              <Badge variant="outline">Risk: {kaiProfile.preferences.risk_profile}</Badge>
             )}
-            {introProfile?.investment_style && (
-              <Badge variant="outline">Style: {introProfile.investment_style}</Badge>
+            {kaiProfile?.preferences.investment_horizon && (
+              <Badge variant="outline">Horizon: {kaiProfile.preferences.investment_horizon}</Badge>
             )}
           </div>
         </CardContent>
@@ -630,7 +634,7 @@ export default function PortfolioHealthPage() {
             <CardHeader className="border-b border-border/5 bg-muted/5 px-6 py-4">
               <div className="flex items-center gap-2.5">
                 <div className="p-1.5 rounded-lg bg-primary/10">
-                  <LayoutDashboard className="w-4 h-4 text-primary" />
+                  <Icon icon={LayoutDashboard} size="sm" className="text-primary" />
                 </div>
                 <CardTitle className="text-sm font-bold uppercase tracking-widest text-foreground">
                   Portfolio Intelligence & Health
@@ -763,7 +767,7 @@ export default function PortfolioHealthPage() {
                   {/* Strategic Insights Module */}
                   <div className="flex-1 flex flex-col justify-end pt-6 border-t border-border/10">
                     <h4 className="flex items-center gap-2 text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-4">
-                      <ListChecks className="w-4 h-4 text-primary" />
+                      <Icon icon={ListChecks} size="sm" className="text-primary" />
                       Key Insights
                     </h4>
                     
@@ -796,7 +800,7 @@ export default function PortfolioHealthPage() {
                   ].map((stat, i) => (
                     <div key={i} className="flex items-center gap-3 md:gap-4 px-4 py-4 md:px-6 md:py-5 rounded-3xl bg-muted/30 border border-border/40 shadow-sm">
                       <div className="p-3 rounded-2xl bg-primary/10">
-                        <stat.icon className="w-5 h-5 text-primary" />
+                        <Icon icon={stat.icon} size="md" className="text-primary" />
                       </div>
                       <div className="flex flex-col gap-1">
                         <span className="text-[10px] text-muted-foreground font-black uppercase tracking-widest">{stat.label}</span>
@@ -813,7 +817,7 @@ export default function PortfolioHealthPage() {
             <Card variant="none" effect="glass" showRipple={false} className="border-white/5">
               <CardHeader className="pb-0">
                 <CardTitle className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                  <TrendingUp className="w-3 h-3 text-primary" />
+                  <Icon icon={TrendingUp} size={12} className="text-primary" />
                   Sector Concentration Shift
                 </CardTitle>
               </CardHeader>
@@ -881,11 +885,11 @@ export default function PortfolioHealthPage() {
           {(result.portfolio_level_takeaways?.length || 0) > 0 && (
             <div className="bg-muted/10 border border-primary/20 rounded-3xl p-8 backdrop-blur-xl relative overflow-hidden shadow-sm">
                <div className="absolute top-0 right-0 p-4 opacity-5">
-                 <ShieldCheck className="w-32 h-32 text-foreground" />
+                 <Icon icon={ShieldCheck} size={128} className="text-foreground" />
                </div>
                <div className="relative z-10">
                 <h3 className="text-xs font-black uppercase tracking-[0.2em] text-primary mb-6 flex items-center gap-2">
-                  <Zap className="w-4 h-4" />
+                  <Icon icon={Zap} size="sm" />
                   Executive Strategic Summary
                 </h3>
                 <ul className="grid gap-4 md:grid-cols-2">
@@ -904,7 +908,7 @@ export default function PortfolioHealthPage() {
           <Card variant="none" effect="glass" showRipple={false} className="border-primary/20 bg-muted/10">
             <CardHeader>
               <div className="flex items-center gap-2">
-                <Zap className="w-5 h-5 text-primary animate-pulse" />
+                <Icon icon={Zap} size="md" className="text-primary animate-pulse" />
                 <CardTitle className="text-sm font-black uppercase tracking-widest">Simulated Alignment Outcome</CardTitle>
               </div>
             </CardHeader>
@@ -915,7 +919,7 @@ export default function PortfolioHealthPage() {
               <div className="p-5 rounded-3xl bg-background/80 border border-border/10 space-y-4">
                 <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-muted-foreground">
                   <span>Current Fragility</span>
-                  <ArrowRight className="w-3 h-3" />
+                  <Icon icon={ArrowRight} size={12} />
                   <span>Optimized Resilience</span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
@@ -935,7 +939,7 @@ export default function PortfolioHealthPage() {
             <Card variant="none" effect="glass" showRipple={false} className="border-white/10 overflow-hidden">
               <CardHeader className="pb-0">
                 <div className="flex items-center gap-2">
-                  <Target className="w-5 h-5 text-primary" />
+                  <Icon icon={Target} size="md" className="text-primary" />
                   <CardTitle>Optimization Trade Strategy</CardTitle>
                 </div>
               </CardHeader>
@@ -1033,7 +1037,7 @@ export default function PortfolioHealthPage() {
             <Card variant="none" effect="glass" showRipple={false} className="border-white/5 overflow-hidden">
               <CardHeader className="pb-4">
                 <CardTitle className="text-xs font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                  <LayoutDashboard className="w-4 h-4 text-primary" />
+                  <Icon icon={LayoutDashboard} size="sm" className="text-primary" />
                   Proposed Rebalance Path Scenarios
                 </CardTitle>
               </CardHeader>
@@ -1090,13 +1094,17 @@ export default function PortfolioHealthPage() {
                                     <span className="text-[8px] font-black text-muted-foreground uppercase tracking-widest mb-0.5">Transition</span>
                                     <div className="flex items-center gap-2">
                                       <span className="text-xs font-bold text-muted-foreground/60">{a.current_weight_pct.toFixed(1)}%</span>
-                                      <ArrowRight className="w-3 h-3 text-primary group-hover:translate-x-1 transition-transform" />
+                                      <Icon
+                                        icon={ArrowRight}
+                                        size={12}
+                                        className="text-primary group-hover:translate-x-1 transition-transform"
+                                      />
                                       <span className="text-sm font-black text-foreground">{(a.target_weight_pct ?? a.current_weight_pct).toFixed(1)}%</span>
                                     </div>
                                   </div>
                                 )}
                                 <Button size="sm" variant="muted" className="h-8 w-8 p-0 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <Info className="w-3.5 h-3.5" />
+                                  <Icon icon={Info} size="xs" />
                                 </Button>
                               </div>
                             </div>

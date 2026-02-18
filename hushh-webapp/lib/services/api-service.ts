@@ -177,6 +177,69 @@ export class ApiService {
     return getDirectBackendUrl();
   }
 
+  // ==================== App Config ====================
+
+  /**
+   * Runtime app-review-mode config served from backend env (not frontend build env).
+   *
+   * Web: hits Next.js proxy route `/api/app-config/review-mode`
+   * Native: hits backend directly (API_BASE points at backend)
+   */
+  static async getAppReviewModeConfig(): Promise<{ enabled: boolean }> {
+    try {
+      const response = await apiFetch("/api/app-config/review-mode", {
+        method: "GET",
+        cache: "no-store",
+      });
+
+      if (!response.ok) return { enabled: false };
+
+      const data = (await response.json().catch(() => ({}))) as {
+        enabled?: unknown;
+      };
+
+      return { enabled: data.enabled === true };
+    } catch (error) {
+      console.warn("[ApiService] getAppReviewModeConfig failed:", error);
+      return { enabled: false };
+    }
+  }
+
+  /**
+   * Request a backend-minted Firebase custom token for reviewer login.
+   * Only available when app-review mode is enabled server-side.
+   */
+  static async createAppReviewModeSession(): Promise<{ token: string }> {
+    const response = await apiFetch("/api/app-config/review-mode/session", {
+      method: "POST",
+      cache: "no-store",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: "{}",
+    });
+
+    const payload = (await response.json().catch(() => ({}))) as Record<
+      string,
+      unknown
+    >;
+
+    if (!response.ok) {
+      const msg =
+        (typeof payload.error === "string" && payload.error) ||
+        (typeof payload.detail === "string" && payload.detail) ||
+        "Reviewer login unavailable";
+      throw new Error(msg);
+    }
+
+    const token = payload.token;
+    if (typeof token !== "string" || token.length === 0) {
+      throw new Error("Invalid reviewer session token");
+    }
+
+    return { token };
+  }
+
   // ==================== Auth ====================
 
   /**

@@ -16,7 +16,7 @@
 
 "use client";
 
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import {
   Pencil,
   Trash2,
@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { Icon } from "@/lib/morphy-ux/ui";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -50,6 +51,16 @@ import { WorldModelService } from "@/lib/services/world-model-service";
 import { CacheService, CACHE_KEYS, CACHE_TTL } from "@/lib/services/cache-service";
 import { useKaiSession } from "@/lib/stores/kai-session-store";
 import { Button as MorphyButton } from "@/lib/morphy-ux/button";
+import { useAuth } from "@/hooks/use-auth";
+import { useVault } from "@/lib/vault/vault-context";
+import { VaultService } from "@/lib/services/vault-service";
+import { VaultFlow } from "@/components/vault/vault-flow";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { 
   Card as MorphyCard, 
   CardContent, 
@@ -226,6 +237,11 @@ export function PortfolioReviewView({
   onBack: _onBack,
   className,
 }: PortfolioReviewViewProps) {
+  const { user } = useAuth();
+  const { vaultKey: ctxVaultKey, vaultOwnerToken: ctxVaultOwnerToken } = useVault();
+  const effectiveVaultKey = ctxVaultKey ?? vaultKey;
+  const effectiveVaultOwnerToken = ctxVaultOwnerToken ?? vaultOwnerToken;
+
   // Editable state
   const [accountInfo, setAccountInfo] = useState<AccountInfo>(
     initialData.account_info || {}
@@ -251,6 +267,10 @@ export function PortfolioReviewView({
 
   const [isSaving, setIsSaving] = useState(false);
   const setBusyOperation = useKaiSession((s) => s.setBusyOperation);
+  const [vaultDialogOpen, setVaultDialogOpen] = useState(false);
+  const [pendingVaultSave, setPendingVaultSave] = useState(false);
+  const [hasVault, setHasVault] = useState<boolean | null>(null);
+  const createdVaultCopyRef = useRef(false);
   const [editingHoldingIndex, setEditingHoldingIndex] = useState<number | null>(
     null
   );
@@ -274,6 +294,36 @@ export function PortfolioReviewView({
       setBusyOperation("portfolio_review_active", false);
     };
   }, [setBusyOperation]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadVaultState() {
+      if (!user) return;
+      try {
+        const next = await VaultService.checkVault(userId);
+        if (!cancelled) setHasVault(next);
+      } catch (error) {
+        console.warn("[PortfolioReviewView] Failed to check vault existence:", error);
+        if (!cancelled) setHasVault(null);
+      }
+    }
+
+    void loadVaultState();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user, userId]);
+
+  useEffect(() => {
+    if (!pendingVaultSave) return;
+    if (!effectiveVaultKey || !effectiveVaultOwnerToken) return;
+
+    setPendingVaultSave(false);
+    void handleSave();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingVaultSave, effectiveVaultKey, effectiveVaultOwnerToken]);
 
   const activeHoldings = useMemo(
     () => holdings.filter((holding) => !holding.pending_delete),
@@ -349,8 +399,32 @@ export function PortfolioReviewView({
   }, [holdings.length]);
 
   const handleSave = async () => {
-    if (!userId || !vaultKey) {
-      toast.error("Please unlock your vault first");
+    if (!userId) return;
+
+    // If vault existence isn't resolved yet, resolve it on-demand so copy/flow is correct.
+    let resolvedHasVault = hasVault;
+    if (resolvedHasVault === null) {
+      try {
+        resolvedHasVault = await VaultService.checkVault(userId);
+        setHasVault(resolvedHasVault);
+      } catch (error) {
+        console.warn(
+          "[PortfolioReviewView] Failed to resolve vault existence on save:",
+          error
+        );
+        resolvedHasVault = null;
+      }
+    }
+
+    if (!effectiveVaultKey || !effectiveVaultOwnerToken) {
+      createdVaultCopyRef.current = resolvedHasVault === false;
+      setPendingVaultSave(true);
+      setVaultDialogOpen(true);
+      toast.info(
+        resolvedHasVault === false
+          ? "Create your vault to save your portfolio."
+          : "Unlock your vault to save your portfolio."
+      );
       return;
     }
 
@@ -414,11 +488,11 @@ export function PortfolioReviewView({
       // 3. Store canonical financial domain with full-blob merge semantics.
       const financialResult = await WorldModelService.storeMergedDomain({
         userId,
-        vaultKey,
+        vaultKey: effectiveVaultKey,
         domain: "financial",
         domainData: portfolioToSave as unknown as Record<string, unknown>,
         summary: financialSummary,
-        vaultOwnerToken,
+        vaultOwnerToken: effectiveVaultOwnerToken,
       });
 
       if (!financialResult.success) {
@@ -506,11 +580,11 @@ export function PortfolioReviewView({
 
       const docsResult = await WorldModelService.storeMergedDomain({
         userId,
-        vaultKey,
+        vaultKey: effectiveVaultKey,
         domain: documentsDomain,
         domainData: nextDocsDomain as unknown as Record<string, unknown>,
         summary: docsSummary,
-        vaultOwnerToken,
+        vaultOwnerToken: effectiveVaultOwnerToken,
       });
 
       if (!docsResult.success) {
@@ -530,7 +604,11 @@ export function PortfolioReviewView({
 
       // 6. Verify the save by reading back
       try {
-        const readBack = await WorldModelService.getDomainData(userId, "financial", vaultOwnerToken);
+        const readBack = await WorldModelService.getDomainData(
+          userId,
+          "financial",
+          effectiveVaultOwnerToken
+        );
         if (!readBack) {
           console.warn("[PortfolioReview] Read-back verification failed: no data returned");
         }
@@ -538,13 +616,18 @@ export function PortfolioReviewView({
         console.warn("[PortfolioReview] Read-back verification error:", verifyErr);
       }
 
-      toast.success("Portfolio saved to vault!");
+      if (createdVaultCopyRef.current) {
+        toast.success("Vault created. Portfolio saved securely.");
+      } else {
+        toast.success("Portfolio saved securely.");
+      }
       onSaveComplete(portfolioToSave);
     } catch (error) {
       console.error("Save error:", error);
       toast.error("Failed to save portfolio");
     } finally {
       setIsSaving(false);
+      createdVaultCopyRef.current = false;
     }
   };
 
@@ -560,12 +643,14 @@ export function PortfolioReviewView({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="px-1">
-            <h1 className="text-xl font-bold tracking-tight">Review Portfolio</h1>
-            <p className="text-sm text-muted-foreground whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px] sm:max-w-none">
-              Verify before saving to vault
-            </p>
-          </div>
-        </div>
+	            <h1 className="text-xl font-bold tracking-tight">Review Portfolio</h1>
+	            <p className="text-sm text-muted-foreground whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px] sm:max-w-none">
+	              {hasVault === false
+	                ? "Review your portfolio, then create your vault to save it."
+	                : "Verify before saving to vault"}
+	            </p>
+	          </div>
+	        </div>
         <MorphyButton 
           variant="muted" 
           size="default" 
@@ -611,9 +696,9 @@ export function PortfolioReviewView({
                       )}
                     >
                       {totalUnrealizedGainLoss >= 0 ? (
-                        <TrendingUp className="h-3 w-3 mr-1.5" />
+                        <Icon icon={TrendingUp} size={12} className="mr-1.5" />
                       ) : (
-                        <TrendingDown className="h-3 w-3 mr-1.5" />
+                        <Icon icon={TrendingDown} size={12} className="mr-1.5" />
                       )}
                       {formatCurrency(totalUnrealizedGainLoss)} unrealized
                     </Badge>
@@ -661,7 +746,7 @@ export function PortfolioReviewView({
 
 
             <div className="flex items-center gap-2">
-              <Building2 className="h-4 w-4" />
+              <Icon icon={Building2} size="sm" />
               Account Information
             </div>
           </AccordionTrigger>
@@ -734,7 +819,7 @@ export function PortfolioReviewView({
 
 
               <div className="flex items-center gap-2">
-                <PieChart className="h-4 w-4" />
+                <Icon icon={PieChart} size="sm" />
                 Asset Allocation
               </div>
             </AccordionTrigger>
@@ -792,7 +877,7 @@ export function PortfolioReviewView({
 
 
               <div className="flex items-center gap-2">
-                <Wallet className="h-4 w-4" />
+                <Icon icon={Wallet} size="sm" />
                 Income Summary
               </div>
             </AccordionTrigger>
@@ -858,7 +943,11 @@ export function PortfolioReviewView({
 
           {holdings.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
-              <AlertCircle className="h-8 w-8 mx-auto mb-2 opacity-50" />
+              <Icon
+                icon={AlertCircle}
+                size={32}
+                className="mx-auto mb-2 opacity-50"
+              />
               <p>No holdings found</p>
               <p className="text-sm">Click "Add" to add holdings manually</p>
             </div>
@@ -1062,25 +1151,85 @@ export function PortfolioReviewView({
 
   {/* Save Button - Refined Floating Action */}
   {/* Save Button - Refined Floating Action with Safe Area Support */}
-  <div className="fixed left-0 right-0 bottom-[calc(96px+env(safe-area-inset-bottom))] px-10 sm:px-16 pb-2 z-[145] pointer-events-none">
-    <div className="max-w-xs mx-auto pointer-events-auto">
-      <MorphyButton
-        variant="morphy"
-        effect="fill"
-        size="default"
-        className="w-full font-black shadow-xl border-none"
-        onClick={handleSave}
-        disabled={isSaving || activeHoldings.length === 0}
-        icon={{ 
-          icon: isSaving ? SpinningLoader : Save,
-          gradient: false 
-        }}
-        loading={isSaving}
-      >
-        {isSaving ? "SAVING..." : "SAVE TO VAULT"}
-      </MorphyButton>
-    </div>
-  </div>
-</div>
-  );
+	  <div className="fixed left-0 right-0 bottom-[calc(var(--app-bottom-fixed-ui)+env(safe-area-inset-bottom))] px-10 sm:px-16 pb-2 z-[145] pointer-events-none">
+	    <div className="max-w-xs mx-auto pointer-events-auto">
+	      <MorphyButton
+	        variant="morphy"
+	        effect="fill"
+	        size="default"
+	        className="w-full font-black shadow-xl border-none"
+	        onClick={() => {
+	          createdVaultCopyRef.current = hasVault === false;
+	          void handleSave();
+	        }}
+	        disabled={isSaving || activeHoldings.length === 0}
+	        icon={{ 
+	          icon: isSaving ? SpinningLoader : Save,
+	          gradient: false 
+	        }}
+	        loading={isSaving}
+	      >
+	        {isSaving
+	          ? "Saving..."
+	          : hasVault === false
+	          ? "Create vault"
+	          : "Save to vault"}
+	      </MorphyButton>
+	    </div>
+	  </div>
+
+      {/* Vault Dialog (create/unlock) */}
+      {user && (
+        <Dialog
+          open={vaultDialogOpen}
+          onOpenChange={(open) => {
+            if (isSaving) return;
+            setVaultDialogOpen(open);
+            if (!open) setPendingVaultSave(false);
+          }}
+        >
+          <DialogContent className="sm:max-w-md p-0 border-none bg-transparent shadow-none">
+            <div className="bg-background/95 backdrop-blur-xl border rounded-xl overflow-hidden shadow-2xl">
+              <div className="p-4 border-b">
+                <DialogTitle className="font-semibold text-center text-base">
+                  {hasVault === false
+                    ? "Create vault to save portfolio"
+                    : "Unlock vault to save portfolio"}
+                </DialogTitle>
+                <DialogDescription className="sr-only">
+                  Create or unlock your vault to securely save this portfolio to your world model.
+                </DialogDescription>
+              </div>
+              <div className="p-4">
+                <VaultFlow
+                  user={user}
+                  onSuccess={() => {
+                    setVaultDialogOpen(false);
+                    setPendingVaultSave(true);
+                  }}
+                />
+
+                <div className="pt-4">
+                  <MorphyButton
+                    variant="none"
+                    effect="fade"
+                    size="sm"
+                    fullWidth
+                    showRipple={false}
+                    onClick={() => {
+                      setVaultDialogOpen(false);
+                      setPendingVaultSave(false);
+                    }}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    Skip for now
+                  </MorphyButton>
+                </div>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+	</div>
+	  );
 }

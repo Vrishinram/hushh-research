@@ -44,8 +44,15 @@ import {
 import { WorldModelService, DomainSummary } from "@/lib/services/world-model-service";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { VaultFlow } from "@/components/vault/vault-flow";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { AccountService } from "@/lib/services/account-service";
+import { VaultService } from "@/lib/services/vault-service";
+import { resolveDeleteAccountAuth } from "@/lib/flows/delete-account";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -57,9 +64,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import type { LucideIcon } from "lucide-react";
+import { Icon } from "@/lib/morphy-ux/ui";
 
 // Icon mapping for domains
-const DOMAIN_ICONS: Record<string, React.ElementType> = {
+const DOMAIN_ICONS: Record<string, LucideIcon> = {
   financial: Wallet,
   subscriptions: CreditCard,
   health: Heart,
@@ -85,10 +94,33 @@ export default function ProfilePage() {
   const [showVaultUnlock, setShowVaultUnlock] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [hasVault, setHasVault] = useState<boolean | null>(null);
   const [domains, setDomains] = useState<DomainSummary[]>([]);
   const [totalAttributes, setTotalAttributes] = useState(0);
   const [loadingDomains, setLoadingDomains] = useState(true);
   const [initialized, setInitialized] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadVaultState() {
+      if (authLoading) return;
+      if (!user?.uid) return;
+      try {
+        const next = await VaultService.checkVault(user.uid);
+        if (!cancelled) setHasVault(next);
+      } catch (error) {
+        console.warn("[ProfilePage] Failed to check vault existence:", error);
+        if (!cancelled) setHasVault(null);
+      }
+    }
+
+    void loadVaultState();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, user?.uid]);
 
   // Load world model data - auth is handled by VaultLockGuard in layout
   useEffect(() => {
@@ -154,17 +186,25 @@ export default function ProfilePage() {
 
   const handleDeleteAccount = async () => {
     if (!user) return;
-    
-    // Ensure we have the vault owner token
-    if (!vaultOwnerToken) {
-      toast.error("Please unlock your vault first to delete your account.");
-      setShowVaultUnlock(true);
-      return;
-    }
-    
+
     setIsDeleting(true);
     try {
-      await AccountService.deleteAccount(vaultOwnerToken);
+      const resolution = await resolveDeleteAccountAuth({
+        userId: user.uid,
+        existingVaultOwnerToken: vaultOwnerToken ?? null,
+      });
+
+      if (resolution.kind === "needs_unlock") {
+        toast.error("Please unlock your vault first to delete your account.");
+        setShowDeleteConfirm(false);
+        setShowVaultUnlock(true);
+        return;
+      }
+
+      // Track vault existence for UI copy paths.
+      setHasVault(resolution.hasVault);
+
+      await AccountService.deleteAccount(resolution.token);
       toast.success("Account deleted successfully. Redirecting...", {
         duration: 3000,
       });
@@ -180,7 +220,26 @@ export default function ProfilePage() {
     }
   };
 
-  const handleDeleteClick = () => {
+  const handleDeleteClick = async () => {
+    if (!user) return;
+
+    let nextHasVault = hasVault;
+    if (nextHasVault === null) {
+      try {
+        nextHasVault = await VaultService.checkVault(user.uid);
+        setHasVault(nextHasVault);
+      } catch (error) {
+        console.warn("[ProfilePage] Failed to check vault existence:", error);
+        nextHasVault = true;
+      }
+    }
+
+    // If no vault exists yet, allow direct delete without vault unlock.
+    if (!nextHasVault) {
+      setShowDeleteConfirm(true);
+      return;
+    }
+
     if (isVaultUnlocked) {
       setShowDeleteConfirm(true);
     } else {
@@ -215,6 +274,11 @@ export default function ProfilePage() {
     return null;
   }
 
+  const deleteButtonLabel =
+    hasVault === true && !isVaultUnlocked
+      ? "Unlock to Delete Account"
+      : "Delete Account";
+
   return (
     <div className="w-full mx-auto px-4 sm:px-6 py-6 md:py-8 md:max-w-2xl space-y-6">
       {/* Profile Header */}
@@ -230,7 +294,7 @@ export default function ProfilePage() {
                 .slice(0, 2)
                 .toUpperCase()
             ) : (
-              <User className="h-12 w-12" />
+              <Icon icon={User} size={48} />
             )}
           </AvatarFallback>
         </Avatar>
@@ -246,7 +310,7 @@ export default function ProfilePage() {
           <CardTitle className="text-lg flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
-                <Folder className="h-5 w-5 text-primary" />
+                <Icon icon={Folder} size="md" className="text-primary" />
               </div>
               <span>Your Data Profile</span>
             </div>
@@ -260,7 +324,11 @@ export default function ProfilePage() {
         <CardContent className="pt-4">
           {loadingDomains ? (
             <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <Icon
+                icon={Loader2}
+                size={32}
+                className="animate-spin text-primary"
+              />
             </div>
           ) : domains.length > 0 ? (
             <div className="grid grid-cols-2 gap-3">
@@ -277,10 +345,7 @@ export default function ProfilePage() {
                         className="p-2 rounded-lg"
                         style={{ backgroundColor: `${domain.color}20` }}
                       >
-                        <IconComponent
-                          className="h-5 w-5"
-                          style={{ color: domain.color }}
-                        />
+                        <Icon icon={IconComponent} size="md" style={{ color: domain.color }} />
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-sm truncate group-hover:text-primary transition-colors">
@@ -290,7 +355,11 @@ export default function ProfilePage() {
                           {domain.attributeCount} attribute{domain.attributeCount !== 1 ? "s" : ""}
                         </p>
                       </div>
-                      <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                      <Icon
+                        icon={ChevronRight}
+                        size="sm"
+                        className="text-muted-foreground group-hover:text-primary transition-colors"
+                      />
                     </div>
                   </button>
                 );
@@ -299,7 +368,7 @@ export default function ProfilePage() {
           ) : (
             <div className="text-center py-6">
               <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-primary/10 flex items-center justify-center">
-                <MessageSquare className="h-6 w-6 text-primary" />
+                <Icon icon={MessageSquare} size="lg" className="text-primary" />
               </div>
               <p className="text-sm text-muted-foreground mb-3">
                 No data yet. Chat with Kai to build your profile.
@@ -321,7 +390,7 @@ export default function ProfilePage() {
         <CardHeader className="pb-2">
           <CardTitle className="text-lg flex items-center gap-3">
             <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
-              <Shield className="h-5 w-5 text-primary" />
+              <Icon icon={Shield} size="md" className="text-primary" />
             </div>
             <span>Account</span>
           </CardTitle>
@@ -330,7 +399,7 @@ export default function ProfilePage() {
           {/* Email */}
           <div className="flex items-center gap-4">
             <div className="h-10 w-10 rounded-xl bg-muted flex items-center justify-center">
-              <Mail className="h-5 w-5 text-muted-foreground" />
+              <Icon icon={Mail} size="md" className="text-muted-foreground" />
             </div>
             <div className="flex-1">
               <p className="text-sm font-medium">Email</p>
@@ -367,7 +436,7 @@ export default function ProfilePage() {
                   <path d="M17.05 20.28c-.98.95-2.05.88-3.08.38-1.07-.52-2.07-.51-3.2 0-1.01.43-2.1.49-2.98-.38C5.22 17.63 2.7 12 5.45 8.04c1.47-2.09 3.8-2.31 5.33-1.18 1.1.75 3.3.73 4.45-.04 2.1-1.31 3.55-.95 4.5 1.14-.15.08.2.14 0 .2-2.63 1.34-3.35 6.03.95 7.84-.46 1.4-1.25 2.89-2.26 4.4l-.07.08-.05-.2zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.17 2.22-1.8 4.19-3.74 4.25z" />
                 </svg>
               ) : (
-                <Shield className="h-5 w-5 text-muted-foreground" />
+                <Icon icon={Shield} size="md" className="text-muted-foreground" />
               )}
             </div>
             <div className="flex-1">
@@ -392,7 +461,7 @@ export default function ProfilePage() {
       <Card variant="none" className="border-destructive/20 bg-destructive/5 dark:bg-destructive/10">
         <CardHeader className="pb-2">
           <CardTitle className="text-lg flex items-center gap-3 text-destructive">
-            <AlertTriangle className="h-5 w-5" />
+            <Icon icon={AlertTriangle} size="md" />
             <span>Danger Zone</span>
           </CardTitle>
         </CardHeader>
@@ -410,13 +479,17 @@ export default function ProfilePage() {
           >
             {isDeleting ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Icon
+                  icon={Loader2}
+                  size="sm"
+                  className="mr-2 animate-spin"
+                />
                 Deleting...
               </>
             ) : (
               <>
-                <Trash2 className="mr-2 h-4 w-4" />
-                {isVaultUnlocked ? "Delete Account" : "Unlock to Delete Account"}
+                <Icon icon={Trash2} size="sm" className="mr-2" />
+                {deleteButtonLabel}
               </>
             )}
           </Button>
@@ -424,34 +497,41 @@ export default function ProfilePage() {
       </Card>
 
       {/* Unlock Dialog */}
-      <Dialog open={showVaultUnlock} onOpenChange={setShowVaultUnlock}>
-        <DialogContent className="sm:max-w-md p-0 border-none bg-transparent shadow-none">
-           {user && (
-             <div className="bg-background/95 backdrop-blur-xl border rounded-xl overflow-hidden shadow-2xl">
-               <div className="p-4 border-b">
-                 <h2 className="font-semibold text-center">Unlock Vault to Delete Account</h2>
-               </div>
-               <div className="p-4">
-                 <VaultFlow 
-                   user={user} 
-                   onSuccess={() => {
-                     setShowVaultUnlock(false);
-                     // Small delay to let closing animation finish before showing confirm
-                     setTimeout(() => setShowDeleteConfirm(true), 300);
-                   }} 
-                 />
-               </div>
-             </div>
-           )}
-        </DialogContent>
-      </Dialog>
+      {hasVault === true && (
+        <Dialog open={showVaultUnlock} onOpenChange={setShowVaultUnlock}>
+          <DialogContent className="sm:max-w-md p-0 border-none bg-transparent shadow-none">
+            {user && (
+              <div className="bg-background/95 backdrop-blur-xl border rounded-xl overflow-hidden shadow-2xl">
+                <div className="p-4 border-b">
+                  <DialogTitle className="font-semibold text-center text-base">
+                    Unlock Vault to Delete Account
+                  </DialogTitle>
+                  <DialogDescription className="sr-only">
+                    Unlock your vault to confirm deletion. This is permanent and removes all encrypted data.
+                  </DialogDescription>
+                </div>
+                <div className="p-4">
+                  <VaultFlow
+                    user={user}
+                    onSuccess={() => {
+                      setShowVaultUnlock(false);
+                      // Small delay to let closing animation finish before showing confirm
+                      setTimeout(() => setShowDeleteConfirm(true), 300);
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="text-destructive flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5" />
+              <Icon icon={AlertTriangle} size="md" />
               Delete Account?
             </AlertDialogTitle>
             <AlertDialogDescription>
@@ -483,7 +563,7 @@ export default function ProfilePage() {
         className="w-full"
         onClick={handleSignOut}
       >
-        <LogOut className="h-5 w-5 mr-2" />
+        <Icon icon={LogOut} size="md" className="mr-2" />
         Sign Out
       </Button>
 

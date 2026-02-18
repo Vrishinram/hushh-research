@@ -42,6 +42,7 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
+import { Icon } from "@/lib/morphy-ux/ui";
 
 // ============================================================================
 // Types
@@ -178,7 +179,7 @@ function SourceLink({ source }: { source: string }) {
         rel="noopener noreferrer"
         className="text-[10px] text-primary/80 hover:text-primary truncate pl-2 border-l-2 border-primary/20 flex items-center gap-1 transition-colors"
       >
-        <Link2 className="w-2.5 h-2.5 shrink-0" />
+        <Icon icon={Link2} size={10} className="shrink-0" />
         <span className="truncate">{text || url}</span>
       </a>
     );
@@ -353,7 +354,7 @@ function QuantMetricsBarChart({ metrics }: { metrics: Record<string, any> }) {
   return (
     <div className="space-y-3">
       <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-        <BarChart3 className="w-3.5 h-3.5" />
+        <Icon icon={BarChart3} size="xs" />
         Valuation & Fundamentals
       </p>
       <ChartContainer config={barChartConfig} className="w-full h-[160px]">
@@ -400,7 +401,7 @@ function PriceTargetsChart({ targets }: { targets: Record<string, number> }) {
   return (
     <div className="space-y-3">
       <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-        <TrendingUp className="w-3.5 h-3.5" />
+        <Icon icon={TrendingUp} size="xs" />
         Price Scenarios
       </p>
       <ChartContainer config={barChartConfig} className="w-full h-[160px]">
@@ -471,22 +472,22 @@ function RenaissanceBadge({ tier, score }: { tier: "ACE" | "KING" | "QUEEN" | "J
   const badgeConfig = {
     ACE: {
       color: "bg-fuchsia-100 text-fuchsia-700 border-fuchsia-200 dark:bg-fuchsia-950/30 dark:text-fuchsia-400 dark:border-fuchsia-800",
-      icon: <Crown className="w-3.5 h-3.5 fill-current" />,
+      icon: <Icon icon={Crown} size="xs" className="fill-current" />,
       label: "Renaissance Ace",
     },
     KING: {
       color: "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-800",
-      icon: <Trophy className="w-3.5 h-3.5 fill-current" />,
+      icon: <Icon icon={Trophy} size="xs" className="fill-current" />,
       label: "Renaissance King",
     },
     QUEEN: {
       color: "bg-violet-100 text-violet-700 border-violet-200 dark:bg-violet-950/30 dark:text-violet-400 dark:border-violet-800",
-      icon: <Sparkles className="w-3.5 h-3.5 fill-current" />,
+      icon: <Icon icon={Sparkles} size="xs" className="fill-current" />,
       label: "Renaissance Queen",
     },
     JACK: {
       color: "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-950/30 dark:text-blue-400 dark:border-blue-800",
-      icon: <Medal className="w-3.5 h-3.5 fill-current" />,
+      icon: <Icon icon={Medal} size="xs" className="fill-current" />,
       label: "Renaissance Jack",
     },
   };
@@ -549,9 +550,9 @@ export function DecisionCard({ result }: { result: DecisionResult }) {
       className="border-primary/20 bg-primary/5 animate-in fade-in zoom-in duration-500 rounded-3xl overflow-hidden"
     >
       <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Zap className="w-5 h-5 text-primary" />
+            <Icon icon={Zap} size="md" className="text-primary" />
             <CardTitle className="text-sm font-black uppercase tracking-widest">Final Recommendation</CardTitle>
           </div>
           <Badge
@@ -613,7 +614,7 @@ export function DecisionCard({ result }: { result: DecisionResult }) {
             {rawCard?.risk_persona_alignment && (
             <div className="p-4 bg-background/50 border border-primary/10 rounded-2xl backdrop-blur-sm">
                 <div className="flex items-center gap-2 mb-2">
-                <Shield className="w-4 h-4 text-primary" />
+                <Icon icon={Shield} size="sm" className="text-primary" />
                 <span className="text-xs font-bold text-primary uppercase tracking-wide">Risk Alignment</span>
                 </div>
                 <p className="text-sm text-muted-foreground leading-relaxed">{rawCard.risk_persona_alignment}</p>
@@ -624,11 +625,11 @@ export function DecisionCard({ result }: { result: DecisionResult }) {
             {rawCard?.fundamental_insight?.summary && (
             <div className="p-5 bg-linear-to-br from-primary/10 via-primary/5 to-transparent border border-primary/20 rounded-2xl shadow-sm relative overflow-hidden group">
                 <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                    <Zap className="w-24 h-24 rotate-12" />
+                    <Icon icon={Zap} size={96} className="rotate-12" />
                 </div>
                 <div className="relative z-10">
                     <div className="flex items-center gap-2 mb-2">
-                    <Zap className="w-4 h-4 text-primary" />
+                    <Icon icon={Zap} size="sm" className="text-primary" />
                     <span className="text-xs font-black uppercase tracking-widest text-primary">Key Takeaway</span>
                     </div>
                     <p className="text-sm font-semibold leading-relaxed text-foreground/90">{rawCard.fundamental_insight.summary}</p>
@@ -643,7 +644,7 @@ export function DecisionCard({ result }: { result: DecisionResult }) {
             {rawCard?.fundamental_insight?.business_moat && (
             <div className="p-4 bg-blue-500/5 border border-blue-500/10 rounded-2xl">
                 <div className="flex items-center gap-2 mb-2">
-                <Shield className="w-3.5 h-3.5 text-blue-500" />
+                <Icon icon={Shield} size="xs" className="text-blue-500" />
                 <span className="text-[10px] font-bold text-blue-500 uppercase tracking-widest">Moat</span>
                 </div>
                 <p className="text-xs text-muted-foreground">{rawCard.fundamental_insight.business_moat}</p>
@@ -655,7 +656,7 @@ export function DecisionCard({ result }: { result: DecisionResult }) {
             <div className="p-4 bg-card/40 border border-border/50 rounded-2xl flex flex-col justify-center">
                 <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
-                        <BarChart3 className="w-3.5 h-3.5" style={{ color: "hsl(var(--chart-3))" }} />
+                        <Icon icon={BarChart3} size="xs" style={{ color: "hsl(var(--chart-3))" }} />
                         <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "hsl(var(--chart-3))" }}>Sentiment</span>
                     </div>
                     <Badge variant="outline" className="text-[10px] font-mono bg-muted/30 border-border/40">
@@ -676,7 +677,7 @@ export function DecisionCard({ result }: { result: DecisionResult }) {
             {rawCard.fundamental_insight.bull_case && (
                 <div className="p-4 bg-emerald-500/5 border border-emerald-500/10 rounded-2xl">
                 <div className="flex items-center gap-2 mb-2">
-                    <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
+                    <Icon icon={TrendingUp} size="xs" className="text-emerald-500" />
                     <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest">Bull Case</span>
                 </div>
                 <p className="text-xs text-muted-foreground leading-relaxed">{rawCard.fundamental_insight.bull_case}</p>
@@ -685,7 +686,7 @@ export function DecisionCard({ result }: { result: DecisionResult }) {
             {rawCard.fundamental_insight.bear_case && (
                 <div className="p-4 bg-red-500/5 border border-red-500/10 rounded-2xl">
                 <div className="flex items-center gap-2 mb-2">
-                    <TrendingDown className="w-3.5 h-3.5 text-red-500" />
+                    <Icon icon={TrendingDown} size="xs" className="text-red-500" />
                     <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest">Bear Case</span>
                 </div>
                 <p className="text-xs text-muted-foreground leading-relaxed">{rawCard.fundamental_insight.bear_case}</p>
@@ -715,7 +716,7 @@ export function DecisionCard({ result }: { result: DecisionResult }) {
         {/* FINAL STATEMENT */}
         <div className="p-5 bg-card/60 rounded-2xl border border-border/60">
             <div className="flex items-center gap-2 mb-2 opacity-50">
-                <FileText className="w-3.5 h-3.5" />
+                <Icon icon={FileText} size="xs" />
                 <span className="text-[10px] font-bold uppercase tracking-widest">Verdict Rationale</span>
             </div>
             <p className="text-sm font-medium leading-relaxed">{rawCard?.debate_digest || result.final_statement}</p>
@@ -726,7 +727,7 @@ export function DecisionCard({ result }: { result: DecisionResult }) {
           <div className="p-5 bg-primary/5 border border-primary/20 rounded-2xl space-y-3">
             <div className="flex items-center justify-between gap-2">
               <p className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5" />
+                <Icon icon={Sparkles} size="xs" />
                 Chief Strategist Synthesis
               </p>
               {llmSynthesis?.fallback && (
@@ -760,7 +761,7 @@ export function DecisionCard({ result }: { result: DecisionResult }) {
             {synthesisDrivers.length > 0 && (
               <div className="p-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/5">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-400 mb-2 flex items-center gap-1.5">
-                  <TrendingUp className="w-3.5 h-3.5" />
+                  <Icon icon={TrendingUp} size="xs" />
                   Key Drivers
                 </p>
                 <ul className="space-y-2">
@@ -778,7 +779,7 @@ export function DecisionCard({ result }: { result: DecisionResult }) {
             {synthesisRisks.length > 0 && (
               <div className="p-4 rounded-2xl border border-red-500/20 bg-red-500/5">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-red-600 dark:text-red-400 mb-2 flex items-center gap-1.5">
-                  <Shield className="w-3.5 h-3.5" />
+                  <Icon icon={Shield} size="xs" />
                   Key Risks
                 </p>
                 <ul className="space-y-2">
@@ -802,7 +803,7 @@ export function DecisionCard({ result }: { result: DecisionResult }) {
             {synthesisActionPlan.length > 0 && (
               <div className="p-4 rounded-2xl border border-blue-500/20 bg-blue-500/5">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-blue-600 dark:text-blue-400 mb-2 flex items-center gap-1.5">
-                  <Target className="w-3.5 h-3.5" />
+                  <Icon icon={Target} size="xs" />
                   Action Plan
                 </p>
                 <ul className="space-y-2">
@@ -820,7 +821,7 @@ export function DecisionCard({ result }: { result: DecisionResult }) {
             {synthesisTriggers.length > 0 && (
               <div className="p-4 rounded-2xl border border-amber-500/20 bg-amber-500/5">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-amber-600 dark:text-amber-400 mb-2 flex items-center gap-1.5">
-                  <Zap className="w-3.5 h-3.5" />
+                  <Icon icon={Zap} size="xs" />
                   Watchlist Triggers
                 </p>
                 <ul className="space-y-2">
@@ -929,42 +930,7 @@ export function DecisionCard({ result }: { result: DecisionResult }) {
           </div>
         )}
 
-        {/* AGENT DETAILED SUMMARIES - Collapsible (REMOVED: Redundant with Debate Tabs) */}
-        {/* User feedback: "We are already showing round 1 and 2 above, the decision card need not again have the Deep analysis section" */}
-        {/* {hasAgentSummaries && (
-          <div className="space-y-3 pt-2">
-            <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2 pl-1">
-              <Sparkles className="w-3.5 h-3.5" />
-              Deep Analysis
-            </p>
-            <div className="space-y-2">
-              {result.fundamental_summary && (
-                <AgentSummarySection
-                  title="Fundamental Analysis"
-                  summary={result.fundamental_summary}
-                  icon={<TrendingUp className="w-3.5 h-3.5 text-blue-500" />}
-                  color="text-blue-500"
-                />
-              )}
-              {result.sentiment_summary && (
-                <AgentSummarySection
-                  title="Sentiment Analysis"
-                  summary={result.sentiment_summary}
-                  icon={<BarChart3 className="w-3.5 h-3.5 text-purple-500" />}
-                  color="text-purple-500"
-                />
-              )}
-              {result.valuation_summary && (
-                <AgentSummarySection
-                  title="Valuation Analysis"
-                  summary={result.valuation_summary}
-                  icon={<TrendingDown className="w-3.5 h-3.5 text-emerald-500" />}
-                  color="text-emerald-500"
-                />
-              )}
-            </div>
-          </div>
-        )} */}
+        {/* Deep Analysis section intentionally removed: debate rounds already surface the agent detail. */}
         
         {/* Consensus Donut - Only show here if QuantMetrics took the main spot */}
         {hasQuantMetrics && rawCard?.quant_metrics && (
@@ -978,7 +944,7 @@ export function DecisionCard({ result }: { result: DecisionResult }) {
         {result.dissenting_opinions && result.dissenting_opinions.length > 0 && (
           <div className="p-4 bg-amber-500/5 border border-amber-500/20 rounded-2xl">
             <p className="text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 mb-2 flex items-center gap-1.5">
-              <Scale className="w-3.5 h-3.5" />
+              <Icon icon={Scale} size="xs" />
               Dissenting Opinions
             </p>
             <ul className="space-y-2">
@@ -1000,9 +966,13 @@ export function DecisionCard({ result }: { result: DecisionResult }) {
                 onClick={() => setShowSources(!showSources)}
                 className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors duration-200"
               >
-                <ExternalLink className="w-3.5 h-3.5" />
+                <Icon icon={ExternalLink} size="xs" />
                 Sources ({sources.length})
-                {showSources ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                {showSources ? (
+                  <Icon icon={ChevronUp} size={12} />
+                ) : (
+                  <Icon icon={ChevronDown} size={12} />
+                )}
               </button>
               {showSources && (
                 <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">

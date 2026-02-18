@@ -50,6 +50,7 @@ export type {
 
 // GSAP animations
 export * from "./gsap";
+export * from "./gsap-init";
 
 // Motion presets (GSAP-based)
 export * from "./motion";

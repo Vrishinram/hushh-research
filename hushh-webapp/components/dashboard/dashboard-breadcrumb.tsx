@@ -13,6 +13,7 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { Home } from "lucide-react";
+import { Icon } from "@/lib/morphy-ux/ui";
 
 const pathNameMap: Record<string, string> = {
   kai: "Kai",
@@ -43,7 +44,7 @@ export function DashboardBreadcrumb() {
         <BreadcrumbList className="flex items-center">
           <BreadcrumbItem>
             <BreadcrumbPage className="flex items-center gap-1">
-              <Home className="h-4 w-4" />
+              <Icon icon={Home} size="sm" />
               Kai
             </BreadcrumbPage>
           </BreadcrumbItem>
@@ -58,7 +59,7 @@ export function DashboardBreadcrumb() {
         <BreadcrumbItem>
           <BreadcrumbLink asChild>
             <Link href="/kai" className="flex items-center gap-1">
-              <Home className="h-4 w-4" />
+              <Icon icon={Home} size="sm" />
               Kai
             </Link>
           </BreadcrumbLink>

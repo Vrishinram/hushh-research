@@ -15,6 +15,7 @@
 import { useState } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/lib/morphy-ux/card";
 import { Button as MorphyButton } from "@/lib/morphy-ux/button";
+import { Icon } from "@/lib/morphy-ux/ui";
 
 import {
   AlertTriangle,
@@ -79,9 +80,9 @@ export function LoserReportView({
   return (
     <div className="w-full max-w-6xl mx-auto space-y-6 p-6">
       {/* Header */}
-      <div className="text-center space-y-2">
+        <div className="text-center space-y-2">
         <div className="inline-flex items-center gap-2 px-4 py-2 bg-red-500/10 rounded-full text-red-600 dark:text-red-400 mb-2">
-          <AlertTriangle className="w-5 h-5" />
+          <Icon icon={AlertTriangle} size="md" />
           <span className="font-semibold">{losers.length} Positions Need Attention</span>
         </div>
         <h1 className="text-3xl font-bold tracking-tight">Portfolio Losers</h1>
@@ -100,7 +101,7 @@ export function LoserReportView({
         <CardContent className="p-4">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm text-muted-foreground flex items-center gap-2">
-              <ArrowUpDown className="w-4 h-4" />
+              <Icon icon={ArrowUpDown} size="sm" />
               Sort by:
             </span>
             <MorphyButton
@@ -148,7 +149,7 @@ export function LoserReportView({
                 {/* Left: Stock Info */}
                 <div className="flex items-center gap-4 flex-1">
                   <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center">
-                    <TrendingDown className="w-6 h-6 text-red-500" />
+                    <Icon icon={TrendingDown} size="lg" className="text-red-500" />
                   </div>
                   <div>
                     <h3 className="text-lg font-bold">{loser.symbol}</h3>
@@ -185,7 +186,7 @@ export function LoserReportView({
                   </div>
 
                   {/* Analyze Icon */}
-                  <BarChart3 className="w-5 h-5 text-muted-foreground" />
+                  <Icon icon={BarChart3} size="md" className="text-muted-foreground" />
                 </div>
               </div>
             </CardContent>
@@ -226,7 +227,7 @@ export function LoserReportView({
       <Card variant="muted" effect="glass" showRipple={false}>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
-            <AlertTriangle className="w-5 h-5 text-amber-500" />
+            <Icon icon={AlertTriangle} size="md" className="text-amber-500" />
             What This Means
           </CardTitle>
         </CardHeader>

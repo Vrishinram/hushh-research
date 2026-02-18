@@ -44,7 +44,7 @@ export const getVariantStyles = (
   switch (variant) {
     case "gradient":
       if (effect === "fill") {
-        return `bg-gradient-to-r from-[var(--morphy-primary-start)] to-[var(--morphy-primary-end)] hover:from-black/90 hover:to-black/90 dark:hover:from-[var(--morphy-primary-start)]/90 dark:hover:to-[var(--morphy-primary-end)]/90 text-white dark:text-black shadow-md transition-shadow,transition-colors duration-200`;
+        return `bg-gradient-to-r from-[var(--morphy-primary-start)] to-[var(--morphy-primary-end)] hover:from-black/90 hover:to-black/90 dark:hover:from-[var(--morphy-primary-start)]/90 dark:hover:to-[var(--morphy-primary-end)]/90 text-white dark:text-black shadow-[0_18px_60px_var(--morphy-cta-shadow)] transition-shadow,transition-colors duration-200`;
       } else if (effect === "fade") {
         // Dark mode: black text for visibility on gold/yellow gradient
         return "bg-gradient-to-r from-[var(--morphy-primary-start)]/10 to-[var(--morphy-primary-end)]/10 border border-[var(--morphy-primary-start)]/20 text-[var(--morphy-primary-start)] dark:text-black transition-colors duration-200";
@@ -55,7 +55,7 @@ export const getVariantStyles = (
 
     case "blue":
       if (effect === "fill") {
-        return "bg-gradient-to-r from-[var(--morphy-primary-end)] to-[var(--morphy-primary-start)] text-white shadow-md transition-shadow,transition-colors duration-200 dark:from-[#fbbf24] dark:to-[#f59e0b] dark:text-black";
+        return "bg-gradient-to-r from-[var(--morphy-primary-end)] to-[var(--morphy-primary-start)] text-white shadow-[0_18px_60px_var(--morphy-cta-shadow)] transition-shadow,transition-colors duration-200 dark:from-[#fbbf24] dark:to-[#f59e0b] dark:text-black";
       } else if (effect === "fade") {
         return "bg-gradient-to-r from-[var(--morphy-primary-start)]/10 to-[var(--morphy-primary-end)]/10 border border-[var(--morphy-primary-start)]/20 text-[var(--morphy-primary-start)] transition-colors duration-200";
       } else {
@@ -64,7 +64,7 @@ export const getVariantStyles = (
 
     case "blue-gradient":
       if (effect === "fill") {
-        return `bg-gradient-to-r ${gradientPresets.primary} text-white shadow-md transition-shadow,transition-colors duration-200`;
+        return `bg-gradient-to-r ${gradientPresets.primary} text-white shadow-[0_18px_60px_var(--morphy-cta-shadow)] transition-shadow,transition-colors duration-200`;
       } else if (effect === "fade") {
         return "bg-gradient-to-r from-[var(--morphy-primary-start)]/10 to-[var(--morphy-primary-end)]/10 border border-[var(--morphy-primary-start)]/20 text-[var(--morphy-primary-start)] transition-colors duration-200";
       } else {
@@ -184,8 +184,9 @@ export const getVariantStyles = (
       return "bg-foreground text-background shadow-md hover:opacity-90 transition-all duration-200 border-none font-bold";
 
     case "link":
-      // Silver hover in dark mode for hushh brand
-      const baseLinkStyles = "text-[#374151] dark:text-[#e5e7eb] hover:text-black dark:hover:text-[#c0c0c0] underline-offset-4 hover:underline transition-colors duration-200";
+      // Link buttons are low-emphasis brand actions (blue), without custom callsite styling.
+      const baseLinkStyles =
+        "text-[var(--brand-primary)] hover:text-[var(--brand-700)] dark:text-[var(--brand-200)] dark:hover:text-[var(--brand-100)] underline-offset-4 hover:underline font-semibold transition-colors duration-200";
       
       if (effect === "glass") {
         return `${baseLinkStyles} bg-white/50 dark:bg-black/50 shadow-sm border border-black/10 dark:border-white/10 backdrop-blur-md hover:bg-white/60 dark:hover:bg-black/60`;

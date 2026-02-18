@@ -48,6 +48,95 @@ export const motionDefaults = {
   distancePx: motionDistances.md,
 } as const;
 
+// -----------------------------------------------------------------------------
+// Runtime motion vars (client-only)
+// -----------------------------------------------------------------------------
+
+function parseCssNumber(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const n = Number.parseFloat(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function parseCssBezier(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const v = value.trim();
+  // Accept either "cubic-bezier(...)" or "0.2,0,0,1"
+  if (v.startsWith("cubic-bezier(") || /^[0-9.\s,]+$/.test(v)) return v;
+  return null;
+}
+
+export function getMotionCssVars(): {
+  durationsMs: Record<MotionDurationKey, number>;
+  easings: Record<MotionEasingKey, string>;
+  pageEnterDurationMs: number;
+  deckDurationMs: number;
+  deckScales: { active: number; adjacent: number; other: number };
+} {
+  // SSR-safe fallback
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    return {
+      durationsMs: motionDurations,
+      easings: motionEasings,
+      pageEnterDurationMs: motionDurations.xl,
+      deckDurationMs: motionDurations.xl,
+      deckScales: { active: 1.14, adjacent: 0.9, other: 0.84 },
+    };
+  }
+
+  const style = getComputedStyle(document.documentElement);
+
+  const durationsMs = {
+    xs: parseCssNumber(style.getPropertyValue("--motion-duration-xs")) ?? motionDurations.xs,
+    sm: parseCssNumber(style.getPropertyValue("--motion-duration-sm")) ?? motionDurations.sm,
+    md: parseCssNumber(style.getPropertyValue("--motion-duration-md")) ?? motionDurations.md,
+    lg: parseCssNumber(style.getPropertyValue("--motion-duration-lg")) ?? motionDurations.lg,
+    xl: parseCssNumber(style.getPropertyValue("--motion-duration-xl")) ?? motionDurations.xl,
+    xxl: parseCssNumber(style.getPropertyValue("--motion-duration-xxl")) ?? motionDurations.xxl,
+  };
+
+  const easings = {
+    standard:
+      parseCssBezier(style.getPropertyValue("--motion-ease-standard")) ??
+      motionEasings.standard,
+    accelerate:
+      parseCssBezier(style.getPropertyValue("--motion-ease-accelerate")) ??
+      motionEasings.accelerate,
+    decelerate:
+      parseCssBezier(style.getPropertyValue("--motion-ease-decelerate")) ??
+      motionEasings.decelerate,
+    emphasized:
+      parseCssBezier(style.getPropertyValue("--motion-ease-emphasized")) ??
+      motionEasings.emphasized,
+  };
+
+  const pageEnterDurationMs =
+    parseCssNumber(style.getPropertyValue("--motion-page-enter-duration")) ??
+    durationsMs.xl;
+  const deckDurationMs =
+    parseCssNumber(style.getPropertyValue("--motion-deck-duration")) ??
+    durationsMs.xl;
+
+  const deckScales = {
+    active:
+      parseCssNumber(style.getPropertyValue("--motion-deck-scale-active")) ??
+      1.14,
+    adjacent:
+      parseCssNumber(style.getPropertyValue("--motion-deck-scale-adjacent")) ??
+      0.9,
+    other:
+      parseCssNumber(style.getPropertyValue("--motion-deck-scale-other")) ?? 0.84,
+  };
+
+  return {
+    durationsMs,
+    easings,
+    pageEnterDurationMs,
+    deckDurationMs,
+    deckScales,
+  };
+}
+
 export const motionVariants = {
   // Shared axis Y (enter from below)
   enterFromBottom: {

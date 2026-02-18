@@ -40,14 +40,25 @@ export const getMaterialRippleColors = (
   hoverOpacity: number;
   pressedOpacity: number;
 } => {
-  // Base opacity - glass/fade are more subtle, fill is standard Material 3
+  // Base opacity - glass/fade are more subtle; fill needs to be more visible on solid/gradient surfaces.
   const baseOpacity =
     effect === "glass" || effect === "fade"
       ? { hover: 0.06, pressed: 0.1 }
-      : { hover: 0.08, pressed: 0.12 };
+      : { hover: 0.1, pressed: 0.16 };
 
-  // Dark mode uses silver for Hushh brand
-  if (isDarkMode && effect !== "fill") {
+  // For fill buttons, use currentColor so the ripple contrasts with the label color
+  // (white in light mode for gradients, black in dark mode where Morphy flips text).
+  if (effect === "fill") {
+    return {
+      hoverColor: "currentColor",
+      pressedColor: "currentColor",
+      hoverOpacity: baseOpacity.hover,
+      pressedOpacity: baseOpacity.pressed,
+    };
+  }
+
+  // Dark mode uses silver for Hushh brand (glass/fade only).
+  if (isDarkMode) {
     return {
       hoverColor: "#c0c0c0",
       pressedColor: "#e8e8e8",
@@ -202,10 +213,16 @@ export const MaterialRipple = ({
   }, [variant, effect]);
 
   return (
-    <div ref={containerRef} className={`absolute inset-0 ${className}`}>
+    <div
+      ref={containerRef}
+      className={`absolute inset-0 ${className}`}
+      // Ensure the ripple clips correctly for pill/rounded buttons.
+      style={{ borderRadius: "inherit" }}
+    >
       {React.createElement("md-ripple", {
         ref: rippleRef,
         disabled: disabled || undefined,
+        className: "morphy-md-ripple",
       })}
     </div>
   );

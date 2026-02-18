@@ -3,7 +3,7 @@
 import { ColumnDef } from "@tanstack/react-table";
 import { AnalysisHistoryEntry } from "@/lib/services/kai-history-service";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/lib/morphy-ux/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,6 +15,7 @@ import {
 import { MoreHorizontal, ArrowRight, Trash2, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
+import { Icon } from "@/lib/morphy-ux/ui";
 
 // Extended type to include version number computed at runtime
 export type HistoryEntryWithVersion = AnalysisHistoryEntry & {
@@ -40,27 +41,30 @@ export const getColumns = ({
     cell: ({ row }) => {
       const entry = row.original;
 
-      return (
-        <DropdownMenu modal={false}>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              className="h-8 w-8 p-0"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <span className="sr-only">Open menu</span>
-              <MoreHorizontal className="h-4 w-4" />
+          return (
+            <DropdownMenu modal={false}>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="none"
+                  effect="fade"
+                  size="icon-sm"
+                  showRipple={false}
+                  className="h-8 w-8 p-0 border border-transparent hover:border-border/40"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <span className="sr-only">Open menu</span>
+                  <Icon icon={MoreHorizontal} size="sm" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
+            <DropdownMenuContent align="start">
             <DropdownMenuLabel>Actions</DropdownMenuLabel>
             <DropdownMenuItem onClick={() => onView(entry)}>
-              <Eye className="mr-2 h-4 w-4" />
+              <Icon icon={Eye} size="sm" className="mr-2" />
               View Analysis
             </DropdownMenuItem>
             {onViewVersions && (
               <DropdownMenuItem onClick={() => onViewVersions(entry.ticker)}>
-                <ArrowRight className="mr-2 h-4 w-4" />
+                <Icon icon={ArrowRight} size="sm" className="mr-2" />
                 View Previous Versions
               </DropdownMenuItem>
             )}
@@ -69,14 +73,14 @@ export const getColumns = ({
               onClick={() => onDelete(entry)}
               className="text-red-600 dark:text-red-400 focus:text-red-600 focus:bg-red-500/10"
             >
-              <Trash2 className="mr-2 h-4 w-4" />
+              <Icon icon={Trash2} size="sm" className="mr-2" />
               Delete Entry
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => onDeleteTicker(entry.ticker)}
               className="text-red-600 dark:text-red-400 focus:text-red-600 focus:bg-red-500/10"
             >
-              <Trash2 className="mr-2 h-4 w-4" />
+              <Icon icon={Trash2} size="sm" className="mr-2" />
               Delete All {entry.ticker}
             </DropdownMenuItem>
           </DropdownMenuContent>

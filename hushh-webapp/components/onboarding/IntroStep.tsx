@@ -1,0 +1,64 @@
+"use client";
+
+import { ArrowRight, CandlestickChart, TrendingUp, Zap } from "lucide-react";
+import { Button } from "@/lib/morphy-ux/button";
+import { BrandMark, Icon, OnboardingFeatureList } from "@/lib/morphy-ux/ui";
+
+export function IntroStep({ onNext }: { onNext: () => void }) {
+  return (
+    <main className="h-[100dvh] w-full bg-transparent">
+      <div className="mx-auto flex h-full w-full max-w-md flex-col overflow-hidden px-6 pt-8">
+        <div className="flex-1 min-h-0 overflow-hidden">
+          <div className="flex h-full flex-col items-center text-center">
+            <BrandMark label="Kai" size="md" />
+
+            <div className="mt-8 space-y-4">
+              <h1 className="text-[clamp(2.25rem,7.5vw,3.2rem)] font-black tracking-tight leading-[1.08]">
+                Meet Kai,
+                <br />
+                Your Personal
+                <br />
+                Financial Advisor
+              </h1>
+              <p className="mx-auto max-w-[18rem] text-[clamp(1rem,3.8vw,1.125rem)] leading-relaxed text-muted-foreground">
+                The fastest path to actionable wealth insights.
+              </p>
+            </div>
+
+            <div className="mt-8 w-full max-w-sm text-left">
+              <OnboardingFeatureList
+                features={[
+                  {
+                    tone: "blue",
+                    icon: Zap,
+                    title: "Seamless KYC",
+                    subtitle: "Accelerating KYC with frictionless verification",
+                  },
+                  {
+                    tone: "green",
+                    icon: TrendingUp,
+                    title: "Portfolio Monitoring",
+                    subtitle: "Identify top performing holdings at a glance.",
+                  },
+                  {
+                    tone: "orange",
+                    icon: CandlestickChart,
+                    title: "Actionable Advice",
+                    subtitle: "Giving quick buy, sell, and hold investment signals",
+                  },
+                ]}
+              />
+            </div>
+          </div>
+        </div>
+
+        <footer className="flex-none pb-[calc(16px+var(--app-bottom-fixed-ui)+env(safe-area-inset-bottom))] pt-4">
+          <Button size="lg" fullWidth onClick={onNext} showRipple>
+            Get Started
+            <Icon icon={ArrowRight} size="md" className="ml-2" />
+          </Button>
+        </footer>
+      </div>
+    </main>
+  );
+}

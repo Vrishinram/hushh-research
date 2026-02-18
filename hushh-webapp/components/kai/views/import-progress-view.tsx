@@ -27,6 +27,7 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { Button as MorphyButton } from "@/lib/morphy-ux/button";
 import { X, FileChartColumn, Database, CheckCircle2 } from "lucide-react";
+import { Icon } from "@/lib/morphy-ux/ui";
 
 
 export type ImportStage =
@@ -172,7 +173,7 @@ export function ImportProgressView({
       <CardHeader className="pb-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <FileChartColumn className={cn("w-5 h-5", isStreaming && "text-primary")} />
+            <Icon icon={FileChartColumn} size="md" className={cn(isStreaming && "text-primary")} />
             <CardTitle className="text-lg">Importing Portfolio</CardTitle>
           </div>
           {onCancel && stage !== "complete" && (
@@ -231,7 +232,7 @@ export function ImportProgressView({
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs text-muted-foreground px-1">
               <span className="flex items-center gap-1.5">
-                <Database className="w-3.5 h-3.5 text-primary" />
+                <Icon icon={Database} size="xs" className="text-primary" />
                 Live Extraction Stream
               </span>
               <span>
@@ -246,7 +247,7 @@ export function ImportProgressView({
               isComplete={isComplete}
               formatAsHuman={false}
               icon={isComplete ? "database" : "spinner"}
-              iconClassName="w-6 h-6"
+              iconClassName="text-primary"
               maxHeight="320px"
               defaultExpanded={true}
               autoCollapseOnComplete={false}
@@ -318,7 +319,7 @@ export function ImportProgressView({
         {stage === "complete" && (
           <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
             <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+              <Icon icon={CheckCircle2} size="md" className="text-emerald-500" />
               <p className="text-sm text-emerald-600 dark:text-emerald-400 font-medium">
                 Successfully extracted portfolio data
               </p>

@@ -274,7 +274,7 @@ For features that handle vault data:
 - [ ] Use `useVault().getVaultKey()` for key access (not localStorage/sessionStorage)
 - [ ] Backend stores only ciphertext
 - [ ] Decryption happens client-side only
-- [ ] Tests use dynamically generated keys (see `testing.md`)
+- [ ] Tests use dynamically generated keys (see [`TESTING.md`](../../TESTING.md))
 
 ## Streaming Features
 
@@ -291,8 +291,9 @@ For features that use Server-Sent Events (SSE) streaming:
 
 - [Project Context Map](../project_context_map.md) - Tri-flow architecture rules
 - [Component README](../../hushh-webapp/components/README.md) - Component guidelines
-- [Route Contracts](../reference/api-contracts.md) - Endpoint documentation
+- [API Contracts](../reference/api-contracts.md) - Endpoint documentation
+- [Route Contracts](../reference/route_contracts.md) - Next.js route governance
 - [Architecture](../reference/architecture.md) - System design
 - [Native Streaming Guide](./native_streaming.md) - SSE streaming patterns
-- [Testing Guide](../testing.md) - BYOK-compliant testing
-- [Security Policy](../security.md) - Security guidelines
+- [Testing Guide](../../TESTING.md) - BYOK-compliant testing
+- [Security Policy](../../SECURITY.md) - Security guidelines

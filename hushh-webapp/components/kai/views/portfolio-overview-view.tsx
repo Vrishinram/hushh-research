@@ -26,6 +26,7 @@ import {
   Activity,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Icon } from "@/lib/morphy-ux/ui";
 
 // =============================================================================
 // TYPES
@@ -93,7 +94,7 @@ export function PortfolioOverviewView({
         <Card variant="none" effect="glass" showRipple={false}>
           <CardContent className="p-6">
             <div className="flex items-center justify-between mb-2">
-              <PieChart className="w-5 h-5 text-primary" />
+              <Icon icon={PieChart} size="md" className="text-primary" />
               <span className="text-xs text-muted-foreground">Holdings</span>
             </div>
             <p className="text-3xl font-bold">{holdingsCount}</p>
@@ -107,7 +108,7 @@ export function PortfolioOverviewView({
         <Card variant="none" effect="glass" showRipple={false}>
           <CardContent className="p-6">
             <div className="flex items-center justify-between mb-2">
-              <DollarSign className="w-5 h-5 text-primary" />
+              <Icon icon={DollarSign} size="md" className="text-primary" />
               <span className="text-xs text-muted-foreground">Value Range</span>
             </div>
             <p className="text-2xl font-bold">
@@ -125,7 +126,7 @@ export function PortfolioOverviewView({
         <Card variant="none" effect="glass" showRipple={false}>
           <CardContent className="p-6">
             <div className="flex items-center justify-between mb-2">
-              <Activity className="w-5 h-5 text-primary" />
+              <Icon icon={Activity} size="md" className="text-primary" />
               <span className="text-xs text-muted-foreground">Performance</span>
             </div>
             <p
@@ -152,7 +153,7 @@ export function PortfolioOverviewView({
         <Card variant="none" effect="glass" showRipple={false}>
           <CardContent className="p-6">
             <div className="flex items-center justify-between mb-2">
-              <BarChart3 className="w-5 h-5 text-primary" />
+              <Icon icon={BarChart3} size="md" className="text-primary" />
               <span className="text-xs text-muted-foreground">Risk Profile</span>
             </div>
             <p className={cn("text-2xl font-bold capitalize", riskColors[riskProfile])}>
@@ -171,7 +172,7 @@ export function PortfolioOverviewView({
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
-                <TrendingUp className="w-5 h-5 text-emerald-500" />
+                <Icon icon={TrendingUp} size="md" className="text-emerald-500" />
                 <div>
                   <p className="text-2xl font-bold">{winnersCount}</p>
                   <p className="text-sm text-muted-foreground">Winners</p>
@@ -179,7 +180,7 @@ export function PortfolioOverviewView({
               </div>
               <div className="h-12 w-px bg-border" />
               <div className="flex items-center gap-4">
-                <TrendingDown className="w-5 h-5 text-red-500" />
+                <Icon icon={TrendingDown} size="md" className="text-red-500" />
                 <div>
                   <p className="text-2xl font-bold">{losersCount}</p>
                   <p className="text-sm text-muted-foreground">Losers</p>
@@ -289,7 +290,7 @@ export function PortfolioOverviewView({
       <Card variant="muted" effect="glass" showRipple={false}>
         <CardContent className="p-6">
           <div className="flex items-start gap-3">
-            <Activity className="w-5 h-5 text-primary mt-0.5 shrink-0" />
+            <Icon icon={Activity} size="md" className="text-primary mt-0.5 shrink-0" />
             <div>
               <h4 className="font-semibold mb-1">About Your Portfolio</h4>
               <p className="text-sm text-muted-foreground">

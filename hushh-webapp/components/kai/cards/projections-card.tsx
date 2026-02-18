@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/lib/morphy-ux/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Icon } from "@/lib/morphy-ux/ui";
 import {
   BarChart,
   Bar,
@@ -121,7 +122,7 @@ function MRDSection({ mrd }: MRDSectionProps) {
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Calendar className="w-4 h-4 text-muted-foreground" />
+          <Icon icon={Calendar} size="sm" className="text-muted-foreground" />
           <span className="text-sm font-medium">
             {mrd.year} Required Minimum Distribution
           </span>
@@ -131,7 +132,7 @@ function MRDSection({ mrd }: MRDSectionProps) {
             variant="outline"
             className="bg-emerald-500/10 text-emerald-600 border-emerald-500/30"
           >
-            <CheckCircle2 className="w-3 h-3 mr-1" />
+            <Icon icon={CheckCircle2} size={12} className="mr-1" />
             Complete
           </Badge>
         ) : isNearDeadline ? (
@@ -139,7 +140,7 @@ function MRDSection({ mrd }: MRDSectionProps) {
             variant="outline"
             className="bg-orange-500/10 text-orange-600 border-orange-500/30"
           >
-            <AlertCircle className="w-3 h-3 mr-1" />
+            <Icon icon={AlertCircle} size={12} className="mr-1" />
             Action Needed
           </Badge>
         ) : (
@@ -221,7 +222,7 @@ export function ProjectionsCard({
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <TrendingUp className="w-5 h-5 text-primary" />
+            <Icon icon={TrendingUp} size="md" className="text-primary" />
             <CardTitle className="text-base">Projections & MRD</CardTitle>
           </div>
           {hasProjections && (

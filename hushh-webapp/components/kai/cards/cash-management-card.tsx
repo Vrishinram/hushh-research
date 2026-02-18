@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/lib/morphy-ux/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import { Icon } from "@/lib/morphy-ux/ui";
 
 // =============================================================================
 // TYPES
@@ -98,7 +99,7 @@ function CheckRow({ transaction }: { transaction: CheckTransaction }) {
     <div className="flex items-center justify-between py-2 border-b border-border/50 last:border-0">
       <div className="flex items-center gap-3">
         <div className="p-1.5 rounded-lg bg-muted">
-          <Hash className="w-3.5 h-3.5 text-muted-foreground" />
+          <Icon icon={Hash} size="xs" className="text-muted-foreground" />
         </div>
         <div>
           <p className="text-sm font-medium">{transaction.payee}</p>
@@ -119,7 +120,7 @@ function DebitRow({ transaction }: { transaction: DebitTransaction }) {
     <div className="flex items-center justify-between py-2 border-b border-border/50 last:border-0">
       <div className="flex items-center gap-3">
         <div className="p-1.5 rounded-lg bg-muted">
-          <CreditCard className="w-3.5 h-3.5 text-muted-foreground" />
+          <Icon icon={CreditCard} size="xs" className="text-muted-foreground" />
         </div>
         <div>
           <p className="text-sm font-medium">{transaction.merchant}</p>
@@ -137,7 +138,7 @@ function DebitRow({ transaction }: { transaction: DebitTransaction }) {
 
 function TransferRow({ transaction }: { transaction: BankTransfer }) {
   const isDeposit = transaction.amount > 0;
-  const Icon = isDeposit ? ArrowDownLeft : ArrowUpRight;
+  const Lucide = isDeposit ? ArrowDownLeft : ArrowUpRight;
 
   return (
     <div className="flex items-center justify-between py-2 border-b border-border/50 last:border-0">
@@ -149,10 +150,9 @@ function TransferRow({ transaction }: { transaction: BankTransfer }) {
           )}
         >
           <Icon
-            className={cn(
-              "w-3.5 h-3.5",
-              isDeposit ? "text-emerald-500" : "text-red-500"
-            )}
+            icon={Lucide}
+            size="xs"
+            className={isDeposit ? "text-emerald-500" : "text-red-500"}
           />
         </div>
         <div>
@@ -187,7 +187,7 @@ function TransferRow({ transaction }: { transaction: BankTransfer }) {
 function EmptyState({ message }: { message: string }) {
   return (
     <div className="flex flex-col items-center justify-center py-8 text-center">
-      <Receipt className="w-8 h-8 text-muted-foreground/50 mb-2" />
+      <Icon icon={Receipt} size={32} className="text-muted-foreground/50 mb-2" />
       <p className="text-sm text-muted-foreground">{message}</p>
     </div>
   );
@@ -238,7 +238,7 @@ export function CashManagementCard({
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Building2 className="w-5 h-5 text-primary" />
+            <Icon icon={Building2} size="md" className="text-primary" />
             <CardTitle className="text-base">Cash Management</CardTitle>
           </div>
           <Badge variant="secondary" className="text-xs">

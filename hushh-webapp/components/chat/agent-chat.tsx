@@ -8,6 +8,7 @@ import { Send, Bot, User, Sparkles, ShieldCheck } from "lucide-react";
 import { HushhLoader } from "@/components/ui/hushh-loader";
 import { cn } from "@/lib/utils";
 import { formatMessage } from "@/lib/format-message";
+import { Icon } from "@/lib/morphy-ux/ui";
 import { CollectedDataCard } from "./collected-data-card";
 import { CheckboxSelector } from "./checkbox-selector";
 import { encryptData } from "@/lib/vault/encrypt";
@@ -457,7 +458,7 @@ export function AgentChat({
           <div className="flex items-center justify-between p-4 border-b border-gray-200/50 dark:border-gray-800/50 bg-white/30 dark:bg-black/30">
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-full bg-linear-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-lg">
-                <Bot className="h-6 w-6 text-white" />
+                <Icon icon={Bot} size="lg" className="text-white" />
               </div>
               <div>
                 <h3 className="font-semibold text-lg">{agentName}</h3>
@@ -477,7 +478,7 @@ export function AgentChat({
                 size="icon"
                 className="h-8 w-8 text-muted-foreground hover:text-primary"
               >
-                <ShieldCheck className="h-4 w-4" />
+                <Icon icon={ShieldCheck} size="sm" />
               </Button>
             </div>
           </div>
@@ -503,9 +504,13 @@ export function AgentChat({
                 )}
               >
                 {msg.role === "user" ? (
-                  <User className="h-4 w-4" />
+                  <Icon icon={User} size="sm" />
                 ) : (
-                  <Sparkles className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                  <Icon
+                    icon={Sparkles}
+                    size="sm"
+                    className="text-blue-600 dark:text-blue-400"
+                  />
                 )}
               </div>
 
@@ -602,12 +607,12 @@ export function AgentChat({
                   : "bg-gray-200 dark:bg-gray-800 text-gray-400 scale-90 pointer-events-none"
               )}
             >
-              <Send className="h-4 w-4" />
+              <Icon icon={Send} size="sm" />
             </Button>
           </div>
           <div className="mt-2 flex justify-center">
             <p className="text-[10px] text-muted-foreground text-center flex items-center gap-1.5">
-              <ShieldCheck className="h-3 w-3" />
+              <Icon icon={ShieldCheck} size={12} />
               Private & Secure via Hushh Consent Protocol
             </p>
           </div>

@@ -16,6 +16,7 @@ import { useMemo } from "react";
 import { BarChart3, Percent, DollarSign, Layers } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/lib/morphy-ux/card";
+import { Icon } from "@/lib/morphy-ux/ui";
 
 interface Holding {
   symbol: string;
@@ -133,7 +134,7 @@ export function PortfolioMetricsCard({
     <Card variant="none" effect="glass" showRipple={false} className={className}>
       <CardHeader className="pb-1 pt-3 px-4">
         <CardTitle className="text-sm font-semibold flex items-center gap-2">
-          <BarChart3 className="w-5 h-5 text-primary" />
+          <Icon icon={BarChart3} size="md" className="text-primary" />
           Metrics
         </CardTitle>
       </CardHeader>
@@ -142,7 +143,7 @@ export function PortfolioMetricsCard({
           {/* Diversification Score */}
           <div className="space-y-1">
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Layers className="w-5 h-5" />
+              <Icon icon={Layers} size="md" />
               <span>Diversity</span>
             </div>
             <div className="flex items-baseline gap-1.5">
@@ -158,7 +159,7 @@ export function PortfolioMetricsCard({
           {/* Sector Count */}
           <div className="space-y-1">
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Layers className="w-5 h-5" />
+              <Icon icon={Layers} size="md" />
               <span>Sectors</span>
             </div>
             <div className="flex items-baseline gap-1.5">
@@ -172,7 +173,7 @@ export function PortfolioMetricsCard({
           {avgYield !== null && (
             <div className="space-y-1">
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Percent className="w-5 h-5" />
+                <Icon icon={Percent} size="md" />
                 <span>Avg Yield</span>
               </div>
               <span className="text-lg font-bold text-emerald-500">
@@ -185,7 +186,7 @@ export function PortfolioMetricsCard({
           {weightedCostBasis !== null && (
             <div className="space-y-1">
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <DollarSign className="w-5 h-5" />
+                <Icon icon={DollarSign} size="md" />
                 <span>Cost Basis</span>
               </div>
               <span className="text-lg font-bold">

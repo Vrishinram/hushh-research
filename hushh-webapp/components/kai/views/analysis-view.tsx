@@ -18,6 +18,7 @@ import { ArrowLeft, TrendingUp, TrendingDown, Minus, Search, AlertTriangle } fro
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/lib/morphy-ux/card";
 import { Button as MorphyButton } from "@/lib/morphy-ux/button";
+import { Icon } from "@/lib/morphy-ux/ui";
 
 import { Badge } from "@/components/ui/badge";
 
@@ -110,11 +111,7 @@ export function AnalysisView({
     <div className="flex flex-col h-full bg-transparent relative">
       {/* Header - Masked gradient + sticky nav */}
       <div className="flex-none sticky top-0 z-10 overflow-hidden mb-4">
-        {/* Masked gradient background */}
-        <div
-          className="absolute inset-0 morphy-app-bg opacity-80"
-          style={{ maskImage: "linear-gradient(to bottom, black 60%, transparent)", WebkitMaskImage: "linear-gradient(to bottom, black 60%, transparent)" }}
-        />
+        {/* Root layout owns the app gradient; keep header readable with a subtle surface only. */}
         <div className="absolute inset-0 backdrop-blur-md bg-background/40" />
 
         {/* Content */}
@@ -241,7 +238,11 @@ export function AnalysisView({
       <Card variant="muted" effect="glass" showRipple={false}>
         <CardContent className="p-4">
           <div className="flex items-start gap-3">
-            <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+            <Icon
+              icon={AlertTriangle}
+              size="md"
+              className="text-amber-500 shrink-0 mt-0.5"
+            />
             <div>
               <p className="text-sm font-medium mb-1">Investment Disclaimer</p>
               <p className="text-xs text-muted-foreground">
@@ -262,7 +263,11 @@ export function AnalysisView({
             <p className="text-sm font-medium mb-3">Analyze Another Stock</p>
             <form onSubmit={handleSearch} className="flex gap-2">
               <div className="flex-1 relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Icon
+                  icon={Search}
+                  size="sm"
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                />
                 <input
                   type="text"
                   value={searchInput}

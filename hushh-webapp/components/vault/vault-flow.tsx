@@ -31,6 +31,7 @@ import { User } from "firebase/auth";
 
 import { useVault } from "@/lib/vault/vault-context";
 import { HushhLoader } from "@/components/ui/hushh-loader";
+import { Icon } from "@/lib/morphy-ux/ui";
 
 type VaultStep = "checking" | "intro" | "create" | "unlock" | "recovery" | "success";
 
@@ -249,7 +250,7 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
           <CardContent className="p-6 text-center py-8">
             <div className="space-y-4">
               <div className="text-destructive mb-2">
-                <AlertCircle className="h-8 w-8 mx-auto" />
+                <Icon icon={AlertCircle} size={32} className="mx-auto" />
               </div>
               <p className="text-muted-foreground">{error}</p>
               <Button
@@ -277,7 +278,7 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
             <div className="space-y-6 text-center animate-in fade-in slide-in-from-bottom-4 duration-500">
               <div className="flex justify-center mb-4">
                 <div className="h-20 w-20 rounded-2xl bg-primary/10 flex items-center justify-center">
-                  <Shield className="h-10 w-10 text-primary" />
+                  <Icon icon={Shield} size={40} className="text-primary" />
                 </div>
               </div>
               
@@ -292,13 +293,13 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
               <div className="text-left bg-muted/50 rounded-xl p-4 space-y-3 text-sm border border-border/50">
                 <div className="flex gap-3">
                   <div className="mt-0.5 min-w-[1.25rem] text-primary">
-                     <Check className="h-5 w-5" />
+                     <Icon icon={Check} size="md" />
                   </div>
                   <p><span className="font-semibold block text-foreground">You hold the only key</span> We cannot see your data or reset your password.</p>
                 </div>
                 <div className="flex gap-3">
                    <div className="mt-0.5 min-w-[1.25rem] text-primary">
-                     <Check className="h-5 w-5" />
+                     <Icon icon={Check} size="md" />
                   </div>
                   <p><span className="font-semibold block text-foreground">Local First</span> Encryption happens on your device, not on our servers.</p>
                 </div>
@@ -315,7 +316,11 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
                 className="group"
               >
                 I Understand, Create Vault
-                <ArrowRight className="ml-2 h-5 w-5 transition-transform group-hover:translate-x-1" />
+                <Icon
+                  icon={ArrowRight}
+                  size="md"
+                  className="ml-2 transition-transform group-hover:translate-x-1"
+                />
               </Button>
             </div>
           )}
@@ -324,7 +329,7 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
           {step === "create" && (
             <div className="space-y-4">
               <div className="text-center">
-                <Lock className="h-12 w-12 mx-auto text-primary mb-4" />
+                <Icon icon={Lock} size={48} className="mx-auto text-primary mb-4" />
                 <h3 className="font-semibold text-xl">Create Your Vault Passphrase</h3>
                 <p className="text-base text-muted-foreground mt-2">
                   This passphrase encrypts your data. We never see it.
@@ -363,7 +368,9 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
                 disabled={isUnlocking || passphrase.length < 8 || passphrase !== confirmPassphrase}
               >
                 {isUnlocking ? (
-                  <><Loader2 className="h-5 w-5 mr-2 animate-spin" /> Creating...</>
+                  <>
+                    <Icon icon={Loader2} size="md" className="mr-2 animate-spin" /> Creating...
+                  </>
                 ) : (
                   "Create Vault"
                 )}
@@ -375,7 +382,7 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
           {step === "unlock" && (
             <div className="space-y-4">
               <div className="text-center">
-                <Lock className="h-12 w-12 mx-auto text-primary mb-4" />
+                <Icon icon={Lock} size={48} className="mx-auto text-primary mb-4" />
                 <h3 className="font-semibold text-xl">Unlock Your Vault</h3>
                 <p className="text-base text-muted-foreground mt-2">
                   Enter your passphrase to decrypt your data
@@ -410,7 +417,9 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
                   disabled={isUnlocking || !passphrase}
                 >
                   {isUnlocking ? (
-                    <><Loader2 className="h-5 w-5 mr-2 animate-spin" /> Unlocking...</>
+                    <>
+                      <Icon icon={Loader2} size="md" className="mr-2 animate-spin" /> Unlocking...
+                    </>
                   ) : (
                     "Unlock"
                   )}
@@ -437,7 +446,7 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
           {step === "recovery" && !recoveryKey && (
             <div className="space-y-4">
               <div className="text-center">
-                <Key className="h-12 w-12 mx-auto text-primary mb-4" />
+                <Icon icon={Key} size={48} className="mx-auto text-primary mb-4" />
                 <h3 className="font-semibold text-xl">Enter Recovery Key</h3>
                 <p className="text-base text-muted-foreground mt-2">
                   Enter your recovery key to unlock your vault
@@ -469,7 +478,9 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
                   disabled={isUnlocking || !recoveryKeyInput}
                 >
                   {isUnlocking ? (
-                    <><Loader2 className="h-5 w-5 mr-2 animate-spin" /> Unlocking...</>
+                    <>
+                      <Icon icon={Loader2} size="md" className="mr-2 animate-spin" /> Unlocking...
+                    </>
                   ) : (
                     "Unlock"
                   )}
@@ -515,7 +526,7 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
         >
           <DialogHeader>
             <div className="flex items-center gap-2">
-              <Key className="h-6 w-6 text-orange-500" />
+              <Icon icon={Key} size="lg" className="text-orange-500" />
               <DialogTitle>Save Your Recovery Key</DialogTitle>
             </div>
             <DialogDescription>
@@ -526,7 +537,7 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
 
           <div className="space-y-4">
             <Alert className="bg-orange-500/10 border-orange-500/50">
-              <AlertCircle className="h-4 w-4 text-orange-500" />
+              <Icon icon={AlertCircle} size="sm" className="text-orange-500" />
               <AlertDescription className="text-orange-700 dark:text-orange-300">
                 Write this down or save it securely. You cannot recover it
                 later!
@@ -547,12 +558,12 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
               >
                 {copied ? (
                   <>
-                    <Check className="h-4 w-4 mr-2 text-green-500" />
+                    <Icon icon={Check} size="sm" className="mr-2 text-green-500" />
                     Copied!
                   </>
                 ) : (
                   <>
-                    <Copy className="h-4 w-4 mr-2" />
+                    <Icon icon={Copy} size="sm" className="mr-2" />
                     Copy
                   </>
                 )}
@@ -565,7 +576,7 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
                   await downloadTextFile(content, "hushh-recovery-key.txt");
                 }}
               >
-                <Download className="h-4 w-4 mr-2" />
+                <Icon icon={Download} size="sm" className="mr-2" />
                 Download
               </Button>
             </div>

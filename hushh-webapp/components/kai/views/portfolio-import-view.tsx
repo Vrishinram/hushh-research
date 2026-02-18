@@ -18,6 +18,7 @@ import { Button as MorphyButton } from "@/lib/morphy-ux/button";
 import { Upload, FileText, CheckCircle, AlertCircle, Link2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { Icon } from "@/lib/morphy-ux/ui";
 
 // =============================================================================
 // TYPES
@@ -118,7 +119,7 @@ export function PortfolioImportView({
           >
             {/* Upload Icon */}
             <div className="mx-auto w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
-              <Upload className="w-8 h-8 text-primary" />
+              <Icon icon={Upload} size={32} className="text-primary" />
             </div>
 
             {/* Text */}
@@ -136,9 +137,9 @@ export function PortfolioImportView({
             {/* Selected File Display */}
             {selectedFile && !isUploading && (
               <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-primary/10 rounded-full text-sm">
-                <FileText className="w-4 h-4" />
+                <Icon icon={FileText} size="sm" />
                 <span>{selectedFile.name}</span>
-                <CheckCircle className="w-4 h-4 text-green-500" />
+                <Icon icon={CheckCircle} size="sm" className="text-green-500" />
               </div>
             )}
 
@@ -186,13 +187,13 @@ export function PortfolioImportView({
                 key={brokerage}
                 className="flex items-center gap-2 p-2 rounded bg-background/50 text-sm"
               >
-                <CheckCircle className="w-4 h-4 text-green-500 shrink-0" />
+                <Icon icon={CheckCircle} size="sm" className="text-green-500 shrink-0" />
                 <span>{brokerage}</span>
               </div>
             ))}
           </div>
           <p className="text-xs text-muted-foreground mt-4 flex items-start gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            <Icon icon={AlertCircle} size="sm" className="shrink-0 mt-0.5" />
             Don't see your brokerage? We'll do our best to parse generic CSV
             formats.
           </p>
@@ -205,7 +206,7 @@ export function PortfolioImportView({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                <Link2 className="w-5 h-5 text-primary" />
+                <Icon icon={Link2} size="md" className="text-primary" />
               </div>
               <div>
                 <h3 className="font-medium">Connect with Plaid</h3>

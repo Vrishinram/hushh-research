@@ -14,6 +14,7 @@ import { Button } from "@/lib/morphy-ux/morphy";
 import { useAuth } from "@/lib/firebase";
 import { useVault } from "@/lib/vault/vault-context";
 import { Mic } from "lucide-react";
+import { Icon } from "@/lib/morphy-ux/ui";
 
 const navItems = [
   { href: "/", label: "Home", public: true },
@@ -81,7 +82,7 @@ export function Navigation() {
                 }`}
                 title="Agent Nav - Universal Agent Search"
               >
-                <Mic className="h-4 w-4" />
+                <Icon icon={Mic} size="sm" />
                 <span className="hidden lg:inline">Agent Nav</span>
               </Button>
             </Link>

@@ -12,7 +12,7 @@
  * CacheProvider enables data sharing across page navigations to reduce API calls.
  */
 
-import { ReactNode } from "react";
+import { ReactNode, useEffect, useRef } from "react";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/lib/firebase";
 import { VaultProvider } from "@/lib/vault/vault-context";
@@ -25,12 +25,27 @@ import { StatusBarBlur, TopAppBar, TopBarBackground } from "@/components/ui/top-
 import { Navbar } from "@/components/navbar";
 import { Toaster } from "@/components/ui/sonner";
 import { StatusBarManager } from "@/components/status-bar-manager";
+import { usePathname } from "next/navigation";
+import { ensureMorphyGsapReady } from "@/lib/morphy-ux/gsap-init";
+import { usePageEnterAnimation } from "@/lib/morphy-ux/hooks/use-page-enter";
 
 interface ProvidersProps {
   children: ReactNode;
 }
 
 export function Providers({ children }: ProvidersProps) {
+  const pathname = usePathname();
+  const isLanding = pathname === "/";
+  const pageRef = useRef<HTMLDivElement | null>(null);
+
+  // One-time GSAP init (non-blocking).
+  useEffect(() => {
+    void ensureMorphyGsapReady();
+  }, []);
+
+  // App-wide page enter fade.
+  usePageEnterAnimation(pageRef, { enabled: true, key: pathname });
+
   return (
     <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
       <StepProgressProvider>
@@ -49,8 +64,17 @@ export function Providers({ children }: ProvidersProps) {
                     <TopBarBackground />
                     <TopAppBar />
                     {/* Main scroll container: extends under fixed bar so content can scroll behind it; padding clears bar height */}
-                    <div className="flex-1 overflow-y-auto pb-[calc(8rem+env(safe-area-inset-bottom))] relative z-10 min-h-0 pt-[45px]">
-                      {children}
+                    <div
+                      className={
+                        isLanding
+                          ? // Landing is a full-screen onboarding flow: no page scroll, no extra top inset.
+                            "flex-1 overflow-hidden relative z-10 min-h-0"
+                          : "flex-1 overflow-y-auto pb-[calc(var(--app-bottom-fixed-ui)+env(safe-area-inset-bottom))] relative z-10 min-h-0 pt-[45px]"
+                      }
+                    >
+                      <div ref={pageRef} key={pathname} className="min-h-0">
+                        {children}
+                      </div>
                     </div>
                   </div>
                   <Toaster />

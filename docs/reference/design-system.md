@@ -39,9 +39,11 @@ import { BreadcrumbLink } from "@/components/ui/breadcrumb";
 import { Button } from "@/lib/morphy-ux/button";
 
 // ✅ CORRECT - Use Morphy-UX Button with showRipple
+// Default (no props): primary CTA = blue-gradient + fill + pill radius.
 <Button
-  variant="gradient" // "none" | "link" | "gradient" | "blue" | "purple" | "green" | "orange" | "metallic" | "blue-gradient" | "yellow" | "multi"
-  effect="glass" // "fill" | "glass" | "fade"
+  // Optional overrides:
+  variant="blue-gradient" // default for primary CTAs
+  effect="fill" // default for primary CTAs
   showRipple // Ripple on CLICK only
   size="lg" // "sm" | "default" | "lg" | "xl"
 >
@@ -63,6 +65,7 @@ import { CardContent, CardTitle, CardDescription } from "@/components/ui/card";
 <Card
   variant="none"
   effect="glass"
+  preset="default" // optional: "default" | "hero"
   showRipple // Only for clickable cards
   onClick={handler}
 >
@@ -194,27 +197,171 @@ Use **Phosphor Icons** (`@phosphor-icons/react`) ONLY if a specific icon is miss
 import { Shield, Lock } from "lucide-react";
 ```
 
+### Icon System (Lucide)
+
+**North star:** icons are globally consistent and tunable from one place.
+
+#### Defaults (global)
+
+- Global Lucide stroke width is controlled via CSS variable:
+  - `--lucide-stroke-width` (default `1`)
+  - Implemented in `hushh-webapp/app/globals.css`:
+    - `.lucide { stroke-width: var(--lucide-stroke-width); }`
+    - `.lucide * { vector-effect: non-scaling-stroke; }` (keeps stroke consistent when scaled)
+
+#### Standard usage (app code)
+
+**Do:** size icons using Lucide’s official `size` prop via the design-system wrapper:
+
+```tsx
+import { Shield } from "lucide-react";
+import { Icon } from "@/lib/morphy-ux/ui";
+
+<Icon icon={Shield} size="sm" className="text-muted-foreground" />;
+```
+
+- Wrapper path: `hushh-webapp/lib/morphy-ux/ui/icon.tsx`
+- Token sizes:
+  - `xs=14`, `sm=16`, `md=20`, `lg=24`, `xl=28`
+- `size` also accepts a number for edge cases (`size={12}`, `size={32}`, etc).
+
+**Don’t:** size Lucide icons in app code using Tailwind `h-<n>/w-<n>` unless you’re in vendor shadcn code (`components/ui/**`) or doing a temporary scaffold.
+
+#### Rare overrides (thicker stroke)
+
+Prefer global defaults. If you must thicken a single icon:
+
+```tsx
+<Icon icon={Shield} size="sm" strokeWidth={1.5} />
+```
+
+This works by overriding `--lucide-stroke-width` locally (does not fight global CSS).
+
 ---
 
-## 8. Motion Standards
+## Onboarding Intro Pattern (Feature Rail + Chips)
 
-### Transitions
+Use this pattern for the first onboarding screen (`Meet Kai...`) so structure, motion, and tones stay consistent.
 
-- Main: `transition-all 0.3s cubic-bezier(0.4, 0, 0.2, 1)`
-- Opacity: `transition-opacity 0.2s`
-- Colors: `transition-colors 0.2s`
+Use:
+- `BrandMark` from `hushh-webapp/lib/morphy-ux/ui/brand-mark.tsx`
+- `OnboardingFeatureList` from `hushh-webapp/lib/morphy-ux/ui/onboarding-feature-list.tsx`
+- `IconChip` + `FeatureRail` (through `OnboardingFeatureList`)
 
-### Animation (GSAP + Morphy-UX)
+Feature tones are token-driven in `hushh-webapp/app/globals.css`:
+- `--tone-blue`, `--tone-green`, `--tone-orange`
+- `--tone-blue-bg`, `--tone-green-bg`, `--tone-orange-bg`
+- `--tone-blue-glow`, `--tone-green-glow`, `--tone-orange-glow`
 
-- Page transitions and expressive motion use **GSAP**, wired through Morphy-UX helpers in `lib/morphy-ux/gsap.ts` and tokens in `lib/morphy-ux/motion.ts`.
-- Default route-change pattern:
-  - Fade + small vertical shift on content container when the app router pathname changes.
-  - Short durations (`xs`/`sm` tokens) tuned for mobile.
-- Motion tokens:
-  - Durations: `xs`, `sm`, `md`, `lg`, `xl`, `xxl` in `motionDurations`.
-  - Easing: `standard`, `accelerate`, `decelerate`, `emphasized` in `motionEasings`.
-  - Distances: `tiny`, `xs`, `sm`, `md`, `lg` in `motionDistances`.
-- Always respect `prefers-reduced-motion` — Morphy-UX helpers bail out early when users request reduced motion.
+Do:
+- Compose Intro screen from Morphy primitives and keep wrappers transparent (root owns background).
+- Keep primary CTA on Morphy `Button` defaults (`blue-gradient` + `fill`).
+- Use Lucide icons through the `Icon` wrapper or components that already wrap it.
+
+Don't:
+- Import raw HTML snippets or Material Symbols for onboarding visuals.
+- Add per-callsite `shadow-*` / `rounded-*` class overrides on Morphy CTA buttons/cards.
+- Hardcode tone colors in feature callsites; use tokens/components.
+
+---
+
+## 8. Motion System (GSAP + Morphy)
+
+**North star:** motion is globally tunable and consistent. If we retune duration/easing once, it should reflect everywhere.
+
+### Why GSAP (and what we do NOT use it for)
+
+We use **GSAP** for:
+- App-wide page entrance fades
+- “Deck focus” / stacked-carousel emphasis
+- Loader -> content fades (where content appears after async)
+
+We do **not** use GSAP for:
+- Micro-interactions that are already handled well by CSS/vendor primitives (Radix `data-state` transitions)
+- Button ripples/toast keyframes (performance + tiny scope)
+
+### Global tokens (single tune point)
+
+Motion tokens live in:
+- CSS vars: `hushh-webapp/app/globals.css` (`--motion-*`)
+- Morphy tokens: `hushh-webapp/lib/morphy-ux/motion.ts`
+
+Important vars:
+- Durations: `--motion-duration-xs|sm|md|lg|xl|xxl`
+- Easings: `--motion-ease-standard|accelerate|decelerate|emphasized`
+- Page enter: `--motion-page-enter-duration`
+- Carousel deck: `--motion-deck-duration`, `--motion-deck-scale-*`
+
+### Initialization
+
+GSAP is initialized once on the client:
+- `hushh-webapp/lib/morphy-ux/gsap-init.ts`
+- Called early from `hushh-webapp/app/providers.tsx`
+
+It attempts to register `CustomEase` and create named eases:
+- `morphy-standard`
+- `morphy-emphasized`
+- etc.
+
+If `CustomEase` is unavailable, GSAP still supports `ease: "cubic-bezier(...)"` as a fallback.
+
+### Reduced motion
+
+All Morphy GSAP helpers must bail out when the OS requests reduced motion:
+- `prefersReducedMotion()` in `hushh-webapp/lib/morphy-ux/gsap.ts`
+
+### React usage patterns (required)
+
+Do:
+- Use refs (never query selectors across the whole document).
+- Use `gsap.context()` when available to scope animations and ensure cleanup.
+- Use `useLayoutEffect` for “enter” animations to avoid a flash.
+
+Don’t:
+- Call GSAP in render.
+- Animate layout (width/height) unless absolutely required.
+- Add bespoke Tailwind `ease-[cubic-bezier(...)]` and `duration-500` in feature code for new motion. Prefer the GSAP hooks below.
+
+### Standard hooks (copy-paste safe)
+
+#### Page enter fade (app-wide)
+
+File: `hushh-webapp/lib/morphy-ux/hooks/use-page-enter.ts`
+
+```tsx
+import { useRef } from "react";
+import { usePageEnterAnimation } from "@/lib/morphy-ux/hooks/use-page-enter";
+
+const ref = useRef<HTMLDivElement | null>(null);
+usePageEnterAnimation(ref, { enabled: true, key: pathname });
+
+return <div ref={ref}>{children}</div>;
+```
+
+#### Loader -> content fade (opt-in)
+
+File: `hushh-webapp/lib/morphy-ux/hooks/use-fade-in-on-ready.ts`
+
+```tsx
+import { useRef } from "react";
+import { useFadeInOnReady } from "@/lib/morphy-ux/hooks/use-fade-in-on-ready";
+
+const ref = useRef<HTMLDivElement | null>(null);
+useFadeInOnReady(ref, ready);
+
+return <div ref={ref}>{ready ? <Content /> : <Loader />}</div>;
+```
+
+#### Carousel deck focus (stacked emphasis)
+
+File: `hushh-webapp/lib/morphy-ux/hooks/use-carousel-deck-focus.ts`
+
+```tsx
+const slideEls = useRef<Array<HTMLElement | null>>([]);
+useCarouselDeckFocus({ activeIndex, slideEls });
+
+<div ref={(n) => (slideEls.current[idx] = n)} />
+```
 
 ---
 
@@ -269,6 +416,11 @@ import { Shield, Lock } from "lucide-react";
 | `components/ui/`    | Stock Shadcn/UI components    | ✅ Yes (via CLI) |
 | `lib/morphy-ux/`    | Core Morphy-UX utilities      | 🛠 Custom        |
 | `lib/morphy-ux/ui/` | Morphy-enhanced UI components | 🛠 Custom        |
+
+### shadcn `Button` import policy
+
+- **Primary CTAs:** Use Morphy `Button` (`@/lib/morphy-ux/button`).
+- **Low-emphasis controls:** shadcn `Button` is acceptable for complex primitives (tables, menus, small ghost/icon triggers), but prefer Morphy `Button` with `variant="none"` / `effect="fade"` when it fits.
 
 ---
 
@@ -378,6 +530,27 @@ Design every flow as if you are **personally using your own data agent on a smal
   - Make revoke actions as visible and easy as accept/approve actions.
 - **Layout**
   - On mobile, present consents in a **single-column card stack** using `Card` with `variant="muted"` and clear typography hierarchy.
+
+---
+
+## 15. Compliance & Verification (Design System)
+
+Run locally:
+
+```bash
+cd hushh-webapp
+npm run verify:design-system
+```
+
+What it checks:
+
+- Fails on legacy styling in app code:
+  - `crystal-*`
+  - `rounded-ios*`
+- Warns when app code imports shadcn `Button` directly (`@/components/ui/button`).
+  - Goal: Morphy for primary CTAs; shadcn `Button` only when needed for low-emphasis controls.
+- Best-effort warnings for Lucide sizing anti-patterns (Tailwind `h-*/w-*` on Lucide icon JSX in app code).
+
   - On desktop, consider a two-column layout: left = active/pending consents, right = history/details.
 - **Interaction**
   - Use `interactive` + `selected` on cards when the user is choosing between alternatives (e.g., scopes, durations).

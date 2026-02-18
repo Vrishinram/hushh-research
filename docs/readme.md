@@ -9,7 +9,7 @@ Hushh is a **Personal Data Agent (PDA)** platform where users own their data, ag
 3. **Tri-Flow** -- Every feature works on Web, iOS, and Android.
 4. **Minimal Browser Storage** -- Sensitive credentials stay in React memory; selected non-sensitive UI/cache data may use browser storage.
 
-For repo-level setup instructions, see the root [`README.md`](../README.md) and [`getting_started.md`](../getting_started.md).
+For repo-level setup instructions, see the root [`readme.md`](../readme.md) and [`getting_started.md`](../getting_started.md).
 
 ---
 
@@ -17,6 +17,7 @@ For repo-level setup instructions, see the root [`README.md`](../README.md) and 
 
 | Goal | Document |
 | ---- | -------- |
+| Understand the north stars and critical rules | [project_context_map.md](./project_context_map.md) |
 | Understand the system architecture | [reference/architecture.md](./reference/architecture.md) |
 | Learn how data is stored and encrypted | [world-model.md](../consent-protocol/docs/reference/world-model.md) |
 | See every API endpoint | [reference/api-contracts.md](./reference/api-contracts.md) |
@@ -54,11 +55,13 @@ For repo-level setup instructions, see the root [`README.md`](../README.md) and 
 
 ```
 docs/
-  README.md                          # This file (entry point)
+  readme.md                          # This file (entry point)
+  project_context_map.md             # North stars, critical rules, repo map
 
   reference/                         # What IS the system
     architecture.md                  # System diagram, backend, frontend, DB, security
     api-contracts.md                 # Every endpoint, auth, developer API
+    route_contracts.md               # Next.js route governance (tri-flow contracts)
     design-system.md                 # Morphy-UX + Shadcn design system
     env-and-secrets.md               # All environment variables and GCP secrets
     ci.md                            # CI/CD pipeline
@@ -98,4 +101,4 @@ hushh-webapp/docs/
   plugin-api-reference.md            # Native Capacitor plugin APIs
 ```
 
-**22 files across two documentation homes. Every file earns its place.**
+**Docs live across three documentation homes: `docs/`, `consent-protocol/docs/`, and `hushh-webapp/docs/`. Every file earns its place.**

@@ -18,3 +18,8 @@
 // Export all morphy-ux enhanced UI components
 export * from "./sidebar-menu-button";
 export * from "./tabs";
+export * from "./icon";
+export * from "./brand-mark";
+export * from "./icon-chip";
+export * from "./feature-rail";
+export * from "./onboarding-feature-list";

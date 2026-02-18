@@ -20,8 +20,10 @@ import {
   ArrowRightLeft,
   Activity,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/lib/morphy-ux/card";
+import { Icon } from "@/lib/morphy-ux/ui";
 
 // =============================================================================
 // TYPES
@@ -91,7 +93,7 @@ interface TransactionIconProps {
 function TransactionIcon({ type }: TransactionIconProps) {
   const normalizedType = type.toUpperCase();
   
-  const iconConfig: Record<string, { icon: React.ElementType; color: string; bg: string }> = {
+  const iconConfig: Record<string, { icon: LucideIcon; color: string; bg: string }> = {
     BUY: { icon: ArrowDownLeft, color: "text-blue-500", bg: "bg-blue-500/10" },
     SELL: { icon: ArrowUpRight, color: "text-emerald-500", bg: "bg-emerald-500/10" },
     DIVIDEND: { icon: Coins, color: "text-amber-500", bg: "bg-amber-500/10" },
@@ -101,11 +103,10 @@ function TransactionIcon({ type }: TransactionIconProps) {
   
   const config = iconConfig[normalizedType] || iconConfig.TRANSFER;
   if (!config) return null;
-  const Icon = config.icon;
   
   return (
     <div className={cn("w-8 h-8 rounded-full flex items-center justify-center", config.bg)}>
-      <Icon className={cn("w-4 h-4", config.color)} />
+      <Icon icon={config.icon} size="sm" className={config.color} />
     </div>
   );
 }
@@ -190,7 +191,7 @@ export function TransactionActivity({
     <Card variant="none" effect="glass" showRipple={false} className={className}>
       <CardHeader className="pb-2">
         <CardTitle className="text-sm flex items-center gap-2">
-          <Activity className="w-4 h-4" />
+          <Icon icon={Activity} size="sm" />
           Recent Activity
         </CardTitle>
       </CardHeader>

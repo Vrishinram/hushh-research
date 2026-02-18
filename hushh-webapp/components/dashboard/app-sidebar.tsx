@@ -17,7 +17,7 @@ import {
   SidebarMenuBadge,
   SidebarHeader,
 } from "@/components/ui/sidebar";
-import { SidebarMenuButton } from "@/lib/morphy-ux/ui";
+import { Icon, SidebarMenuButton } from "@/lib/morphy-ux/ui";
 import { usePendingConsentCount } from "@/components/consent/notification-provider";
 
 const domains = [
@@ -58,7 +58,7 @@ export function AppSidebar() {
                   className="md:h-12 md:text-base font-semibold"
                 >
                   <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                    <Home className="h-4 w-4" />
+                    <Icon icon={Home} size="sm" />
                   </div>
                   <span className="ml-2">Kai</span>
                 </SidebarMenuButton>
@@ -76,12 +76,12 @@ export function AppSidebar() {
                 const isActive =
                   pathname === domain.href ||
                   pathname?.startsWith(domain.href + "/");
-                const Icon = domain.icon;
+                const DomainIcon = domain.icon;
 
                 return (
                   <SidebarMenuItem key={domain.href}>
                     <SidebarMenuButton href={domain.href} isActive={isActive}>
-                      <Icon className="h-4 w-4" />
+                      <Icon icon={DomainIcon} size="sm" />
                       <span>{domain.name}</span>
                     </SidebarMenuButton>
                     {domain.status === "soon" && (
@@ -104,7 +104,7 @@ export function AppSidebar() {
                   href="/consents"
                   isActive={pathname === "/consents"}
                 >
-                  <Shield className="h-4 w-4" />
+                  <Icon icon={Shield} size="sm" />
                   <span>Consents</span>
                 </SidebarMenuButton>
                 {pendingCount > 0 && (

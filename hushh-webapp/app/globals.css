@@ -59,6 +59,32 @@ html body[data-scroll-locked] {
 
 :root {
   --radius: 1.25rem;
+  /* Lucide defaults (see docs/reference/design-system.md): change once to update all icons. */
+  --lucide-stroke-width: 1;
+  /* Fixed bottom navbar clearance fallback (before runtime measurement). */
+  --bottom-nav-offset: 88px;
+  /* Runtime-measured bottom fixed UI (Navbar / floating theme pill). Overridden by navbar at runtime. */
+  --app-bottom-fixed-ui: var(--bottom-nav-offset);
+
+  /* Motion tokens (GSAP + CSS). Change once to retune the whole app. */
+  --motion-duration-xs: 120ms;
+  --motion-duration-sm: 180ms;
+  --motion-duration-md: 240ms;
+  --motion-duration-lg: 320ms;
+  --motion-duration-xl: 450ms;
+  --motion-duration-xxl: 600ms;
+
+  --motion-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --motion-ease-accelerate: cubic-bezier(0.3, 0, 1, 1);
+  --motion-ease-decelerate: cubic-bezier(0, 0, 0.2, 1);
+  --motion-ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
+
+  --motion-page-enter-duration: var(--motion-duration-xl);
+  --motion-deck-duration: var(--motion-duration-xl);
+
+  --motion-deck-scale-active: 1.14;
+  --motion-deck-scale-adjacent: 0.9;
+  --motion-deck-scale-other: 0.84;
   --background: oklch(1 0 0);
   --foreground: oklch(0 0 0);
   --card: oklch(0.98 0.002 264);
@@ -105,6 +131,17 @@ html body[data-scroll-locked] {
   --brand-800: #002f5a;
   --brand-900: #00192d;
 
+  /* Onboarding tri-tone chips / rail */
+  --tone-blue: #0071e3;
+  --tone-green: #34c759;
+  --tone-orange: #ff9500;
+  --tone-blue-bg: #eaf2ff;
+  --tone-green-bg: #e9f8ef;
+  --tone-orange-bg: #fff4e8;
+  --tone-blue-glow: rgba(0, 113, 227, 0.18);
+  --tone-green-glow: rgba(52, 199, 89, 0.18);
+  --tone-orange-glow: rgba(255, 149, 0, 0.2);
+
   /* Crystal Glass Effect */
   --crystal-glass-bg: rgba(255, 255, 255, 0.12);
   --crystal-glass-border: rgba(0, 113, 227, 0.2);
@@ -128,6 +165,9 @@ html body[data-scroll-locked] {
   --morphy-primary-end: #3b82f6;
   --morphy-secondary-start: #c0c0c0;
   --morphy-secondary-end: #e8e8e8;
+
+  /* CTA elevation (used by Morphy Button fill variants) */
+  --morphy-cta-shadow: rgba(0, 113, 227, 0.25);
 
   /* Accent gradient */
   --morphy-accent-start: #0071e3;
@@ -234,6 +274,20 @@ html body[data-scroll-locked] {
   --morphy-secondary-start: #60a5fa;
   --morphy-secondary-end: #3b82f6;
 
+  /* Onboarding tri-tone chips / rail (dark mode) */
+  --tone-blue: #60a5fa;
+  --tone-green: #4ade80;
+  --tone-orange: #fb923c;
+  --tone-blue-bg: #1a2638;
+  --tone-green-bg: #182d24;
+  --tone-orange-bg: #33241b;
+  --tone-blue-glow: rgba(96, 165, 250, 0.22);
+  --tone-green-glow: rgba(74, 222, 128, 0.22);
+  --tone-orange-glow: rgba(251, 146, 60, 0.24);
+
+  /* CTA elevation (used by Morphy Button fill variants) */
+  --morphy-cta-shadow: rgba(96, 165, 250, 0.22);
+
   /* Ensure gradient colors are available immediately in dark mode */
   --morphy-secondary-gradient: linear-gradient(
     135deg,
@@ -307,6 +361,17 @@ html body[data-scroll-locked] {
   * {
     @apply border-border outline-ring/50;
   }
+
+  /* Global Lucide icon stroke thickness (lucide-react adds `.lucide` on the SVG). */
+  .lucide {
+    stroke-width: var(--lucide-stroke-width);
+  }
+
+  /* Keep strokes consistent when icons are scaled via `size`/CSS. */
+  .lucide * {
+    vector-effect: non-scaling-stroke;
+  }
+
   /* Global cursor-pointer for all interactive elements */
   button,
   [role="button"],
@@ -363,22 +428,108 @@ html body[data-scroll-locked] {
   -webkit-backdrop-filter: blur(24px);
 }
 
+/* Material Web ripple: ensure it fills its host and clips with border-radius. */
+md-ripple.morphy-md-ripple {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+}
+
 /* Top bar (StatusBarBlur + TopAppBar): masked blur - glass + faded bottom edge, all platforms.
  * Use standard backdrop-filter only (no -webkit-backdrop-filter) so normal backdrop blur works. */
 .top-bar-glass {
-  background-color: color-mix(in oklch, lab(100 0 0 / 0.83) 30%, transparent);
-  -webkit-backdrop-filter: blur(5px);
-  backdrop-filter: blur(5px);
+  background-color: color-mix(in oklch, lab(100 0 0 / 0.72) 26%, transparent);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
   transform: translate3d(0, 0, 0);
   will-change: transform;
-  mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
-  -webkit-mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
+  mask-image: linear-gradient(
+    to bottom,
+    black 0%,
+    black 48%,
+    rgba(0, 0, 0, 0.92) 62%,
+    rgba(0, 0, 0, 0.7) 76%,
+    rgba(0, 0, 0, 0.38) 90%,
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    black 0%,
+    black 48%,
+    rgba(0, 0, 0, 0.92) 62%,
+    rgba(0, 0, 0, 0.7) 76%,
+    rgba(0, 0, 0, 0.38) 90%,
+    transparent 100%
+  );
   mask-size: 100% 100%;
   -webkit-mask-size: 100% 100%;
 }
 
 .dark .top-bar-glass {
-  background-color: color-mix(in oklch, lab(0 0 0 / 0.83) 40%, transparent);
+  background-color: color-mix(in oklch, lab(0 0 0 / 0.72) 46%, transparent);
+}
+
+/* Carousel edge glass (left/right): use to hint adjacent slides while keeping center crisp. */
+.carousel-side-glass {
+  background-color: color-mix(in oklch, lab(100 0 0 / 0.68) 28%, transparent);
+  /* No blur: keep only the masked edge fade so adjacent slides remain crisp. */
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  transform: translate3d(0, 0, 0);
+  will-change: transform;
+}
+
+.dark .carousel-side-glass {
+  background-color: color-mix(in oklch, lab(0 0 0 / 0.68) 52%, transparent);
+}
+
+.carousel-side-glass-left {
+  mask-image: linear-gradient(
+    to right,
+    black 0%,
+    rgba(0, 0, 0, 0.94) 18%,
+    rgba(0, 0, 0, 0.75) 42%,
+    rgba(0, 0, 0, 0.42) 66%,
+    rgba(0, 0, 0, 0.18) 84%,
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to right,
+    black 0%,
+    rgba(0, 0, 0, 0.94) 18%,
+    rgba(0, 0, 0, 0.75) 42%,
+    rgba(0, 0, 0, 0.42) 66%,
+    rgba(0, 0, 0, 0.18) 84%,
+    transparent 100%
+  );
+  mask-size: 100% 100%;
+  -webkit-mask-size: 100% 100%;
+}
+
+.carousel-side-glass-right {
+  mask-image: linear-gradient(
+    to left,
+    black 0%,
+    rgba(0, 0, 0, 0.94) 18%,
+    rgba(0, 0, 0, 0.75) 42%,
+    rgba(0, 0, 0, 0.42) 66%,
+    rgba(0, 0, 0, 0.18) 84%,
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to left,
+    black 0%,
+    rgba(0, 0, 0, 0.94) 18%,
+    rgba(0, 0, 0, 0.75) 42%,
+    rgba(0, 0, 0, 0.42) 66%,
+    rgba(0, 0, 0, 0.18) 84%,
+    transparent 100%
+  );
+  mask-size: 100% 100%;
+  -webkit-mask-size: 100% 100%;
 }
 
 /* 
@@ -414,6 +565,26 @@ html body[data-scroll-locked] {
   .morphy-transition-transform {
     transition: transform 200ms ease-in-out;
   }
+
+  /* Fade carousel edges so adjacent slides "tease" into view without hard clipping. */
+  .carousel-edge-mask [data-slot="carousel-content"] {
+    mask-image: linear-gradient(
+      to right,
+      transparent 0%,
+      black 10%,
+      black 90%,
+      transparent 100%
+    );
+    -webkit-mask-image: linear-gradient(
+      to right,
+      transparent 0%,
+      black 10%,
+      black 90%,
+      transparent 100%
+    );
+    mask-size: 100% 100%;
+    -webkit-mask-size: 100% 100%;
+  }
 }
 
 /* Ripple Animation - For Morphy-UX click effects */
@@ -444,9 +615,10 @@ html body[data-scroll-locked] {
   background: linear-gradient(
     180deg,
     #ffffff 0%,
-    #ffffff 40%,
-    #f2f8ff 70%,
-    #e6f2ff 100%
+    #fcfeff 18%,
+    #f4f9ff 46%,
+    #e8f2ff 74%,
+    #dbe9ff 100%
   );
 }
 
@@ -467,9 +639,9 @@ html body[data-scroll-locked] {
 .morphy-app-bg-radial {
   background: radial-gradient(
     ellipse at 50% 0%,
-    rgba(0, 113, 227, 0.06) 0%,
-    rgba(59, 130, 246, 0.04) 25%,
-    rgba(59, 130, 246, 0.02) 45%,
+    rgba(0, 113, 227, 0.14) 0%,
+    rgba(59, 130, 246, 0.1) 22%,
+    rgba(59, 130, 246, 0.05) 44%,
     transparent 70%
   );
 }

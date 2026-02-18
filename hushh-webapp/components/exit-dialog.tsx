@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { LogOut, ShieldCheck } from "lucide-react";
 import { useContext } from "react";
+import { Icon } from "@/lib/morphy-ux/ui";
 
 // Import the context directly to check if it exists
 import { VaultContext } from "@/lib/vault/vault-context";
@@ -67,7 +68,7 @@ export function ExitDialog({ open, onOpenChange, onConfirm }: ExitDialogProps) {
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
-            <ShieldCheck className="h-5 w-5 text-primary" />
+            <Icon icon={ShieldCheck} size="md" className="text-primary" />
             Exit Hushh
           </AlertDialogTitle>
           <AlertDialogDescription>
@@ -81,7 +82,7 @@ export function ExitDialog({ open, onOpenChange, onConfirm }: ExitDialogProps) {
             onClick={handleExit}
             className="bg-red-600 text-white hover:bg-red-700 shadow-md"
           >
-            <LogOut className="h-4 w-4 mr-2" />
+            <Icon icon={LogOut} size="sm" className="mr-2" />
             Exit Hushh
           </AlertDialogAction>
         </AlertDialogFooter>

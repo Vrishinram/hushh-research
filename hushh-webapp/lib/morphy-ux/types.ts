@@ -65,6 +65,12 @@ export interface MorphyButtonBaseProps extends MorphyInteractiveProps {
 // Base props for card/surface components
 export interface MorphyCardBaseProps extends MorphyInteractiveProps {
   /**
+   * Design-system preset for consistent radius/elevation without per-callsite className.
+   * - "default": standard card surface
+   * - "hero": large-radius, elevated hero surface (e.g. onboarding previews)
+   */
+  preset?: "default" | "hero";
+  /**
    * Marks the card as interactive (pointer cursor, hover affordances).
    */
   interactive?: boolean;

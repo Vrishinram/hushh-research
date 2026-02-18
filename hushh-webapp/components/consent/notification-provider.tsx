@@ -17,6 +17,7 @@
 import { useEffect, useCallback, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Check, X } from "lucide-react";
+import { Icon } from "@/lib/morphy-ux/ui";
 import { useVault } from "@/lib/vault/vault-context";
 import { useConsentActions, type PendingConsent } from "@/lib/consent";
 import { ApiService } from "@/lib/services/api-service";
@@ -114,13 +115,13 @@ export function ConsentNotificationProvider({
               onClick={() => handleApprove(consent)}
               className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium rounded-lg flex items-center justify-center gap-1.5 transition-colors"
             >
-              <Check className="h-4 w-4" /> Approve
+              <Icon icon={Check} size="sm" /> Approve
             </button>
             <button
               onClick={() => handleDeny(consent.id)}
               className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm font-medium rounded-lg flex items-center justify-center gap-1.5 transition-colors dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600"
             >
-              <X className="h-4 w-4" /> Deny
+              <Icon icon={X} size="sm" /> Deny
             </button>
           </div>
         </div>,

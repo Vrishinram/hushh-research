@@ -15,6 +15,7 @@
 import { DollarSign } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/lib/morphy-ux/card";
+import { Icon } from "@/lib/morphy-ux/ui";
 
 // =============================================================================
 // TYPES
@@ -133,7 +134,7 @@ export function IncomeDetailCard({
     <Card variant="none" effect="glass" showRipple={false} className={className}>
       <CardHeader className="pb-2">
         <CardTitle className="text-sm flex items-center gap-2">
-          <DollarSign className="w-5 h-5" />
+          <Icon icon={DollarSign} size="md" />
           Income
         </CardTitle>
       </CardHeader>

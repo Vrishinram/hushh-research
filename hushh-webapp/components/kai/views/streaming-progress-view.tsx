@@ -21,6 +21,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
+import { Icon } from "@/lib/morphy-ux/ui";
 
 export type StreamingStage = "idle" | "active" | "complete" | "error";
 
@@ -204,7 +205,7 @@ function CatalystChips({ catalysts }: { catalysts: string[] }) {
       <div className="flex flex-wrap gap-1.5">
         {valid.slice(0, 6).map((c, i) => (
           <Badge key={i} variant="outline" className="text-[10px] bg-primary/5 border-primary/20">
-            <Zap className="w-2.5 h-2.5 mr-1" />
+            <Icon icon={Zap} size={10} className="mr-1" />
             {c.length > 40 ? c.slice(0, 40) + "..." : c}
           </Badge>
         ))}
@@ -222,7 +223,7 @@ function BullBearCase({ bullCase, bearCase }: { bullCase?: string; bearCase?: st
       {hasBull && (
         <div className="p-2 rounded-lg bg-emerald-500/5 border border-emerald-500/20">
           <div className="flex items-center gap-1.5 mb-0.5">
-            <TrendingUp className="w-3 h-3 text-emerald-500" />
+            <Icon icon={TrendingUp} size={12} className="text-emerald-500" />
             <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">Bull Case</span>
           </div>
           <p className="text-[10px] text-muted-foreground leading-relaxed">{bullCase}</p>
@@ -231,7 +232,7 @@ function BullBearCase({ bullCase, bearCase }: { bullCase?: string; bearCase?: st
       {hasBear && (
         <div className="p-2 rounded-lg bg-red-500/5 border border-red-500/20">
           <div className="flex items-center gap-1.5 mb-0.5">
-            <TrendingDown className="w-3 h-3 text-red-500" />
+            <Icon icon={TrendingDown} size={12} className="text-red-500" />
             <span className="text-[10px] font-semibold text-red-600 dark:text-red-400">Bear Case</span>
           </div>
           <p className="text-[10px] text-muted-foreground leading-relaxed">{bearCase}</p>
@@ -250,7 +251,7 @@ function PriceTargets({ targets }: { targets: Record<string, any> }) {
   return (
     <div className="space-y-1.5">
       <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-        <Target className="w-3.5 h-3.5" />
+        <Icon icon={Target} size="xs" />
         Price Targets
       </p>
       <div className="grid grid-cols-3 gap-1.5">
@@ -278,9 +279,10 @@ function SourcesList({ sources }: { sources: string[] }) {
         onClick={() => setExpanded(!expanded)}
         className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors"
       >
-        <ExternalLink className="w-3 h-3" />
+        <Icon icon={ExternalLink} size={12} />
         Sources ({valid.length})
-        {valid.length > 3 && (expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
+        {valid.length > 3 &&
+          (expanded ? <Icon icon={ChevronUp} size={12} /> : <Icon icon={ChevronDown} size={12} />)}
       </button>
       <div className="space-y-1">
         {visibleSources.map((src, i) => {
@@ -294,7 +296,7 @@ function SourcesList({ sources }: { sources: string[] }) {
                 rel="noopener noreferrer"
                 className="text-[10px] text-primary/80 hover:text-primary truncate pl-2 border-l-2 border-primary/20 flex items-center gap-1 transition-colors"
               >
-                <Link2 className="w-2.5 h-2.5 shrink-0" />
+                <Icon icon={Link2} size={10} className="shrink-0" />
                 <span className="truncate">{text || url}</span>
               </a>
             );
@@ -368,11 +370,11 @@ export function StreamingProgressView({
       <div className="flex items-center gap-2">
         <div className={cn("transition-colors duration-200 shrink-0", isActive ? accentColor : isComplete ? "text-emerald-500" : isError ? "text-red-500" : "text-muted-foreground")}>
           {isComplete ? (
-            <CheckCircle2 className="w-4 h-4" />
+            <Icon icon={CheckCircle2} size="sm" />
           ) : isError ? (
-            <AlertCircle className="w-4 h-4" />
+            <Icon icon={AlertCircle} size="sm" />
           ) : (
-            icon || <Loader2 className={cn("w-4 h-4", isActive && "animate-spin")} />
+            icon || <Icon icon={Loader2} size="sm" className={cn(isActive && "animate-spin")} />
           )}
         </div>
         <span className="text-xs text-muted-foreground">
@@ -421,7 +423,7 @@ export function StreamingProgressView({
           {isNonEmptyString(businessMoat) && (
             <div className="p-2 rounded-lg bg-blue-500/5 border border-blue-500/20">
               <div className="flex items-center gap-1.5 mb-0.5">
-                <Shield className="w-3 h-3 text-blue-500" />
+                <Icon icon={Shield} size={12} className="text-blue-500" />
                 <span className="text-[10px] font-semibold text-blue-600 dark:text-blue-400">Business Moat</span>
               </div>
               <p className="text-[10px] text-muted-foreground leading-relaxed">{businessMoat}</p>
@@ -464,7 +466,7 @@ export function StreamingProgressView({
       {isError && errorMessage && (
         <div className="p-2.5 bg-red-500/10 border border-red-500/20 rounded-lg">
           <div className="flex items-center gap-2 mb-0.5">
-            <AlertTriangle className="w-3 h-3 text-red-500" />
+            <Icon icon={AlertTriangle} size={12} className="text-red-500" />
             <span className="text-[10px] font-semibold text-red-500">Error Details</span>
           </div>
           <p className="text-[10px] text-red-500/80">{errorMessage}</p>

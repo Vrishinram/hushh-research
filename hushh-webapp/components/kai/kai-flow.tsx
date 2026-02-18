@@ -34,11 +34,7 @@ import { getStockContext } from "@/lib/services/kai-service";
 import { useKaiSession } from "@/lib/stores/kai-session-store";
 import type { KaiStreamEnvelope } from "@/lib/streaming/kai-stream-types";
 import { consumeCanonicalKaiStream } from "@/lib/streaming/kai-stream-client";
-import {
-  KaiIntroService,
-  type KaiIntroProfile,
-} from "@/lib/services/kai-intro-service";
-import { KaiIntroModal } from "@/components/kai/onboarding/kai-intro-modal";
+import { KaiPreferencesSheet } from "@/components/kai/onboarding/KaiPreferencesSheet";
 
 // =============================================================================
 // TYPES
@@ -422,8 +418,7 @@ export function KaiFlow({
     hasFinancialData: false,
   });
   const [error, setError] = useState<string | null>(null);
-  const [introProfile, setIntroProfile] = useState<KaiIntroProfile | null>(null);
-  const [introModalOpen, setIntroModalOpen] = useState(false);
+  const [preferencesSheetOpen, setPreferencesSheetOpen] = useState(false);
   
   // Streaming state for real-time progress
   const [streaming, setStreaming] = useState<StreamingState>({
@@ -654,74 +649,13 @@ export function KaiFlow({
     }
   }, [flowData.holdings, onHoldingsLoaded]);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadIntroProfile() {
-      if (!vaultKey || !vaultOwnerToken) {
-        setIntroProfile(null);
-        setIntroModalOpen(false);
-        return;
-      }
-
-      try {
-        const profile = await KaiIntroService.getProfile({
-          userId,
-          vaultKey,
-          vaultOwnerToken,
-        });
-        if (cancelled) {
-          return;
-        }
-        setIntroProfile(profile);
-        if (!profile.intro_seen) {
-          setIntroModalOpen(true);
-        }
-      } catch (introError) {
-        if (!cancelled) {
-          console.warn("[KaiFlow] Failed to load Kai intro profile:", introError);
-        }
-      }
-    }
-
-    loadIntroProfile();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [userId, vaultKey, vaultOwnerToken]);
-
-  const handleIntroComplete = useCallback(
-    async (update: {
-      intro_seen: boolean;
-      investment_horizon: string | null;
-      investment_style: string | null;
-    }) => {
-      if (!vaultKey || !vaultOwnerToken) {
-        toast.error("Unlock your vault to personalize Kai.");
-        return;
-      }
-
-      try {
-        const profile = await KaiIntroService.saveProfile({
-          userId,
-          vaultKey,
-          vaultOwnerToken,
-          patch: update,
-        });
-        setIntroProfile(profile);
-        setIntroModalOpen(false);
-      } catch (introSaveError) {
-        console.error("[KaiFlow] Failed to save Kai intro profile:", introSaveError);
-        toast.error("Couldn't save Kai personalization. Please retry.");
-      }
-    },
-    [userId, vaultKey, vaultOwnerToken]
-  );
-
   const handleOpenPersonalizeKai = useCallback(() => {
-    setIntroModalOpen(true);
-  }, []);
+    if (!vaultKey || !vaultOwnerToken) {
+      toast.error("Unlock your vault to edit Kai preferences.");
+      return;
+    }
+    setPreferencesSheetOpen(true);
+  }, [vaultKey, vaultOwnerToken]);
 
   // Production-grade disconnect: abort active streams on force-close, mobile swipe-away
   useEffect(() => {
@@ -1492,12 +1426,15 @@ export function KaiFlow({
         </div>
       )}
 
-      <KaiIntroModal
-        open={introModalOpen}
-        profile={introProfile}
-        onComplete={handleIntroComplete}
-        onOpenChange={setIntroModalOpen}
-      />
+      {vaultKey && vaultOwnerToken && (
+        <KaiPreferencesSheet
+          open={preferencesSheetOpen}
+          onOpenChange={setPreferencesSheetOpen}
+          userId={userId}
+          vaultKey={vaultKey}
+          vaultOwnerToken={vaultOwnerToken}
+        />
+      )}
     </div>
   );
 }

@@ -18,6 +18,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Button } from "@/lib/morphy-ux/morphy";
+import { Icon } from "@/lib/morphy-ux/ui";
 
 interface ConsentStatusBarProps {
   className?: string;
@@ -85,7 +86,7 @@ export function ConsentStatusBar({ className = "" }: ConsentStatusBarProps) {
         variant={session.isActive ? "default" : "destructive"}
         className="flex items-center gap-1.5 text-xs"
       >
-        <Shield className="h-3 w-3" />
+        <Icon icon={Shield} size={12} />
         <span className="hidden sm:inline">
           {session.isActive ? "Session Active" : "Session Expired"}
         </span>
@@ -97,7 +98,7 @@ export function ConsentStatusBar({ className = "" }: ConsentStatusBarProps) {
       {/* Time Remaining */}
       {session.isActive && timeRemaining && (
         <Badge variant="outline" className="flex items-center gap-1 text-xs">
-          <Clock className="h-3 w-3" />
+          <Icon icon={Clock} size={12} />
           <span className="hidden sm:inline">{timeRemaining}</span>
           <span className="sm:hidden">{timeRemaining}</span>
         </Badge>
@@ -116,10 +117,10 @@ export function ConsentStatusBar({ className = "" }: ConsentStatusBarProps) {
             className="h-6 px-2 text-xs text-muted-foreground"
           >
             Details
-            <ChevronDown
-              className={`h-3 w-3 ml-1 transition-transform ${
-                isOpen ? "rotate-180" : ""
-              }`}
+            <Icon
+              icon={ChevronDown}
+              size={12}
+              className={`ml-1 transition-transform ${isOpen ? "rotate-180" : ""}`}
             />
           </Button>
         </CollapsibleTrigger>

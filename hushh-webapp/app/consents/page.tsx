@@ -40,6 +40,8 @@ import {
   LineChart,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/lib/morphy-ux/ui/tabs";
+import type { LucideIcon } from "lucide-react";
+import { Icon } from "@/lib/morphy-ux/ui";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { useVault } from "@/lib/vault/vault-context";
@@ -109,23 +111,28 @@ interface ActiveConsent {
 // ============================================================================
 
 // Icon renderer helper (replaces emojis)
-const renderIcon = (iconName: string, className: string = "h-4 w-4") => {
-  const iconMap: Record<string, React.ReactNode> = {
-    clipboard: <Clipboard className={className} />,
-    check: <Check className={className} />,
-    x: <X className={className} />,
-    ban: <Ban className={className} />,
-    clock: <Clock className={className} />,
-    lock: <Lock className={className} />,
-    "file-text": <FileText className={className} />,
-    activity: <Activity className={className} />,
-    utensils: <Utensils className={className} />,
-    briefcase: <Briefcase className={className} />,
-    wallet: <Wallet className={className} />,
-    crown: <Crown className={className} />,
-    "line-chart": <LineChart className={className} />,
-  };
-  return iconMap[iconName] || <FileText className={className} />;
+const ICON_MAP: Record<string, LucideIcon> = {
+  clipboard: Clipboard,
+  check: Check,
+  x: X,
+  ban: Ban,
+  clock: Clock,
+  lock: Lock,
+  "file-text": FileText,
+  activity: Activity,
+  utensils: Utensils,
+  briefcase: Briefcase,
+  wallet: Wallet,
+  crown: Crown,
+  "line-chart": LineChart,
+};
+
+const renderIcon = (
+  iconName: string,
+  opts?: { size?: "xs" | "sm" | "md" | "lg" | "xl" | number; className?: string }
+) => {
+  const Lucide = ICON_MAP[iconName] || FileText;
+  return <Icon icon={Lucide} size={opts?.size ?? "sm"} className={opts?.className} />;
 };
 
 // User-friendly action labels with colors (no emojis)
@@ -422,7 +429,7 @@ function AppAuditLog({
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <History className="h-5 w-5" />
+            <Icon icon={History} size="md" />
             Connected Apps
           </CardTitle>
         </CardHeader>
@@ -441,7 +448,7 @@ function AppAuditLog({
         <DrawerContent>
           <DrawerHeader>
             <DrawerTitle className="flex items-center gap-2">
-              <Shield className="h-5 w-5" />
+              <Icon icon={Shield} size="md" />
               {selectedApp?.agent_id}
               {selectedApp?.hasActiveToken && (
                 <Badge className="bg-green-500/10 text-green-600 border-green-500/20 ml-2">
@@ -980,7 +987,7 @@ export default function ConsentsPage() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <div className="p-3 rounded-xl bg-linear-to-r from-(--morphy-primary-start) to-(--morphy-primary-end)">
-            <Shield className="h-6 w-6 text-white" />
+            <Icon icon={Shield} size="lg" className="text-white" />
           </div>
           <div>
             <h1 className="text-2xl font-bold">Consent Management</h1>
@@ -1007,7 +1014,7 @@ export default function ConsentsPage() {
           className="flex items-center gap-2 border p-2 md:px-4"
           title="Refresh"
         >
-          <RefreshCw className="h-4 w-4 shrink-0" />
+          <Icon icon={RefreshCw} size="sm" className="shrink-0" />
           <span className="hidden sm:inline">Refresh</span>
         </Button>
       </div>
@@ -1019,7 +1026,7 @@ export default function ConsentsPage() {
             value="pending"
             className="flex items-center gap-2 cursor-pointer"
           >
-            <Bell className="h-4 w-4" />
+            <Icon icon={Bell} size="sm" />
             Pending
             {pending.length > 0 && (
               <Badge
@@ -1034,14 +1041,14 @@ export default function ConsentsPage() {
             value="session"
             className="flex items-center gap-2 cursor-pointer"
           >
-            <Key className="h-4 w-4" />
+            <Icon icon={Key} size="sm" />
             Session
           </TabsTrigger>
           <TabsTrigger
             value="history"
             className="flex items-center gap-2 cursor-pointer"
           >
-            <History className="h-4 w-4" />
+            <Icon icon={History} size="sm" />
             Audit Log
           </TabsTrigger>
         </TabsList>
@@ -1051,7 +1058,11 @@ export default function ConsentsPage() {
           {pending.length === 0 ? (
             <Card>
               <CardContent className="py-12 text-center">
-                <Bell className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                <Icon
+                  icon={Bell}
+                  size={48}
+                  className="mx-auto text-gray-400 mb-4"
+                />
                 <h3 className="text-lg font-semibold">No Pending Requests</h3>
                 <p className="text-muted-foreground mt-2">
                   When developers request access to your data, it will appear
@@ -1089,7 +1100,7 @@ export default function ConsentsPage() {
                   </div>
 
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Clock className="h-4 w-4" />
+                    <Icon icon={Clock} size="sm" />
                     Access valid for {request.expiryHours} hours if approved
                   </div>
 
@@ -1101,9 +1112,13 @@ export default function ConsentsPage() {
                       disabled={actionLoading === request.id}
                     >
                       {actionLoading === request.id ? (
-                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                        <Icon
+                          icon={RefreshCw}
+                          size="sm"
+                          className="mr-2 animate-spin"
+                        />
                       ) : (
-                        <Check className="h-4 w-4 mr-2" />
+                        <Icon icon={Check} size="sm" className="mr-2" />
                       )}
                       Approve
                     </Button>
@@ -1113,7 +1128,7 @@ export default function ConsentsPage() {
                       className="flex-1 border border-destructive text-destructive hover:bg-destructive/10"
                       disabled={actionLoading === request.id}
                     >
-                      <X className="h-4 w-4 mr-2" />
+                      <Icon icon={X} size="sm" className="mr-2" />
                       Deny
                     </Button>
                   </div>
@@ -1132,7 +1147,7 @@ export default function ConsentsPage() {
                 <div className="flex items-start justify-between">
                   <div>
                     <CardTitle className="text-lg flex items-center gap-2">
-                      <Key className="h-5 w-5 text-purple-600" />
+                      <Icon icon={Key} size="md" className="text-purple-600" />
                       Owner Session
                     </CardTitle>
                     <p className="text-sm text-muted-foreground">
@@ -1154,7 +1169,7 @@ export default function ConsentsPage() {
                       Time Remaining
                     </p>
                     <p className="text-lg font-semibold flex items-center gap-2">
-                      <Clock className="h-4 w-4" />
+                      <Icon icon={Clock} size="sm" />
                       {ownerExpiresAt
                         ? getTimeRemaining(ownerExpiresAt)
                         : "N/A"}
@@ -1181,7 +1196,7 @@ export default function ConsentsPage() {
                   disabled={actionLoading === `revoke-${ownerScope}`}
                   className="w-full border border-destructive text-destructive hover:bg-destructive/10 cursor-pointer"
                 >
-                  <Ban className="h-4 w-4 mr-2" />
+                  <Icon icon={Ban} size="sm" className="mr-2" />
                   {actionLoading === `revoke-${ownerScope}`
                     ? "Revoking..."
                     : "Revoke Owner Session"}
@@ -1208,7 +1223,7 @@ export default function ConsentsPage() {
                       <div className="flex items-start justify-between">
                         <div>
                           <CardTitle className="text-lg flex items-center gap-2">
-                            <CheckCircle2 className="h-5 w-5 text-green-500" />
+                            <Icon icon={CheckCircle2} size="md" className="text-green-500" />
                             Active Consent
                           </CardTitle>
                           <p className="text-sm text-muted-foreground">
@@ -1232,7 +1247,7 @@ export default function ConsentsPage() {
                             Time Remaining
                           </p>
                           <p className="text-lg font-semibold flex items-center gap-2">
-                            <Clock className="h-4 w-4" />
+                            <Icon icon={Clock} size="sm" />
                             {timeRemaining}
                           </p>
                         </div>
@@ -1263,7 +1278,7 @@ export default function ConsentsPage() {
                         disabled={actionLoading === `revoke-${consent.scope}`}
                         className="w-full border border-destructive text-destructive hover:bg-destructive/10 cursor-pointer"
                       >
-                        <Ban className="h-4 w-4 mr-2" />
+                        <Icon icon={Ban} size="sm" className="mr-2" />
                         {actionLoading === `revoke-${consent.scope}`
                           ? "Revoking..."
                           : "Revoke Access"}
@@ -1277,7 +1292,11 @@ export default function ConsentsPage() {
             !session && !ownerActiveConsent && (
               <Card>
                 <CardContent className="py-12 text-center">
-                  <Key className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                  <Icon
+                    icon={Key}
+                    size={48}
+                    className="mx-auto text-gray-400 mb-4"
+                  />
                   <h3 className="text-lg font-semibold">No Active Sessions</h3>
                   <p className="text-muted-foreground mt-2">
                     Unlock your vault to start a session.
@@ -1293,7 +1312,11 @@ export default function ConsentsPage() {
           {auditLog.length === 0 ? (
             <Card>
               <CardContent className="py-12 text-center">
-                <History className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                <Icon
+                  icon={History}
+                  size={48}
+                  className="mx-auto text-gray-400 mb-4"
+                />
                 <h3 className="text-lg font-semibold">No Audit History</h3>
                 <p className="text-muted-foreground mt-2">
                   Consent actions will be recorded here.

@@ -3,6 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/lib/morphy-ux/card";
 import { TrendingUp, ShieldAlert, Crown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Icon } from "@/lib/morphy-ux/ui";
 
 interface TrinityCardsProps {
   bullCase?: string;
@@ -21,7 +22,7 @@ export function TrinityCards({ bullCase, bearCase, renaissanceVerdict }: Trinity
       <Card className={cn("border-emerald-500/20 bg-emerald-500/5", !bullCase && "opacity-50")}>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-2">
-            <TrendingUp className="w-4 h-4" />
+            <Icon icon={TrendingUp} size="sm" />
             Personalized Bull Case
           </CardTitle>
         </CardHeader>
@@ -42,7 +43,7 @@ export function TrinityCards({ bullCase, bearCase, renaissanceVerdict }: Trinity
       <Card className={cn("border-rose-500/20 bg-rose-500/5", !bearCase && "opacity-50")}>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-medium text-rose-600 dark:text-rose-400 flex items-center gap-2">
-            <ShieldAlert className="w-4 h-4" />
+            <Icon icon={ShieldAlert} size="sm" />
             Personalized Bear Case
           </CardTitle>
         </CardHeader>
@@ -63,7 +64,7 @@ export function TrinityCards({ bullCase, bearCase, renaissanceVerdict }: Trinity
       <Card className={cn("border-violet-500/20 bg-violet-500/5", !renaissanceVerdict && "opacity-50")}>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-medium text-violet-600 dark:text-violet-400 flex items-center gap-2">
-            <Crown className="w-4 h-4 text-amber-500" />
+            <Icon icon={Crown} size="sm" className="text-amber-500" />
             Renaissance Verdict
           </CardTitle>
         </CardHeader>

@@ -7,16 +7,18 @@ import React, { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import type { LucideIcon } from "lucide-react";
 import { TrendingUp, Bell, User, Mic } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useKaiSession } from "@/lib/stores/kai-session-store";
 import { usePendingConsentCount } from "@/components/consent/notification-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { Icon } from "@/lib/morphy-ux/ui";
 
 interface NavItem {
   label: string;
   href: string;
-  icon: React.ElementType;
+  icon: LucideIcon;
   badge?: number;
 }
 
@@ -24,10 +26,39 @@ export const Navbar = () => {
   const pathname = usePathname();
   const { isAuthenticated } = useAuth();
   const pendingConsents = usePendingConsentCount();
+  const pillRef = React.useRef<HTMLDivElement | null>(null);
 
   // Sticky Kai path (last visited /kai or /kai/dashboard/*)
   const lastKaiPath = useKaiSession((s) => s.lastKaiPath);
   const [kaiHref, setKaiHref] = useState("/kai");
+
+  // Measure bottom fixed UI (navbar/theme pill) and expose a single global offset for pinned CTAs.
+  React.useLayoutEffect(() => {
+    const el = pillRef.current;
+    if (!el) return;
+
+    const BOTTOM_GAP_PX = isAuthenticated ? 24 : 16; // matches the bottom calc (1.5rem vs 1rem)
+
+    const update = () => {
+      const rect = el.getBoundingClientRect();
+      const height = Math.max(0, rect.height);
+      const px = Math.round(height + BOTTOM_GAP_PX);
+      document.documentElement.style.setProperty("--app-bottom-fixed-ui", `${px}px`);
+    };
+
+    update();
+    const ro =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(() => update())
+        : null;
+    ro?.observe(el);
+
+    window.addEventListener("resize", update, { passive: true });
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (lastKaiPath) {
@@ -46,7 +77,7 @@ export const Navbar = () => {
   if (!isAuthenticated) {
     return (
       <nav className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-0 right-0 z-50 flex justify-center px-4 pointer-events-none">
-        <div className="pointer-events-auto shadow-2xl rounded-full">
+        <div ref={pillRef} className="pointer-events-auto shadow-2xl rounded-full">
           <ThemeToggle className="bg-white/80 dark:bg-black/80 backdrop-blur-md border border-gray-200 dark:border-gray-800" />
         </div>
       </nav>
@@ -80,9 +111,11 @@ export const Navbar = () => {
 
   return (
     <nav className="fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom))] inset-x-0 z-[120] flex justify-center px-4 pointer-events-none transform-gpu">
-      <div className="pointer-events-auto flex items-center p-1 bg-muted/80 backdrop-blur-3xl border border-white/10 dark:border-white/5 rounded-full shadow-2xl ring-1 ring-black/5 min-h-[45px]">
+      <div
+        ref={pillRef}
+        className="pointer-events-auto flex items-center p-1 bg-muted/80 backdrop-blur-3xl border border-white/10 dark:border-white/5 rounded-full shadow-2xl ring-1 ring-black/5 min-h-[45px]"
+      >
         {navigationItems.map((item) => {
-          const Icon = item.icon;
           // Handle trailing slashes from Capacitor static export
           const normalizedPathname = pathname?.replace(/\/$/, "") || "";
           const normalizedHref = item.href.replace(/\/$/, "");
@@ -105,8 +138,10 @@ export const Navbar = () => {
             >
               <div className="relative flex items-center justify-center">
                 <Icon
+                  icon={item.icon}
+                  size="md"
                   className={cn(
-                    "h-5 w-5 transition-transform duration-500 ease-[cubic-bezier(0.25,1,0.5,1)]",
+                    "transition-transform duration-500 ease-[cubic-bezier(0.25,1,0.5,1)]",
                     isActive && "scale-105"
                   )}
                 />

@@ -25,6 +25,7 @@ import {
   Receipt,
   Wallet,
 } from "lucide-react";
+import { Icon } from "@/lib/morphy-ux/ui";
 
 export interface YtdData {
   net_deposits_ytd?: number;
@@ -78,9 +79,9 @@ function MetricItem({ label, value, icon, showSign = false, invertColors = false
       <div className="flex items-center gap-1">
         {showSign && value !== 0 && (
           displayPositive ? (
-            <ArrowUpRight className="w-3.5 h-3.5 text-emerald-500" />
+            <Icon icon={ArrowUpRight} size="xs" className="text-emerald-500" />
           ) : (
-            <ArrowDownRight className="w-3.5 h-3.5 text-red-500" />
+            <Icon icon={ArrowDownRight} size="xs" className="text-red-500" />
           )
         )}
         <span
@@ -117,7 +118,7 @@ export function YtdSummaryCard({ data, className }: YtdSummaryCardProps) {
     <Card variant="muted" effect="glass" className={className}>
       <CardHeader className="pb-2">
         <CardTitle className="text-base flex items-center gap-2">
-          <Calendar className="w-5 h-5 text-primary" />
+          <Icon icon={Calendar} size="md" className="text-primary" />
           Year-to-Date Summary
         </CardTitle>
       </CardHeader>
@@ -126,7 +127,7 @@ export function YtdSummaryCard({ data, className }: YtdSummaryCardProps) {
           <MetricItem
             label="Net Deposits"
             value={data.net_deposits_ytd}
-            icon={<Wallet className="w-5 h-5 text-muted-foreground" />}
+            icon={<Icon icon={Wallet} size="md" className="text-muted-foreground" />}
             showSign
           />
         )}
@@ -135,7 +136,7 @@ export function YtdSummaryCard({ data, className }: YtdSummaryCardProps) {
           <MetricItem
             label="Withdrawals"
             value={-Math.abs(data.withdrawals_ytd)}
-            icon={<ArrowDownRight className="w-5 h-5 text-muted-foreground" />}
+            icon={<Icon icon={ArrowDownRight} size="md" className="text-muted-foreground" />}
           />
         )}
         
@@ -143,7 +144,7 @@ export function YtdSummaryCard({ data, className }: YtdSummaryCardProps) {
           <MetricItem
             label="Total Income"
             value={data.total_income_ytd}
-            icon={<DollarSign className="w-5 h-5 text-muted-foreground" />}
+            icon={<Icon icon={DollarSign} size="md" className="text-muted-foreground" />}
             showSign
           />
         )}
@@ -152,7 +153,7 @@ export function YtdSummaryCard({ data, className }: YtdSummaryCardProps) {
           <MetricItem
             label="Fees Paid"
             value={-Math.abs(data.total_fees)}
-            icon={<Receipt className="w-5 h-5 text-muted-foreground" />}
+            icon={<Icon icon={Receipt} size="md" className="text-muted-foreground" />}
             invertColors
           />
         )}
@@ -163,9 +164,9 @@ export function YtdSummaryCard({ data, className }: YtdSummaryCardProps) {
             value={data.investment_gain_loss}
             icon={
               data.investment_gain_loss >= 0 ? (
-                <TrendingUp className="w-5 h-5 text-emerald-500" />
+                <Icon icon={TrendingUp} size="md" className="text-emerald-500" />
               ) : (
-                <TrendingDown className="w-5 h-5 text-red-500" />
+                <Icon icon={TrendingDown} size="md" className="text-red-500" />
               )
             }
             showSign

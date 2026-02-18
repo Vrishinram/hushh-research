@@ -21,7 +21,7 @@ endif
 
 dev: ## Start frontend + backend (backend backgrounded)
 	@echo "Starting backend on :8000..."
-	@cd consent-protocol && python -m uvicorn server:app --reload --port 8000 &
+	@cd consent-protocol && python3 -m uvicorn server:app --reload --port 8000 &
 	@echo "Starting frontend on :3000..."
 	@cd hushh-webapp && npm run dev
 
@@ -29,7 +29,7 @@ dev-frontend: ## Start frontend only
 	cd hushh-webapp && npm run dev
 
 dev-backend: ## Start backend only
-	cd consent-protocol && python -m uvicorn server:app --reload --port 8000
+	cd consent-protocol && python3 -m uvicorn server:app --reload --port 8000
 
 # === Quality ===============================================================
 

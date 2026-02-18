@@ -43,7 +43,6 @@ const REQUIRED_PLUGINS = [
   "HushhKeychain", // iOS keystore uses jsName HushhKeychain
   "WorldModel",
   // Extra
-  "HushhOnboarding",
   "HushhAccount",
   "HushhNotifications",
 ];
@@ -55,8 +54,6 @@ const REQUIRED_WEB_ROUTES = [
   "hushh-webapp/app/api/kai/[...path]/route.ts",
   "hushh-webapp/app/api/consent/pending/route.ts",
   "hushh-webapp/app/api/consent/revoke/route.ts",
-  "hushh-webapp/app/api/onboarding/status/route.ts",
-  "hushh-webapp/app/api/onboarding/complete/route.ts",
 ];
 
 function checkWebRoutes() {
@@ -109,7 +106,6 @@ function checkAndroidRegistrationAndNames() {
     "HushhSettingsPlugin",
     "HushhKeystorePlugin",
     "WorldModelPlugin",
-    "HushhOnboardingPlugin",
     "HushhAccountPlugin",
     "HushhNotificationsPlugin",
   ];
@@ -123,7 +119,6 @@ function checkAndroidRegistrationAndNames() {
   // Ensure @CapacitorPlugin name alignment for selected plugins
   const androidPluginFiles = [
     "hushh-webapp/android/app/src/main/java/com/hushh/app/plugins/HushhNotifications/HushhNotificationsPlugin.kt",
-    "hushh-webapp/android/app/src/main/java/com/hushh/app/plugins/HushhOnboarding/HushhOnboardingPlugin.kt",
     "hushh-webapp/android/app/src/main/java/com/hushh/app/plugins/HushhAccount/HushhAccountPlugin.kt",
     "hushh-webapp/android/app/src/main/java/com/hushh/app/plugins/WorldModel/WorldModelPlugin.kt",
     "hushh-webapp/android/app/src/main/java/com/hushh/app/plugins/Kai/KaiPlugin.kt",

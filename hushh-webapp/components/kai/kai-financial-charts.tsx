@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/chart";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { TrendingUp, DollarSign } from "lucide-react";
+import { Icon } from "@/lib/morphy-ux/ui";
 
 interface TrendDataPoint {
   year: string;
@@ -96,7 +97,7 @@ export default function KaiFinancialCharts({ quantMetrics, keyMetrics }: KaiFina
         <Card className="border-border/40 bg-card/40 backdrop-blur-sm">
             <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium flex items-center gap-2">
-                    <TrendingUp className="w-4 h-4 text-primary" />
+                    <Icon icon={TrendingUp} size="sm" className="text-primary" />
                     Revenue Trend (3Y)
                 </CardTitle>
                 <CardDescription>
@@ -132,7 +133,7 @@ export default function KaiFinancialCharts({ quantMetrics, keyMetrics }: KaiFina
         <Card className="border-border/40 bg-card/40 backdrop-blur-sm">
             <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium flex items-center gap-2">
-                    <DollarSign className="w-4 h-4 text-green-500" />
+                    <Icon icon={DollarSign} size="sm" className="text-green-500" />
                     Net Income Trend
                 </CardTitle>
                 <CardDescription>

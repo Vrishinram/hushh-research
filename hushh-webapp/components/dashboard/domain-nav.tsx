@@ -7,6 +7,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { TrendingUp } from "lucide-react";
+import { Icon } from "@/lib/morphy-ux/ui";
 
 const domains = [
   {
@@ -24,7 +25,7 @@ export function DomainNav() {
   return (
     <nav className="space-y-1">
       {domains.map((domain) => {
-        const Icon = domain.icon;
+        const Lucide = domain.icon;
         const isActive = pathname?.startsWith(domain.href);
 
         return (
@@ -39,7 +40,7 @@ export function DomainNav() {
             )}
           >
             <div className="flex items-center gap-3">
-              <Icon className={cn("h-5 w-5", domain.color)} />
+              <Icon icon={Lucide} size="md" className={domain.color} />
               <span>{domain.name}</span>
             </div>
           </Link>

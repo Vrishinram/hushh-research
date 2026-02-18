@@ -24,6 +24,7 @@ import {
 import { Button } from "@/lib/morphy-ux/morphy";
 import { Shield, CheckCircle, XCircle, Clock, Lock } from "lucide-react";
 import { HushhLoader } from "@/components/ui/hushh-loader";
+import { Icon } from "@/lib/morphy-ux/ui";
 
 // ============================================================================
 // Types
@@ -112,7 +113,7 @@ export function ConsentDialog({
         {/* Scope Info */}
         <div className="space-y-4 py-4">
           <div className="flex items-start gap-3 p-3 rounded-lg bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800">
-            <Shield className="h-5 w-5 text-blue-500 mt-0.5" />
+            <Icon icon={Shield} size="md" className="text-blue-500 mt-0.5" />
             <div>
               <p className="font-medium text-blue-900 dark:text-blue-100">
                 {scopeInfo.title}
@@ -132,7 +133,7 @@ export function ConsentDialog({
               <ul className="text-sm space-y-1">
                 {request.dataFields.map((field, i) => (
                   <li key={i} className="flex items-center gap-2">
-                    <Lock className="h-3 w-3 text-green-500" />
+                    <Icon icon={Lock} size={12} className="text-green-500" />
                     <span>{field}</span>
                   </li>
                 ))}
@@ -142,7 +143,7 @@ export function ConsentDialog({
 
           {/* Expiry Info */}
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Clock className="h-4 w-4" />
+            <Icon icon={Clock} size="sm" />
             <span>Permission expires in {request.expiresInDays || 7} days</span>
           </div>
         </div>
@@ -159,7 +160,7 @@ export function ConsentDialog({
             disabled={isGranting || loading}
             className="flex-1"
           >
-            <XCircle className="h-4 w-4 mr-2" />
+            <Icon icon={XCircle} size="sm" className="mr-2" />
             Deny
           </Button>
           <Button
@@ -174,7 +175,7 @@ export function ConsentDialog({
               </>
             ) : (
               <>
-                <CheckCircle className="h-4 w-4 mr-2" />
+                <Icon icon={CheckCircle} size="sm" className="mr-2" />
                 Allow
               </>
             )}

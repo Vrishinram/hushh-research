@@ -15,6 +15,7 @@ import { Button } from '@/lib/morphy-ux/morphy';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Copy, Check, Download, AlertTriangle } from 'lucide-react';
 import { downloadTextFile } from '@/lib/utils/native-download';
+import { Icon } from '@/lib/morphy-ux/ui';
 
 interface RecoveryKeyDialogProps {
   open: boolean;
@@ -53,7 +54,7 @@ export function RecoveryKeyDialog({
       <DialogContent className="sm:max-w-lg" onPointerDownOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <AlertTriangle className="h-6 w-6 text-orange-500" />
+            <Icon icon={AlertTriangle} size="lg" className="text-orange-500" />
             Save Your Recovery Key
           </DialogTitle>
           <DialogDescription>
@@ -64,7 +65,7 @@ export function RecoveryKeyDialog({
 
         <div className="space-y-4 py-4">
           <Alert variant="destructive">
-            <AlertTriangle className="h-4 w-4" />
+            <Icon icon={AlertTriangle} size="sm" />
             <AlertDescription>
               <strong>Warning:</strong> This recovery key will only be shown once. 
               We cannot recover it for you if you lose it.
@@ -84,12 +85,12 @@ export function RecoveryKeyDialog({
             >
               {copied ? (
                 <>
-                  <Check className="h-4 w-4 mr-2" />
+                  <Icon icon={Check} size="sm" className="mr-2" />
                   Copied!
                 </>
               ) : (
                 <>
-                  <Copy className="h-4 w-4 mr-2" />
+                  <Icon icon={Copy} size="sm" className="mr-2" />
                   Copy Key
                 </>
               )}
@@ -99,7 +100,7 @@ export function RecoveryKeyDialog({
               onClick={handleDownload}
               className="w-full"
             >
-              <Download className="h-4 w-4 mr-2" />
+              <Icon icon={Download} size="sm" className="mr-2" />
               {downloaded ? 'Downloaded' : 'Download'}
             </Button>
           </div>

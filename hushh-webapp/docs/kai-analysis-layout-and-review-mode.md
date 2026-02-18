@@ -11,16 +11,21 @@
   - `components/kai/views/columns.tsx`
 - Menu trigger stops row click propagation for reliable touch behavior.
 
-## Kai Intro Preferences Save UX
-- Preferences are persisted to world model domain `kai_profile` using:
-  - `KaiIntroService.saveProfile()` -> `WorldModelService.storeMergedDomain(...)`.
-- Save button now shows spinner state:
-  - `components/kai/onboarding/kai-intro-modal.tsx`
-- Skip/Skip All now close immediately and save in background to remove perceived delay.
+## Kai Preferences (World Model)
+- Preferences are persisted to encrypted world model domain `kai_profile` via:
+  - `lib/services/kai-profile-service.ts` (`KaiProfileService.savePreferences`, `KaiProfileService.setOnboardingCompleted`)
+- Onboarding flow (post-auth + vault unlock):
+  - `app/kai/onboarding/page.tsx` (wizard -> persona -> dashboard)
+  - `components/kai/onboarding/KaiPreferencesWizard.tsx`
+  - `components/kai/onboarding/KaiPersonaScreen.tsx`
+- Dashboard editing uses a bottom sheet:
+  - `components/kai/onboarding/KaiPreferencesSheet.tsx`
 
 ## App Review Mode Source of Truth
 - Login screen now fetches review-mode config from backend at runtime:
   - `ApiService.getAppReviewModeConfig()`
+- Reviewer login session token:
+  - `ApiService.createAppReviewModeSession()` -> `AuthService.signInWithCustomToken(...)`
 - Web path:
   - `GET /api/app-config/review-mode` (Next route proxy)
   - `app/api/app-config/review-mode/route.ts`
@@ -28,6 +33,4 @@
   - `ApiService` points directly to backend, bypassing Next proxy.
 
 ## Native Auth Compatibility
-- Reviewer login now uses platform-aware `AuthService.signInWithEmailAndPassword(...)`
-  instead of direct Firebase web SDK call.
-- This keeps native and web login behavior aligned.
+- Reviewer login uses `AuthService.signInWithCustomToken(...)` (same on web + native).

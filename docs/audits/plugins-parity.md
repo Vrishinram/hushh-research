@@ -15,7 +15,6 @@ Observed files:
 - [`HushhAccountPlugin.swift`](../../hushh-webapp/ios/App/App/Plugins/HushhAccountPlugin.swift:1)
 - [`HushhAuthPlugin.swift`](../../hushh-webapp/ios/App/App/Plugins/HushhAuthPlugin.swift:1)
 - [`HushhConsentPlugin.swift`](../../hushh-webapp/ios/App/App/Plugins/HushhConsentPlugin.swift:1)
-- [`HushhIdentityPlugin.swift`](../../hushh-webapp/ios/App/App/Plugins/HushhIdentityPlugin.swift:1)
 - [`HushhKeystorePlugin.swift`](../../hushh-webapp/ios/App/App/Plugins/HushhKeystorePlugin.swift:1)
 - [`HushhNotificationsPlugin.swift`](../../hushh-webapp/ios/App/App/Plugins/HushhNotificationsPlugin.swift:1)
 - [`HushhSettingsPlugin.swift`](../../hushh-webapp/ios/App/App/Plugins/HushhSettingsPlugin.swift:1)
@@ -30,7 +29,9 @@ Non-plugin helper:
 
 Note:
 
-- iOS onboarding exists as `HushhOnboardingPlugin` but is implemented inside [`HushhSyncPlugin.swift`](../../hushh-webapp/ios/App/App/Plugins/HushhSyncPlugin.swift:133) (not a separate file).
+- `HushhOnboarding` plugin was removed (Feb 2026). Onboarding state now lives in:
+  - Local (device) marketing flag: `@capacitor/preferences`
+  - Encrypted world-model domain: `kai_profile`
 
 ### 1.2 Android plugins (Kotlin)
 
@@ -41,10 +42,8 @@ Observed:
 - [`HushhAccountPlugin.kt`](../../hushh-webapp/android/app/src/main/java/com/hushh/app/plugins/HushhAccount/HushhAccountPlugin.kt:1)
 - [`HushhAuthPlugin.kt`](../../hushh-webapp/android/app/src/main/java/com/hushh/app/plugins/HushhAuth/HushhAuthPlugin.kt:1)
 - [`HushhConsentPlugin.kt`](../../hushh-webapp/android/app/src/main/java/com/hushh/app/plugins/HushhConsent/HushhConsentPlugin.kt:1)
-- [`HushhIdentityPlugin.kt`](../../hushh-webapp/android/app/src/main/java/com/hushh/app/plugins/HushhIdentity/HushhIdentityPlugin.kt:1)
 - [`HushhKeystorePlugin.kt`](../../hushh-webapp/android/app/src/main/java/com/hushh/app/plugins/HushhKeystore/HushhKeystorePlugin.kt:1)
 - [`HushhNotificationsPlugin.kt`](../../hushh-webapp/android/app/src/main/java/com/hushh/app/plugins/HushhNotifications/HushhNotificationsPlugin.kt:1)
-- [`HushhOnboardingPlugin.kt`](../../hushh-webapp/android/app/src/main/java/com/hushh/app/plugins/HushhOnboarding/HushhOnboardingPlugin.kt:1)
 - [`HushhSettingsPlugin.kt`](../../hushh-webapp/android/app/src/main/java/com/hushh/app/plugins/HushhSettings/HushhSettingsPlugin.kt:1)
 - [`HushhSyncPlugin.kt`](../../hushh-webapp/android/app/src/main/java/com/hushh/app/plugins/HushhSync/HushhSyncPlugin.kt:1)
 - [`HushhVaultPlugin.kt`](../../hushh-webapp/android/app/src/main/java/com/hushh/app/plugins/HushhVault/HushhVaultPlugin.kt:1)
@@ -68,18 +67,15 @@ Shared helper:
 - `HushhSettings`: [`registerPlugin("HushhSettings")`](../../hushh-webapp/lib/capacitor/index.ts:440)
 - `HushhDatabase`: [`registerPlugin("HushhDatabase")`](../../hushh-webapp/lib/capacitor/index.ts:475)
 - `HushhSync`: [`registerPlugin("HushhSync")`](../../hushh-webapp/lib/capacitor/index.ts:584)
-- `HushhIdentity`: [`registerPlugin("HushhIdentity")`](../../hushh-webapp/lib/capacitor/index.ts:703)
-- `HushhOnboarding`: [`registerPlugin("HushhOnboarding")`](../../hushh-webapp/lib/capacitor/index.ts:741)
-- `HushhNotifications`: [`registerPlugin("HushhNotifications")`](../../hushh-webapp/lib/capacitor/index.ts:779)
-- `Kai`: [`registerPlugin("Kai")`](../../hushh-webapp/lib/capacitor/kai.ts:263)
-- `WorldModel`: [`registerPlugin("WorldModel")`](../../hushh-webapp/lib/capacitor/world-model.ts:215)
+- `HushhNotifications`: [`registerPlugin("HushhNotifications")`](../../hushh-webapp/lib/capacitor/index.ts:618)
+- `Kai`: [`registerPlugin("Kai")`](../../hushh-webapp/lib/capacitor/kai.ts:216)
+- `WorldModel`: [`registerPlugin("WorldModel")`](../../hushh-webapp/lib/capacitor/world-model.ts:231)
 
 ### 2.2 Potential drift detected
 
 - `HushhAccount` TS export exists: [`registerPlugin("HushhAccount")`](../../hushh-webapp/lib/capacitor/account.ts:8).
 
-- Android has `HushhOnboardingPlugin.kt`; iOS onboarding exists but is implemented inside [`HushhSyncPlugin.swift`](../../hushh-webapp/ios/App/App/Plugins/HushhSyncPlugin.swift:133).
-  - Action: ensure TS export `HushhOnboarding` matches iOS `jsName = "HushhOnboarding"`.
+- `HushhDatabase` is currently web-only (no native iOS/Android implementation). If native parity is required later, add the corresponding plugins.
 
 ---
 
@@ -89,13 +85,13 @@ Shared helper:
 
 Verified registration in [`MyViewController.swift`](../../hushh-webapp/ios/App/App/MyViewController.swift:13):
 
-- `HushhAuth`, `HushhVault`, `HushhConsent`, `HushhIdentity`, `Kai`, `HushhSync`, `HushhSettings`, `HushhKeystore`, `HushhNotifications`, `WorldModel`, `HushhOnboarding`, `HushhAccount`.
+- `HushhAuth`, `HushhVault`, `HushhConsent`, `Kai`, `HushhSync`, `HushhSettings`, `HushhKeychain`, `WorldModel`, `HushhAccount`, `HushhNotifications`.
 
 ### 3.2 Android
 
 Verified registration in [`MainActivity.kt`](../../hushh-webapp/android/app/src/main/java/com/hushh/app/MainActivity.kt:19):
 
-- `HushhAuth`, `HushhVault`, `HushhConsent`, `HushhIdentity`, `HushhSync`, `HushhOnboarding`, `HushhSettings`, `HushhKeystore`, `HushhNotifications`, `Kai`, `WorldModel`, `HushhAccount`.
+- `HushhAuth`, `HushhVault`, `HushhConsent`, `HushhSync`, `HushhSettings`, `HushhKeystore`, `HushhNotifications`, `Kai`, `WorldModel`, `HushhAccount`.
 
 ---
 

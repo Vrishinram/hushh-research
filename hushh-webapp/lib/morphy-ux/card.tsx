@@ -35,6 +35,7 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
       className,
       variant = "none",
       effect = "glass",
+      preset = "default",
       asChild = false,
       showRipple = false,
       icon,
@@ -131,10 +132,12 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
     };
 
     return (
-      <Comp
+          <Comp
         ref={ref}
         className={cn(
           "rounded-lg border border-solid text-card-foreground shadow-[0_1px_3px_0_rgb(0_0_0_/_0.3),_0_1px_2px_-1px_rgb(0_0_0_/_0.2)] relative p-6 transition-[border-color,box-shadow,background-color] duration-200",
+          preset === "hero" &&
+            "p-0 rounded-3xl shadow-[0_18px_60px_rgba(0,0,0,0.10)]",
           // Theme-aware background based on variant
           variant === "muted"
             ? "bg-white/60 dark:bg-background/40 border-border/30"

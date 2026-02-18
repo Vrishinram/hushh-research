@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card } from "@/lib/morphy-ux/card";
+import { Icon } from "@/lib/morphy-ux/ui";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 // Search is provided globally via Kai layout (bottom bar)
@@ -27,7 +28,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/lib/morphy-ux/button";
 import { format } from "date-fns";
 
 // ============================================================================
@@ -59,7 +60,7 @@ function decisionStyles(decision: string): {
       bg: "bg-emerald-500/10",
       text: "text-emerald-600 dark:text-emerald-400",
       border: "border-emerald-500/30",
-      icon: <TrendingUp className="w-3 h-3" />,
+      icon: <Icon icon={TrendingUp} size={12} />,
     };
   }
   if (d === "reduce" || d === "sell") {
@@ -67,7 +68,7 @@ function decisionStyles(decision: string): {
       bg: "bg-red-500/10",
       text: "text-red-600 dark:text-red-400",
       border: "border-red-500/30",
-      icon: <TrendingDown className="w-3 h-3" />,
+      icon: <Icon icon={TrendingDown} size={12} />,
     };
   }
   // hold / other
@@ -75,7 +76,7 @@ function decisionStyles(decision: string): {
     bg: "bg-amber-500/10",
     text: "text-amber-600 dark:text-amber-400",
     border: "border-amber-500/30",
-    icon: <Minus className="w-3 h-3" />,
+    icon: <Icon icon={Minus} size={12} />,
   };
 }
 
@@ -147,7 +148,7 @@ function EmptyState() {
   return (
     <div className="flex flex-col items-center justify-center py-12 px-4 space-y-6">
       <div className="p-4 rounded-full bg-primary/5 border border-primary/10">
-        <BarChart3 className="w-8 h-8 text-primary/60" />
+        <Icon icon={BarChart3} size={32} className="text-primary/60" />
       </div>
       <div className="text-center space-y-2 max-w-sm">
         <h3 className="text-lg font-semibold">No analyses yet</h3>
@@ -300,7 +301,7 @@ export function AnalysisHistoryDashboard({
     <div className="space-y-6 px-4 sm:px-6 pb-safe max-w-4xl mx-auto">
       {/* Header (search is global in Kai layout) */}
       <div className="flex items-center gap-2">
-        <Search className="w-4 h-4 text-muted-foreground" />
+        <Icon icon={Search} size="sm" className="text-muted-foreground" />
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
           Analysis History
         </h2>
@@ -351,8 +352,11 @@ export function AnalysisHistoryDashboard({
                   <Button
                     key={`${entry.ticker}-${entry.timestamp}`}
                     type="button"
-                    variant="ghost"
-                    className="w-full justify-between h-auto py-3 px-3"
+                    variant="none"
+                    effect="fade"
+                    size="sm"
+                    showRipple={false}
+                    className="w-full justify-between h-auto py-3 px-3 border border-transparent hover:border-border/40"
                     onClick={() => {
                       onViewHistory(entry);
                       setVersionsOpen(false);

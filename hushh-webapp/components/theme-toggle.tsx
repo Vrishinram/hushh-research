@@ -8,7 +8,10 @@ import {
   TooltipTrigger,
   TooltipContent,
 } from "@/components/ui/tooltip";
+import type { LucideIcon } from "lucide-react";
 import { Sun, Moon, Monitor } from "lucide-react";
+
+import { Icon } from "@/lib/morphy-ux/ui";
 
 type ThemeOption = "light" | "dark" | "system";
 
@@ -26,7 +29,7 @@ export function ThemeToggle({ className }: { className?: string }) {
 
   const themeOptions: {
     value: ThemeOption;
-    icon: any;
+    icon: LucideIcon;
     label: string;
   }[] = [
     { value: "light", icon: Sun, label: "Light" },
@@ -41,7 +44,7 @@ export function ThemeToggle({ className }: { className?: string }) {
         className
       )}
     >
-      {themeOptions.map(({ value, icon: Icon, label }) => {
+      {themeOptions.map(({ value, icon: Lucide, label }) => {
         const isActive = theme === value;
         return (
           <Tooltip key={value}>
@@ -56,8 +59,10 @@ export function ThemeToggle({ className }: { className?: string }) {
                 )}
               >
                 <Icon
+                  icon={Lucide}
+                  size="sm"
                   className={cn(
-                    "h-4 w-4 transition-transform duration-500 ease-[cubic-bezier(0.25,1,0.5,1)]",
+                    "transition-transform duration-500 ease-[cubic-bezier(0.25,1,0.5,1)]",
                     isActive && "scale-105"
                   )}
                 />

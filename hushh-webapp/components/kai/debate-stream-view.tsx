@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/lib/morphy-ux/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Loader2, AlertCircle, RefreshCw, X, WifiOff, ShieldAlert, Clock, CheckCircle2 } from "lucide-react";
+import { Icon } from "@/lib/morphy-ux/ui";
 import { setKaiVaultOwnerToken } from "@/lib/services/kai-service";
 import { KaiHistoryService } from "@/lib/services/kai-history-service";
 import { CacheService, CACHE_KEYS } from "@/lib/services/cache-service";
@@ -18,7 +19,7 @@ import { ApiService } from "@/lib/services/api-service";
 import { consumeCanonicalKaiStream } from "@/lib/streaming/kai-stream-client";
 import type { KaiStreamEnvelope } from "@/lib/streaming/kai-stream-types";
 import { useKaiSession } from "@/lib/stores/kai-session-store";
-import { KaiIntroService } from "@/lib/services/kai-intro-service";
+import { KaiProfileService } from "@/lib/services/kai-profile-service";
 
 // ============================================================================
 // Types
@@ -96,31 +97,31 @@ function getErrorDisplay(errorType: ErrorType, retryIn?: number): { icon: React.
   switch (errorType) {
     case "rate_limit":
       return {
-        icon: <Clock className="w-8 h-8 text-amber-500" />,
+        icon: <Icon icon={Clock} size={32} className="text-amber-500" />,
         title: "Rate Limit Reached",
         message: retryIn ? `Too many requests. Retrying in ${retryIn}s...` : "Too many requests. Please try again in a moment.",
       };
     case "auth_expired":
       return {
-        icon: <ShieldAlert className="w-8 h-8 text-red-500" />,
+        icon: <Icon icon={ShieldAlert} size={32} className="text-red-500" />,
         title: "Session Expired",
         message: "Your session has expired. Please re-authenticate to continue.",
       };
     case "server_error":
       return {
-        icon: <AlertCircle className="w-8 h-8 text-red-500" />,
+        icon: <Icon icon={AlertCircle} size={32} className="text-red-500" />,
         title: "Server Error",
         message: retryIn ? `Server encountered an error. Retrying in ${retryIn}s...` : "Server error. Please try again.",
       };
     case "connection_lost":
       return {
-        icon: <WifiOff className="w-8 h-8 text-orange-500" />,
+        icon: <Icon icon={WifiOff} size={32} className="text-orange-500" />,
         title: "Connection Lost",
         message: "Lost connection to the analysis server.",
       };
     default:
       return {
-        icon: <AlertCircle className="w-8 h-8 text-red-500" />,
+        icon: <Icon icon={AlertCircle} size={32} className="text-red-500" />,
         title: "Analysis Interrupted",
         message: "An unexpected error occurred.",
       };
@@ -305,18 +306,35 @@ export function DebateStreamView({ ticker, userId, riskProfile: riskProfileProp,
 
         // Build user context payload for backend personalization.
         let context: Record<string, unknown> | null = null;
+        let effectiveRiskProfile = riskProfileProp || "balanced";
         if (vaultKey) {
           try {
-            const profile = await KaiIntroService.getProfile({
+            const profile = await KaiProfileService.getProfile({
               userId,
               vaultKey,
               vaultOwnerToken,
             });
+            effectiveRiskProfile =
+              (profile.preferences.risk_profile as unknown as string | null) ||
+              effectiveRiskProfile;
             context = {
               user_name: userId,
               preferences: {
-                investment_horizon: profile.investment_horizon,
-                investment_style: profile.investment_style,
+                investment_horizon: profile.preferences.investment_horizon,
+                investment_horizon_selected_at:
+                  profile.preferences.investment_horizon_selected_at,
+                investment_horizon_anchor_at:
+                  profile.preferences.investment_horizon_anchor_at,
+                drawdown_response: profile.preferences.drawdown_response,
+                drawdown_response_selected_at:
+                  profile.preferences.drawdown_response_selected_at,
+                volatility_preference: profile.preferences.volatility_preference,
+                volatility_preference_selected_at:
+                  profile.preferences.volatility_preference_selected_at,
+                risk_score: profile.preferences.risk_score,
+                risk_profile: profile.preferences.risk_profile,
+                risk_profile_selected_at:
+                  profile.preferences.risk_profile_selected_at,
               },
               kai_profile: profile,
             };
@@ -326,15 +344,13 @@ export function DebateStreamView({ ticker, userId, riskProfile: riskProfileProp,
           }
         }
 
-        const riskProfile = riskProfileProp || "balanced";
-
         // Start SSE connection via ApiService.
         // This centralizes Android localhost→10.0.2.2 normalization and
         // uses native plugins on iOS/Android when available.
         const response = await ApiService.streamKaiAnalysis({
           userId,
           ticker,
-          riskProfile,
+          riskProfile: effectiveRiskProfile,
           userContext: context, // Pass the FULL decrypted context object
           vaultOwnerToken,
           signal: abortControllerRef.current.signal,
@@ -711,16 +727,26 @@ export function DebateStreamView({ ticker, userId, riskProfile: riskProfileProp,
             <p className="text-sm text-muted-foreground text-center">{error}</p>
             {retryCountdown !== null && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Icon icon={Loader2} size="sm" className="animate-spin" />
                 <span>Retrying in {retryCountdown}s...</span>
               </div>
             )}
             <div className="flex gap-2 pt-2">
-              <Button variant="outline" onClick={onClose}>
+              <Button
+                variant="none"
+                effect="fade"
+                size="sm"
+                showRipple={false}
+                className="border border-border/50 hover:border-border"
+                onClick={onClose}
+              >
                 Close
               </Button>
               {errorType !== "auth_expired" && (
                 <Button
+                  variant="blue-gradient"
+                  effect="fill"
+                  size="sm"
                   onClick={() => {
                     retryCountRef.current = 0;
                     resetState();
@@ -728,12 +754,12 @@ export function DebateStreamView({ ticker, userId, riskProfile: riskProfileProp,
                     startStream();
                   }}
                 >
-                  <RefreshCw className="w-4 h-4 mr-2" /> Retry
+                  <Icon icon={RefreshCw} size="sm" className="mr-2" /> Retry
                 </Button>
               )}
               {errorType === "auth_expired" && (
-                <Button onClick={onClose}>
-                  <ShieldAlert className="w-4 h-4 mr-2" /> Re-authenticate
+                <Button variant="blue-gradient" effect="fill" size="sm" onClick={onClose}>
+                  <Icon icon={ShieldAlert} size="sm" className="mr-2" /> Re-authenticate
                 </Button>
               )}
             </div>
@@ -759,11 +785,11 @@ export function DebateStreamView({ ticker, userId, riskProfile: riskProfileProp,
               {/* Status badge */}
               {decision ? (
                 <Badge className="text-[10px] bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 font-semibold">
-                  <CheckCircle2 className="w-3 h-3 mr-1" /> Complete
+                  <Icon icon={CheckCircle2} size={12} className="mr-1" /> Complete
                 </Badge>
               ) : loading ? (
                 <Badge variant="outline" className="text-[10px] bg-primary/10 text-primary border-primary/30 font-medium max-w-[240px] truncate">
-                  <Loader2 className="w-3 h-3 mr-1 animate-spin" /> {kaiThinking}
+                  <Icon icon={Loader2} size={12} className="mr-1 animate-spin" /> {kaiThinking}
                 </Badge>
               ) : retryCountdown !== null ? (
                 <Badge variant="outline" className="text-[10px] bg-amber-500/10 text-amber-600 border-amber-500/30">
@@ -774,12 +800,14 @@ export function DebateStreamView({ ticker, userId, riskProfile: riskProfileProp,
             {/* Right: Back button */}
             <div className="flex justify-end">
               <Button
-                variant="ghost"
+                variant="none"
+                effect="fade"
                 size="sm"
+                showRipple={false}
                 onClick={handleClose}
                 className="shrink-0 h-8 gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
               >
-                <X className="w-3.5 h-3.5" />
+                <Icon icon={X} size="xs" />
               </Button>
             </div>
           </div>

@@ -1,5 +1,19 @@
 # Component Development Guidelines
 
+## Quick Rules (Design System North Stars)
+
+- **Icons:** Use Lucide via the `Icon` wrapper (`hushh-webapp/lib/morphy-ux/ui/icon.tsx`). Do not size icons with Tailwind `h-<n>/w-<n>` in app code.
+- **CTAs:** Use Morphy `Button` for user-facing actions. Prefer `variant="blue-gradient"` for primary CTAs.
+- **Surfaces:** Use Morphy `Card` for glass surfaces. Do not use legacy `.crystal-*` classes in app code.
+- **Motion:** Use GSAP via Morphy hooks/helpers (`lib/morphy-ux/gsap-init.ts`, `lib/morphy-ux/hooks/*`). Avoid bespoke `ease-[cubic-bezier(...)]` / long Tailwind transitions in feature code.
+- **shadcn:** Keep `components/ui/*` stock; add/update via shadcn CLI. Extend via `lib/morphy-ux/ui/*`.
+- **Radius:** Use token-backed `rounded-*` classes (`rounded-xl/2xl/3xl` map to CSS vars).
+- **Onboarding Intro:** Use `BrandMark` + `OnboardingFeatureList` (feature rail + tri-tone icon chips) from `lib/morphy-ux/ui/*`; do not recreate this pattern in route components.
+
+See:
+- `docs/reference/design-system.md`
+- `docs/reference/frontend-pattern-catalog.md`
+
 ## 1. Tri-Flow Architecture (Data Access)
 
 ### ⛔ CRITICAL: Network Calls in Components
@@ -77,7 +91,7 @@ Rationale:
   - You need a low-level control that Morphy-UX does not yet wrap.
   - You are building an internal-only tool where brand polish is not required.
 
-See `[docs/reference/frontend_design_system.md](../../docs/reference/frontend_design_system.md)` for full prop contracts.
+See `[docs/reference/design-system.md](../../docs/reference/design-system.md)` for full prop contracts.
 
 ---
 
@@ -184,6 +198,6 @@ If you answered "no" to question 4 for a user-facing surface, strongly consider 
 ## 6. See Also
 
 - `[docs/project_context_map.md](../../docs/project_context_map.md)` – Tri-flow rules.
-- `[docs/guides/feature_checklist.md](../../docs/guides/feature_checklist.md)` – Implementation guide.
-- `[docs/reference/route_contracts.md](../../docs/reference/route_contracts.md)` – Endpoint documentation.
-- `[docs/reference/frontend_design_system.md](../../docs/reference/frontend_design_system.md)` – Design tokens, props, and UX patterns.
+- `[docs/guides/new-feature.md](../../docs/guides/new-feature.md)` – New feature checklist (tri-flow).
+- `[docs/reference/route_contracts.md](../../docs/reference/route_contracts.md)` – Next.js route governance.
+- `[docs/reference/design-system.md](../../docs/reference/design-system.md)` – Design tokens, props, and UX patterns.

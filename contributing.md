@@ -148,7 +148,7 @@ Attach a screen recording or screenshot of the feature in action.
 - **[Getting Started Guide](getting_started.md)**: Environment setup
 - **[Contributing Guide](contributing.md)**: Workflow and guidelines (this file)
 - **[Project Context Map](docs/project_context_map.md)**: Understanding the codebase
-- **[Feature Checklist](docs/guides/feature_checklist.md)**: Building new features
+- **[New Feature Checklist](docs/guides/new-feature.md)**: Building new features
 - **[Route Contracts](docs/reference/route_contracts.md)**: API contract documentation
 
 ---

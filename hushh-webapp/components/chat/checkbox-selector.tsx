@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { Send, Plus, Check } from "lucide-react";
+import { Icon } from "@/lib/morphy-ux/ui";
 
 interface CheckboxSelectorProps {
   options: string[];
@@ -96,7 +97,7 @@ export function CheckboxSelector({
                     : "bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-500"
                 )}
               >
-                {isSelected && <Check className="h-3 w-3" />}
+                {isSelected && <Icon icon={Check} size={12} />}
                 <span className="font-medium truncate max-w-[150px]">
                   {displayName}
                 </span>
@@ -124,7 +125,7 @@ export function CheckboxSelector({
               disabled={!customValue.trim()}
               className="h-8 w-8 text-muted-foreground hover:text-primary"
             >
-              <Plus className="h-4 w-4" />
+              <Icon icon={Plus} size="sm" />
             </Button>
           </div>
         )}
@@ -135,7 +136,7 @@ export function CheckboxSelector({
           className="h-8 bg-blue-600 hover:bg-blue-700 text-white text-xs px-4 ml-auto"
         >
           {submitLabel}
-          <Send className="ml-2 h-3 w-3" />
+          <Icon icon={Send} size={12} className="ml-2" />
         </Button>
       </div>
     </div>

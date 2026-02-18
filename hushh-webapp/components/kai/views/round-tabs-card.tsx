@@ -3,7 +3,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/lib/morphy-ux/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/lib/morphy-ux/button";
 import {
   ChevronDown,
   ChevronUp,
@@ -18,6 +18,7 @@ import { AgentAnalysisCard } from "../agent-analysis-card";
 import { cn } from "@/lib/morphy-ux";
 import { Badge } from "@/components/ui/badge";
 import type { AgentState } from "../debate-stream-view";
+import { Icon } from "@/lib/morphy-ux/ui";
 
 // ============================================================================
 // Types
@@ -41,21 +42,21 @@ const AGENT_ORDER = ["fundamental", "sentiment", "valuation"] as const;
 const AGENT_CONFIG = {
   fundamental: {
     label: "Fundamental",
-    icon: <Search className="w-4 h-4" />,
+    icon: <Icon icon={Search} size="sm" />,
     color: "text-blue-500",
     bgActive: "bg-blue-500",
     bgDot: "bg-blue-500",
   },
   sentiment: {
     label: "Sentiment",
-    icon: <Heart className="w-4 h-4" />,
+    icon: <Icon icon={Heart} size="sm" />,
     color: "text-purple-500",
     bgActive: "bg-purple-500",
     bgDot: "bg-purple-500",
   },
   valuation: {
     label: "Valuation",
-    icon: <Calculator className="w-4 h-4" />,
+    icon: <Icon icon={Calculator} size="sm" />,
     color: "text-emerald-500",
     bgActive: "bg-emerald-500",
     bgDot: "bg-emerald-500",
@@ -153,7 +154,7 @@ export function RoundTabsCard({
                   : "bg-muted/30 text-muted-foreground"
               )}
             >
-              {isRoundComplete ? <CheckCircle2 className="w-4 h-4" /> : roundNumber}
+              {isRoundComplete ? <Icon icon={CheckCircle2} size="sm" /> : roundNumber}
             </div>
             <div>
               <CardTitle className="text-base font-semibold">{title}</CardTitle>
@@ -164,15 +165,22 @@ export function RoundTabsCard({
           <div className="flex items-center gap-2">
             {isRoundComplete ? (
               <Badge variant="outline" className="text-xs bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30">
-                <CheckCircle2 className="w-3 h-3 mr-1" /> Complete
+                <Icon icon={CheckCircle2} size={12} className="mr-1" /> Complete
               </Badge>
             ) : hasAnyActivity ? (
               <Badge variant="outline" className="text-xs bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30">
-                <Clock className="w-3 h-3 mr-1 animate-pulse" /> {completedCount}/3
+                <Icon icon={Clock} size={12} className="mr-1 animate-pulse" /> {completedCount}/3
               </Badge>
             ) : null}
-            <Button variant="ghost" size="sm" onClick={onToggleCollapse} className="h-8 w-8 p-0">
-              {isCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+            <Button
+              variant="none"
+              effect="fade"
+              size="icon-sm"
+              showRipple={false}
+              onClick={onToggleCollapse}
+              className="h-8 w-8 p-0 border border-transparent hover:border-border/40"
+            >
+              {isCollapsed ? <Icon icon={ChevronDown} size="sm" /> : <Icon icon={ChevronUp} size="sm" />}
             </Button>
           </div>
         </div>
@@ -200,9 +208,9 @@ export function RoundTabsCard({
                   >
                     {/* Completion/Active indicator */}
                     {isAgentComplete ? (
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                      <Icon icon={CheckCircle2} size="xs" className="text-emerald-500 shrink-0" />
                     ) : isAgentError ? (
-                      <AlertCircle className="w-3.5 h-3.5 text-red-500 shrink-0" />
+                      <Icon icon={AlertCircle} size="xs" className="text-red-500 shrink-0" />
                     ) : isAgentActive ? (
                       <span className="relative flex h-2 w-2 shrink-0">
                         <span className={cn("animate-ping absolute inline-flex h-full w-full rounded-full opacity-75", config.bgDot)} />

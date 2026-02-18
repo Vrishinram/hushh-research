@@ -19,6 +19,7 @@ import {
   AlertTriangle,
   ArrowLeft,
 } from "lucide-react";
+import { Icon } from "@/lib/morphy-ux/ui";
 
 // VSCode-style syntax highlighting for JSON
 function SyntaxHighlightedJSON({ code }: { code: string }) {
@@ -67,9 +68,13 @@ function CopyButton({ text }: { text: string }) {
       title="Copy to clipboard"
     >
       {copied ? (
-        <Check className="h-4 w-4 text-green-500" />
+        <Icon icon={Check} size="sm" className="text-green-500" />
       ) : (
-        <Copy className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
+        <Icon
+          icon={Copy}
+          size="sm"
+          className="text-zinc-500 dark:text-zinc-400"
+        />
       )}
     </button>
   );
@@ -108,10 +113,10 @@ export default function ApiDocsPage() {
             href="/docs"
             className="text-muted-foreground hover:text-foreground cursor-pointer"
           >
-            <ArrowLeft className="h-5 w-5" />
+            <Icon icon={ArrowLeft} size="md" />
           </Link>
           <div className="flex items-center gap-2">
-            <Code className="h-5 w-5 text-blue-500" />
+            <Icon icon={Code} size="md" className="text-blue-500" />
             <h1 className="text-xl font-bold">Developer API</h1>
           </div>
           <div className="ml-auto">
@@ -128,7 +133,7 @@ export default function ApiDocsPage() {
                 size="sm"
                 className="border cursor-pointer"
               >
-                Swagger <ExternalLink className="h-3 w-3 ml-1" />
+                Swagger <Icon icon={ExternalLink} size={12} className="ml-1" />
               </Button>
             </a>
           </div>
@@ -146,7 +151,7 @@ export default function ApiDocsPage() {
         {/* Consent Flow */}
         <section className="space-y-4">
           <h2 className="text-2xl font-bold flex items-center gap-2">
-            <Shield className="h-6 w-6 text-blue-500" />
+            <Icon icon={Shield} size="lg" className="text-blue-500" />
             Consent Flow
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -190,7 +195,7 @@ export default function ApiDocsPage() {
               POST
             </span>
             <code className="text-lg font-mono">/api/v1/request-consent</code>
-            <Lock className="h-4 w-4 text-yellow-500 ml-auto" />
+            <Icon icon={Lock} size="sm" className="text-yellow-500 ml-auto" />
           </div>
 
           <Card variant="none" effect="glass" className="p-6 space-y-6">
@@ -256,7 +261,7 @@ export default function ApiDocsPage() {
         {/* Errors */}
         <section className="space-y-4">
           <h2 className="text-2xl font-bold flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-red-500" />
+            <Icon icon={AlertTriangle} size="md" className="text-red-500" />
             Error Codes
           </h2>
           <Card variant="none" effect="glass" className="p-6">
@@ -289,7 +294,11 @@ export default function ApiDocsPage() {
                 "Secure tokens — Never expose tokens in client-side code",
               ].map((tip) => (
                 <li key={tip} className="flex items-start gap-3 text-sm">
-                  <ChevronRight className="h-4 w-4 text-blue-500 mt-0.5 shrink-0" />
+                  <Icon
+                    icon={ChevronRight}
+                    size="sm"
+                    className="text-blue-500 mt-0.5 shrink-0"
+                  />
                   <span>{tip}</span>
                 </li>
               ))}

@@ -18,7 +18,8 @@ import { FileText, ChevronDown, ChevronUp, Shield, Scale } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/lib/morphy-ux/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/lib/morphy-ux/button";
+import { Icon } from "@/lib/morphy-ux/ui";
 import {
   Collapsible,
   CollapsibleContent,
@@ -48,7 +49,7 @@ function categorizeDisclosure(text: string): {
   if (lowerText.includes("patriot act") || lowerText.includes("usa patriot")) {
     return {
       category: "USA PATRIOT Act",
-      icon: <Shield className="w-5 h-5" />,
+      icon: <Icon icon={Shield} size="md" />,
       priority: 1,
     };
   }
@@ -56,7 +57,7 @@ function categorizeDisclosure(text: string): {
   if (lowerText.includes("sipc") || lowerText.includes("securities investor")) {
     return {
       category: "SIPC Protection",
-      icon: <Shield className="w-5 h-5" />,
+      icon: <Icon icon={Shield} size="md" />,
       priority: 2,
     };
   }
@@ -64,7 +65,7 @@ function categorizeDisclosure(text: string): {
   if (lowerText.includes("fdic")) {
     return {
       category: "FDIC Insurance",
-      icon: <Shield className="w-5 h-5" />,
+      icon: <Icon icon={Shield} size="md" />,
       priority: 3,
     };
   }
@@ -75,7 +76,7 @@ function categorizeDisclosure(text: string): {
   ) {
     return {
       category: "Privacy Notice",
-      icon: <Scale className="w-5 h-5" />,
+      icon: <Icon icon={Scale} size="md" />,
       priority: 4,
     };
   }
@@ -83,14 +84,14 @@ function categorizeDisclosure(text: string): {
   if (lowerText.includes("risk") || lowerText.includes("investment risk")) {
     return {
       category: "Risk Disclosure",
-      icon: <Scale className="w-5 h-5" />,
+      icon: <Icon icon={Scale} size="md" />,
       priority: 5,
     };
   }
 
   return {
     category: "General Disclosure",
-    icon: <FileText className="w-5 h-5" />,
+    icon: <Icon icon={FileText} size="md" />,
     priority: 10,
   };
 }
@@ -153,9 +154,9 @@ function DisclosureItem({ text, index: _index }: DisclosureItemProps) {
             {isLongText && (
               <div className="shrink-0 text-muted-foreground">
                 {isOpen ? (
-                  <ChevronUp className="w-4 h-4" />
+                  <Icon icon={ChevronUp} size="sm" />
                 ) : (
-                  <ChevronDown className="w-4 h-4" />
+                  <Icon icon={ChevronDown} size="sm" />
                 )}
               </div>
             )}
@@ -208,9 +209,9 @@ export function LegalDisclosuresCard({
   return (
     <Card className={cn("w-full", className)}>
       <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Scale className="w-6 h-6 text-muted-foreground" />
+            <Icon icon={Scale} size="lg" className="text-muted-foreground" />
             <CardTitle className="text-base">Legal Disclosures</CardTitle>
           </div>
           <Badge variant="secondary" className="text-xs">
@@ -229,24 +230,28 @@ export function LegalDisclosuresCard({
 
         {hiddenCount > 0 && !showAll && (
           <Button
-            variant="ghost"
+            variant="none"
+            effect="fade"
             size="sm"
+            showRipple={false}
             onClick={() => setShowAll(true)}
-            className="w-full text-xs text-muted-foreground hover:text-foreground"
+            className="w-full text-xs text-muted-foreground hover:text-foreground border border-transparent hover:border-border/50"
           >
-            <ChevronDown className="w-4 h-4 mr-1" />
+            <Icon icon={ChevronDown} size="sm" className="mr-1" />
             Show {hiddenCount} more disclosure{hiddenCount !== 1 ? "s" : ""}
           </Button>
         )}
 
         {showAll && sortedDisclosures.length > 3 && (
           <Button
-            variant="ghost"
+            variant="none"
+            effect="fade"
             size="sm"
+            showRipple={false}
             onClick={() => setShowAll(false)}
-            className="w-full text-xs text-muted-foreground hover:text-foreground"
+            className="w-full text-xs text-muted-foreground hover:text-foreground border border-transparent hover:border-border/50"
           >
-            <ChevronUp className="w-4 h-4 mr-1" />
+            <Icon icon={ChevronUp} size="sm" className="mr-1" />
             Show less
           </Button>
         )}

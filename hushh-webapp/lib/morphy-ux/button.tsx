@@ -15,7 +15,7 @@ import { useIconWeight } from "@/lib/morphy-ux/icon-theme-context";
 // ============================================================================
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 cursor-pointer focus-visible:outline-none focus:outline-none focus-visible:outline-none",
+  "inline-flex items-center justify-center whitespace-nowrap rounded-full text-sm font-medium ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 cursor-pointer focus-visible:outline-none focus:outline-none focus-visible:outline-none",
   {
     variants: {
       size: {
@@ -54,8 +54,9 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   (
     {
       className,
-      variant = "gradient",
-      effect = "glass",
+      // Default to primary CTA look (design-system requirement).
+      variant = "blue-gradient",
+      effect = "fill",
       size,
       asChild = false,
       showRipple = true,
@@ -161,11 +162,14 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         className={cn(
           buttonVariants({ size }),
           variantStyles,
+          "shadow-none",
           showRipple ? "relative overflow-hidden" : "",
-          // Add border with transition for smooth hover effect
-          "border border-transparent transition-[border-color,box-shadow,background-color] duration-200",
-          // Hover border effect for all buttons - silver accent in dark mode for hushh brand
-          "hover:border-black dark:hover:border-[#c0c0c0]",
+          // Link buttons should behave like text, not pills with borders/heights.
+          variant === "link" ? "h-auto px-0 py-0 rounded-none" : "",
+          // Add border with transition for smooth hover effect (not for link/none).
+          variant !== "link" && variant !== "none"
+            ? "border border-transparent transition-[border-color,box-shadow,background-color] duration-200 hover:border-black dark:hover:border-[#c0c0c0]"
+            : "",
           fullWidth ? "w-full" : "",
           loading ? "cursor-wait" : "",
           className
@@ -178,16 +182,19 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         data-loading={loading || undefined}
         {...restProps}
       >
-        {IconComponent && renderIconBlock()}
-        {children}
         {/* Material 3 Expressive Ripple */}
         {showRipple && (
           <MaterialRipple
             variant={variant}
             effect={effect}
             disabled={props.disabled}
+            className="z-0"
           />
         )}
+        <span className="relative z-10 inline-flex items-center justify-center">
+          {IconComponent && renderIconBlock()}
+          {children}
+        </span>
       </Comp>
     );
   }
