@@ -162,9 +162,12 @@ html body[data-scroll-locked] {
 
   /* Hushh Brand Color Tokens - Apple Blue */
   --morphy-primary-start: #0071e3;
+  --morphy-primary-mid: #2d86ff;
   --morphy-primary-end: #3b82f6;
   --morphy-secondary-start: #c0c0c0;
   --morphy-secondary-end: #e8e8e8;
+  --morphy-glass-accent-a: rgba(55, 131, 255, 0.13);
+  --morphy-glass-accent-b: rgba(109, 175, 255, 0.11);
 
   /* CTA elevation (used by Morphy Button fill variants) */
   --morphy-cta-shadow: rgba(0, 113, 227, 0.25);
@@ -177,6 +180,7 @@ html body[data-scroll-locked] {
   --morphy-primary-gradient: linear-gradient(
     to right,
     var(--morphy-primary-start),
+    var(--morphy-primary-mid),
     var(--morphy-primary-end)
   );
   --morphy-secondary-gradient: linear-gradient(
@@ -199,14 +203,24 @@ html body[data-scroll-locked] {
 
 /* Theme-aware gradient text - Apple Blue consistently */
 .hushh-gradient-text {
-  background-image: linear-gradient(to right, #0071e3, #3b82f6);
+  background-image: linear-gradient(
+    98deg,
+    #0063d9 0%,
+    #2d86ff 52%,
+    #67b0ff 100%
+  );
   color: transparent;
   -webkit-background-clip: text;
   background-clip: text;
 }
 
 .dark .hushh-gradient-text {
-  background-image: linear-gradient(to right, #60a5fa, #93c5fd);
+  background-image: linear-gradient(
+    98deg,
+    #67a8ff 0%,
+    #8ec2ff 52%,
+    #b8dcff 100%
+  );
 }
 
 /* Hushh Brand Text */
@@ -269,10 +283,13 @@ html body[data-scroll-locked] {
   --fadeGrey: #e5e7eb80;
 
   /* Morphy UI Color Tokens - Dark Mode */
-  --morphy-primary-start: #60a5fa;
-  --morphy-primary-end: #3b82f6;
+  --morphy-primary-start: #5a9fff;
+  --morphy-primary-mid: #82bcff;
+  --morphy-primary-end: #4f93ff;
   --morphy-secondary-start: #60a5fa;
   --morphy-secondary-end: #3b82f6;
+  --morphy-glass-accent-a: rgba(90, 159, 255, 0.16);
+  --morphy-glass-accent-b: rgba(130, 188, 255, 0.14);
 
   /* Onboarding tri-tone chips / rail (dark mode) */
   --tone-blue: #60a5fa;
@@ -544,6 +561,21 @@ md-ripple.morphy-md-ripple {
     background-color 200ms ease-in-out,
     border-color 200ms ease-in-out,
     color 200ms ease-in-out;
+}
+
+/* Root-controlled theme transition layer (single source of truth). */
+.theme-switching *,
+.theme-switching *::before,
+.theme-switching *::after {
+  transition-property:
+    color,
+    background-color,
+    border-color,
+    fill,
+    stroke,
+    box-shadow;
+  transition-duration: 240ms !important;
+  transition-timing-function: ease-in-out !important;
 }
 
 /* Standard interaction transitions for buttons, cards, links */

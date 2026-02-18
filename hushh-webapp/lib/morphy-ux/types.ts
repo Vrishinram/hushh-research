@@ -71,6 +71,11 @@ export interface MorphyCardBaseProps extends MorphyInteractiveProps {
    */
   preset?: "default" | "hero";
   /**
+   * Optional glass accent overlay for depth/highlight on glass cards.
+   * Keep centralized via tokens so light/dark stay balanced.
+   */
+  glassAccent?: "none" | "soft" | "balanced";
+  /**
    * Marks the card as interactive (pointer cursor, hover affordances).
    */
   interactive?: boolean;

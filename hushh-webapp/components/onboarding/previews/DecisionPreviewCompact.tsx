@@ -1,115 +1,92 @@
 "use client";
 
-import { Minus, Sparkles, TrendingDown, TrendingUp } from "lucide-react";
-
-import { Badge } from "@/components/ui/badge";
-import type { DecisionResult } from "@/components/kai/views/decision-card";
 import { Card } from "@/lib/morphy-ux/card";
+import { Icon } from "@/lib/morphy-ux/ui";
+import { CheckCircle, PlusCircle, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type Decision = DecisionResult["decision"];
+const ANALYSIS_ROWS = [
+  {
+    label: "COMPANY STRENGTH",
+    text: "Record vehicle deliveries and expanding margins",
+    icon: CheckCircle,
+  },
+  {
+    label: "MARKET TREND",
+    text: "Strong upward momentum and institutional backing",
+    icon: TrendingUp,
+  },
+  {
+    label: "PRICE VALUE",
+    text: "Attractive entry point for long-term growth",
+    icon: PlusCircle,
+  },
+] as const;
 
 export function DecisionPreviewCompact() {
-  const decision: Decision = "BUY";
-
   return (
     <Card
       variant="none"
       effect="glass"
       preset="hero"
       showRipple={false}
+      className="h-full w-full"
     >
-      <div className="p-6 space-y-4">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <div className="h-9 w-9 rounded-2xl bg-muted/40 grid place-items-center">
-                <Sparkles className="h-4 w-4 text-[var(--brand-600)]" />
+      <div className="p-5">
+        <div className="rounded-2xl border border-background/70 bg-background/55 p-5">
+          <div className="mb-5 flex items-center justify-between border-b border-border/70 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="grid h-9 w-9 place-items-center rounded-full bg-black text-[11px] font-extrabold text-white dark:bg-white dark:text-black">
+                TSLA
               </div>
-              <div>
-                <p className="text-xs text-muted-foreground uppercase tracking-widest">
-                  TSLA
-                </p>
-                <p className="text-sm font-semibold">Analysis</p>
-              </div>
+              <p className="text-[19px] font-bold tracking-tight">TSLA</p>
             </div>
+            <span className="rounded-full border border-border/70 bg-background/80 px-2.5 py-1 text-xs font-semibold text-muted-foreground">
+              Analysis
+            </span>
           </div>
 
-          <Badge
-            variant="outline"
-            className={cn(
-              "rounded-full px-3 py-1 text-xs font-extrabold tracking-wider",
-              decisionTone(decision).badge
-            )}
-          >
-            <span className="inline-flex items-center gap-1.5">
-              {renderDecisionIcon(decision, "h-3.5 w-3.5")}
-              {decision}
-            </span>
-          </Badge>
-        </div>
+          <div className="space-y-4">
+            {ANALYSIS_ROWS.map((item) => (
+              <div key={item.label} className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
+                    {item.label}
+                  </p>
+                  <p className="mt-0.5 text-sm font-medium leading-tight">{item.text}</p>
+                </div>
+                <Icon icon={item.icon} size="lg" className="shrink-0 text-[var(--tone-orange)]" />
+              </div>
+            ))}
+          </div>
 
-        <div className="space-y-2">
-          <Point
-            title="Company strength"
-            text="Expanding margins with resilient demand."
-            tone="good"
-          />
-          <Point
-            title="Market trend"
-            text="Momentum supported by institutional flow."
-            tone="good"
-          />
-          <Point
-            title="Price value"
-            text="Attractive entry for long-term growth."
-            tone="neutral"
-          />
-        </div>
-
-        <div className="pt-1 text-xs text-muted-foreground">
-          Conviction: High · Horizon: 12+ months
+          <div className="mt-6 border-t border-border/70 pt-5">
+            <div className="mb-3 flex w-full gap-2">
+              <ActionPill active label="BUY" />
+              <ActionPill label="HOLD" />
+              <ActionPill label="SELL" />
+            </div>
+            <p className="text-center text-[13px] font-medium text-muted-foreground">
+              Conviction: High · Horizon: 12+ months
+            </p>
+          </div>
         </div>
       </div>
     </Card>
   );
 }
 
-function decisionTone(decision: Decision): { badge: string; icon: string } {
-  switch (decision) {
-    case "BUY":
-      return { badge: "border-emerald-500/30 text-emerald-600 bg-emerald-500/10", icon: "text-emerald-600" };
-    case "REDUCE":
-      return { badge: "border-red-500/30 text-red-600 bg-red-500/10", icon: "text-red-600" };
-    default:
-      return { badge: "border-amber-500/30 text-amber-700 bg-amber-500/10", icon: "text-amber-700" };
-  }
-}
-
-function renderDecisionIcon(decision: Decision, className?: string) {
-  const tone = decisionTone(decision);
-  if (decision === "BUY") return <TrendingUp className={cn(className, tone.icon)} />;
-  if (decision === "REDUCE") return <TrendingDown className={cn(className, tone.icon)} />;
-  return <Minus className={cn(className, tone.icon)} />;
-}
-
-function Point(props: { title: string; text: string; tone: "good" | "neutral" }) {
-  const indicator =
-    props.tone === "good"
-      ? "bg-emerald-500/70"
-      : "bg-muted-foreground/40";
-
+function ActionPill({ label, active = false }: { label: string; active?: boolean }) {
   return (
-    <div className="rounded-2xl bg-muted/30 px-4 py-3">
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0 space-y-1">
-          <p className="text-[10px] font-extrabold tracking-[0.18em] text-muted-foreground uppercase">
-            {props.title}
-          </p>
-          <p className="text-sm font-semibold leading-snug">{props.text}</p>
-        </div>
-        <span className={cn("mt-1 h-2.5 w-2.5 rounded-full", indicator)} aria-hidden />
-      </div>
+    <div
+      className={cn(
+        "flex-1 rounded-xl px-2 py-2.5 text-center text-[13px] font-semibold",
+        active
+          ? "bg-emerald-500 text-white dark:bg-emerald-400 dark:text-black"
+          : "border border-border/70 bg-muted/45 text-muted-foreground"
+      )}
+    >
+      {label}
     </div>
   );
 }

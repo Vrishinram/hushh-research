@@ -66,6 +66,7 @@ import { CardContent, CardTitle, CardDescription } from "@/components/ui/card";
   variant="none"
   effect="glass"
   preset="default" // optional: "default" | "hero"
+  glassAccent="none" // optional: "none" | "soft" | "balanced" (for tokenized glass highlights)
   showRipple // Only for clickable cards
   onClick={handler}
 >
@@ -74,6 +75,8 @@ import { CardContent, CardTitle, CardDescription } from "@/components/ui/card";
 
 // Note: CardContent, CardTitle, etc. still come from @/components/ui/card
 ```
+
+`glassAccent` is the centralized way to add subtle liquid-glass color depth. Avoid ad-hoc blur blobs in feature components.
 
 ### VaultFlow (Authentication)
 
@@ -265,6 +268,27 @@ Don't:
 
 ---
 
+## Onboarding Carousel Pattern (Slide 2)
+
+Use this pattern for the marketing preview carousel step on `/`:
+
+- `hushh-webapp/components/onboarding/PreviewCarouselStep.tsx` owns:
+  - slide metadata (`title`, `accent`, `subtitle`, `preview`)
+  - carousel state (Embla API + selected index)
+  - fixed footer CTA + dots
+- `hushh-webapp/components/onboarding/previews/*` owns slide body visuals:
+  - `KycPreviewCompact.tsx`
+  - `PortfolioPreviewCompact.tsx`
+  - `DecisionPreviewCompact.tsx`
+
+Rules:
+- Keep shadcn `Carousel` stock (`components/ui/carousel.tsx`).
+- Keep primary CTA as Morphy `Button`.
+- Use Lucide icons via `Icon` wrapper across slide bodies.
+- Translate Figma into reusable React components; do not paste raw HTML.
+
+---
+
 ## 8. Motion System (GSAP + Morphy)
 
 **North star:** motion is globally tunable and consistent. If we retune duration/easing once, it should reflect everywhere.
@@ -309,6 +333,16 @@ If `CustomEase` is unavailable, GSAP still supports `ease: "cubic-bezier(...)"` 
 
 All Morphy GSAP helpers must bail out when the OS requests reduced motion:
 - `prefersReducedMotion()` in `hushh-webapp/lib/morphy-ux/gsap.ts`
+
+### Theme switch transitions (root-level)
+
+Theme color transitions are controlled at the root level (not per component):
+- Controller: `hushh-webapp/components/theme-provider.tsx` (`ThemeTransitionController`)
+- Global class: `.theme-switching` in `hushh-webapp/app/globals.css`
+
+Rule:
+- Do not add component-scoped theme transition overrides for text/surface colors.
+- Use the root transition layer so all pages/cards/carousels switch themes uniformly.
 
 ### React usage patterns (required)
 

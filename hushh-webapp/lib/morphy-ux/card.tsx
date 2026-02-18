@@ -42,6 +42,7 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
       interactive,
       selected,
       fullHeight,
+      glassAccent = "none",
       children,
       ...props
     },
@@ -132,7 +133,7 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
     };
 
     return (
-          <Comp
+      <Comp
         ref={ref}
         className={cn(
           "rounded-lg border border-solid text-card-foreground shadow-[0_1px_3px_0_rgb(0_0_0_/_0.3),_0_1px_2px_-1px_rgb(0_0_0_/_0.2)] relative p-6 transition-[border-color,box-shadow,background-color] duration-200",
@@ -160,14 +161,29 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
         )}
         {...props}
       >
-        {/* Render icon block at top or bottom, in flow, never absolute */}
-        {IconComponent &&
-          (iconPosition === "top-left" || iconPosition === "top-right") &&
-          renderIconBlock()}
-        {children}
-        {IconComponent &&
-          (iconPosition === "bottom-left" || iconPosition === "bottom-right") &&
-          renderIconBlock()}
+        {effect === "glass" && glassAccent !== "none" && (
+          <div
+            aria-hidden
+            className={cn(
+              "pointer-events-none absolute inset-0",
+              glassAccent === "soft"
+                ? "bg-[radial-gradient(95%_75%_at_15%_82%,var(--morphy-glass-accent-a)_0%,transparent_70%),radial-gradient(88%_70%_at_84%_16%,var(--morphy-glass-accent-b)_0%,transparent_68%)] opacity-70"
+                : "bg-[radial-gradient(95%_75%_at_15%_82%,var(--morphy-glass-accent-a)_0%,transparent_66%),radial-gradient(88%_70%_at_84%_16%,var(--morphy-glass-accent-b)_0%,transparent_64%)] opacity-95"
+            )}
+            style={{ borderRadius: "inherit" }}
+          />
+        )}
+
+        <div className="relative z-[1]">
+          {/* Render icon block at top or bottom, in flow, never absolute */}
+          {IconComponent &&
+            (iconPosition === "top-left" || iconPosition === "top-right") &&
+            renderIconBlock()}
+          {children}
+          {IconComponent &&
+            (iconPosition === "bottom-left" || iconPosition === "bottom-right") &&
+            renderIconBlock()}
+        </div>
         {/* Material 3 Expressive Ripple */}
         {showRipple && <MaterialRipple variant={variant} effect={effect} />}
       </Comp>

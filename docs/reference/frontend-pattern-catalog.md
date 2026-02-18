@@ -142,6 +142,30 @@ Do:
 
 ---
 
+## Pattern: Onboarding Carousel Slide Content (Figma -> React)
+
+Keywords: onboarding, carousel, preview, compact, morphy-card, lucide
+
+Use when: Building onboarding slides from design references without raw HTML imports.
+
+Do:
+- Keep slide composition in React components under `components/onboarding/previews/*`.
+- Use Morphy `Card` (`preset="hero"`) for glass surfaces.
+- Use Lucide via `Icon` wrapper (no Material Symbols).
+- Keep slide data (title/accent/subtitle/component) in `PreviewCarouselStep`.
+
+Don't:
+- Paste Figma HTML directly into routes/components.
+- Re-implement slide-specific styles inline in app routes.
+
+Files:
+- `hushh-webapp/components/onboarding/PreviewCarouselStep.tsx`
+- `hushh-webapp/components/onboarding/previews/KycPreviewCompact.tsx`
+- `hushh-webapp/components/onboarding/previews/PortfolioPreviewCompact.tsx`
+- `hushh-webapp/components/onboarding/previews/DecisionPreviewCompact.tsx`
+
+---
+
 ## Pattern: Page Enter Fade (GSAP)
 
 Keywords: gsap, motion, page, enter, fade, providers

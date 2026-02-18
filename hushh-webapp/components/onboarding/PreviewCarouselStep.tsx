@@ -15,7 +15,6 @@ import { cn } from "@/lib/utils";
 import { OnboardingLocalService } from "@/lib/services/onboarding-local-service";
 import { ChevronRight } from "lucide-react";
 import { Icon } from "@/lib/morphy-ux/ui";
-import { useCarouselDeckFocus } from "@/lib/morphy-ux/hooks/use-carousel-deck-focus";
 import { prefersReducedMotion, getGsap } from "@/lib/morphy-ux/gsap";
 import { ensureMorphyGsapReady, getMorphyEaseName } from "@/lib/morphy-ux/gsap-init";
 import { getMotionCssVars } from "@/lib/morphy-ux/motion";
@@ -26,6 +25,7 @@ import { DecisionPreviewCompact } from "@/components/onboarding/previews/Decisio
 
 type Slide = {
   title: string;
+  accent: string;
   subtitle: string;
   preview: React.ReactNode;
 };
@@ -34,20 +34,23 @@ export function PreviewCarouselStep({ onContinue }: { onContinue: () => void }) 
   const slides: Slide[] = useMemo(
     () => [
       {
-        title: "Verified\nWithout friction",
+        title: "Verified without",
+        accent: "friction",
         subtitle:
-          "Secure identity verification\nfully compliant and completed in\nminutes",
+          "Secure identity verification — fully compliant and completed in minutes.",
         preview: <KycPreviewCompact />,
       },
       {
-        title: "See your portfolio\nclearly",
-        subtitle: "Performance, allocation, and risk\norganized in one place.",
+        title: "See your portfolio",
+        accent: "clearly",
+        subtitle: "Performance, allocation, and risk — organized in one place.",
         preview: <PortfolioPreviewCompact />,
       },
       {
-        title: "Decide with\nconviction",
+        title: "Decide with",
+        accent: "conviction",
         subtitle:
-          "Every decision is backed by structured\nanalysis and aligned to your risk profile.",
+          "Every decision is backed by structured analysis and aligned to your risk profile.",
         preview: <DecisionPreviewCompact />,
       },
     ],
@@ -58,7 +61,6 @@ export function PreviewCarouselStep({ onContinue }: { onContinue: () => void }) 
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [displayIndex, setDisplayIndex] = useState(0);
   const headerRef = useRef<HTMLDivElement | null>(null);
-  const slideEls = useRef<Array<HTMLElement | null>>([]);
   const mountRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -78,8 +80,6 @@ export function PreviewCarouselStep({ onContinue }: { onContinue: () => void }) 
   }, [api]);
 
   const isLast = selectedIndex === slides.length - 1;
-
-  useCarouselDeckFocus({ activeIndex: selectedIndex, slideEls, api });
 
   // Step entrance animation: this is what you feel when clicking "Get Started"
   // and transitioning from Step 1 -> Step 2 without a route change.
@@ -162,10 +162,14 @@ export function PreviewCarouselStep({ onContinue }: { onContinue: () => void }) 
     };
   }, [selectedIndex]);
 
+  async function completeAndContinue() {
+    await OnboardingLocalService.markMarketingSeen();
+    onContinue();
+  }
+
   async function handlePrimary() {
     if (isLast) {
-      await OnboardingLocalService.markMarketingSeen();
-      onContinue();
+      await completeAndContinue();
       return;
     }
     api?.scrollNext();
@@ -178,44 +182,52 @@ export function PreviewCarouselStep({ onContinue }: { onContinue: () => void }) 
         "h-[100dvh] w-full bg-transparent flex flex-col overflow-hidden"
       )}
     >
-      <header className="flex-none px-6 pt-6 pb-2">
+      <header className="relative flex-none px-6 pt-6 pb-2">
+        <div className="absolute right-6 top-3 z-10">
+          <Button
+            variant="link"
+            effect="fill"
+            size="sm"
+            showRipple={false}
+            onClick={completeAndContinue}
+          >
+            Skip
+            <Icon icon={ChevronRight} size="sm" className="ml-1" />
+          </Button>
+        </div>
         <div
           ref={headerRef}
           className={cn(
             "w-full mx-auto text-center flex flex-col justify-end gap-3",
             // Responsive allocation so we never clip on tablets/desktop, while keeping mobile tight.
-            "min-h-[clamp(168px,24vh,268px)]",
+            "min-h-[clamp(168px,22vh,248px)]",
             "sm:max-w-lg"
           )}
         >
-          <h2 className="text-[clamp(2.25rem,6vw,3.75rem)] font-black tracking-tight leading-[1.05] whitespace-pre-line">
+          <h2 className="text-[clamp(2rem,5.6vw,3.2rem)] font-black tracking-tight leading-[1.08]">
             {slides[displayIndex]?.title}
+            <br />
+            <span className="hushh-gradient-text">{slides[displayIndex]?.accent}</span>
           </h2>
-          <p className="text-[clamp(0.875rem,2.2vw,1rem)] text-muted-foreground whitespace-pre-line leading-relaxed">
+          <p className="mx-auto max-w-[19rem] text-[clamp(0.95rem,2.2vw,1.05rem)] text-muted-foreground leading-relaxed">
             {slides[displayIndex]?.subtitle}
           </p>
         </div>
       </header>
 
-      {/* Match header/footer gutters so the first slide doesn't feel glued to the screen edge. */}
       <section className="flex-1 min-h-0 flex items-center overflow-hidden px-6">
-        {/* Shadcn stock structure (CarouselDemo): Carousel -> CarouselContent -> CarouselItem -> p-1 -> Card -> CardContent */}
         <Carousel
+          opts={{ align: "center", containScroll: "trimSnaps" }}
           setApi={setApi}
-          className="w-full max-w-xs sm:max-w-sm md:max-w-md mx-auto"
+          className="w-full max-w-sm sm:max-w-md mx-auto"
         >
-          <CarouselContent>
+          <CarouselContent className="items-center">
             {slides.map((slide, idx) => (
-              <CarouselItem key={idx}>
-                <div className="p-2">
-                  <Card className="border-0 bg-transparent shadow-none">
-                    <CardContent className="flex items-center justify-center p-0">
-                      <div
-                        ref={(node) => {
-                          slideEls.current[idx] = node;
-                        }}
-                        className="inline-block max-w-full transform-gpu will-change-transform"
-                      >
+              <CarouselItem key={idx} className="flex items-center justify-center">
+                <div className="w-full max-w-[22rem] p-1">
+                  <Card className="h-full w-full border-0 bg-transparent shadow-none">
+                    <CardContent className="flex h-full items-center justify-center p-0">
+                      <div className="flex w-full min-h-[clamp(24rem,50vh,31rem)] items-center justify-center">
                         {slide.preview}
                       </div>
                     </CardContent>
@@ -224,8 +236,8 @@ export function PreviewCarouselStep({ onContinue }: { onContinue: () => void }) 
               </CarouselItem>
             ))}
           </CarouselContent>
-          <CarouselPrevious />
-          <CarouselNext />
+          <CarouselPrevious className="left-0 border-border/60 bg-background/85 backdrop-blur-sm" />
+          <CarouselNext className="right-0 border-border/60 bg-background/85 backdrop-blur-sm" />
         </Carousel>
       </section>
 

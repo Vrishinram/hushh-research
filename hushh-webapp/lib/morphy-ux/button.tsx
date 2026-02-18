@@ -191,7 +191,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
             className="z-0"
           />
         )}
-        <span className="relative z-10 inline-flex items-center justify-center">
+        <span className="relative z-10 inline-flex items-center justify-center pointer-events-none">
           {IconComponent && renderIconBlock()}
           {children}
         </span>

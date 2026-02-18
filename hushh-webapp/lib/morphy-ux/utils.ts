@@ -7,7 +7,8 @@ import { type ColorVariant, type ComponentEffect } from "./types";
 
 export const gradientPresets = {
   // Primary brand gradient - Blue→Purple (auto-switches in dark mode via CSS vars)
-  primary: "from-[var(--morphy-primary-start)] to-[var(--morphy-primary-end)]",
+  primary:
+    "from-[var(--morphy-primary-start)] via-[var(--morphy-primary-mid)] to-[var(--morphy-primary-end)]",
 
   // Secondary gradient - Silver for subtle backgrounds
   secondary:
