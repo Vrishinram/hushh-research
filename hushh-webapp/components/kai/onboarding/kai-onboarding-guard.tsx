@@ -5,8 +5,14 @@ import { usePathname, useRouter } from "next/navigation";
 
 import { HushhLoader } from "@/components/ui/hushh-loader";
 import { KaiProfileService } from "@/lib/services/kai-profile-service";
+import { PreVaultOnboardingService } from "@/lib/services/pre-vault-onboarding-service";
+import { VaultService } from "@/lib/services/vault-service";
 import { useAuth } from "@/hooks/use-auth";
 import { useVault } from "@/lib/vault/vault-context";
+import {
+  isOnboardingRequiredCookieEnabled,
+  setOnboardingRequiredCookie,
+} from "@/lib/services/onboarding-route-cookie";
 
 export function KaiOnboardingGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -18,23 +24,52 @@ export function KaiOnboardingGuard({ children }: { children: React.ReactNode }) 
 
   useEffect(() => {
     let cancelled = false;
+    const onOnboardingRoute = pathname.startsWith("/kai/onboarding");
 
     async function run() {
       if (authLoading) return;
 
-      // VaultLockGuard handles unauthenticated + locked vault states.
-      if (!user || !isVaultUnlocked || !vaultKey || !vaultOwnerToken) {
-        setChecking(false);
-        return;
-      }
-
-      // Allow the onboarding route itself.
-      if (pathname.startsWith("/kai/onboarding")) {
+      // VaultLockGuard handles unauthenticated states.
+      if (!user) {
         setChecking(false);
         return;
       }
 
       try {
+        const hasVault = await VaultService.checkVault(user.uid);
+        if (cancelled) return;
+
+        if (!hasVault) {
+          const pending = await PreVaultOnboardingService.load(user.uid);
+          if (cancelled) return;
+
+          const onboardingIncomplete = !pending?.completed;
+          setOnboardingRequiredCookie(onboardingIncomplete);
+
+          if (onboardingIncomplete && !onOnboardingRoute) {
+            router.replace("/kai/onboarding");
+            return;
+          }
+
+          if (!onboardingIncomplete && onOnboardingRoute) {
+            router.replace("/kai");
+            return;
+          }
+
+          setChecking(false);
+          return;
+        }
+
+        // If vault exists but is not currently unlocked, rely on lock-guard and last known cookie.
+        if (!isVaultUnlocked || !vaultKey || !vaultOwnerToken) {
+          if (!onOnboardingRoute && isOnboardingRequiredCookieEnabled()) {
+            router.replace("/kai/onboarding");
+            return;
+          }
+          setChecking(false);
+          return;
+        }
+
         const profile = await KaiProfileService.getProfile({
           userId: user.uid,
           vaultKey,
@@ -43,8 +78,16 @@ export function KaiOnboardingGuard({ children }: { children: React.ReactNode }) 
 
         if (cancelled) return;
 
-        if (!profile.onboarding.completed) {
+        const onboardingIncomplete = !profile.onboarding.completed;
+        setOnboardingRequiredCookie(onboardingIncomplete);
+
+        if (onboardingIncomplete && !onOnboardingRoute) {
           router.replace("/kai/onboarding");
+          return;
+        }
+
+        if (!onboardingIncomplete && onOnboardingRoute) {
+          router.replace("/kai");
           return;
         }
       } catch (error) {
@@ -76,4 +119,3 @@ export function KaiOnboardingGuard({ children }: { children: React.ReactNode }) 
 
   return <>{children}</>;
 }
-

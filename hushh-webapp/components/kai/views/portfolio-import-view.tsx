@@ -11,11 +11,11 @@
 
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/lib/morphy-ux/card";
 import { Button as MorphyButton } from "@/lib/morphy-ux/button";
 
-import { Upload, FileText, CheckCircle, AlertCircle, Link2 } from "lucide-react";
+import { Upload, FileText, CheckCircle, AlertCircle, Link2, Headphones } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Icon } from "@/lib/morphy-ux/ui";
@@ -41,6 +41,7 @@ export function PortfolioImportView({
 }: PortfolioImportViewProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Handle file drop
   const handleDrop = useCallback(
@@ -84,53 +85,76 @@ export function PortfolioImportView({
 
   // Trigger file input click
   const triggerFileInput = () => {
-    const input = document.getElementById("file-input") as HTMLInputElement;
-    input?.click();
+    fileInputRef.current?.click();
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto space-y-6 p-6">
+    <div className="w-full max-w-md mx-auto space-y-4 px-4 pt-4 pb-[calc(var(--app-bottom-inset)+1rem)]">
       {/* Header */}
-      <div className="text-center space-y-2">
-        <h1 className="text-3xl font-bold tracking-tight">
-          Import Your Portfolio
+      <div className="text-center space-y-2 px-2">
+        <h1 className="text-[34px] font-bold tracking-tight leading-[1.08]">
+          Your data
+          <br />
+          <span className="hushh-gradient-text">Your decisions</span>
         </h1>
-        <p className="text-muted-foreground">
-          Upload your brokerage statement to get personalized investment insights
+        <p className="text-[17px] font-medium text-muted-foreground leading-snug">
+          Let Kai analyze your holdings for precise advice
         </p>
       </div>
 
+      {/* Plaid Integration - Coming Soon (moved above upload by request) */}
+      <Card variant="none" effect="glass" showRipple={false}>
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-12 h-12 rounded-full bg-primary/10 border border-primary/15 flex items-center justify-center shrink-0">
+                <Icon icon={Link2} size="md" className="text-primary" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-[17px] font-semibold leading-tight">Connect with Plaid</h3>
+                <p className="text-[13px] font-medium text-muted-foreground leading-snug">
+                  Automatically sync your brokerage accounts
+                </p>
+              </div>
+            </div>
+            <Badge variant="outline" className="shrink-0">
+              Coming Soon
+            </Badge>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Main Import Card */}
       <Card variant="none" effect="glass" showRipple={false}>
-        <CardContent className="p-8">
+        <CardContent className="p-4">
           {/* Drag & Drop Zone */}
           <div
             onDrop={handleDrop}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             className={cn(
-              "relative border-2 border-dashed rounded-xl p-12 transition-all duration-200 text-center cursor-pointer",
+              "relative border border-dashed rounded-3xl p-8 transition-all duration-200 text-center cursor-pointer min-h-48 flex flex-col items-center justify-center",
               isDragging
-                ? "border-primary bg-primary/5 scale-[1.02]"
-                : "border-border hover:border-primary/50 hover:bg-muted/50",
+                ? "border-primary bg-primary/8 scale-[1.01]"
+                : "border-border/70 hover:border-primary/50 hover:bg-muted/25",
               isUploading && "pointer-events-none opacity-50"
             )}
             onClick={triggerFileInput}
           >
             {/* Upload Icon */}
-            <div className="mx-auto w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
-              <Icon icon={Upload} size={32} className="text-primary" />
+            <div className="mx-auto w-14 h-14 rounded-full bg-primary/10 border border-primary/15 flex items-center justify-center mb-3">
+              <Icon icon={Upload} size={30} className="text-primary" />
             </div>
 
             {/* Text */}
-            <div className="space-y-2">
-              <h3 className="text-lg font-semibold">
+            <div className="space-y-1">
+              <h3 className="text-[17px] font-semibold text-primary">
                 {isDragging
                   ? "Drop your file here"
-                  : "Drag & drop your statement"}
+                  : "Tap to upload statement"}
               </h3>
-              <p className="text-sm text-muted-foreground">
-                or click to browse files
+              <p className="text-[14px] font-medium text-muted-foreground">
+                CSV or PDF
               </p>
             </div>
 
@@ -145,7 +169,7 @@ export function PortfolioImportView({
 
             {/* Hidden File Input */}
             <input
-              id="file-input"
+              ref={fileInputRef}
               type="file"
               accept=".csv,.pdf"
               onChange={handleFileChange}
@@ -153,88 +177,59 @@ export function PortfolioImportView({
               disabled={isUploading}
             />
           </div>
+        </CardContent>
+      </Card>
 
-          {/* Supported Formats */}
-          <div className="mt-6 text-center">
-            <p className="text-xs text-muted-foreground mb-2">
-              Supported formats: CSV, PDF
+      {/* Supported Brokerages */}
+      <Card variant="none" effect="glass" showRipple={false}>
+        <CardHeader>
+          <CardTitle className="text-[17px]">Supported Brokerages</CardTitle>
+          <CardDescription className="text-[13px] font-medium">
+            We support statements from these brokerages
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              "Fidelity",
+              "Schwab",
+              "Vanguard",
+              "E*TRADE",
+              "Robinhood",
+              "Ameritrade",
+            ].map((brokerage) => (
+              <div
+                key={brokerage}
+                className="flex items-center gap-2 p-2 rounded-xl bg-muted/45 text-sm"
+              >
+                <Icon icon={CheckCircle} size="sm" className="text-green-500 shrink-0" />
+                <span className="font-medium">{brokerage}</span>
+              </div>
+            ))}
+          </div>
+          <div className="border-t border-border/60 pt-3">
+            <p className="text-[13px] text-muted-foreground font-medium text-center">
+              Don&apos;t see yours?{" "}
+              <span className="underline underline-offset-2 decoration-muted-foreground/40">
+                Contact support
+              </span>
             </p>
           </div>
         </CardContent>
       </Card>
 
-      {/* Supported Brokerages */}
-      <Card variant="muted" effect="glass" showRipple={false}>
-        <CardHeader>
-          <CardTitle className="text-base">Supported Brokerages</CardTitle>
-          <CardDescription>
-            We support statements from these brokerages
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {[
-              "Fidelity",
-              "Charles Schwab",
-              "Robinhood",
-              "E*TRADE",
-              "TD Ameritrade",
-              "Interactive Brokers",
-              "Vanguard",
-              "Merrill Edge",
-            ].map((brokerage) => (
-              <div
-                key={brokerage}
-                className="flex items-center gap-2 p-2 rounded bg-background/50 text-sm"
-              >
-                <Icon icon={CheckCircle} size="sm" className="text-green-500 shrink-0" />
-                <span>{brokerage}</span>
-              </div>
-            ))}
-          </div>
-          <p className="text-xs text-muted-foreground mt-4 flex items-start gap-2">
-            <Icon icon={AlertCircle} size="sm" className="shrink-0 mt-0.5" />
-            Don't see your brokerage? We'll do our best to parse generic CSV
-            formats.
-          </p>
-        </CardContent>
-      </Card>
-
-      {/* Plaid Integration - Coming Soon */}
-      <Card variant="none" effect="glass" showRipple={false}>
-        <CardContent className="p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                <Icon icon={Link2} size="md" className="text-primary" />
-              </div>
-              <div>
-                <h3 className="font-medium">Connect with Plaid</h3>
-                <p className="text-sm text-muted-foreground">
-                  Automatically sync your brokerage accounts
-                </p>
-              </div>
-            </div>
-            <Badge variant="outline" className="shrink-0">
-              Coming Soon
-            </Badge>
-          </div>
-        </CardContent>
-      </Card>
-
       {/* Skip Option */}
-      <div className="text-center">
+      <div className="text-center pt-1">
         <MorphyButton
           variant="none"
           effect="fade"
           onClick={onSkip}
           disabled={isUploading}
-          className="text-muted-foreground hover:text-foreground"
+          className="text-muted-foreground hover:text-foreground text-base"
         >
           Skip for now
         </MorphyButton>
       </div>
-
     </div>
   );
 }

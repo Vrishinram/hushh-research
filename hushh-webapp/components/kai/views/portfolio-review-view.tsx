@@ -1151,7 +1151,7 @@ export function PortfolioReviewView({
 
   {/* Save Button - Refined Floating Action */}
   {/* Save Button - Refined Floating Action with Safe Area Support */}
-	  <div className="fixed left-0 right-0 bottom-[calc(var(--app-bottom-fixed-ui)+env(safe-area-inset-bottom))] px-10 sm:px-16 pb-2 z-[145] pointer-events-none">
+	  <div className="fixed left-0 right-0 bottom-[var(--app-bottom-inset)] px-10 sm:px-16 pb-2 z-[145] pointer-events-none">
 	    <div className="max-w-xs mx-auto pointer-events-auto">
 	      <MorphyButton
 	        variant="morphy"

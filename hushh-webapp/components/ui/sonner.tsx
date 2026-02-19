@@ -16,13 +16,13 @@ export function Toaster({ ...props }: ToasterProps) {
       style={{ marginTop: "max(env(safe-area-inset-top), 4rem)" }}
       toastOptions={{
         classNames: {
-          toast:
-            "group toast group-[.toaster]:bg-background group-[.toaster]:text-foreground group-[.toaster]:border-border group-[.toaster]:shadow-lg",
-          description: "group-[.toast]:text-muted-foreground",
+          toast: "group toast morphy-sonner-toast",
+          title: "morphy-sonner-title",
+          description: "morphy-sonner-description",
           actionButton:
-            "group-[.toast]:bg-primary group-[.toast]:text-primary-foreground",
+            "morphy-sonner-action",
           cancelButton:
-            "group-[.toast]:bg-muted group-[.toast]:text-muted-foreground",
+            "morphy-sonner-cancel",
         },
       }}
       {...props}

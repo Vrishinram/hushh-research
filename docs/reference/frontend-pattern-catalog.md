@@ -166,6 +166,54 @@ Files:
 
 ---
 
+## Pattern: Onboarding Auth Step (Providers + Disabled Phone)
+
+Keywords: onboarding, auth, apple, google, phone-disabled, morphy-button
+
+Use when: Building the pre-auth login step after onboarding marketing slides.
+
+Do:
+- Keep auth provider buttons centralized via `AuthProviderButton`.
+- Keep phone login present but disabled until the flow is enabled.
+- Reuse `BrandMark` and onboarding hero typography for consistency with intro.
+- Keep provider wiring in `AuthStep` (Google/Apple/Reviewer handlers) and UI composition separate.
+
+Files:
+- `hushh-webapp/components/onboarding/AuthStep.tsx`
+- `hushh-webapp/components/onboarding/AuthProviderButton.tsx`
+
+---
+
+## Pattern: Centralized Error Toast (Sonner)
+
+Keywords: sonner, toast, error, feedback, morphy, notifications
+
+Use when: You need to show an operation result/error and want consistent color + behavior across the app.
+
+Do:
+- Use `morphyToast.error|warning|info|success`.
+- Keep error copy concise and include next-step descriptions when useful.
+- Rely on centralized Sonner theme/tokens (`morphy-sonner-toast`).
+
+Don't:
+- Render large inline error banners on onboarding/auth pages for transient action failures.
+- Add per-screen custom toast colors.
+
+```tsx
+import { morphyToast } from "@/lib/morphy-ux/morphy";
+
+try {
+  await action();
+  morphyToast.success("Saved successfully");
+} catch (error: any) {
+  morphyToast.error(error?.message || "Save failed", {
+    description: "Please retry in a moment.",
+  });
+}
+```
+
+---
+
 ## Pattern: Page Enter Fade (GSAP)
 
 Keywords: gsap, motion, page, enter, fade, providers

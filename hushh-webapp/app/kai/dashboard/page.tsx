@@ -92,6 +92,7 @@ export default function KaiPage() {
  
         <KaiFlow
           userId={user.uid}
+          mode="dashboard"
           // Prefer in-memory token, but allow empty string as fallback.
           // KaiFlow and downstream services will handle 401s gracefully.
           vaultOwnerToken={vaultOwnerToken ?? ""}

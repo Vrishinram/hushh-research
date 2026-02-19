@@ -8,14 +8,13 @@ import { useAuth } from "@/lib/firebase/auth-context";
 import { OnboardingLocalService } from "@/lib/services/onboarding-local-service";
 import { IntroStep } from "@/components/onboarding/IntroStep";
 import { PreviewCarouselStep } from "@/components/onboarding/PreviewCarouselStep";
-import { AuthStep } from "@/components/onboarding/AuthStep";
 
-type HomeStep = "intro" | "preview" | "auth";
+type HomeStep = "intro" | "preview";
 
 function HomeContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectPath = searchParams.get("redirect") || "/kai";
+  const redirectPath = searchParams.get("redirect") || "";
 
   const { user, loading } = useAuth();
   const [step, setStep] = useState<HomeStep | null>(null);
@@ -46,7 +45,7 @@ function HomeContent() {
     if (loading) return;
 
     if (user) {
-      router.push(redirectPath);
+      router.push("/kai");
       return;
     }
 
@@ -58,13 +57,13 @@ function HomeContent() {
 
       const hasSeen = await OnboardingLocalService.hasSeenMarketing();
       if (cancelled) return;
-      setStep(hasSeen ? "auth" : "intro");
+      setStep(hasSeen ? "preview" : "intro");
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [loading, user, redirectPath, router, forceOnboardingInDev]);
+  }, [loading, user, router, forceOnboardingInDev]);
 
   if (loading || step === null) {
     return <HushhLoader label="Loading..." variant="fullscreen" />;
@@ -75,10 +74,12 @@ function HomeContent() {
   }
 
   if (step === "preview") {
-    return <PreviewCarouselStep onContinue={() => setStep("auth")} />;
+    const loginUrl = redirectPath
+      ? `/login?redirect=${encodeURIComponent(redirectPath)}`
+      : "/login";
+    return <PreviewCarouselStep onContinue={() => router.push(loginUrl)} />;
   }
-
-  return <AuthStep redirectPath={redirectPath} />;
+  return null;
 }
 
 export default function Home() {

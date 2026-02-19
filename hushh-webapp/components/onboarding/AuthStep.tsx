@@ -1,33 +1,58 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getRedirectResult } from "firebase/auth";
-import { AlertCircle, Shield } from "lucide-react";
-
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { cn } from "@/lib/utils";
+import { Phone, Shield } from "lucide-react";
 import { AuthService } from "@/lib/services/auth-service";
 import { ApiService } from "@/lib/services/api-service";
 import { auth } from "@/lib/firebase/config";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { HushhLoader } from "@/components/ui/hushh-loader";
-import { Button } from "@/lib/morphy-ux/button";
-import { Card } from "@/lib/morphy-ux/card";
-import { CardContent } from "@/components/ui/card";
 import { useStepProgress } from "@/lib/progress/step-progress-context";
 import { isAndroid } from "@/lib/capacitor/platform";
+import { BrandMark, Icon } from "@/lib/morphy-ux/ui";
+import { morphyToast } from "@/lib/morphy-ux/morphy";
+import { AuthProviderButton } from "@/components/onboarding/AuthProviderButton";
+import { PostAuthRouteService } from "@/lib/services/post-auth-route-service";
+import {
+  setOnboardingFlowActiveCookie,
+  setOnboardingRequiredCookie,
+} from "@/lib/services/onboarding-route-cookie";
 
-export function AuthStep({ redirectPath }: { redirectPath: string }) {
+export function AuthStep({
+  redirectPath,
+  compact = false,
+}: {
+  redirectPath: string;
+  compact?: boolean;
+}) {
   const router = useRouter();
   const { user, loading: authLoading, setNativeUser } = useAuth();
   const { registerSteps, completeStep, reset } = useStepProgress();
 
-  const [error, setError] = useState<string | null>(null);
   const [reviewModeConfig, setReviewModeConfig] = useState<{ enabled: boolean }>(
     { enabled: false }
+  );
+
+  const resolveAndNavigate = useCallback(
+    async (userId: string) => {
+      try {
+        const nextPath = await PostAuthRouteService.resolveAfterLogin({
+          userId,
+          redirectPath,
+        });
+        setOnboardingRequiredCookie(nextPath === "/kai/onboarding");
+        setOnboardingFlowActiveCookie(false);
+        router.push(nextPath);
+      } catch (error) {
+        console.warn("[AuthStep] Failed to resolve post-auth route:", error);
+        setOnboardingRequiredCookie(false);
+        setOnboardingFlowActiveCookie(false);
+        router.push(redirectPath);
+      }
+    },
+    [redirectPath, router]
   );
 
   const debugLog = (...args: unknown[]) => {
@@ -58,7 +83,7 @@ export function AuthStep({ redirectPath }: { redirectPath: string }) {
         if (result?.user) {
           debugLog("[AuthStep] Redirect result found, navigating to:", redirectPath);
           setNativeUser(result.user);
-          router.push(redirectPath);
+          void resolveAndNavigate(result.user.uid);
         }
       })
       .catch((err) => {
@@ -67,9 +92,16 @@ export function AuthStep({ redirectPath }: { redirectPath: string }) {
 
     if (user) {
       debugLog("[AuthStep] User authenticated, navigating to:", redirectPath);
-      router.push(redirectPath);
+      void resolveAndNavigate(user.uid);
     }
-  }, [redirectPath, user, authLoading, completeStep, router, setNativeUser]);
+  }, [
+    redirectPath,
+    user,
+    authLoading,
+    completeStep,
+    setNativeUser,
+    resolveAndNavigate,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -88,215 +120,179 @@ export function AuthStep({ redirectPath }: { redirectPath: string }) {
 
   const handleGoogleLogin = async () => {
     try {
-      setError(null);
       const authResult = await AuthService.signInWithGoogle();
-      const user = authResult.user;
+      const authenticatedUser = authResult.user;
 
       debugLog("[AuthStep] signInWithGoogle returned user");
 
-      if (user) {
-        setNativeUser(user);
-        router.push(redirectPath);
+      if (authenticatedUser) {
+        setNativeUser(authenticatedUser);
+        await resolveAndNavigate(authenticatedUser.uid);
       } else {
         debugError("[AuthStep] No user returned from signInWithGoogle");
-        setError("Login succeeded but no user returned");
+        morphyToast.error("Sign-in completed but no user session was returned.", {
+          description: "Please try again.",
+        });
       }
     } catch (err: any) {
       debugError("[AuthStep] Google login failed", err);
-      setError(err.message || "Failed to sign in");
     }
   };
 
   const handleAppleLogin = async () => {
     try {
-      setError(null);
       const authResult = await AuthService.signInWithApple();
-      const user = authResult.user;
+      const authenticatedUser = authResult.user;
 
       debugLog("[AuthStep] signInWithApple returned user");
 
-      if (user) {
-        setNativeUser(user);
-        router.push(redirectPath);
+      if (authenticatedUser) {
+        setNativeUser(authenticatedUser);
+        await resolveAndNavigate(authenticatedUser.uid);
       } else {
         debugError("[AuthStep] No user returned from signInWithApple");
-        setError("Login succeeded but no user returned");
+        morphyToast.error("Sign-in completed but no user session was returned.", {
+          description: "Please try again.",
+        });
       }
     } catch (err: any) {
       debugError("[AuthStep] Apple login failed", err);
-      if (
-        !err.message?.includes("cancelled") &&
-        !err.message?.includes("canceled")
-      ) {
-        setError(err.message || "Failed to sign in with Apple");
-      }
     }
   };
 
   const handleReviewerLogin = async () => {
     try {
-      setError(null);
-
       if (!reviewModeConfig.enabled) {
         throw new Error("Reviewer mode is not enabled");
       }
 
       const { token } = await ApiService.createAppReviewModeSession();
       const authResult = await AuthService.signInWithCustomToken(token);
-      const user = authResult.user;
+      const authenticatedUser = authResult.user;
 
-      if (user) {
-        setNativeUser(user);
-        router.push(redirectPath);
+      if (authenticatedUser) {
+        setNativeUser(authenticatedUser);
+        await resolveAndNavigate(authenticatedUser.uid);
       } else {
-        setError("Reviewer login failed - no user returned");
+        morphyToast.error("Reviewer login failed: no user session returned.");
       }
     } catch (err: any) {
       debugError("[AuthStep] Reviewer login failed", err);
-      setError(err.message || "Failed to sign in as reviewer");
+      morphyToast.error(err.message || "Failed to sign in as reviewer");
     }
   };
 
+  const authOptions = isAndroid()
+    ? [
+        {
+          id: "google",
+          label: "Continue with Google",
+          icon: <GoogleIcon />,
+          onClick: handleGoogleLogin,
+        },
+        {
+          id: "apple",
+          label: "Continue with Apple",
+          icon: <AppleIcon />,
+          onClick: handleAppleLogin,
+        },
+      ]
+    : [
+        {
+          id: "apple",
+          label: "Continue with Apple",
+          icon: <AppleIcon />,
+          onClick: handleAppleLogin,
+        },
+        {
+          id: "google",
+          label: "Continue with Google",
+          icon: <GoogleIcon />,
+          onClick: handleGoogleLogin,
+        },
+      ];
+
   return (
-    <main className="h-full w-full bg-transparent flex flex-col items-center overflow-hidden px-6 pt-5 pb-[calc(16px+var(--app-bottom-fixed-ui)+env(safe-area-inset-bottom))]">
-      <div className="w-full max-w-sm flex-1 min-h-0 flex flex-col">
-        <div className="flex-1 min-h-0 flex flex-col space-y-6">
-          <div className="text-center space-y-2">
-            <div className="mx-auto h-20 w-20 rounded-3xl bg-black text-white dark:bg-white dark:text-black grid place-items-center shadow-[0_18px_50px_rgba(0,0,0,0.18)]">
-              <span className="text-3xl font-black">Kai</span>
-            </div>
-            <h1 className="text-2xl font-extrabold tracking-tight">
-              Sign in to continue
-            </h1>
-            <p className="text-sm text-muted-foreground leading-relaxed">
-              Phone onboarding is coming soon. For now, use Apple or Google.
-            </p>
-          </div>
-
-          {reviewModeConfig.enabled && (
-            <Card variant="none" effect="glass" className="border-yellow-500/30">
-              <CardContent className="flex items-center gap-3 p-3 text-sm font-medium">
-                <Shield className="h-5 w-5 text-yellow-600 dark:text-yellow-400 shrink-0" />
-                <span>App Review Mode Active</span>
-              </CardContent>
-            </Card>
-          )}
-
-          {error && (
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-
-          <div className="space-y-4 pt-1">
-            <div className="space-y-3">
-              {isAndroid() ? (
-                <>
-                  <Button
-                    variant="link"
-                    effect="glass"
-                    size="lg"
-                    fullWidth
-                    className="rounded-2xl"
-                    onClick={handleGoogleLogin}
-                    showRipple
-                  >
-                    <GoogleIcon className="mr-3" />
-                    Continue with Google
-                  </Button>
-                  <Button
-                    variant="link"
-                    effect="glass"
-                    size="lg"
-                    fullWidth
-                    className="rounded-2xl"
-                    onClick={handleAppleLogin}
-                    showRipple
-                  >
-                    <AppleIcon className="mr-3" />
-                    Continue with Apple
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <Button
-                    variant="link"
-                    effect="glass"
-                    size="lg"
-                    fullWidth
-                    className="rounded-2xl"
-                    onClick={handleAppleLogin}
-                    showRipple
-                  >
-                    <AppleIcon className="mr-3" />
-                    Continue with Apple
-                  </Button>
-                  <Button
-                    variant="link"
-                    effect="glass"
-                    size="lg"
-                    fullWidth
-                    className="rounded-2xl"
-                    onClick={handleGoogleLogin}
-                    showRipple
-                  >
-                    <GoogleIcon className="mr-3" />
-                    Continue with Google
-                  </Button>
-                </>
-              )}
-
-              {reviewModeConfig.enabled && (
-                <Button
-                  variant="link"
-                  effect="glass"
-                  size="lg"
-                  fullWidth
-                  className="rounded-2xl"
-                  onClick={handleReviewerLogin}
-                  showRipple
-                >
-                  <Shield className="w-5 h-5 mr-3" />
-                  Continue as Reviewer
-                </Button>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="phone" className="text-sm font-semibold">
-                Phone number
-              </Label>
-              <Input
-                id="phone"
-                placeholder="+1 (555) 123-4567"
-                disabled
-                aria-disabled="true"
-              />
-              <p className="text-xs text-muted-foreground">
-                Coming soon. Phone sign-in is disabled in this build.
+    <main className="h-[100dvh] w-full bg-transparent">
+      <div
+        className={
+          compact
+            ? "mx-auto flex h-full w-full max-w-md flex-col overflow-hidden px-8 pt-[calc(16px+env(safe-area-inset-top))] pb-[var(--app-screen-footer-pad)]"
+            : "mx-auto flex h-full w-full max-w-md flex-col overflow-hidden px-8 pt-10 pb-[var(--app-screen-footer-pad)]"
+        }
+      >
+        <header className="flex-none text-center">
+          <BrandMark label="Kai" size={compact ? "sm" : "md"} className="mx-auto" />
+          {compact ? (
+            <>
+              <h1 className="mt-6 text-[clamp(1.75rem,5.8vw,2.35rem)] font-black tracking-tight leading-[1.12]">
+                Sign in to Kai
+              </h1>
+              <p className="mx-auto mt-3 max-w-[17.5rem] text-sm leading-relaxed text-muted-foreground">
+                Continue with your preferred provider.
               </p>
-            </div>
-          </div>
+            </>
+          ) : (
+            <>
+              <h1 className="mt-8 text-[clamp(2.2rem,7vw,3rem)] font-black tracking-tight leading-[1.08]">
+                Meet Kai,
+                <br />
+                Your Personal
+                <br />
+                Financial Advisor
+              </h1>
+              <p className="mx-auto mt-4 max-w-[17.5rem] text-[17px] leading-relaxed text-muted-foreground">
+                The fastest path to actionable wealth insights.
+              </p>
+            </>
+          )}
+        </header>
 
-          <div className="mt-auto pt-6">
-            <p className="text-center text-xs text-muted-foreground/70">
-              By continuing, you agree to our Terms of Service and Privacy Policy.
+        <section className={compact ? "flex-1 min-h-0 flex items-center pt-6" : "flex-1 min-h-0 flex items-center"}>
+          <div className="mx-auto w-full max-w-[20rem] space-y-3">
+            {authOptions.map((option) => (
+              <AuthProviderButton
+                key={option.id}
+                label={option.label}
+                icon={option.icon}
+                onClick={option.onClick}
+              />
+            ))}
+
+            <AuthProviderButton
+              label="Continue with Phone Number"
+              icon={<Icon icon={Phone} size="md" className="text-[var(--morphy-primary-start)]" />}
+              disabled
+            />
+
+            <p className="pt-1 text-center text-xs text-muted-foreground">
+              Phone sign-in is coming soon.
             </p>
+
+            {reviewModeConfig.enabled && (
+              <AuthProviderButton
+                label="Continue as Reviewer"
+                icon={<Icon icon={Shield} size="md" />}
+                onClick={handleReviewerLogin}
+                className="border-yellow-500/30"
+              />
+            )}
           </div>
-        </div>
+        </section>
+
+        <footer className={compact ? "flex-none pt-4" : "flex-none pt-3"}>
+          <p className="mx-auto max-w-[18.75rem] text-center text-[11px] leading-normal text-muted-foreground/80">
+            By continuing, you agree to Kai&apos;s Terms and Privacy Policy.
+          </p>
+        </footer>
       </div>
     </main>
   );
 }
 
-function GoogleIcon({ className }: { className?: string }) {
+function GoogleIcon() {
   return (
-    <svg
-      className={cn("w-5 h-5", className)}
-      viewBox="0 0 24 24"
-      aria-hidden
-    >
+    <svg className="h-5 w-5" viewBox="0 0 24 24" aria-hidden>
       <path
         fill="#4285F4"
         d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
@@ -317,14 +313,9 @@ function GoogleIcon({ className }: { className?: string }) {
   );
 }
 
-function AppleIcon({ className }: { className?: string }) {
+function AppleIcon() {
   return (
-    <svg
-      className={cn("w-5 h-5", className)}
-      viewBox="0 0 24 24"
-      fill="currentColor"
-      aria-hidden
-    >
+    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
       <path d="M17.05 20.28c-.98.95-2.05.88-3.08.38-1.07-.52-2.07-.51-3.2 0-1.01.43-2.1.49-2.98-.38C5.22 17.63 2.7 12 5.45 8.04c1.47-2.09 3.8-2.31 5.33-1.18 1.1.75 3.3.73 4.45-.04 2.1-1.31 3.55-.95 4.5 1.14-.15.08.2.14 0 .2-2.63 1.34-3.35 6.03.95 7.84-.46 1.4-1.25 2.89-2.26 4.4l-.07.08-.05-.2zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.17 2.22-1.8 4.19-3.74 4.25z" />
     </svg>
   );

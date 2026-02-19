@@ -241,7 +241,7 @@ export function PreviewCarouselStep({ onContinue }: { onContinue: () => void }) 
         </Carousel>
       </section>
 
-      <footer className="flex-none px-6 pt-2 pb-[calc(16px+var(--app-bottom-fixed-ui)+env(safe-area-inset-bottom))]">
+      <footer className="flex-none px-6 pt-2 pb-[var(--app-screen-footer-pad)]">
         <div className="w-full sm:max-w-md mx-auto flex flex-col justify-end gap-4">
           <Dots count={slides.length} activeIndex={selectedIndex} />
 

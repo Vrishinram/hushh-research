@@ -1,42 +1,44 @@
 "use client";
 
-import { ArrowRight, Shield, Target, TrendingUp } from "lucide-react";
+import { ArrowRight, Shield, Target, TrendingUp, type LucideIcon } from "lucide-react";
 
 import type { RiskProfile } from "@/lib/services/kai-profile-service";
 import { Button } from "@/lib/morphy-ux/button";
-import { cn } from "@/lib/utils";
+import { Icon } from "@/lib/morphy-ux/ui";
 
 const PERSONA_CONFIG: Record<
   RiskProfile,
   {
     pill: string;
     title: string;
-    description: string;
-    subtext: string;
-    icon: React.ComponentType<{ className?: string }>;
+    headline: string;
+    support: string;
+    footerTagline: string;
+    icon: LucideIcon;
   }
 > = {
   conservative: {
     pill: "YOU VALUE STABILITY",
-    title: "Ready for\nsteady growth?",
-    description: "You prefer steady progress without unnecessary swings.",
-    subtext: "Smart growth. Less stress.",
+    title: "Ready for steady growth?",
+    headline: "You prefer steady progress without unnecessary swings",
+    support: "Kai helps you grow steadily - without exposing you to unnecessary risk",
+    footerTagline: "Smart growth. Less stress.",
     icon: Shield,
   },
   balanced: {
     pill: "YOU PLAY IT SMART",
-    title: "Ready to\nmove ahead?",
-    description:
-      "You're comfortable with some ups and downs for consistent long-term growth.",
-    subtext: "Progress, without overexposure.",
+    title: "Ready to move ahead?",
+    headline: "You're comfortable with some ups and downs for consistent long-term growth",
+    support: "Kai balances opportunity and discipline to keep your growth on track",
+    footerTagline: "Progress - without overexposure",
     icon: Target,
   },
   aggressive: {
     pill: "YOU'RE BUILT FOR GROWTH",
-    title: "Ready to\nlevel up?",
-    description:
-      "You're comfortable with market swings when the potential reward justifies it.",
-    subtext: "Let's build momentum.",
+    title: "Ready to level up?",
+    headline: "You're comfortable with market swings when the potential reward justifies it.",
+    support: "Kai helps you pursue stronger growth while managing risk intelligently",
+    footerTagline: "Let's build momentum",
     icon: TrendingUp,
   },
 };
@@ -47,57 +49,65 @@ export function KaiPersonaScreen(props: {
   onEditAnswers?: () => void;
 }) {
   const cfg = PERSONA_CONFIG[props.riskProfile];
-  const Icon = cfg.icon;
+  const icon = cfg.icon;
 
   return (
-    <main className="h-[100dvh] w-full bg-transparent flex flex-col overflow-hidden px-6 pt-[calc(20px+env(safe-area-inset-top))] pb-[calc(16px+env(safe-area-inset-bottom))]">
-      <div className="w-full max-w-sm mx-auto flex-1 flex flex-col">
-        <div className="space-y-5">
-          <div className="h-12 w-12 rounded-2xl bg-[var(--brand-50)] border border-[var(--brand-200)] grid place-items-center">
-            <Icon className="h-6 w-6 text-[var(--brand-600)]" />
+    <main className="h-full w-full bg-transparent flex flex-col overflow-hidden px-8 pt-[calc(12px+env(safe-area-inset-top))] pb-[var(--app-screen-footer-pad)]">
+      <div className="w-full max-w-md mx-auto flex-1 flex flex-col min-h-0">
+        <section className="relative flex-1 flex flex-col justify-center pb-4">
+          <div className="absolute inset-0 pointer-events-none">
+            <div className="absolute inset-0 bg-gradient-to-b from-[var(--brand-50)]/25 via-transparent to-transparent" />
           </div>
 
-          <div className="space-y-3">
-            <p className="text-[10px] font-extrabold tracking-[0.18em] text-[var(--brand-600)]">
-              {cfg.pill}
-            </p>
-            <h1 className="text-4xl font-black tracking-tight leading-[1.05] whitespace-pre-line">
-              {cfg.title}
-            </h1>
-            <p className="text-sm text-muted-foreground leading-relaxed max-w-[22rem]">
-              {cfg.description}
+          <div className="relative z-10 space-y-7">
+            <div className="h-20 w-20 rounded-[24px] border border-border/60 bg-background/70 backdrop-blur-sm grid place-items-center shadow-sm">
+              <Icon icon={icon} size={40} className="text-[var(--brand-600)]" />
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-[13px] font-extrabold tracking-[0.2em] text-[var(--brand-600)] uppercase leading-tight">
+                {cfg.pill}
+              </p>
+              <h1 className="text-[44px] font-bold tracking-tight leading-[1.05] text-foreground">
+                {cfg.title}
+              </h1>
+            </div>
+            <p className="text-[16px] font-medium leading-relaxed text-muted-foreground text-center">
+              {cfg.support}
             </p>
           </div>
+        </section>
 
-          <p className="text-xs text-muted-foreground leading-relaxed">
-            Kai helps you stay aligned with your horizon and tolerance. {cfg.subtext}
+        <section className="flex-none pb-4">
+          <p className="text-[21px] font-semibold leading-relaxed text-foreground">
+            {cfg.headline}
+          </p>
+        </section>
+
+        <footer className="flex-none pt-0 shrink-0">
+          <p className="text-[16px] font-medium leading-relaxed text-muted-foreground text-center mb-6">
+            {cfg.footerTagline}
           </p>
 
-          {props.onEditAnswers && (
-            <Button
-              variant="link"
-              effect="fill"
-              size="sm"
-              className="self-start"
-              onClick={props.onEditAnswers}
-              showRipple={false}
-            >
-              Edit answers
-            </Button>
-          )}
-        </div>
-
-        <div className="mt-auto pt-10">
-          <Button
-            size="lg"
-            fullWidth
-            onClick={props.onLaunchDashboard}
-            showRipple
-          >
+          <Button size="lg" fullWidth onClick={props.onLaunchDashboard} showRipple>
             Launch Dashboard
             <ArrowRight className="ml-2 h-5 w-5" />
           </Button>
-        </div>
+
+          {props.onEditAnswers && (
+            <div className="pt-4 text-center">
+              <Button
+                variant="link"
+                effect="fill"
+                size="sm"
+                onClick={props.onEditAnswers}
+                showRipple={false}
+              >
+                Edit answers
+              </Button>
+            </div>
+          )}
+        </footer>
       </div>
     </main>
   );

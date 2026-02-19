@@ -3,11 +3,16 @@
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import {
+  isOnboardingRoute,
+  ONBOARDING_REQUIRED_COOKIE,
+} from "./lib/services/onboarding-route-cookie";
 
 // Routes that don't require authentication (VaultLockGuard handles protected routes)
 const PUBLIC_ROUTES = [
   "/",
   "/login",
+  "/onboarding/preferences",
   "/docs",
   "/logout",
   "/privacy",
@@ -39,6 +44,16 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Cookie-backed onboarding route guard:
+  // if onboarding is pending, keep users inside /kai/onboarding until completion.
+  const onboardingRequired = request.cookies.get(ONBOARDING_REQUIRED_COOKIE)?.value === "1";
+  if (onboardingRequired && pathname.startsWith("/kai") && !isOnboardingRoute(pathname)) {
+    const nextUrl = request.nextUrl.clone();
+    nextUrl.pathname = "/kai/onboarding";
+    nextUrl.search = "";
+    return NextResponse.redirect(nextUrl);
+  }
+
   // =========================================================================
   // IMPORTANT: Firebase Auth is CLIENT-SIDE. We cannot reliably check auth
   // server-side in proxy without session cookies (which we don't use).
@@ -48,7 +63,7 @@ export function proxy(request: NextRequest) {
   // 2. useAuth hook in individual pages
   //
   // The proxy just handles basic routing and allows all requests through.
-  // Protected pages will redirect to "/" if not authenticated.
+  // Protected pages will redirect to "/login" if not authenticated.
   // =========================================================================
 
   return NextResponse.next();

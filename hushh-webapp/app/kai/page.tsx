@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { KaiMarketPreviewView } from "@/components/kai/views/kai-market-preview-view";
 
-export default function KaiEntryPage() {
-  redirect("/kai/dashboard");
+export default function KaiPage() {
+  return <KaiMarketPreviewView />;
 }

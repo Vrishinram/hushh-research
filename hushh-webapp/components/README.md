@@ -160,6 +160,10 @@ Use:
 - `warning` for risky actions.
 - `info` for background events (syncing, imports, etc.).
 
+Rules:
+- For new feature/UI code, prefer `morphyToast` over direct `toast` imports.
+- Use inline error panels only for persistent validation states; transient action failures should use Sonner toasts.
+
 ---
 
 ## 4. Kai Module Notes

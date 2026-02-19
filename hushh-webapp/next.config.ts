@@ -23,6 +23,7 @@ const config: NextConfig = {
       { source: "/dashboard/kai/:path*", destination: "/kai/dashboard/:path*", permanent: false },
       { source: "/dashboard/domain/:path*", destination: "/kai", permanent: false },
       { source: "/dashboard/agent-nav", destination: "/agent-nav", permanent: false },
+      { source: "/onboarding/preferences", destination: "/kai/onboarding", permanent: false },
     ];
   },
 

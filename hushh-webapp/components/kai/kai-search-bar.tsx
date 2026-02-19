@@ -42,7 +42,7 @@ export function KaiSearchBar({
   };
 
   return (
-    <div className="fixed bottom-[calc(var(--app-bottom-fixed-ui)+env(safe-area-inset-bottom))] inset-x-0 z-[130] flex justify-center px-4 pointer-events-none">
+    <div className="fixed bottom-[var(--app-bottom-inset)] inset-x-0 z-[130] flex justify-center px-4 pointer-events-none">
       <div className="pointer-events-auto w-[315px]">
         <StockSearch
           onSelect={handleSelect}

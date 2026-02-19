@@ -19,6 +19,7 @@ import { VaultContext } from "@/lib/vault/vault-context";
 
 interface ExitDialogProps {
   open: boolean;
+  mode?: "exit" | "lock_only";
   onOpenChange: (open: boolean) => void;
   onConfirm: () => void;
 }
@@ -37,7 +38,12 @@ interface ExitDialogProps {
  * - Removes sensitive localStorage items
  * - Then exits the app via Capacitor App.exitApp()
  */
-export function ExitDialog({ open, onOpenChange, onConfirm }: ExitDialogProps) {
+export function ExitDialog({
+  open,
+  mode = "exit",
+  onOpenChange,
+  onConfirm,
+}: ExitDialogProps) {
   // Safely try to get vault context (may not exist during SSR/static generation)
   const vaultContext = useContext(VaultContext);
 
@@ -63,18 +69,22 @@ export function ExitDialog({ open, onOpenChange, onConfirm }: ExitDialogProps) {
     onConfirm();
   };
 
+  const isLockOnly = mode === "lock_only";
+  const title = isLockOnly ? "Lock Vault" : "Exit Hushh";
+  const description = isLockOnly
+    ? "Lock your vault now? You can close the app manually from iOS app switcher."
+    : "Are you sure you want to exit? Your vault will be locked for security.";
+  const actionLabel = isLockOnly ? "Lock Vault" : "Lock Vault & Exit";
+
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
             <Icon icon={ShieldCheck} size="md" className="text-primary" />
-            Exit Hushh
+            {title}
           </AlertDialogTitle>
-          <AlertDialogDescription>
-            Are you sure you want to exit? Your vault will be locked for
-            security.
-          </AlertDialogDescription>
+          <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -83,7 +93,7 @@ export function ExitDialog({ open, onOpenChange, onConfirm }: ExitDialogProps) {
             className="bg-red-600 text-white hover:bg-red-700 shadow-md"
           >
             <Icon icon={LogOut} size="sm" className="mr-2" />
-            Exit Hushh
+            {actionLabel}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

@@ -29,11 +29,19 @@ export default function KaiLayout({
     (s) => Boolean(s.busyOperations.portfolio_manage_active)
   );
   const onOnboardingRoute = pathname.startsWith("/kai/onboarding");
+  const onKaiHomeRoute = pathname === "/kai";
+  const onImportRoute = pathname.startsWith("/kai/import");
   const onAnalysisRoute = pathname.startsWith("/kai/dashboard/analysis");
   const onPortfolioHealthRoute = pathname.startsWith("/kai/dashboard/portfolio-health");
-  const hideSearchBar = isReviewActive || isManageActive || onOnboardingRoute;
+  const hideSearchBar =
+    isReviewActive || isManageActive || onOnboardingRoute || onKaiHomeRoute || onImportRoute;
   const disableSearch =
-    isSearchDisabled || onAnalysisRoute || onPortfolioHealthRoute || onOnboardingRoute;
+    isSearchDisabled ||
+    onAnalysisRoute ||
+    onPortfolioHealthRoute ||
+    onOnboardingRoute ||
+    onKaiHomeRoute ||
+    onImportRoute;
 
   return (
     <VaultLockGuard>

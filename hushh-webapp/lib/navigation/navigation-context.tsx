@@ -58,6 +58,7 @@ export function NavigationProvider({
   const pathname = usePathname();
   const router = useRouter();
   const [showExitDialog, setShowExitDialog] = useState(false);
+  const [exitDialogMode, setExitDialogMode] = useState<"exit" | "lock_only">("exit");
 
   // Use ref to avoid stale closure issues with the back button listener
   const handleBackRef = useRef<() => void>(() => {});
@@ -87,10 +88,12 @@ export function NavigationProvider({
     };
   }, [pathname]);
 
-  // Handle back navigation - show exit dialog on BOTH iOS and Android
+  // Handle back navigation - root-level dialog varies by platform.
   const handleBack = useCallback(() => {
     if (isRootLevel) {
-      // Level 1: Show exit dialog with vault lock and app exit
+      // iOS cannot programmatically exit, so show lock-only action.
+      const platform = Capacitor.getPlatform();
+      setExitDialogMode(platform === "ios" ? "lock_only" : "exit");
       setShowExitDialog(true);
       return;
     }
@@ -204,8 +207,14 @@ export function NavigationProvider({
       {children}
       <ExitDialog
         open={showExitDialog}
+        mode={exitDialogMode}
         onOpenChange={setShowExitDialog}
-        onConfirm={() => App.exitApp()}
+        onConfirm={() => {
+          if (exitDialogMode === "exit") {
+            void App.exitApp();
+          }
+          setShowExitDialog(false);
+        }}
       />
     </NavigationContext.Provider>
   );

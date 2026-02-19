@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import * as RadioGroupPrimitive from "@radix-ui/react-radio-group";
-import { ArrowRight } from "lucide-react";
+import { ArrowLeft, ArrowRight } from "lucide-react";
 
 import { Progress } from "@/components/ui/progress";
 import { RadioGroup } from "@/components/ui/radio-group";
@@ -67,13 +67,19 @@ const QUESTIONS = [
 export function KaiPreferencesWizard(props: {
   mode: "onboarding" | "edit";
   layout?: "page" | "sheet";
+  initialStep?: number;
   initialAnswers?: Partial<WizardAnswers>;
+  onAnswersChange?: (answers: WizardAnswers) => void | Promise<void>;
+  onBack?: () => void;
   onSkip?: () => void;
   onComplete: (payload: WizardCompletePayload) => void | Promise<void>;
 }) {
   const total = QUESTIONS.length;
   const layout = props.layout ?? "page";
-  const [step, setStep] = useState(0);
+  const [step, setStep] = useState(() => {
+    const initial = props.initialStep ?? 0;
+    return Math.min(Math.max(initial, 0), total - 1);
+  });
   const [answers, setAnswers] = useState<WizardAnswers>({
     investment_horizon: props.initialAnswers?.investment_horizon ?? null,
     drawdown_response: props.initialAnswers?.drawdown_response ?? null,
@@ -87,6 +93,7 @@ export function KaiPreferencesWizard(props: {
   const progressValue = useMemo(() => {
     return Math.round(((step + 1) / total) * 100);
   }, [step, total]);
+  const currentStep = step + 1;
 
   const isLast = step === total - 1;
 
@@ -96,7 +103,11 @@ export function KaiPreferencesWizard(props: {
   const canContinue = Boolean(activeValue);
 
   function setAnswer<K extends keyof WizardAnswers>(key: K, value: WizardAnswers[K]) {
-    setAnswers((prev) => ({ ...prev, [key]: value }));
+    setAnswers((prev) => {
+      const next = { ...prev, [key]: value };
+      void props.onAnswersChange?.(next);
+      return next;
+    });
   }
 
   function handleSelect(value: string) {
@@ -147,12 +158,24 @@ export function KaiPreferencesWizard(props: {
       ? "Continue"
       : "Next";
 
+  const showBack = props.mode === "onboarding" && step > 0;
+  const canGoPrevious = step > 0;
+
+  function handleBack() {
+    if (canGoPrevious) {
+      setStep((s) => Math.max(0, s - 1));
+      return;
+    }
+
+    props.onBack?.();
+  }
+
   return (
     <main
       className={cn(
         "w-full bg-transparent flex flex-col overflow-hidden",
         layout === "page"
-          ? "h-[100dvh] px-6 pt-[calc(16px+env(safe-area-inset-top))] pb-[calc(16px+env(safe-area-inset-bottom))]"
+          ? "h-full px-6 pt-[calc(16px+env(safe-area-inset-top))] pb-[var(--app-screen-footer-pad)]"
           : "min-h-0 px-4 pt-4 pb-4"
       )}
     >
@@ -162,7 +185,29 @@ export function KaiPreferencesWizard(props: {
           layout === "sheet" && "min-h-0"
         )}
       >
-        <div className="pt-1">
+        <div className="pt-1 space-y-2">
+          {showBack && (
+            <div className="flex justify-start">
+              <Button
+                variant="link"
+                effect="fill"
+                size="sm"
+                onClick={handleBack}
+                className="h-auto p-0"
+                showRipple={false}
+              >
+                <ArrowLeft className="mr-1 h-4 w-4" />
+                Back
+              </Button>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span className="font-medium">
+              Step {currentStep} of {total}
+            </span>
+            <span className="tabular-nums">{progressValue}%</span>
+          </div>
           <Progress value={progressValue} className="h-1 rounded-full bg-muted" />
         </div>
 

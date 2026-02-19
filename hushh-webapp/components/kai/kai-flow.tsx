@@ -35,6 +35,15 @@ import { useKaiSession } from "@/lib/stores/kai-session-store";
 import type { KaiStreamEnvelope } from "@/lib/streaming/kai-stream-types";
 import { consumeCanonicalKaiStream } from "@/lib/streaming/kai-stream-client";
 import { KaiPreferencesSheet } from "@/components/kai/onboarding/KaiPreferencesSheet";
+import { useAuth } from "@/hooks/use-auth";
+import { VaultFlow } from "@/components/vault/vault-flow";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { setOnboardingFlowActiveCookie } from "@/lib/services/onboarding-route-cookie";
 
 // =============================================================================
 // TYPES
@@ -52,6 +61,7 @@ export type FlowState =
 interface KaiFlowProps {
   userId: string;
   vaultOwnerToken: string;
+  mode: "dashboard" | "import";
   onStateChange?: (state: FlowState) => void;
   onHoldingsLoaded?: (holdings: string[]) => void;
 }
@@ -407,11 +417,14 @@ function normalizeHoldingsWithPct<T extends {
 export function KaiFlow({
   userId,
   vaultOwnerToken,
+  mode,
   onStateChange,
   onHoldingsLoaded,
 }: KaiFlowProps) {
   const router = useRouter();
-  const { vaultKey } = useVault();
+  const { user } = useAuth();
+  const { vaultKey, vaultOwnerToken: contextVaultOwnerToken } = useVault();
+  const effectiveVaultOwnerToken = contextVaultOwnerToken ?? vaultOwnerToken;
   const { getPortfolioData, setPortfolioData, invalidateDomain } = useCache();
   const [state, setState] = useState<FlowState>("checking");
   const [flowData, setFlowData] = useState<FlowData>({
@@ -419,6 +432,11 @@ export function KaiFlow({
   });
   const [error, setError] = useState<string | null>(null);
   const [preferencesSheetOpen, setPreferencesSheetOpen] = useState(false);
+  const [vaultDialogOpen, setVaultDialogOpen] = useState(false);
+  const [queuedUploadFile, setQueuedUploadFile] = useState<File | null>(null);
+  const [resumeUploadAfterUnlock, setResumeUploadAfterUnlock] = useState(false);
+  const [vaultResolvedForUpload, setVaultResolvedForUpload] = useState(false);
+  const isDashboardMode = mode === "dashboard";
   
   // Streaming state for real-time progress
   const [streaming, setStreaming] = useState<StreamingState>({
@@ -527,11 +545,7 @@ export function KaiFlow({
         setState("checking");
 
         // Fetch user's World Model metadata
-        const metadata = await WorldModelService.getMetadata(
-          userId,
-          false,
-          vaultOwnerToken
-        );
+        const metadata = await WorldModelService.getMetadata(userId, false, effectiveVaultOwnerToken);
 
         // Check if financial domain exists and has data
         const financialDomain = metadata.domains.find(
@@ -552,7 +566,7 @@ export function KaiFlow({
               const allData = await WorldModelService.loadFullBlob({
                 userId,
                 vaultKey,
-                vaultOwnerToken,
+                vaultOwnerToken: effectiveVaultOwnerToken,
               });
               const rawFinancial = allData.financial;
               if (!hasValidFinancialDomainData(rawFinancial)) {
@@ -609,17 +623,27 @@ export function KaiFlow({
             portfolioData,
             holdings: portfolioData?.holdings?.map(h => h.symbol) || [],
           });
-          setState("dashboard");
+          setState(isDashboardMode ? "dashboard" : "import_required");
         } else {
-          // No financial data - prompt for import
+          // No financial data.
           // Ensure stale frontend cache never leaks into first-time user experience.
           invalidateDomain(userId, "financial");
           setFlowData({ hasFinancialData: false });
+          if (isDashboardMode) {
+            router.replace("/kai/import");
+            setState("checking");
+            return;
+          }
           setState("import_required");
         }
       } catch (err) {
         console.error("[KaiFlow] Error checking financial data:", err);
         // Default to import_required on error (new user)
+        if (isDashboardMode) {
+          router.replace("/kai/import");
+          setState("checking");
+          return;
+        }
         setFlowData({ hasFinancialData: false });
         setState("import_required");
       }
@@ -627,12 +651,14 @@ export function KaiFlow({
 
     checkFinancialData();
   }, [
+    mode,
     userId,
     vaultKey,
-    vaultOwnerToken,
+    effectiveVaultOwnerToken,
     getPortfolioData,
     setPortfolioData,
     invalidateDomain,
+    isDashboardMode,
   ]);
 
   // Notify parent of state changes
@@ -650,12 +676,12 @@ export function KaiFlow({
   }, [flowData.holdings, onHoldingsLoaded]);
 
   const handleOpenPersonalizeKai = useCallback(() => {
-    if (!vaultKey || !vaultOwnerToken) {
+    if (!vaultKey || !effectiveVaultOwnerToken) {
       toast.error("Unlock your vault to edit Kai preferences.");
       return;
     }
     setPreferencesSheetOpen(true);
-  }, [vaultKey, vaultOwnerToken]);
+  }, [vaultKey, effectiveVaultOwnerToken]);
 
   // Production-grade disconnect: abort active streams on force-close, mobile swipe-away
   useEffect(() => {
@@ -685,9 +711,11 @@ export function KaiFlow({
   // Handle file upload with SSE streaming
   const handleFileUpload = useCallback(
     async (file: File) => {
-      if (!vaultKey) {
-        // Treat missing key as vault-locked state and rely on VaultLockGuard / VaultFlow
-        toast.error("Please unlock your vault before importing a statement.");
+      if (!vaultKey || !effectiveVaultOwnerToken) {
+        setQueuedUploadFile(file);
+        setResumeUploadAfterUnlock(true);
+        setVaultDialogOpen(true);
+        toast.info("Create or unlock your vault to import this statement.");
         return;
       }
 
@@ -750,7 +778,7 @@ export function KaiFlow({
         try {
           response = await ApiService.importPortfolioStream({
             formData,
-            vaultOwnerToken,
+            vaultOwnerToken: effectiveVaultOwnerToken,
             signal: abortControllerRef.current.signal,
           });
         } catch (fetchError) {
@@ -1043,8 +1071,31 @@ export function KaiFlow({
         setBusyOperation("portfolio_import_stream", false);
       }
     },
-    [userId, vaultOwnerToken, vaultKey, setBusyOperation]
+    [userId, effectiveVaultOwnerToken, vaultKey, setBusyOperation]
   );
+
+  // Resume a queued upload once vault unlock/create succeeds.
+  useEffect(() => {
+    if (
+      !resumeUploadAfterUnlock ||
+      !queuedUploadFile ||
+      !vaultKey ||
+      !effectiveVaultOwnerToken
+    ) {
+      return;
+    }
+
+    setResumeUploadAfterUnlock(false);
+    const file = queuedUploadFile;
+    setQueuedUploadFile(null);
+    void handleFileUpload(file);
+  }, [
+    resumeUploadAfterUnlock,
+    queuedUploadFile,
+    vaultKey,
+    effectiveVaultOwnerToken,
+    handleFileUpload,
+  ]);
 
   // Handle cancel import
   const handleCancelImport = useCallback(() => {
@@ -1068,7 +1119,11 @@ export function KaiFlow({
       holdingsTotal: undefined,
       errorMessage: undefined,
     });
-  }, [flowData.portfolioData, setBusyOperation]);
+    if (mode === "import" && flowData.portfolioData) {
+      router.push("/kai/dashboard");
+      return;
+    }
+  }, [flowData.portfolioData, mode, router, setBusyOperation]);
 
   // Handle retry import after error
   const _handleRetryImport = useCallback(() => {
@@ -1101,12 +1156,17 @@ export function KaiFlow({
   }, [flowData.parsedPortfolio]);
 
   const handleBackToDashboardFromImport = useCallback(() => {
+    if (mode === "import") {
+      setOnboardingFlowActiveCookie(false);
+      router.push("/kai/dashboard");
+      return;
+    }
     if (flowData.portfolioData) {
       setState("dashboard");
     } else {
       setState("import_required");
     }
-  }, [flowData.portfolioData]);
+  }, [flowData.portfolioData, mode, router]);
 
   // Handle save complete from review screen
   const handleSaveComplete = useCallback((savedData: ReviewPortfolioData) => {
@@ -1161,23 +1221,38 @@ export function KaiFlow({
       parsedPortfolio: undefined, // Clear parsed data
     });
 
+    if (mode === "import") {
+      router.push("/kai/dashboard");
+      return;
+    }
+
     setState("dashboard");
-  }, [userId, setPortfolioData]);
+  }, [mode, router, userId, setPortfolioData]);
 
   // Handle skip import - preserve existing data if available
   const handleSkipImport = useCallback(() => {
+    if (mode === "import") {
+      setOnboardingFlowActiveCookie(false);
+      router.push("/kai");
+      return;
+    }
+
     setState("dashboard");
     // Only reset flowData if there's no existing portfolio data
     // This preserves data when user clicks "Upload New Statement" then skips
     if (!flowData.portfolioData) {
       setFlowData({ hasFinancialData: false });
     }
-  }, [flowData.portfolioData]);
+  }, [flowData.portfolioData, mode, router]);
 
   // Handle re-import (upload new statement)
   const handleReimport = useCallback(() => {
+    if (mode === "dashboard") {
+      router.push("/kai/import");
+      return;
+    }
     setState("import_required");
-  }, []);
+  }, [mode, router]);
 
   // Handle clear all data with confirmation
   const handleClearData = useCallback(async () => {
@@ -1192,7 +1267,7 @@ export function KaiFlow({
     
     try {
       // Clear World Model financial domain
-      await WorldModelService.clearDomain(userId, "financial", vaultOwnerToken);
+      await WorldModelService.clearDomain(userId, "financial", effectiveVaultOwnerToken);
       
       // Invalidate cache to ensure fresh data on next load
       CacheService.getInstance().invalidate(CACHE_KEYS.WORLD_MODEL_METADATA(userId));
@@ -1200,6 +1275,10 @@ export function KaiFlow({
       
       // Reset flow state
       setFlowData({ hasFinancialData: false });
+      if (mode === "dashboard") {
+        router.push("/kai/import");
+        return;
+      }
       setState("import_required");
       
       toast.success("Portfolio data cleared successfully");
@@ -1207,7 +1286,7 @@ export function KaiFlow({
       console.error("[KaiFlow] Error clearing data:", err);
       toast.error("Failed to clear data. Please try again.");
     }
-  }, [userId]);
+  }, [mode, router, userId, effectiveVaultOwnerToken]);
 
   // Handle manage portfolio navigation
   const handleManagePortfolio = useCallback(() => {
@@ -1217,15 +1296,15 @@ export function KaiFlow({
   // Handle analyze stock - starts streaming analysis
   const handleAnalyzeStock = useCallback((symbol: string) => {
     console.log("[KaiFlow] handleAnalyzeStock called with:", symbol);
-    console.log("[KaiFlow] vaultOwnerToken present:", !!vaultOwnerToken);
+    console.log("[KaiFlow] vaultOwnerToken present:", !!effectiveVaultOwnerToken);
     
-    if (!symbol || !vaultOwnerToken) {
+    if (!symbol || !effectiveVaultOwnerToken) {
       toast.error("Please unlock your vault first");
       return;
     }
     
     // Get context for confirmation dialog
-    getStockContext(symbol, vaultOwnerToken)
+    getStockContext(symbol, effectiveVaultOwnerToken)
       .then((context) => {
         console.log("[KaiFlow] Context received:", context?.ticker || "no ticker");
         
@@ -1250,7 +1329,7 @@ export function KaiFlow({
           description: error instanceof Error ? error.message : "Unknown error",
         });
       });
-  }, [vaultOwnerToken, userId, router]);
+  }, [effectiveVaultOwnerToken, userId, router]);
 
   // Handle back to dashboard from analysis
   const handleBackToDashboard = useCallback(() => {
@@ -1300,7 +1379,7 @@ export function KaiFlow({
       )}
 
       {/* State-based rendering */}
-      {state === "import_required" && (
+      {mode === "import" && state === "import_required" && (
         <PortfolioImportView
           onFileSelect={handleFileUpload}
           onSkip={handleSkipImport}
@@ -1308,7 +1387,7 @@ export function KaiFlow({
         />
       )}
 
-      {state === "importing" && (
+      {mode === "import" && state === "importing" && (
         <ImportProgressView
           stage={streaming.stage}
           streamedText={streaming.streamedText}
@@ -1334,7 +1413,7 @@ export function KaiFlow({
         />
       )}
 
-      {state === "import_complete" && (
+      {mode === "import" && state === "import_complete" && (
         <ImportProgressView
           stage="complete"
           streamedText={streaming.streamedText}
@@ -1354,19 +1433,19 @@ export function KaiFlow({
         />
       )}
 
-      {state === "reviewing" && flowData.parsedPortfolio && vaultKey && (
+      {mode === "import" && state === "reviewing" && flowData.parsedPortfolio && vaultKey && (
         <PortfolioReviewView
           portfolioData={flowData.parsedPortfolio}
           userId={userId}
           vaultKey={vaultKey}
-          vaultOwnerToken={vaultOwnerToken}
+          vaultOwnerToken={effectiveVaultOwnerToken}
           onSaveComplete={handleSaveComplete}
           onReimport={handleReimport}
           onBack={() => setState("import_required")}
         />
       )}
 
-      {state === "dashboard" && flowData.portfolioData && (
+      {isDashboardMode && state === "dashboard" && flowData.portfolioData && (
         <DashboardView
           portfolioData={flowData.portfolioData}
           onManagePortfolio={handleManagePortfolio}
@@ -1379,7 +1458,7 @@ export function KaiFlow({
         />
       )}
 
-      {state === "dashboard" && !flowData.portfolioData && (
+      {isDashboardMode && state === "dashboard" && !flowData.portfolioData && (
         <div className="text-center py-12">
           <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-primary/10 flex items-center justify-center">
             <svg
@@ -1409,7 +1488,7 @@ export function KaiFlow({
         </div>
       )}
 
-      {state === "analysis" && flowData.analysisResult && (
+      {isDashboardMode && state === "analysis" && flowData.analysisResult && (
         <AnalysisView
           result={flowData.analysisResult}
           onBack={handleBackToDashboard}
@@ -1417,7 +1496,7 @@ export function KaiFlow({
         />
       )}
 
-      {state === "analysis" && !flowData.analysisResult && (
+      {isDashboardMode && state === "analysis" && !flowData.analysisResult && (
         <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
           <HushhLoader variant="inline" label="Analyzing..." />
           <p className="text-sm text-muted-foreground">
@@ -1426,14 +1505,53 @@ export function KaiFlow({
         </div>
       )}
 
-      {vaultKey && vaultOwnerToken && (
+      {vaultKey && effectiveVaultOwnerToken && (
         <KaiPreferencesSheet
           open={preferencesSheetOpen}
           onOpenChange={setPreferencesSheetOpen}
           userId={userId}
           vaultKey={vaultKey}
-          vaultOwnerToken={vaultOwnerToken}
+          vaultOwnerToken={effectiveVaultOwnerToken}
         />
+      )}
+
+      {user && (
+        <Dialog
+          open={vaultDialogOpen}
+          onOpenChange={(open) => {
+            setVaultDialogOpen(open);
+            if (!open) {
+              if (vaultResolvedForUpload) {
+                setVaultResolvedForUpload(false);
+                return;
+              }
+              setQueuedUploadFile(null);
+              setResumeUploadAfterUnlock(false);
+            }
+          }}
+        >
+          <DialogContent className="sm:max-w-md p-0 border-none bg-transparent shadow-none">
+            <div className="bg-background/95 backdrop-blur-xl border rounded-xl overflow-hidden shadow-2xl">
+              <div className="p-4 border-b">
+                <DialogTitle className="font-semibold text-center text-base">
+                  Create or unlock vault to import portfolio
+                </DialogTitle>
+                <DialogDescription className="sr-only">
+                  Create or unlock your vault to connect financial data to Kai.
+                </DialogDescription>
+              </div>
+              <div className="p-4">
+                <VaultFlow
+                  user={user}
+                  onSuccess={() => {
+                    setVaultResolvedForUpload(true);
+                    setVaultDialogOpen(false);
+                  }}
+                />
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );

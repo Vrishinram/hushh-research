@@ -2,7 +2,7 @@
 
 import { toast } from "sonner";
 import { type ColorVariant, type FeedbackTone } from "./types";
-import { getVariantStylesNoHover, getIconColor } from "./utils";
+import { getVariantStylesNoHover } from "./utils";
 import {
   CheckCircleIcon,
   InfoIcon,
@@ -11,6 +11,7 @@ import {
   SparkleIcon,
 } from "@phosphor-icons/react";
 import { useIconWeight } from "./icon-theme-context";
+import { cn } from "@/lib/utils";
 
 // ============================================================================
 // GLOBAL TOAST PERSISTENCE SYSTEM
@@ -152,7 +153,18 @@ interface ToastOptions {
   variant?: ColorVariant;
   duration?: number;
   description?: string;
+  className?: string;
 }
+
+const getToastToneClassName = (
+  tone: FeedbackTone,
+  variant?: ColorVariant
+) =>
+  cn(
+    "morphy-sonner-toast",
+    `morphy-sonner-tone-${tone}`,
+    variant ? getVariantStylesNoHover(variant, "fill") : undefined
+  );
 
 // ============================================================================
 // TOAST FUNCTIONS WITH MORPHY-UI VARIANTS
@@ -167,82 +179,66 @@ export const useMorphyToast = () => {
   const iconWeight = useIconWeight();
 
   const success = (message: string, options: ToastOptions = {}) => {
-    const {
-      variant = "green-gradient",
-      duration = 3000,
-      description,
-    } = options;
+    const { variant, duration = 3000, description, className } = options;
 
     return toast.success(message, {
       duration,
       description,
       icon: (
         <CheckCircleIcon
-          className="h-4 w-4"
+          className="h-4 w-4 text-current"
           weight={iconWeight}
-          style={{ color: getIconColor(variant, "fill") }}
         />
       ),
-      className: getVariantStylesNoHover(variant, "fill"),
+      className: cn(getToastToneClassName("success", variant), className),
     });
   };
 
   const error = (message: string, options: ToastOptions = {}) => {
-    const {
-      variant = "orange-gradient",
-      duration = 5000,
-      description,
-    } = options;
+    const { variant, duration = 5000, description, className } = options;
 
     return toast.error(message, {
       duration,
       description,
       icon: (
         <XCircleIcon
-          className="h-4 w-4"
+          className="h-4 w-4 text-current"
           weight={iconWeight}
-          style={{ color: getIconColor(variant, "fill") }}
         />
       ),
-      className: getVariantStylesNoHover(variant, "fill"),
+      className: cn(getToastToneClassName("error", variant), className),
     });
   };
 
   const warning = (message: string, options: ToastOptions = {}) => {
-    const {
-      variant = "orange-gradient",
-      duration = 4000,
-      description,
-    } = options;
+    const { variant, duration = 4000, description, className } = options;
 
     return toast.warning(message, {
       duration,
       description,
       icon: (
         <WarningIcon
-          className="h-4 w-4"
+          className="h-4 w-4 text-current"
           weight={iconWeight}
-          style={{ color: getIconColor(variant, "fill") }}
         />
       ),
-      className: getVariantStylesNoHover(variant, "fill"),
+      className: cn(getToastToneClassName("warning", variant), className),
     });
   };
 
   const info = (message: string, options: ToastOptions = {}) => {
-    const { variant = "blue-gradient", duration = 4000, description } = options;
+    const { variant, duration = 4000, description, className } = options;
 
     return toast.info(message, {
       duration,
       description,
       icon: (
         <InfoIcon
-          className="h-4 w-4"
+          className="h-4 w-4 text-current"
           weight={iconWeight}
-          style={{ color: getIconColor(variant, "fill") }}
         />
       ),
-      className: getVariantStylesNoHover(variant, "fill"),
+      className: cn(getToastToneClassName("info", variant), className),
     });
   };
 
@@ -251,10 +247,11 @@ export const useMorphyToast = () => {
     options: ToastOptions & { icon?: React.ReactNode } = {}
   ) => {
     const {
-      variant = "gradient",
+      variant,
       duration = 4000,
       description,
       icon,
+      className,
     } = options;
 
     return toast(message, {
@@ -262,12 +259,11 @@ export const useMorphyToast = () => {
       description,
       icon: icon || (
         <SparkleIcon
-          className="h-4 w-4"
+          className="h-4 w-4 text-current"
           weight={iconWeight}
-          style={{ color: getIconColor(variant, "fill") }}
         />
       ),
-      className: getVariantStylesNoHover(variant, "fill"),
+      className: cn("morphy-sonner-toast", variant ? getVariantStylesNoHover(variant, "fill") : undefined, className),
     });
   };
 
@@ -310,58 +306,42 @@ export const useMorphyToast = () => {
 
 export const morphyToast = {
   success: (message: string, options?: ToastOptions) => {
-    const {
-      variant = "green-gradient",
-      duration = 3000,
-      description,
-    } = options || {};
+    const { variant, duration = 3000, description, className } = options || {};
 
     return toast.success(message, {
       duration,
       description,
-      className: getVariantStylesNoHover(variant, "fill"),
+      className: cn(getToastToneClassName("success", variant), className),
     });
   },
 
   error: (message: string, options?: ToastOptions) => {
-    const {
-      variant = "orange-gradient",
-      duration = 5000,
-      description,
-    } = options || {};
+    const { variant, duration = 5000, description, className } = options || {};
 
     return toast.error(message, {
       duration,
       description,
-      className: getVariantStylesNoHover(variant, "fill"),
+      className: cn(getToastToneClassName("error", variant), className),
     });
   },
 
   warning: (message: string, options?: ToastOptions) => {
-    const {
-      variant = "orange-gradient",
-      duration = 4000,
-      description,
-    } = options || {};
+    const { variant, duration = 4000, description, className } = options || {};
 
     return toast.warning(message, {
       duration,
       description,
-      className: getVariantStylesNoHover(variant, "fill"),
+      className: cn(getToastToneClassName("warning", variant), className),
     });
   },
 
   info: (message: string, options?: ToastOptions) => {
-    const {
-      variant = "blue-gradient",
-      duration = 4000,
-      description,
-    } = options || {};
+    const { variant, duration = 4000, description, className } = options || {};
 
     return toast.info(message, {
       duration,
       description,
-      className: getVariantStylesNoHover(variant, "fill"),
+      className: cn(getToastToneClassName("info", variant), className),
     });
   },
 
@@ -370,17 +350,22 @@ export const morphyToast = {
     options?: ToastOptions & { icon?: React.ReactNode }
   ) => {
     const {
-      variant = "gradient",
+      variant,
       duration = 4000,
       description,
       icon,
+      className,
     } = options || {};
 
     return toast(message, {
       duration,
       description,
       icon,
-      className: getVariantStylesNoHover(variant, "fill"),
+      className: cn(
+        "morphy-sonner-toast",
+        variant ? getVariantStylesNoHover(variant, "fill") : undefined,
+        className
+      ),
     });
   },
 };

@@ -28,6 +28,7 @@ import { StatusBarManager } from "@/components/status-bar-manager";
 import { usePathname } from "next/navigation";
 import { ensureMorphyGsapReady } from "@/lib/morphy-ux/gsap-init";
 import { usePageEnterAnimation } from "@/lib/morphy-ux/hooks/use-page-enter";
+import { PostAuthOnboardingSyncBridge } from "@/components/onboarding/PostAuthOnboardingSyncBridge";
 
 interface ProvidersProps {
   children: ReactNode;
@@ -35,7 +36,8 @@ interface ProvidersProps {
 
 export function Providers({ children }: ProvidersProps) {
   const pathname = usePathname();
-  const isLanding = pathname === "/";
+  const hideGlobalChrome = pathname === "/" || pathname.startsWith("/login");
+  const isKaiOnboarding = pathname === "/kai/onboarding" || pathname.startsWith("/kai/onboarding/");
   const pageRef = useRef<HTMLDivElement | null>(null);
 
   // One-time GSAP init (non-blocking).
@@ -63,16 +65,24 @@ export function Providers({ children }: ProvidersProps) {
                     <StatusBarBlur />
                     <TopBarBackground />
                     <TopAppBar />
+                    <PostAuthOnboardingSyncBridge />
                     {/* Main scroll container: extends under fixed bar so content can scroll behind it; padding clears bar height */}
                     <div
                       className={
-                        isLanding
+                        hideGlobalChrome
                           ? // Landing is a full-screen onboarding flow: no page scroll, no extra top inset.
                             "flex-1 overflow-hidden relative z-10 min-h-0"
-                          : "flex-1 overflow-y-auto pb-[calc(var(--app-bottom-fixed-ui)+env(safe-area-inset-bottom))] relative z-10 min-h-0 pt-[45px]"
+                          : isKaiOnboarding
+                          ? // Keep /kai/onboarding single-screen; step components handle their own safe-area/footer inset.
+                            "flex-1 overflow-hidden relative z-10 min-h-0 pt-[45px]"
+                          : "flex-1 overflow-y-auto pb-[var(--app-bottom-inset)] relative z-10 min-h-0 pt-[45px]"
                       }
                     >
-                      <div ref={pageRef} key={pathname} className="min-h-0">
+                      <div
+                        ref={pageRef}
+                        key={pathname}
+                        className={isKaiOnboarding ? "min-h-0 h-full" : "min-h-0"}
+                      >
                         {children}
                       </div>
                     </div>

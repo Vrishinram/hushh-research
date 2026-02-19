@@ -54,6 +54,11 @@ import { AccountService } from "@/lib/services/account-service";
 import { VaultService } from "@/lib/services/vault-service";
 import { resolveDeleteAccountAuth } from "@/lib/flows/delete-account";
 import { toast } from "sonner";
+import { PreVaultOnboardingService } from "@/lib/services/pre-vault-onboarding-service";
+import {
+  setOnboardingFlowActiveCookie,
+  setOnboardingRequiredCookie,
+} from "@/lib/services/onboarding-route-cookie";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -111,7 +116,7 @@ export default function ProfilePage() {
         if (!cancelled) setHasVault(next);
       } catch (error) {
         console.warn("[ProfilePage] Failed to check vault existence:", error);
-        if (!cancelled) setHasVault(null);
+        if (!cancelled) setHasVault(false);
       }
     }
 
@@ -139,8 +144,32 @@ export default function ProfilePage() {
       // Load world model data
       if (!user?.uid) return;
 
+      // Wait for vault existence resolution before deciding metadata fetch behavior.
+      if (hasVault === null) return;
+
       try {
         setLoadingDomains(true);
+
+        // No vault yet: show empty profile state without calling protected metadata API.
+        if (hasVault === false) {
+          if (!cancelled) {
+            setDomains([]);
+            setTotalAttributes(0);
+            completeStep();
+          }
+          return;
+        }
+
+        // Vault exists but token is unavailable (locked/not resolved): avoid 401 and render graceful state.
+        if (!vaultOwnerToken) {
+          if (!cancelled) {
+            setDomains([]);
+            setTotalAttributes(0);
+            completeStep();
+          }
+          return;
+        }
+
         const metadata = await WorldModelService.getMetadata(
           user.uid,
           false,
@@ -168,6 +197,7 @@ export default function ProfilePage() {
   }, [
     authLoading,
     completeStep,
+    hasVault,
     initialized,
     registerSteps,
     reset,
@@ -205,6 +235,9 @@ export default function ProfilePage() {
       setHasVault(resolution.hasVault);
 
       await AccountService.deleteAccount(resolution.token);
+      await PreVaultOnboardingService.clear(user.uid);
+      setOnboardingRequiredCookie(false);
+      setOnboardingFlowActiveCookie(false);
       toast.success("Account deleted successfully. Redirecting...", {
         duration: 3000,
       });
@@ -370,16 +403,33 @@ export default function ProfilePage() {
               <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-primary/10 flex items-center justify-center">
                 <Icon icon={MessageSquare} size="lg" className="text-primary" />
               </div>
-              <p className="text-sm text-muted-foreground mb-3">
-                No data yet. Chat with Kai to build your profile.
-              </p>
-              <Button
-                variant="gradient"
-                size="sm"
-                onClick={() => router.push("/chat")}
-              >
-                Ask Agent Kai
-              </Button>
+              {hasVault === false ? (
+                <>
+                  <p className="text-sm text-muted-foreground mb-3">
+                    Create your vault from import to start building your data profile.
+                  </p>
+                  <Button variant="gradient" size="sm" onClick={() => router.push("/kai/import")}>
+                    Go to Import
+                  </Button>
+                </>
+              ) : hasVault === true && !vaultOwnerToken ? (
+                <p className="text-sm text-muted-foreground">
+                  Unlock your vault to view your data profile.
+                </p>
+              ) : (
+                <>
+                  <p className="text-sm text-muted-foreground mb-3">
+                    No data yet. Chat with Kai to build your profile.
+                  </p>
+                  <Button
+                    variant="gradient"
+                    size="sm"
+                    onClick={() => router.push("/chat")}
+                  >
+                    Ask Agent Kai
+                  </Button>
+                </>
+              )}
             </div>
           )}
         </CardContent>

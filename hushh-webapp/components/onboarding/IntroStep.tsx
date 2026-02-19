@@ -52,7 +52,7 @@ export function IntroStep({ onNext }: { onNext: () => void }) {
           </div>
         </div>
 
-        <footer className="flex-none pb-[calc(16px+var(--app-bottom-fixed-ui)+env(safe-area-inset-bottom))] pt-4">
+        <footer className="flex-none pt-4 pb-[var(--app-screen-footer-pad)]">
           <Button size="lg" fullWidth onClick={onNext} showRipple>
             Get Started
             <Icon icon={ArrowRight} size="md" className="ml-2" />

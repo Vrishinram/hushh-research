@@ -52,7 +52,7 @@ export default function AgentNavPage() {
   // Redirect to login if not authenticated
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
-      router.push("/");
+      router.push("/login?redirect=%2Fagent-nav");
     }
   }, [isAuthenticated, authLoading, router]);
 

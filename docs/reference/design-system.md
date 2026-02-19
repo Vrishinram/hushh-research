@@ -289,6 +289,51 @@ Rules:
 
 ---
 
+## Onboarding Auth Pattern (Slide 3)
+
+Use this for the login/auth step on `/` after marketing preview:
+
+- `hushh-webapp/components/onboarding/AuthStep.tsx`:
+  - owns auth handlers and redirect/session behavior
+  - composes UI with `BrandMark` + auth provider button list + terms copy
+- `hushh-webapp/components/onboarding/AuthProviderButton.tsx`:
+  - centralized visual contract for provider actions (Apple/Google/Phone)
+
+Rules:
+- Keep phone sign-in visible but disabled until rollout is enabled.
+- Keep provider button shape/spacing centralized in `AuthProviderButton` (no per-callsite variants).
+- Keep primary auth logic in `AuthService` and never call auth providers directly from raw UI helpers.
+
+---
+
+## Feedback System (shadcn Sonner + Morphy)
+
+Use Sonner through Morphy helpers so errors/success/info stay centralized and token-driven.
+
+Use:
+- `morphyToast` from `hushh-webapp/lib/morphy-ux/morphy.tsx`
+- Global Sonner wrapper `hushh-webapp/components/ui/sonner.tsx`
+- Semantic toast tokens in `hushh-webapp/app/globals.css` (`--toast-info-*`, `--toast-success-*`, `--toast-warning-*`, `--toast-error-*`)
+
+```tsx
+import { morphyToast } from "@/lib/morphy-ux/morphy";
+
+morphyToast.error("Failed to sign in", {
+  description: "Please try again.",
+});
+```
+
+Do:
+- Use toast notifications for action errors instead of inline full-width error panels in onboarding/auth screens.
+- Keep semantic mapping: `info`, `success`, `warning`, `error`.
+- Let the centralized Sonner classes handle tone colors and transitions.
+
+Don't:
+- Import `toast` from `sonner` in new feature code unless you are inside infrastructure/wrapper layers.
+- Hardcode one-off toast colors per screen.
+
+---
+
 ## 8. Motion System (GSAP + Morphy)
 
 **North star:** motion is globally tunable and consistent. If we retune duration/easing once, it should reflect everywhere.
@@ -406,6 +451,12 @@ useCarouselDeckFocus({ activeIndex, slideEls });
    - **Formula**: `max(env(safe-area-inset-top), 32px)` where a fallback is needed.
    - _Why 32px?_ Ensures functional padding on emulators or web views that report 0px.
    - **Top bar**: Fixed bar is **64px** tall (breadcrumb bar); on native, StatusBarBlur adds `env(safe-area-inset-top)` above it. Main scroll container uses `pt-[45px]` so content clears the bar and can scroll under it for the masked-blur effect.
+   - **Bottom inset (centralized)**:
+     - `--app-safe-area-bottom`: raw device inset (`env(safe-area-inset-bottom, 0px)`).
+     - `--app-bottom-fixed-ui`: runtime measured fixed UI height (navbar/theme pill).
+     - `--app-bottom-inset`: `calc(var(--app-bottom-fixed-ui) + var(--app-safe-area-bottom))`.
+     - `--app-screen-footer-pad`: `calc(16px + var(--app-bottom-inset))`.
+   - **Rule**: For full-screen onboarding/footer CTAs, use `pb-[var(--app-screen-footer-pad)]`. For fixed bottom overlays/search bars, anchor with `bottom-[var(--app-bottom-inset)]`.
 3. **Toast Positioning**:
    - Place toasts at `margin-top: max(env(safe-area-inset-top), 4rem)` to avoid blocking the header or status bar.
    - Use `z-index: 9999` to float above all sheets/modals.

@@ -20,10 +20,11 @@
  * - Module-level flag tracks unlock across route changes within same session.
  */
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { useVault } from "@/lib/vault/vault-context";
+import { VaultService } from "@/lib/services/vault-service";
 import { VaultFlow } from "./vault-flow";
 import { HushhLoader } from "@/components/ui/hushh-loader";
 
@@ -43,6 +44,7 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
   const router = useRouter();
   const { isVaultUnlocked } = useVault();
   const { user, loading: authLoading } = useAuth();
+  const [hasVault, setHasVault] = useState<boolean | null>(null);
 
   // Redirect unauthenticated users (side-effect outside render)
   useEffect(() => {
@@ -51,9 +53,37 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
 
     if (typeof window !== "undefined") {
       const currentPath = window.location.pathname;
-      router.push(`/?redirect=${encodeURIComponent(currentPath)}`);
+      router.push(`/login?redirect=${encodeURIComponent(currentPath)}`);
     }
   }, [authLoading, router, user]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function checkVaultPresence() {
+      if (authLoading || !user || isVaultUnlocked) return;
+
+      setHasVault(null);
+      try {
+        const exists = await VaultService.checkVault(user.uid);
+        if (!cancelled) {
+          setHasVault(exists);
+        }
+      } catch (error) {
+        console.warn("[VaultLockGuard] Failed to check vault existence:", error);
+        if (!cancelled) {
+          // Fail closed on transient check failures to preserve existing secure behavior.
+          setHasVault(true);
+        }
+      }
+    }
+
+    void checkVaultPresence();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, user?.uid, isVaultUnlocked]);
 
   // ============================================================================
   // FAST PATH: If vault is unlocked (in memory), render children immediately
@@ -75,6 +105,14 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
   // No user - redirect to login
   if (!user) {
     return <HushhLoader label="Redirecting to login..." />;
+  }
+
+  if (hasVault === null) {
+    return <HushhLoader label="Checking vault..." />;
+  }
+
+  if (hasVault === false) {
+    return <>{children}</>;
   }
 
   // User exists but vault is locked - show unlock dialog

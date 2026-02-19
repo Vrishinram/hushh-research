@@ -1,125 +1,217 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { HushhLoader } from "@/components/ui/hushh-loader";
 import { KaiPersonaScreen } from "@/components/kai/onboarding/KaiPersonaScreen";
 import { KaiPreferencesWizard } from "@/components/kai/onboarding/KaiPreferencesWizard";
-import { KaiProfileService, type KaiProfileV2, type RiskProfile } from "@/lib/services/kai-profile-service";
+import {
+  KaiProfileService,
+  computeRiskScore,
+  mapRiskProfile,
+  type KaiProfileV2,
+  type RiskProfile,
+  type DrawdownResponse,
+  type InvestmentHorizon,
+  type VolatilityPreference,
+} from "@/lib/services/kai-profile-service";
+import {
+  PreVaultOnboardingService,
+  type PreVaultOnboardingAnswers,
+  type PreVaultOnboardingState,
+} from "@/lib/services/pre-vault-onboarding-service";
+import { VaultService } from "@/lib/services/vault-service";
 import { useAuth } from "@/hooks/use-auth";
 import { useVault } from "@/lib/vault/vault-context";
+import {
+  setOnboardingFlowActiveCookie,
+  setOnboardingRequiredCookie,
+} from "@/lib/services/onboarding-route-cookie";
 
 type Stage = "loading" | "wizard" | "persona";
+type OnboardingSource = "pre_vault" | "vault";
+
+type WizardAnswers = {
+  investment_horizon: InvestmentHorizon | null;
+  drawdown_response: DrawdownResponse | null;
+  volatility_preference: VolatilityPreference | null;
+};
+
+function profileToAnswers(profile: KaiProfileV2 | null): WizardAnswers {
+  return {
+    investment_horizon: profile?.preferences.investment_horizon ?? null,
+    drawdown_response: profile?.preferences.drawdown_response ?? null,
+    volatility_preference: profile?.preferences.volatility_preference ?? null,
+  };
+}
+
+function pendingToAnswers(pending: PreVaultOnboardingState | null): WizardAnswers {
+  return {
+    investment_horizon: pending?.answers.investment_horizon ?? null,
+    drawdown_response: pending?.answers.drawdown_response ?? null,
+    volatility_preference: pending?.answers.volatility_preference ?? null,
+  };
+}
+
+function computePersona(answers: WizardAnswers, explicit?: RiskProfile | null): RiskProfile {
+  if (explicit) return explicit;
+  const score = computeRiskScore(answers as PreVaultOnboardingAnswers);
+  return score === null ? "balanced" : mapRiskProfile(score);
+}
 
 export default function KaiOnboardingPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const { vaultKey, vaultOwnerToken, isVaultUnlocked } = useVault();
 
-  const [profile, setProfile] = useState<KaiProfileV2 | null>(null);
+  const [source, setSource] = useState<OnboardingSource | null>(null);
   const [stage, setStage] = useState<Stage>("loading");
   const [saving, setSaving] = useState(false);
+  const [profile, setProfile] = useState<KaiProfileV2 | null>(null);
+  const [preVaultState, setPreVaultState] = useState<PreVaultOnboardingState | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
       if (authLoading) return;
-      if (!user || !isVaultUnlocked || !vaultKey || !vaultOwnerToken) return;
 
-      setStage("loading");
+      if (!user) {
+        router.replace("/login?redirect=%2Fkai%2Fonboarding");
+        return;
+      }
+
       try {
-        const p = await KaiProfileService.getProfile({
+        setStage("loading");
+
+        const hasVault = await VaultService.checkVault(user.uid);
+        if (cancelled) return;
+
+        if (!hasVault) {
+          setSource("pre_vault");
+          const pending = await PreVaultOnboardingService.load(user.uid);
+          if (cancelled) return;
+
+          if (pending?.completed) {
+            setOnboardingRequiredCookie(false);
+            setOnboardingFlowActiveCookie(false);
+            router.replace("/kai");
+            return;
+          }
+
+          setOnboardingRequiredCookie(true);
+          setOnboardingFlowActiveCookie(false);
+
+          setPreVaultState(pending);
+          // Always start from the questionnaire flow on reload until onboarding is completed.
+          // We keep draft answers, but do not auto-jump to persona.
+          setStage("wizard");
+          return;
+        }
+
+        setSource("vault");
+
+        if (!isVaultUnlocked || !vaultKey || !vaultOwnerToken) {
+          setStage("loading");
+          return;
+        }
+
+        const nextProfile = await KaiProfileService.getProfile({
           userId: user.uid,
           vaultKey,
           vaultOwnerToken,
         });
-        if (cancelled) return;
-        setProfile(p);
 
-        if (p.onboarding.completed) {
+        if (cancelled) return;
+
+        setProfile(nextProfile);
+        if (nextProfile.onboarding.completed) {
+          setOnboardingRequiredCookie(false);
+          setOnboardingFlowActiveCookie(false);
           router.replace("/kai");
           return;
         }
 
-        // Resume on persona step if questionnaire already computed a persona.
-        if (p.preferences.risk_profile && !p.onboarding.skipped_preferences) {
-          setStage("persona");
-        } else {
-          setStage("wizard");
-        }
+        setOnboardingRequiredCookie(true);
+        setOnboardingFlowActiveCookie(false);
+        // Always return to the questionnaire until the onboarding completion flag is set.
+        setStage("wizard");
       } catch (error) {
-        console.warn("[KaiOnboardingPage] Failed to load profile:", error);
+        console.warn("[KaiOnboardingPage] Failed to load onboarding:", error);
         if (!cancelled) {
-          setProfile(null);
+          setSource("pre_vault");
           setStage("wizard");
         }
       }
     }
 
     void load();
-
     return () => {
       cancelled = true;
     };
   }, [authLoading, user?.uid, isVaultUnlocked, vaultKey, vaultOwnerToken, router]);
 
-  if (authLoading || !user || !isVaultUnlocked || !vaultKey || !vaultOwnerToken) {
-    return <HushhLoader label="Preparing Kai..." variant="fullscreen" />;
-  }
+  const wizardAnswers: WizardAnswers = useMemo(() => {
+    if (source === "vault") return profileToAnswers(profile);
+    return pendingToAnswers(preVaultState);
+  }, [source, profile, preVaultState]);
 
-  if (stage === "loading") {
+  const persona: RiskProfile = useMemo(() => {
+    if (source === "vault") {
+      return computePersona(wizardAnswers, profile?.preferences.risk_profile ?? null);
+    }
+    return computePersona(wizardAnswers, preVaultState?.risk_profile ?? null);
+  }, [source, wizardAnswers, profile?.preferences.risk_profile, preVaultState?.risk_profile]);
+
+  if (authLoading || stage === "loading" || !source) {
     return <HushhLoader label="Loading onboarding..." variant="fullscreen" />;
   }
 
-  const safeProfile: KaiProfileV2 =
-    profile ??
-    ({
-      schema_version: 2,
-      onboarding: {
-        completed: false,
-        completed_at: null,
-        skipped_preferences: false,
-        version: 2,
-      },
-      preferences: {
-        investment_horizon: null,
-        investment_horizon_selected_at: null,
-        investment_horizon_anchor_at: null,
-        drawdown_response: null,
-        drawdown_response_selected_at: null,
-        volatility_preference: null,
-        volatility_preference_selected_at: null,
-        risk_score: null,
-        risk_profile: null,
-        risk_profile_selected_at: null,
-      },
-      updated_at: new Date().toISOString(),
-    } as KaiProfileV2);
+  if (!user) {
+    return <HushhLoader label="Redirecting..." variant="fullscreen" />;
+  }
 
   if (stage === "persona") {
-    const risk = safeProfile.preferences.risk_profile ?? "balanced";
     return (
       <KaiPersonaScreen
-        riskProfile={risk as RiskProfile}
+        riskProfile={persona}
         onEditAnswers={() => setStage("wizard")}
         onLaunchDashboard={async () => {
           if (saving) return;
+
           try {
             setSaving(true);
-            const next = await KaiProfileService.setOnboardingCompleted({
-              userId: user.uid,
-              vaultKey,
-              vaultOwnerToken,
-              skippedPreferences: false,
-            });
-            setProfile(next);
+            const riskScore = computeRiskScore(wizardAnswers as PreVaultOnboardingAnswers);
+
+            if (source === "vault") {
+              if (!vaultKey || !vaultOwnerToken) {
+                toast.error("Unlock your vault to continue.");
+                return;
+              }
+              const nextProfile = await KaiProfileService.setOnboardingCompleted({
+                userId: user.uid,
+                vaultKey,
+                vaultOwnerToken,
+                skippedPreferences: false,
+              });
+              setProfile(nextProfile);
+            } else {
+              await PreVaultOnboardingService.markCompleted(user.uid, {
+                skipped: false,
+                answers: wizardAnswers,
+                risk_score: riskScore,
+                risk_profile: persona,
+              });
+            }
+
             toast.success("You're all set.");
-            router.replace("/kai");
+            setOnboardingRequiredCookie(false);
+            setOnboardingFlowActiveCookie(true);
+            router.replace("/kai/import");
           } catch (error) {
-            console.error("[KaiOnboardingPage] Failed to complete onboarding:", error);
+            console.error("[KaiOnboardingPage] Failed to finalize onboarding:", error);
             toast.error("Couldn't complete onboarding. Please retry.");
           } finally {
             setSaving(false);
@@ -133,23 +225,50 @@ export default function KaiOnboardingPage() {
     <KaiPreferencesWizard
       mode="onboarding"
       layout="page"
-      initialAnswers={{
-        investment_horizon: safeProfile.preferences.investment_horizon,
-        drawdown_response: safeProfile.preferences.drawdown_response,
-        volatility_preference: safeProfile.preferences.volatility_preference,
+      initialStep={0}
+      initialAnswers={wizardAnswers}
+      onBack={() => router.replace("/kai")}
+      onAnswersChange={(nextAnswers) => {
+        if (source !== "pre_vault") return;
+        const score = computeRiskScore(nextAnswers as PreVaultOnboardingAnswers);
+        void PreVaultOnboardingService.saveDraft(user.uid, {
+          answers: nextAnswers,
+          risk_score: score,
+          risk_profile: score === null ? null : mapRiskProfile(score),
+        }).then((nextState) => {
+          setPreVaultState(nextState);
+        });
       }}
       onSkip={async () => {
         if (saving) return;
+
         try {
           setSaving(true);
-          const next = await KaiProfileService.setOnboardingCompleted({
-            userId: user.uid,
-            vaultKey,
-            vaultOwnerToken,
-            skippedPreferences: true,
-          });
-          setProfile(next);
+          if (source === "vault") {
+            if (!vaultKey || !vaultOwnerToken) {
+              toast.error("Unlock your vault to continue.");
+              return;
+            }
+            const nextProfile = await KaiProfileService.setOnboardingCompleted({
+              userId: user.uid,
+              vaultKey,
+              vaultOwnerToken,
+              skippedPreferences: true,
+            });
+            setProfile(nextProfile);
+          } else {
+            const nextState = await PreVaultOnboardingService.markCompleted(user.uid, {
+              skipped: true,
+              answers: wizardAnswers,
+              risk_score: preVaultState?.risk_score ?? null,
+              risk_profile: preVaultState?.risk_profile ?? null,
+            });
+            setPreVaultState(nextState);
+          }
+
           toast.info("Preferences skipped. You can edit them later.");
+          setOnboardingRequiredCookie(false);
+          setOnboardingFlowActiveCookie(false);
           router.replace("/kai");
         } catch (error) {
           console.error("[KaiOnboardingPage] Skip failed:", error);
@@ -160,20 +279,39 @@ export default function KaiOnboardingPage() {
       }}
       onComplete={async (payload) => {
         if (saving) return;
+        const nextAnswers: WizardAnswers = {
+          investment_horizon: payload.investment_horizon,
+          drawdown_response: payload.drawdown_response,
+          volatility_preference: payload.volatility_preference,
+        };
+
         try {
           setSaving(true);
-          const next = await KaiProfileService.savePreferences({
-            userId: user.uid,
-            vaultKey,
-            vaultOwnerToken,
-            updates: {
-              investment_horizon: payload.investment_horizon,
-              drawdown_response: payload.drawdown_response,
-              volatility_preference: payload.volatility_preference,
-            },
-            mode: "onboarding",
-          });
-          setProfile(next);
+
+          if (source === "vault") {
+            if (!vaultKey || !vaultOwnerToken) {
+              toast.error("Unlock your vault to continue.");
+              return;
+            }
+
+            const nextProfile = await KaiProfileService.savePreferences({
+              userId: user.uid,
+              vaultKey,
+              vaultOwnerToken,
+              updates: nextAnswers,
+              mode: "onboarding",
+            });
+            setProfile(nextProfile);
+          } else {
+            const score = computeRiskScore(nextAnswers as PreVaultOnboardingAnswers);
+            const nextState = await PreVaultOnboardingService.saveDraft(user.uid, {
+              answers: nextAnswers,
+              risk_score: score,
+              risk_profile: score === null ? null : mapRiskProfile(score),
+            });
+            setPreVaultState(nextState);
+          }
+
           setStage("persona");
         } catch (error) {
           console.error("[KaiOnboardingPage] Failed to save preferences:", error);

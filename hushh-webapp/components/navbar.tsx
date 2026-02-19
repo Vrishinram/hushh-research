@@ -14,6 +14,7 @@ import { useKaiSession } from "@/lib/stores/kai-session-store";
 import { usePendingConsentCount } from "@/components/consent/notification-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Icon } from "@/lib/morphy-ux/ui";
+import { isOnboardingFlowActiveCookieEnabled } from "@/lib/services/onboarding-route-cookie";
 
 interface NavItem {
   label: string;
@@ -27,6 +28,10 @@ export const Navbar = () => {
   const { isAuthenticated } = useAuth();
   const pendingConsents = usePendingConsentCount();
   const pillRef = React.useRef<HTMLDivElement | null>(null);
+  const [onboardingFlowActive, setOnboardingFlowActive] = useState(false);
+  const isKaiOnboarding = Boolean(pathname?.startsWith("/kai/onboarding"));
+  const isKaiImport = Boolean(pathname?.startsWith("/kai/import"));
+  const useOnboardingChrome = isKaiOnboarding || (isKaiImport && onboardingFlowActive);
 
   // Sticky Kai path (last visited /kai or /kai/dashboard/*)
   const lastKaiPath = useKaiSession((s) => s.lastKaiPath);
@@ -37,7 +42,7 @@ export const Navbar = () => {
     const el = pillRef.current;
     if (!el) return;
 
-    const BOTTOM_GAP_PX = isAuthenticated ? 24 : 16; // matches the bottom calc (1.5rem vs 1rem)
+    const BOTTOM_GAP_PX = isAuthenticated && !useOnboardingChrome ? 24 : 16; // matches bottom calc for full nav vs compact pill
 
     const update = () => {
       const rect = el.getBoundingClientRect();
@@ -58,7 +63,7 @@ export const Navbar = () => {
       ro?.disconnect();
       window.removeEventListener("resize", update);
     };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, useOnboardingChrome]);
 
   useEffect(() => {
     if (lastKaiPath) {
@@ -67,16 +72,21 @@ export const Navbar = () => {
   }, [lastKaiPath]);
 
   useEffect(() => {
+    setOnboardingFlowActive(isOnboardingFlowActiveCookieEnabled());
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!pathname) return;
     if (pathname && pathname.startsWith("/kai")) {
       useKaiSession.getState().setLastKaiPath(pathname);
       setKaiHref(pathname);
     }
   }, [pathname]);
 
-  // If not authenticated, ONLY show the theme toggle in a floating pill
-  if (!isAuthenticated) {
+  // If not authenticated OR onboarding is active, show only the theme toggle.
+  if (!isAuthenticated || useOnboardingChrome) {
     return (
-      <nav className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-0 right-0 z-50 flex justify-center px-4 pointer-events-none">
+      <nav className="fixed bottom-[calc(1rem+var(--app-safe-area-bottom))] left-0 right-0 z-50 flex justify-center px-4 pointer-events-none">
         <div ref={pillRef} className="pointer-events-auto shadow-2xl rounded-full">
           <ThemeToggle className="bg-white/80 dark:bg-black/80 backdrop-blur-md border border-gray-200 dark:border-gray-800" />
         </div>
@@ -110,7 +120,7 @@ export const Navbar = () => {
   ];
 
   return (
-    <nav className="fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom))] inset-x-0 z-[120] flex justify-center px-4 pointer-events-none transform-gpu">
+    <nav className="fixed bottom-[calc(1.5rem+var(--app-safe-area-bottom))] inset-x-0 z-[120] flex justify-center px-4 pointer-events-none transform-gpu">
       <div
         ref={pillRef}
         className="pointer-events-auto flex items-center p-1 bg-muted/80 backdrop-blur-3xl border border-white/10 dark:border-white/5 rounded-full shadow-2xl ring-1 ring-black/5 min-h-[45px]"
