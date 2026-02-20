@@ -345,33 +345,42 @@ jobs:
             echo "Could not fetch upstream. Skipping sync check."
             exit 0
           }
-          UPSTREAM_TREE=$(git rev-parse consent-upstream/main^{tree} 2>/dev/null) || {
-            echo "Could not resolve upstream tree. Skipping."
+          UPSTREAM_COMMIT=$(git rev-parse consent-upstream/main 2>/dev/null) || {
+            echo "Could not resolve upstream commit. Skipping."
             exit 0
           }
-          LOCAL_TREE=$(git rev-parse HEAD:consent-protocol 2>/dev/null) || {
-            echo "Could not resolve local subtree. Skipping."
+          LOCAL_SPLIT=$(git subtree split --prefix=consent-protocol HEAD 2>/dev/null || true)
+
+          if [ -z "$LOCAL_SPLIT" ]; then
+            echo "Could not compute local subtree split commit. Falling back to tree comparison."
+            UPSTREAM_TREE=$(git rev-parse consent-upstream/main^{tree} 2>/dev/null || echo "")
+            LOCAL_TREE=$(git rev-parse HEAD:consent-protocol 2>/dev/null || echo "")
+            if [ -n "$UPSTREAM_TREE" ] && [ -n "$LOCAL_TREE" ] && [ "$UPSTREAM_TREE" = "$LOCAL_TREE" ]; then
+              echo "✅ consent-protocol/ subtree content matches upstream."
+            else
+              echo "::warning::consent-protocol/ subtree differs from upstream (direction undetermined). Run: make sync-protocol OR make push-protocol as applicable."
+            fi
             exit 0
-          }
-          if [ "$UPSTREAM_TREE" != "$LOCAL_TREE" ]; then
-            echo ""
-            echo "============================================="
-            echo "⚠  SUBTREE DRIFT DETECTED"
-            echo "============================================="
-            echo "consent-protocol/ tree does not match upstream."
-            echo ""
-            echo "This means either:"
-            echo "  1. Upstream has commits not yet pulled into this repo"
-            echo "  2. This repo has commits not yet pushed to upstream"
-            echo ""
-            echo "To fix:"
-            echo "  make sync-protocol   # pull upstream into monorepo"
-            echo "  make push-protocol   # push monorepo changes to upstream"
-            echo ""
-            echo "::warning::consent-protocol/ is out of sync with upstream. Run: make sync-protocol"
-          else
-            echo "✅ consent-protocol/ is in sync with upstream."
           fi
+
+          if [ "$LOCAL_SPLIT" = "$UPSTREAM_COMMIT" ]; then
+            echo "✅ consent-protocol/ is in sync with upstream."
+            exit 0
+          fi
+
+          if git merge-base --is-ancestor "$UPSTREAM_COMMIT" "$LOCAL_SPLIT" 2>/dev/null; then
+            AHEAD_BY=$(git rev-list --count "$UPSTREAM_COMMIT..$LOCAL_SPLIT" 2>/dev/null || echo "unknown")
+            echo "::notice::consent-protocol/ subtree is ahead of upstream by ${AHEAD_BY} commit(s). Run: make push-protocol"
+            exit 0
+          fi
+
+          if git merge-base --is-ancestor "$LOCAL_SPLIT" "$UPSTREAM_COMMIT" 2>/dev/null; then
+            BEHIND_BY=$(git rev-list --count "$LOCAL_SPLIT..$UPSTREAM_COMMIT" 2>/dev/null || echo "unknown")
+            echo "::warning::consent-protocol/ subtree is behind upstream by ${BEHIND_BY} commit(s). Run: make sync-protocol"
+            exit 0
+          fi
+
+          echo "::warning::consent-protocol/ subtree has diverged from upstream. Run: make sync-protocol then make push-protocol as needed."
 
   ci-status:
     name: "CI Status Gate"
