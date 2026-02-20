@@ -15,6 +15,9 @@ Mapping of user-visible KPI surfaces to source systems and freshness rules.
 | Renaissance tier/avoid context | Supabase `renaissance` dataset | managed update process | Fail closed for optimize decision if unavailable |
 
 ## Notes
+- Realtime provider order:
+  - Quotes: `Finnhub -> PMP/FMP -> yfinance -> Yahoo`
+  - News: `Finnhub -> PMP/FMP -> NewsAPI -> Google RSS`
 - Offline benchmark scripts do not affect runtime UX latency.
 - Runtime UIs should expose provenance chips and confidence where practical.
 - Missing critical realtime data must terminate recommendation paths safely.

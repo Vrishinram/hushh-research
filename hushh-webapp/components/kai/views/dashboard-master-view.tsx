@@ -55,6 +55,11 @@ function formatConfidence(value: number | undefined): string | undefined {
   return `${pct.toFixed(0)}% confidence`;
 }
 
+function toPercent(part: number, total: number): number {
+  if (!Number.isFinite(part) || !Number.isFinite(total) || total <= 0) return 0;
+  return Math.max(0, Math.min(100, (part / total) * 100));
+}
+
 function toHoldingPositions(portfolioData: PortfolioData): HoldingPosition[] {
   const source = portfolioData.holdings ?? portfolioData.detailed_holdings ?? [];
   return source
@@ -134,6 +139,14 @@ export function DashboardMasterView({
   const brokerageName = portfolioData.account_info?.brokerage_name;
   const qualityReport = portfolioData.quality_report;
   const confidenceLabel = formatConfidence(qualityReport?.average_confidence);
+  const rawCount = safeNumber(qualityReport?.raw, 0);
+  const validatedCount = safeNumber(qualityReport?.validated, 0);
+  const aggregatedCount = safeNumber(qualityReport?.aggregated, 0);
+  const validationPct = toPercent(validatedCount, rawCount);
+  const aggregationPct = toPercent(aggregatedCount, validatedCount || rawCount);
+  const droppedReasons = Object.entries(qualityReport?.dropped_reasons ?? {})
+    .sort((a, b) => (safeNumber(b[1], 0) - safeNumber(a[1], 0)))
+    .slice(0, 3);
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6 px-4 pb-[calc(144px+var(--app-bottom-inset))] pt-2 sm:px-6">
@@ -176,6 +189,75 @@ export function DashboardMasterView({
                 </span>
               )}
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {qualityReport && (
+        <Card variant="none" effect="glass">
+          <CardContent className="space-y-3 p-4">
+            <h3 className="text-[11px] font-black uppercase tracking-[0.16em] text-muted-foreground">
+              Data Quality
+            </h3>
+
+            <div className="grid gap-2 text-xs sm:grid-cols-3">
+              <div className="rounded-xl border border-border/60 bg-background/60 p-2">
+                <p className="text-muted-foreground">Raw rows</p>
+                <p className="text-sm font-semibold">{rawCount}</p>
+              </div>
+              <div className="rounded-xl border border-border/60 bg-background/60 p-2">
+                <p className="text-muted-foreground">Validated</p>
+                <p className="text-sm font-semibold">{validatedCount}</p>
+              </div>
+              <div className="rounded-xl border border-border/60 bg-background/60 p-2">
+                <p className="text-muted-foreground">Aggregated</p>
+                <p className="text-sm font-semibold">{aggregatedCount}</p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div>
+                <div className="mb-1 flex items-center justify-between text-[11px]">
+                  <span className="text-muted-foreground">Validation completeness</span>
+                  <span className="font-medium">{validationPct.toFixed(0)}%</span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-muted/60">
+                  <div
+                    className="h-full rounded-full bg-[var(--brand-500)] transition-all"
+                    style={{ width: `${validationPct}%` }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <div className="mb-1 flex items-center justify-between text-[11px]">
+                  <span className="text-muted-foreground">Aggregation quality</span>
+                  <span className="font-medium">{aggregationPct.toFixed(0)}%</span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-muted/60">
+                  <div
+                    className="h-full rounded-full bg-[var(--tone-green)] transition-all"
+                    style={{ width: `${aggregationPct}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {droppedReasons.length > 0 && (
+              <div className="space-y-1">
+                <p className="text-[11px] text-muted-foreground">Top filtered reasons</p>
+                <div className="flex flex-wrap gap-2 text-[11px]">
+                  {droppedReasons.map(([reason, count]) => (
+                    <span
+                      key={reason}
+                      className="rounded-full border border-border/60 bg-background/70 px-2 py-0.5"
+                    >
+                      {reason}: {safeNumber(count, 0)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
