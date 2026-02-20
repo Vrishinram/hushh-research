@@ -70,6 +70,8 @@ const KNOWN_SOURCE_URLS: Record<string, string> = {
   "bloomberg": "https://www.bloomberg.com",
   "reuters": "https://www.reuters.com",
   "finnhub": "https://finnhub.io",
+  "pmp/fmp": "https://site.financialmodelingprep.com/developer/docs",
+  "financial modeling prep": "https://site.financialmodelingprep.com/developer/docs",
 };
 
 function parseSourceUrl(source: string): { text: string; url: string | null } {

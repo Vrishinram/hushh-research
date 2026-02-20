@@ -49,6 +49,12 @@ function parseDateRange(portfolioData: PortfolioData): string | undefined {
   }
 }
 
+function formatConfidence(value: number | undefined): string | undefined {
+  if (typeof value !== "number" || Number.isNaN(value)) return undefined;
+  const pct = Math.max(0, Math.min(1, value)) * 100;
+  return `${pct.toFixed(0)}% confidence`;
+}
+
 function toHoldingPositions(portfolioData: PortfolioData): HoldingPosition[] {
   const source = portfolioData.holdings ?? portfolioData.detailed_holdings ?? [];
   return source
@@ -126,6 +132,8 @@ export function DashboardMasterView({
   const hasAllocation = cashPct > 0 || equitiesPct > 0 || bondsPct > 0;
   const hasHoldings = holdings.length > 0;
   const brokerageName = portfolioData.account_info?.brokerage_name;
+  const qualityReport = portfolioData.quality_report;
+  const confidenceLabel = formatConfidence(qualityReport?.average_confidence);
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6 px-4 pb-[calc(144px+var(--app-bottom-inset))] pt-2 sm:px-6">
@@ -139,6 +147,38 @@ export function DashboardMasterView({
         periodRange={parseDateRange(portfolioData)}
         beginningBalance={beginningValue > 0 ? beginningValue : undefined}
       />
+
+      {(brokerageName || parseDateRange(portfolioData) || qualityReport) && (
+        <Card variant="none" effect="glass">
+          <CardContent className="space-y-2 p-4">
+            <h3 className="text-[11px] font-black uppercase tracking-[0.16em] text-muted-foreground">
+              Data Provenance
+            </h3>
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              {brokerageName && (
+                <span className="rounded-full border border-border/60 bg-background/70 px-2 py-0.5">
+                  Source: {brokerageName}
+                </span>
+              )}
+              {parseDateRange(portfolioData) && (
+                <span className="rounded-full border border-border/60 bg-background/70 px-2 py-0.5">
+                  Statement: {parseDateRange(portfolioData)}
+                </span>
+              )}
+              {typeof qualityReport?.aggregated === "number" && (
+                <span className="rounded-full border border-border/60 bg-background/70 px-2 py-0.5">
+                  Holdings: {qualityReport.aggregated}
+                </span>
+              )}
+              {confidenceLabel && (
+                <span className="rounded-full border border-border/60 bg-background/70 px-2 py-0.5">
+                  {confidenceLabel}
+                </span>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-3 sm:grid-cols-3">
         <MorphyButton

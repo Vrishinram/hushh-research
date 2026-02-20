@@ -1311,3 +1311,7 @@ Before creating a new component, ensure:
 ---
 
 _Version: 6.0 | Updated February 2026 | Consolidated frontend_ui_patterns.md content_
+
+## Accuracy References
+- `docs/reference/kai-accuracy-contract.md` defines fail-closed realtime/data policies.
+- `docs/reference/data-provenance-ledger.md` maps every KPI surface to source + freshness.

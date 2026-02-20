@@ -232,6 +232,13 @@ function normalizePortfolioData(backendData: Record<string, unknown>): ReviewPor
       cost_basis: costBasis,
       unrealized_gain_loss: unrealized,
       unrealized_gain_loss_pct: unrealizedPct,
+      confidence: parseMaybeNumber(firstPresent(h, ["confidence"])),
+      provenance:
+        firstPresent(h, ["provenance"]) &&
+        typeof firstPresent(h, ["provenance"]) === "object" &&
+        !Array.isArray(firstPresent(h, ["provenance"]))
+          ? (firstPresent(h, ["provenance"]) as Record<string, unknown>)
+          : undefined,
       asset_type: firstPresent(h, ["asset_type", "asset_class", "security_type", "type"])
         ? String(firstPresent(h, ["asset_type", "asset_class", "security_type", "type"]))
         : undefined,
@@ -300,6 +307,7 @@ function normalizePortfolioData(backendData: Record<string, unknown>): ReviewPor
       price: nextPrice,
       market_value: marketValue,
       quantity,
+      confidence: parseMaybeNumber(holding.confidence),
     };
   });
 

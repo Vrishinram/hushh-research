@@ -94,6 +94,8 @@ export interface Holding {
   asset_type?: string;
   is_margin?: boolean;
   is_short?: boolean;
+  confidence?: number;
+  provenance?: Record<string, unknown>;
 }
 
 export interface AccountSummary {
@@ -169,6 +171,17 @@ export interface PortfolioData {
   projections_and_mrd?: ProjectionsAndMRD;
   // Legal (NEW)
   legal_and_disclosures?: string[];
+  // Parser quality/provenance metadata from backend stream contract
+  quality_report?: {
+    raw?: number;
+    validated?: number;
+    aggregated?: number;
+    dropped?: number;
+    reconciled?: number;
+    mismatch_detected?: number;
+    dropped_reasons?: Record<string, number>;
+    average_confidence?: number;
+  };
 }
 
 interface DashboardViewProps {
