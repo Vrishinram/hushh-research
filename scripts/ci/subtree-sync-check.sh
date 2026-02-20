@@ -10,15 +10,43 @@ SUBTREE_PREFIX="consent-protocol"
 SYNC_REF="refs/subtree-sync/consent-protocol"
 MONOREPO_SYNC_CHECK="consent-protocol/ops/monorepo/pre-push.sh"
 
+_gha_escape() {
+  local value="${1:-}"
+  value="${value//'%'/'%25'}"
+  value="${value//$'\n'/'%0A'}"
+  value="${value//$'\r'/'%0D'}"
+  printf '%s' "$value"
+}
+
+emit_annotation() {
+  local level="$1"
+  local message="$2"
+  if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+    printf '::%s title=Upstream Sync::%s\n' "$level" "$(_gha_escape "$message")"
+  fi
+}
+
+log_notice() {
+  local message="$1"
+  echo "$message"
+  emit_annotation "notice" "$message"
+}
+
+log_warning() {
+  local message="$1"
+  echo "$message"
+  emit_annotation "warning" "$message"
+}
+
 git remote add "$UPSTREAM_REMOTE" https://github.com/hushh-labs/consent-protocol.git 2>/dev/null || true
 git fetch "$UPSTREAM_REMOTE" "$UPSTREAM_BRANCH" --quiet 2>/dev/null || {
-  echo "Could not fetch upstream. Skipping sync check."
+  log_notice "Could not fetch upstream. Skipping sync check."
   exit 0
 }
 
 UPSTREAM_COMMIT="$(git rev-parse "$UPSTREAM_REMOTE/$UPSTREAM_BRANCH" 2>/dev/null || true)"
 if [ -z "$UPSTREAM_COMMIT" ]; then
-  echo "Could not resolve upstream commit. Skipping."
+  log_notice "Could not resolve upstream commit. Skipping."
   exit 0
 fi
 
@@ -39,13 +67,13 @@ fi
 
 if [ -n "$LOCAL_SPLIT" ] && git merge-base --is-ancestor "$UPSTREAM_COMMIT" "$LOCAL_SPLIT" 2>/dev/null; then
   AHEAD_BY="$(git rev-list --count "$UPSTREAM_COMMIT..$LOCAL_SPLIT" 2>/dev/null || echo "unknown")"
-  echo "ℹ️ consent-protocol/ subtree is ahead of upstream by ${AHEAD_BY} commit(s). Run: make push-protocol"
+  log_notice "consent-protocol/ subtree is ahead of upstream by ${AHEAD_BY} commit(s). Run: make push-protocol"
   exit 0
 fi
 
 if [ -n "$LOCAL_SPLIT" ] && git merge-base --is-ancestor "$LOCAL_SPLIT" "$UPSTREAM_COMMIT" 2>/dev/null; then
   BEHIND_BY="$(git rev-list --count "$LOCAL_SPLIT..$UPSTREAM_COMMIT" 2>/dev/null || echo "unknown")"
-  echo "⚠️ consent-protocol/ subtree is behind upstream by ${BEHIND_BY} commit(s). Run: make sync-protocol"
+  log_warning "consent-protocol/ subtree is behind upstream by ${BEHIND_BY} commit(s). Run: make sync-protocol"
   exit 0
 fi
 
@@ -55,7 +83,7 @@ if [ -n "$UPSTREAM_TREE" ] && [ -n "$LOCAL_TREE" ] && [ "$UPSTREAM_TREE" = "$LOC
 fi
 
 if [ ! -x "$MONOREPO_SYNC_CHECK" ]; then
-  echo "ℹ️ consent-protocol/ subtree differs from upstream (direction undetermined). Verify manually with make check-protocol-sync."
+  log_notice "consent-protocol/ subtree differs from upstream (direction undetermined). Verify manually with make check-protocol-sync."
   exit 0
 fi
 
@@ -73,11 +101,11 @@ set -e
 SYNC_GATE_SUMMARY="$(printf '%s' "$SYNC_GATE_OUTPUT" | sed -E 's/\x1b\[[0-9;]*m//g' | tr -s '\n' ' ' | sed -E 's/[[:space:]]+/ /g' | cut -c1-220)"
 
 if [ "$SYNC_GATE_EXIT" -eq 0 ]; then
-  echo "ℹ️ consent-protocol/ subtree differs from upstream; upstream is not ahead of the known sync baseline. If these subtree changes are intentional, run: make push-protocol"
+  log_notice "consent-protocol/ subtree differs from upstream; upstream is not ahead of the known sync baseline. If these subtree changes are intentional, run: make push-protocol"
   exit 0
 fi
 
-echo "⚠️ consent-protocol/ subtree differs from upstream and upstream may be ahead (or sync metadata is stale). Run: make sync-protocol, then make push-protocol if needed."
+log_warning "consent-protocol/ subtree differs from upstream and upstream may be ahead (or sync metadata is stale). Run: make sync-protocol, then make push-protocol if needed."
 if [ -n "$SYNC_GATE_SUMMARY" ]; then
-  echo "   sync-gate: $SYNC_GATE_SUMMARY"
+  log_notice "sync-gate: $SYNC_GATE_SUMMARY"
 fi
