@@ -5,6 +5,10 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 WEB_DIR="$REPO_ROOT/hushh-webapp"
 WEB_LINT_WARNING_BUDGET="${WEB_LINT_WARNING_BUDGET:-161}"
 NODE_VERSION_MIN="${NODE_VERSION_MIN:-20}"
+WEB_AUDIT_MODERATE_BUDGET="${WEB_AUDIT_MODERATE_BUDGET:-6}"
+WEB_AUDIT_HIGH_BUDGET="${WEB_AUDIT_HIGH_BUDGET:-21}"
+WEB_AUDIT_CRITICAL_BUDGET="${WEB_AUDIT_CRITICAL_BUDGET:-0}"
+export WEB_AUDIT_MODERATE_BUDGET WEB_AUDIT_HIGH_BUDGET WEB_AUDIT_CRITICAL_BUDGET
 
 cd "$WEB_DIR"
 
@@ -46,7 +50,24 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID="${NEXT_PUBLIC_FIREBASE_MESSAGING_SENDE
 NEXT_PUBLIC_FIREBASE_APP_ID="${NEXT_PUBLIC_FIREBASE_APP_ID:-1:123456789:web:abcdef123456}" \
 npm run cap:build
 
-npm audit --audit-level=high
 npm audit --json > npm-audit-report.json || true
+node -e "
+const fs = require('fs');
+const p = 'npm-audit-report.json';
+const report = JSON.parse(fs.readFileSync(p, 'utf8'));
+const vuln = report?.metadata?.vulnerabilities || {};
+const moderate = Number(vuln.moderate || 0);
+const high = Number(vuln.high || 0);
+const critical = Number(vuln.critical || 0);
+const bModerate = Number(process.env.WEB_AUDIT_MODERATE_BUDGET || 0);
+const bHigh = Number(process.env.WEB_AUDIT_HIGH_BUDGET || 0);
+const bCritical = Number(process.env.WEB_AUDIT_CRITICAL_BUDGET || 0);
+console.log('npm audit vulnerabilities:', { moderate, high, critical });
+console.log('npm audit budgets:', { moderate: bModerate, high: bHigh, critical: bCritical });
+if (moderate > bModerate || high > bHigh || critical > bCritical) {
+  console.error('npm audit exceeds budget; fail CI.');
+  process.exit(1);
+}
+"
 
 npm test

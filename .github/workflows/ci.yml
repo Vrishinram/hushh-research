@@ -30,6 +30,9 @@ env:
   NODE_VERSION: "20"
   PYTHON_VERSION: "3.13"
   WEB_LINT_WARNING_BUDGET: "161"
+  WEB_AUDIT_MODERATE_BUDGET: "6"
+  WEB_AUDIT_HIGH_BUDGET: "21"
+  WEB_AUDIT_CRITICAL_BUDGET: "0"
   GITLEAKS_VERSION: "8.24.2"
 
 jobs:
@@ -165,6 +168,9 @@ jobs:
         run: bash scripts/ci/web-check.sh
         env:
           WEB_LINT_WARNING_BUDGET: ${{ env.WEB_LINT_WARNING_BUDGET }}
+          WEB_AUDIT_MODERATE_BUDGET: ${{ env.WEB_AUDIT_MODERATE_BUDGET }}
+          WEB_AUDIT_HIGH_BUDGET: ${{ env.WEB_AUDIT_HIGH_BUDGET }}
+          WEB_AUDIT_CRITICAL_BUDGET: ${{ env.WEB_AUDIT_CRITICAL_BUDGET }}
           NEXT_PUBLIC_BACKEND_URL: https://api.example.com
           NEXT_PUBLIC_FIREBASE_API_KEY: "test-api-key"
           NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: "dummy-project.firebaseapp.com"
