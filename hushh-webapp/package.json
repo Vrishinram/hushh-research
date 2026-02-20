@@ -16,6 +16,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "verify:design-system": "node scripts/verify-design-system-usage.cjs",
+    "verify:docs": "node ../scripts/verify-doc-runtime-parity.cjs",
     "verify:cache": "node scripts/verify-cache-coherence.cjs",
     "verify:vault-schema": "cd ../consent-protocol && PYTHONPATH=. .venv/bin/python scripts/verify_vault_schema.py",
     "verify:css-vars": "node scripts/verify-css-variable-integrity.cjs",

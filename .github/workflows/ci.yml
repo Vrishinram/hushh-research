@@ -127,6 +127,20 @@ jobs:
           fi
         if: always()
 
+  docs-parity-check:
+    name: "Docs Runtime Parity"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Verify docs/runtime parity
+        run: node scripts/verify-doc-runtime-parity.cjs
+
   # ============================================================================
   # Frontend (Next.js + Capacitor)
   # ============================================================================
@@ -179,6 +193,9 @@ jobs:
 
       - name: Verify design system usage
         run: npm run verify:design-system
+
+      - name: Verify docs/runtime parity
+        run: npm run verify:docs
 
       - name: Build (web standalone)
         run: npm run build

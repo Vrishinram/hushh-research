@@ -3,7 +3,7 @@
 # Usage: make <target>
 # Run `make help` for available targets.
 
-.PHONY: help dev dev-frontend dev-backend lint test ci-local
+.PHONY: help dev dev-frontend dev-backend lint test verify-docs ci-local
 
 # === Help ==================================================================
 
@@ -46,6 +46,9 @@ test: ## Run all tests (backend + frontend)
 	@echo ""
 	@echo "=== Frontend (vitest) ==="
 	cd hushh-webapp && npm test
+
+verify-docs: ## Verify docs/runtime parity and route documentation truth
+	node scripts/verify-doc-runtime-parity.cjs
 
 ci-local: ## Full local CI simulation (mirrors GitHub Actions)
 	./scripts/test-ci-local.sh
