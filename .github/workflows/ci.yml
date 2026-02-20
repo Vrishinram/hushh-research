@@ -358,7 +358,7 @@ jobs:
             if [ -n "$UPSTREAM_TREE" ] && [ -n "$LOCAL_TREE" ] && [ "$UPSTREAM_TREE" = "$LOCAL_TREE" ]; then
               echo "✅ consent-protocol/ subtree content matches upstream."
             else
-              echo "::warning::consent-protocol/ subtree differs from upstream (direction undetermined). Run: make sync-protocol OR make push-protocol as applicable."
+              echo "::notice::consent-protocol/ subtree differs from upstream (direction undetermined). Verify manually with make check-protocol-sync."
             fi
             exit 0
           fi
