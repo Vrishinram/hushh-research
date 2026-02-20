@@ -4,4 +4,4 @@ set -euo pipefail
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
-exec scripts/ci/run-local-ci.sh
+node scripts/verify-doc-runtime-parity.cjs

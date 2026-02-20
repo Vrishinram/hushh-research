@@ -74,7 +74,9 @@ jobs:
           fi
           echo "log_opts=$LOG_OPTS" >> "$GITHUB_OUTPUT"
       - name: Run gitleaks scan (no license secret required)
-        run: gitleaks git --redact --no-banner --exit-code 1 --log-opts="${{ steps.scan-range.outputs.log_opts }}"
+        run: bash scripts/ci/secret-scan.sh
+        env:
+          GITLEAKS_LOG_OPTS: ${{ steps.scan-range.outputs.log_opts }}
 
   # ============================================================================
   # Path filters: run frontend/backend jobs only when their paths change (or manual scope)
@@ -139,7 +141,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
 
       - name: Verify docs/runtime parity
-        run: node scripts/verify-doc-runtime-parity.cjs
+        run: bash scripts/ci/docs-parity-check.sh
 
   # ============================================================================
   # Frontend (Next.js + Capacitor)
@@ -150,9 +152,6 @@ jobs:
     if: needs.paths.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 35
-    defaults:
-      run:
-        working-directory: ./hushh-webapp
     steps:
       - uses: actions/checkout@v4
 
@@ -162,44 +161,10 @@ jobs:
           cache: "npm"
           cache-dependency-path: hushh-webapp/package-lock.json
 
-      - name: Validate Node version
-        run: |
-          node --version
-          node -e "const v = process.version.match(/^v(\d+)\./); if (!v || parseInt(v[1]) < 20) throw new Error('Node.js 20+ required')"
-
-      - name: Verify committed mobile Firebase templates
-        run: node scripts/verify-mobile-firebase-artifacts.cjs
-
-      - name: Validate required files
-        run: |
-          test -f package-lock.json || (echo "❌ ERROR: package-lock.json not found. Run 'npm install' to generate it." && exit 1)
-          node -e "JSON.parse(require('fs').readFileSync('package-lock.json'))" || (echo "❌ ERROR: package-lock.json is not valid JSON" && exit 1)
-          test -f next.config.ts || (echo "❌ ERROR: next.config.ts not found" && exit 1)
-          echo "✓ package-lock.json exists and is valid"
-          echo "✓ next.config.ts exists"
-
-      - name: Use latest npm
-        run: npm install -g npm@latest && npm --version
-
-      - name: Install dependencies
-        timeout-minutes: 5
-        run: npm ci
-
-      - name: Type check
-        run: npm run typecheck
-
-      - name: Lint
-        run: npm run lint -- --max-warnings=${{ env.WEB_LINT_WARNING_BUDGET }}
-
-      - name: Verify design system usage
-        run: npm run verify:design-system
-
-      - name: Verify docs/runtime parity
-        run: npm run verify:docs
-
-      - name: Build (web standalone)
-        run: npm run build
+      - name: Run web check script (single source of truth)
+        run: bash scripts/ci/web-check.sh
         env:
+          WEB_LINT_WARNING_BUDGET: ${{ env.WEB_LINT_WARNING_BUDGET }}
           NEXT_PUBLIC_BACKEND_URL: https://api.example.com
           NEXT_PUBLIC_FIREBASE_API_KEY: "test-api-key"
           NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: "dummy-project.firebaseapp.com"
@@ -207,25 +172,6 @@ jobs:
           NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: "dummy-project.appspot.com"
           NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: "123456789"
           NEXT_PUBLIC_FIREBASE_APP_ID: "1:123456789:web:abcdef123456"
-
-      - name: Build (Capacitor export)
-        run: npm run cap:build
-        env:
-          CAPACITOR_BUILD: "true"
-          NEXT_PUBLIC_BACKEND_URL: https://api.example.com
-          NEXT_PUBLIC_FIREBASE_API_KEY: "test-api-key"
-          NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: "dummy-project.firebaseapp.com"
-          NEXT_PUBLIC_FIREBASE_PROJECT_ID: "dummy-project"
-          NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: "dummy-project.appspot.com"
-          NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: "123456789"
-          NEXT_PUBLIC_FIREBASE_APP_ID: "1:123456789:web:abcdef123456"
-
-      - name: Security audit
-        run: npm audit --audit-level=high
-
-      - name: Security audit report (tracking artifact)
-        if: always()
-        run: npm audit --json > npm-audit-report.json || true
 
       - name: Upload security audit artifact
         if: always()
@@ -233,9 +179,6 @@ jobs:
         with:
           name: web-npm-audit-report
           path: hushh-webapp/npm-audit-report.json
-
-      - name: Run frontend tests
-        run: npm test
 
   # ============================================================================
   # Backend (Python FastAPI) -- lightweight check; upstream repo has full CI
@@ -247,9 +190,6 @@ jobs:
     if: needs.paths.outputs.backend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    defaults:
-      run:
-        working-directory: ./consent-protocol
     steps:
       - uses: actions/checkout@v4
 
@@ -259,35 +199,9 @@ jobs:
           cache: "pip"
           cache-dependency-path: consent-protocol/requirements.txt
 
-      - name: Install dependencies
-        timeout-minutes: 10
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
-          python -m pip install -r requirements-dev.txt
-
-      - name: Lint with ruff
-        run: python -m ruff check .
-
-      - name: Type check with mypy
-        run: python -m mypy --config-file pyproject.toml --ignore-missing-imports
-
-      - name: Run tests
-        timeout-minutes: 10
-        run: |
-          if [ -d tests ] && [ -n "$(find tests -name 'test_*.py' -o -name '*_test.py' | head -1)" ]; then
-            python -m pytest tests/ -v --tb=short
-          else
-            echo "⚠ No test files found, skipping"
-          fi
-        env:
-          TESTING: "true"
-          SECRET_KEY: "test_secret_key_for_ci_only_32chars_min"
-          VAULT_ENCRYPTION_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
-
-      - name: Run Kai accuracy suite (CI-safe)
-        timeout-minutes: 8
-        run: python scripts/run_kai_accuracy_suite.py --benchmark-limit 2 --no-fail-benchmark
+      - name: Run protocol check script (single source of truth)
+        timeout-minutes: 22
+        run: bash scripts/ci/protocol-check.sh
         env:
           TESTING: "true"
           SECRET_KEY: "test_secret_key_for_ci_only_32chars_min"
@@ -311,19 +225,8 @@ jobs:
           cache: "npm"
           cache-dependency-path: hushh-webapp/package-lock.json
 
-      - name: Use latest npm
-        working-directory: ./hushh-webapp
-        run: npm install -g npm@latest && npm --version
-
-      - name: Verify route contracts
-        working-directory: ./hushh-webapp
-        run: |
-          npm ci
-          if [ -f scripts/verify-route-contracts.cjs ]; then
-            npm run verify:routes
-          else
-            echo "⚠ WARNING: verify-route-contracts.cjs not found, skipping"
-          fi
+      - name: Run integration check script (single source of truth)
+        run: bash scripts/ci/integration-check.sh
         continue-on-error: false  # Route contracts must pass; fail CI if missing/out of sync
 
   # ============================================================================
@@ -339,48 +242,7 @@ jobs:
           fetch-depth: 0
 
       - name: Check if upstream consent-protocol has unpulled commits
-        run: |
-          git remote add consent-upstream https://github.com/hushh-labs/consent-protocol.git 2>/dev/null || true
-          git fetch consent-upstream main --quiet 2>/dev/null || {
-            echo "Could not fetch upstream. Skipping sync check."
-            exit 0
-          }
-          UPSTREAM_COMMIT=$(git rev-parse consent-upstream/main 2>/dev/null) || {
-            echo "Could not resolve upstream commit. Skipping."
-            exit 0
-          }
-          LOCAL_SPLIT=$(git subtree split --prefix=consent-protocol HEAD 2>/dev/null || true)
-
-          if [ -z "$LOCAL_SPLIT" ]; then
-            echo "Could not compute local subtree split commit. Falling back to tree comparison."
-            UPSTREAM_TREE=$(git rev-parse consent-upstream/main^{tree} 2>/dev/null || echo "")
-            LOCAL_TREE=$(git rev-parse HEAD:consent-protocol 2>/dev/null || echo "")
-            if [ -n "$UPSTREAM_TREE" ] && [ -n "$LOCAL_TREE" ] && [ "$UPSTREAM_TREE" = "$LOCAL_TREE" ]; then
-              echo "✅ consent-protocol/ subtree content matches upstream."
-            else
-              echo "::notice::consent-protocol/ subtree differs from upstream (direction undetermined). Verify manually with make check-protocol-sync."
-            fi
-            exit 0
-          fi
-
-          if [ "$LOCAL_SPLIT" = "$UPSTREAM_COMMIT" ]; then
-            echo "✅ consent-protocol/ is in sync with upstream."
-            exit 0
-          fi
-
-          if git merge-base --is-ancestor "$UPSTREAM_COMMIT" "$LOCAL_SPLIT" 2>/dev/null; then
-            AHEAD_BY=$(git rev-list --count "$UPSTREAM_COMMIT..$LOCAL_SPLIT" 2>/dev/null || echo "unknown")
-            echo "::notice::consent-protocol/ subtree is ahead of upstream by ${AHEAD_BY} commit(s). Run: make push-protocol"
-            exit 0
-          fi
-
-          if git merge-base --is-ancestor "$LOCAL_SPLIT" "$UPSTREAM_COMMIT" 2>/dev/null; then
-            BEHIND_BY=$(git rev-list --count "$LOCAL_SPLIT..$UPSTREAM_COMMIT" 2>/dev/null || echo "unknown")
-            echo "::warning::consent-protocol/ subtree is behind upstream by ${BEHIND_BY} commit(s). Run: make sync-protocol"
-            exit 0
-          fi
-
-          echo "::warning::consent-protocol/ subtree has diverged from upstream. Run: make sync-protocol then make push-protocol as needed."
+        run: bash scripts/ci/subtree-sync-check.sh
 
   ci-status:
     name: "CI Status Gate"
