@@ -174,6 +174,11 @@ function looksLikePath(token) {
   return true;
 }
 
+function isLocalEnvReference(token) {
+  const cleaned = token.replace(/[),.;:]+$/g, "");
+  return /(^|\/)\.env(\.[A-Za-z0-9_-]+)?$/.test(cleaned);
+}
+
 function resolveDocPathReference(file, token) {
   const cleaned = token.replace(/[),.;:]+$/g, "");
   const candidates = [];
@@ -208,6 +213,7 @@ function verifyDocPathReferences(files) {
       const token = match[1].trim();
       if (!looksLikePath(token)) continue;
       if (token.includes("*")) continue;
+      if (isLocalEnvReference(token)) continue;
 
       const resolved = resolveDocPathReference(file, token);
       if (resolved.length === 0) continue;
