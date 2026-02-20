@@ -57,7 +57,6 @@ export function isOnboardingRoute(pathname: string): boolean {
 
 export const ONBOARDING_ROUTES = {
   PREFERRED: ROUTES.KAI_ONBOARDING,
-  LEGACY: ROUTES.ONBOARDING_PREFERENCES_LEGACY,
 } as const;
 
 export function getOnboardingRoute(): string {

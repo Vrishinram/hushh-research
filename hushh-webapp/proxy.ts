@@ -13,7 +13,6 @@ import { ROUTES, isPublicRoute } from "./lib/navigation/routes";
 const PUBLIC_ROUTES = [
   ROUTES.HOME,
   ROUTES.LOGIN,
-  ROUTES.ONBOARDING_PREFERENCES_LEGACY,
   ROUTES.DOCS,
   ROUTES.LOGOUT,
   ROUTES.PRIVACY,
