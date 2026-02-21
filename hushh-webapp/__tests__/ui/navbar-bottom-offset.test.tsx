@@ -1,6 +1,6 @@
 import React from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 
 // Minimal mocks for Next primitives used by Navbar.
 vi.mock("next/navigation", () => ({
@@ -85,5 +85,10 @@ describe("Navbar bottom fixed UI offset", () => {
     );
     // height 50 + current bottom gap token 14 = 64px
     expect(v.trim()).toBe("64px");
+  });
+
+  it("does not render Agent Nav in bottom navigation", () => {
+    render(<Navbar />);
+    expect(screen.queryByText("Agent Nav")).toBeNull();
   });
 });

@@ -12,6 +12,7 @@ export function Toaster({ ...props }: ToasterProps) {
     <Sonner
       theme={theme as ToasterProps["theme"]}
       position="top-center"
+      richColors
       closeButton
       className="toaster group !z-[9999]"
       style={{ marginTop: "max(env(safe-area-inset-top), 4rem)" }}

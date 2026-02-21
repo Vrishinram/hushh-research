@@ -32,6 +32,13 @@ function bandColor(band: string): string {
   return "var(--chart-2)";
 }
 
+function compactBandLabel(band: string): string {
+  return band
+    .replace(" to ", "→")
+    .replace("%", "%")
+    .replace(" ", "");
+}
+
 export function GainLossDistributionChart({
   data,
   className,
@@ -59,18 +66,20 @@ export function GainLossDistributionChart({
           Gain/Loss Distribution
         </CardTitle>
       </CardHeader>
-      <CardContent className="pt-0">
-        <ChartContainer config={chartConfig} className="h-[220px] w-full">
-          <BarChart data={chartData} margin={{ top: 10, right: 8, left: -10, bottom: 0 }}>
+      <CardContent className="pt-0 min-w-0 overflow-hidden">
+        <ChartContainer config={chartConfig} className="h-[220px] w-full min-w-0">
+          <BarChart data={chartData} margin={{ top: 10, right: 8, left: 0, bottom: 4 }}>
             <CartesianGrid vertical={false} strokeDasharray="3 3" />
             <XAxis
               dataKey="band"
+              tickFormatter={(value) => compactBandLabel(String(value))}
               axisLine={false}
               tickLine={false}
               tickMargin={8}
               interval={0}
+              tick={{ fontSize: 10 }}
             />
-            <YAxis allowDecimals={false} axisLine={false} tickLine={false} />
+            <YAxis allowDecimals={false} axisLine={false} tickLine={false} tick={{ fontSize: 10 }} />
             <ChartTooltip
               cursor={false}
               content={

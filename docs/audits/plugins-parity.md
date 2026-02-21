@@ -100,3 +100,32 @@ Verified registration in [`MainActivity.kt`](../../hushh-webapp/android/app/src/
 - Every plugin in iOS/Android has a matching TS `registerPlugin(...)` export.
 - Every TS plugin export has a corresponding iOS + Android implementation.
 - Every plugin is registered on both platforms.
+
+---
+
+## 5) Kai Route/Feature Parity (Current)
+
+### 5.1 Route-level parity
+
+- `/kai/import`
+- `/kai`
+- `/kai/dashboard`
+- `/kai/dashboard/analysis`
+- `/kai/dashboard/portfolio-health`
+
+Validation source:
+- `npm run verify:capacitor:routes`
+- `python scripts/ops/kai-system-audit.py --api-base ... --web-base ...`
+
+### 5.2 Feature-level parity expectations
+
+- Stream envelope consumption parity for import/optimize/analyze.
+- Token guard parity with one retry on 401/403.
+- Cache-first refresh behavior parity for `/kai` market home.
+- Onboarding chrome/command bar visibility parity.
+- Scroll hide/reveal behavior parity for bottom chrome surfaces.
+
+### 5.3 Explicit web-only behaviors
+
+- `HushhDatabase` remains web-only by design.
+- Next.js proxy route files are web runtime artifacts; native plugins call backend directly while honoring the same API contracts.

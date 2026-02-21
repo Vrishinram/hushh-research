@@ -48,13 +48,14 @@ The frontend route split is intentional and must remain stable unless route cont
 - `/login`: auth-only surface (Google/Apple + disabled phone)
 - `/kai/onboarding`: canonical onboarding questionnaire + persona
 - `/kai/import`: portfolio connection/import flow and vault introduction moment
-- `/kai`: signed-in exploratory mock home (no vault required, first-time bottom-nav tour)
+- `/kai`: signed-in live market home (token-gated, cache-first, degraded labels when providers are partial)
 - `/kai/dashboard`: portfolio analytics/dashboard (requires data, redirects to `/kai/import` when empty)
 
 Guard invariants:
 - Incomplete onboarding cannot navigate to non-onboarding `/kai` routes.
 - Vault unlock is required only when vault exists and protected operations need it.
 - First-time no-vault users are not forced into vault unlock directly after login.
+- Market home refresh remains cache-first while fresh; provider fallback/degraded states must be explicit.
 
 ## Vault Security Model (Current)
 
@@ -71,6 +72,8 @@ Guard invariants:
 - Backend: route -> service (validates consent) -> DB client -> Postgres (Supabase)
 
 System overview: `docs/reference/architecture.md`
+Kai interconnection map: `docs/reference/kai-interconnection-map.md`
+Kai blast radius matrix: `docs/reference/kai-change-impact-matrix.md`
 
 ## Dynamic Domains & Scopes (World Model)
 
@@ -100,6 +103,7 @@ Minimum definition of done:
 - BYOK preserved (no plaintext-at-rest; if custom key is skipped, generate a secure default key)
 - API documented (`docs/reference/api-contracts.md`)
 - Route contracts updated (`hushh-webapp/route-contracts.json` + `cd hushh-webapp && npm run verify:routes`)
+- PR impact map included (`docs/reference/pr-impact-checklist.md`)
 - Tests updated (`TESTING.md`)
 
 ## Trust/Compliance Reality Check

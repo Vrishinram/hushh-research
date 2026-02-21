@@ -11,9 +11,11 @@ echo ""
 FAIL=0
 REPO_ROOT=$(git rev-parse --show-toplevel)
 cd "$REPO_ROOT"
+API_BASE="${KAI_AUDIT_API_BASE:-http://localhost:8000}"
+WEB_BASE="${KAI_AUDIT_WEB_BASE:-http://localhost:3000}"
 
 # 1. Backend Tests
-echo "▶ [1/5] Backend Tests..."
+echo "▶ [1/11] Backend Tests..."
 cd consent-protocol
 # Project standard: .venv (see getting_started.md). Use only one; remove venv if you have both.
 if [ -d ".venv" ]; then
@@ -28,7 +30,7 @@ cd "$REPO_ROOT"
 echo ""
 
 # 2. Architecture Compliance
-echo "▶ [2/5] Architecture Compliance..."
+echo "▶ [2/11] Architecture Compliance..."
 if grep -rq "get_supabase()" consent-protocol/api/routes/ 2>/dev/null; then
   echo "❌ Direct Supabase access found in API routes!"
   grep -r "get_supabase()" consent-protocol/api/routes/
@@ -39,28 +41,74 @@ fi
 echo ""
 
 # 3. Frontend Lint
-echo "▶ [3/5] Frontend Lint..."
+echo "▶ [3/11] Frontend Lint..."
 cd hushh-webapp
 npm run check-lint || { FAIL=1; echo "❌ Lint failed"; }
 cd "$REPO_ROOT"
 echo ""
 
 # 4. TypeScript
-echo "▶ [4/5] TypeScript Check..."
+echo "▶ [4/11] TypeScript Check..."
 cd hushh-webapp
 npx tsc --noEmit || { FAIL=1; echo "❌ TypeScript failed"; }
 cd "$REPO_ROOT"
 echo ""
 
-# 5. Check for uncommitted changes
-echo "▶ [5/5] Git Status..."
+# 5. Route Contract Verification
+echo "▶ [5/11] Route Contract Verification..."
+cd hushh-webapp
+npm run verify:routes || { FAIL=1; echo "❌ Route contract verification failed"; }
+cd "$REPO_ROOT"
+echo ""
+
+# 6. Native Parity Verification
+echo "▶ [6/11] Native Parity Verification..."
+cd hushh-webapp
+npm run verify:parity || { FAIL=1; echo "❌ Native parity verification failed"; }
+cd "$REPO_ROOT"
+echo ""
+
+# 7. Capacitor Route Verification
+echo "▶ [7/11] Capacitor Route Verification..."
+cd hushh-webapp
+npm run verify:capacitor:routes || { FAIL=1; echo "❌ Capacitor route verification failed"; }
+cd "$REPO_ROOT"
+echo ""
+
+# 8. Cache Coherence Verification
+echo "▶ [8/11] Cache Coherence Verification..."
+cd hushh-webapp
+npm run verify:cache || { FAIL=1; echo "❌ Cache coherence verification failed"; }
+cd "$REPO_ROOT"
+echo ""
+
+# 9. Docs Runtime Parity Verification
+echo "▶ [9/11] Docs Runtime Parity Verification..."
+cd hushh-webapp
+npm run verify:docs || { FAIL=1; echo "❌ Docs/runtime parity verification failed"; }
+cd "$REPO_ROOT"
+echo ""
+
+# 10. Kai System Audit
+echo "▶ [10/11] Kai System Audit..."
+python3 scripts/ops/kai-system-audit.py --api-base "$API_BASE" --web-base "$WEB_BASE" || {
+  FAIL=1
+  echo "❌ Kai system audit failed"
+}
+echo ""
+
+# 11. Git Status (strict blocking)
+echo "▶ [11/11] Git Status (Strict)..."
 MODIFIED=$(git status --porcelain | grep "^ M" | wc -l | tr -d ' ')
 UNTRACKED=$(git status --porcelain | grep "^??" | wc -l | tr -d ' ')
+STAGED=$(git status --porcelain | grep "^[AMDRC]" | wc -l | tr -d ' ')
 echo "   Modified files: $MODIFIED"
 echo "   Untracked files: $UNTRACKED"
-if [ "$UNTRACKED" -gt 0 ]; then
-  echo "⚠️  Untracked files should be committed before launch:"
-  git status --porcelain | grep "^??"
+echo "   Staged/non-clean entries: $STAGED"
+if [ "$MODIFIED" -gt 0 ] || [ "$UNTRACKED" -gt 0 ] || [ "$STAGED" -gt 0 ]; then
+  echo "❌ Working tree is not clean (strict launch gate):"
+  git status --short
+  FAIL=1
 fi
 echo ""
 

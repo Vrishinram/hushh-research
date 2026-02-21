@@ -79,6 +79,16 @@ function formatPercent(value: number): string {
   return `${sign}${value.toFixed(2)}%`;
 }
 
+function formatDateTick(value: string): string {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) {
+    return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(parsed);
+  }
+  return raw.length > 10 ? `${raw.slice(0, 10)}…` : raw;
+}
+
 // =============================================================================
 // PERIOD SUMMARY FALLBACK
 // =============================================================================
@@ -209,7 +219,7 @@ export function PortfolioHistoryChart({
       
       <ChartContainer 
         config={chartConfig} 
-        className="w-full"
+        className="w-full min-w-0 overflow-hidden"
         style={{ height }}
       >
         <AreaChart
@@ -220,10 +230,13 @@ export function PortfolioHistoryChart({
           <CartesianGrid vertical={false} strokeDasharray="3 3" />
           <XAxis 
             dataKey="date" 
+            tickFormatter={formatDateTick}
             tickLine={false}
             axisLine={false}
             tickMargin={8}
             interval="preserveStartEnd"
+            minTickGap={26}
+            tick={{ fontSize: 10 }}
           />
           <YAxis 
             tickLine={false}

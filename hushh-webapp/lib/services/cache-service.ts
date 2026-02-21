@@ -148,7 +148,8 @@ class CacheService {
       if (
         key.startsWith(`domain_data_${userId}_`) ||
         key.startsWith(`domain_blob_${userId}_`) ||
-        key.startsWith(`stock_context_${userId}_`)
+        key.startsWith(`stock_context_${userId}_`) ||
+        key.startsWith(`kai_market_home_${userId}_`)
       ) {
         keysToDelete.add(key);
       }
@@ -220,6 +221,8 @@ export const CACHE_KEYS = {
   PENDING_CONSENTS: (userId: string) => `pending_consents_${userId}`,
   CONSENT_AUDIT_LOG: (userId: string) => `consent_audit_log_${userId}`,
   STOCK_CONTEXT: (userId: string, ticker: string) => `stock_context_${userId}_${ticker}`,
+  KAI_MARKET_HOME: (userId: string, symbolsKey: string, daysBack: number) =>
+    `kai_market_home_${userId}_${symbolsKey}_${daysBack}`,
 } as const;
 
 // TTL constants

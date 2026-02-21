@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, ArrowRight, Compass, UserRound, Shield, Mic2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Compass, UserRound, Shield } from "lucide-react";
 import { usePathname } from "next/navigation";
 
 import { Card, CardContent } from "@/lib/morphy-ux/card";
@@ -31,12 +31,6 @@ const TOUR_STEPS = [
     title: "Profile",
     description: "Manage vault security, identity, and personal settings.",
     icon: UserRound,
-  },
-  {
-    id: "nav-agent-nav",
-    title: "Agent Nav",
-    description: "Access agent shortcuts and voice-first workflows.",
-    icon: Mic2,
   },
 ] as const;
 

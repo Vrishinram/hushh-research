@@ -1,33 +1,43 @@
 "use client";
 
-import { ChevronRight, Cpu, Percent, Zap } from "lucide-react";
+import { ChevronRight, Cpu, Percent, Zap, type LucideIcon } from "lucide-react";
 
 import { Card, CardContent } from "@/lib/morphy-ux/card";
 import { Icon } from "@/lib/morphy-ux/ui";
 
-const THEMES = [
+export interface ThemeFocusItem {
+  id?: string;
+  title: string;
+  subtitle: string;
+  icon: LucideIcon;
+}
+
+const DEFAULT_THEMES: ThemeFocusItem[] = [
   {
+    id: "ai",
     title: "AI Infrastructure",
     subtitle: "Semiconductors and data center demand",
     icon: Cpu,
   },
   {
+    id: "rate",
     title: "Rate Outlook",
     subtitle: "Fed policy impact on growth names",
     icon: Percent,
   },
   {
+    id: "energy",
     title: "Energy Rotation",
     subtitle: "Renewables and efficiency acceleration",
     icon: Zap,
   },
 ];
 
-export function ThemeFocusList() {
+export function ThemeFocusList({ themes = DEFAULT_THEMES }: { themes?: ThemeFocusItem[] }) {
   return (
     <div className="space-y-3">
-      {THEMES.map((theme) => (
-        <Card key={theme.title} variant="none" effect="glass" className="rounded-xl p-0">
+      {themes.map((theme) => (
+        <Card key={theme.id || theme.title} variant="none" effect="glass" className="rounded-xl p-0">
           <CardContent className="flex items-center gap-4 p-4">
             <div className="grid h-10 w-10 place-items-center rounded-full bg-background/80">
               <Icon icon={theme.icon} size="md" />

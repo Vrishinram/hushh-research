@@ -7,7 +7,7 @@ import { Loader2, AlertCircle, RefreshCw, X, WifiOff, ShieldAlert, Clock, CheckC
 import { Icon } from "@/lib/morphy-ux/ui";
 import { setKaiVaultOwnerToken } from "@/lib/services/kai-service";
 import { KaiHistoryService } from "@/lib/services/kai-history-service";
-import { DecisionCard } from "./views/decision-card";
+import { DecisionCard, type DecisionResult } from "./views/decision-card";
 import { RoundTabsCard } from "./views/round-tabs-card";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/lib/morphy-ux/card";
@@ -178,7 +178,7 @@ export function DebateStreamView({ ticker, userId, riskProfile: riskProfileProp,
   const [activeAgent, setActiveAgent] = useState("fundamental");
   const [collapsedRounds, setCollapsedRounds] = useState<Record<number, boolean>>({ 1: false, 2: true });
 
-  const [decision, setDecision] = useState<any>(null);
+  const [decision, setDecision] = useState<DecisionResult | null>(null);
 
   // ---- Overall progress computation ----
   const AGENTS = ["fundamental", "sentiment", "valuation"] as const;
@@ -564,7 +564,84 @@ export function DebateStreamView({ ticker, userId, riskProfile: riskProfileProp,
                 break;
               }
               case "decision": {
-                setDecision(data);
+                const degradedAgents = Array.isArray(data.degraded_agents)
+                  ? data.degraded_agents
+                      .map((item) => String(item || "").trim().toLowerCase())
+                      .filter((item) => item.length > 0)
+                  : [];
+                const backendShort =
+                  typeof data.short_recommendation === "string"
+                    ? data.short_recommendation.trim()
+                    : "";
+                const rawCardShort =
+                  typeof (data.raw_card as Record<string, unknown> | undefined)?.short_recommendation ===
+                  "string"
+                    ? String((data.raw_card as Record<string, unknown>).short_recommendation).trim()
+                    : "";
+                const fallbackShort =
+                  typeof data.final_statement === "string" && data.final_statement.trim().length > 0
+                    ? data.final_statement.trim().slice(0, 280)
+                    : "Final recommendation synthesized from the completed debate.";
+
+                const normalizedDecision: DecisionResult = {
+                  ticker: String(data.ticker || ticker).toUpperCase(),
+                  decision: String(data.decision || "hold"),
+                  confidence: Number(data.confidence || 0),
+                  consensus_reached: Boolean(data.consensus_reached),
+                  final_statement: String(data.final_statement || ""),
+                  short_recommendation: backendShort || rawCardShort || fallbackShort,
+                  analysis_degraded:
+                    Boolean(data.analysis_degraded) ||
+                    Boolean((data.raw_card as Record<string, unknown> | undefined)?.analysis_degraded),
+                  degraded_agents: degradedAgents,
+                  stream_id:
+                    typeof data.stream_id === "string"
+                      ? data.stream_id
+                      : typeof (data.raw_card as Record<string, unknown> | undefined)?.stream_diagnostics === "object"
+                        ? String(
+                            ((data.raw_card as Record<string, unknown>).stream_diagnostics as Record<string, unknown>)
+                              .stream_id || ""
+                          )
+                        : undefined,
+                  llm_calls_count:
+                    typeof data.llm_calls_count === "number"
+                      ? data.llm_calls_count
+                      : undefined,
+                  provider_calls_count:
+                    typeof data.provider_calls_count === "number"
+                      ? data.provider_calls_count
+                      : undefined,
+                  retry_counts:
+                    data.retry_counts && typeof data.retry_counts === "object"
+                      ? (data.retry_counts as Record<string, number>)
+                      : undefined,
+                  analysis_mode:
+                    typeof data.analysis_mode === "string" ? data.analysis_mode : undefined,
+                  agent_votes:
+                    data.agent_votes && typeof data.agent_votes === "object"
+                      ? (data.agent_votes as Record<string, string>)
+                      : undefined,
+                  dissenting_opinions: Array.isArray(data.dissenting_opinions)
+                    ? data.dissenting_opinions.map((value: unknown) => String(value))
+                    : undefined,
+                  fundamental_summary:
+                    typeof data.fundamental_summary === "string"
+                      ? data.fundamental_summary
+                      : undefined,
+                  sentiment_summary:
+                    typeof data.sentiment_summary === "string"
+                      ? data.sentiment_summary
+                      : undefined,
+                  valuation_summary:
+                    typeof data.valuation_summary === "string"
+                      ? data.valuation_summary
+                      : undefined,
+                  raw_card:
+                    data.raw_card && typeof data.raw_card === "object"
+                      ? (data.raw_card as DecisionResult["raw_card"])
+                      : {},
+                };
+                setDecision(normalizedDecision);
                 setKaiThinking("Analysis Complete.");
                 setCollapsedRounds({ 1: true, 2: true });
                 setBusyOperation("stock_analysis_stream", false);
@@ -576,12 +653,12 @@ export function DebateStreamView({ ticker, userId, riskProfile: riskProfileProp,
                     entry: {
                       ticker: ticker.toUpperCase(),
                       timestamp: new Date().toISOString(),
-                      decision: data.decision || "hold",
-                      confidence: data.confidence || 0,
-                      consensus_reached: data.consensus_reached ?? false,
-                      agent_votes: data.agent_votes || {},
-                      final_statement: data.final_statement || "",
-                      raw_card: data.raw_card || {},
+                      decision: normalizedDecision.decision || "hold",
+                      confidence: normalizedDecision.confidence || 0,
+                      consensus_reached: normalizedDecision.consensus_reached ?? false,
+                      agent_votes: normalizedDecision.agent_votes || {},
+                      final_statement: normalizedDecision.final_statement || "",
+                      raw_card: normalizedDecision.raw_card || {},
                       debate_transcript: {
                         round1: round1StatesRef.current,
                         round2: round2StatesRef.current,
@@ -893,6 +970,24 @@ export function DebateStreamView({ ticker, userId, riskProfile: riskProfileProp,
           <div className="space-y-6 lg:sticky lg:top-4 h-fit">
             {decision ? (
               <div className="animate-in fade-in slide-in-from-bottom-4 ">
+                <Card variant="none" effect="glass" className="mb-4">
+                  <CardContent className="space-y-2 p-4">
+                    <p className="text-[11px] font-black uppercase tracking-[0.16em] text-muted-foreground">
+                      Quick Recommendation
+                    </p>
+                    <p className="text-sm font-medium leading-relaxed">
+                      {decision.short_recommendation || decision.raw_card?.short_recommendation}
+                    </p>
+                    {(decision.analysis_degraded || decision.raw_card?.analysis_degraded) && (
+                      <p className="text-xs text-amber-600 dark:text-amber-400">
+                        Partial fallback used:{" "}
+                        {(decision.degraded_agents || decision.raw_card?.degraded_agents || [])
+                          .map((agent) => String(agent).toUpperCase())
+                          .join(", ") || "one or more agents"}
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
                 <DecisionCard result={decision} />
               </div>
             ) : (

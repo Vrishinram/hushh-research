@@ -121,8 +121,8 @@ export function AssetAllocationDonut({
   }
 
   return (
-    <div className={cn("w-full", className)}>
-      <ChartContainer config={chartConfig} className="mx-auto" style={{ height }}>
+    <div className={cn("w-full min-w-0 overflow-hidden", className)}>
+      <ChartContainer config={chartConfig} className="mx-auto w-full min-w-0" style={{ height }}>
         <PieChart>
           <ChartTooltip
             cursor={false}
@@ -198,17 +198,17 @@ export function AssetAllocationDonut({
 
       {/* Legend - simplified, no percentages (tooltip shows details) */}
       {showLegend && (
-        <div className="flex flex-wrap justify-center gap-4 mt-2">
+        <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 sm:flex sm:flex-wrap sm:justify-center sm:gap-4">
           {chartData.map((item, index) => (
             <div
               key={index}
-              className="flex items-center gap-2 text-sm"
+              className="flex min-w-0 items-center gap-2 text-xs sm:text-sm"
             >
               <div
                 className="w-3 h-3 rounded-full shrink-0"
                 style={{ backgroundColor: item.color }}
               />
-              <span className="text-foreground">{item.name}</span>
+              <span className="truncate text-foreground">{item.name}</span>
             </div>
           ))}
         </div>

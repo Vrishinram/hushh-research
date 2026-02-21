@@ -147,14 +147,14 @@ export function ImportProgressView({
   const stageLines = useMemo(() => {
     const rawLines = stageTrail.length > 0 ? stageTrail : [statusMessage || stageMessages[stage]];
     const formatted: string[] = [];
-    let lastKey = "";
+    const seen = new Set<string>();
     for (const rawLine of rawLines) {
       const normalizedLine = normalizeStageLine(rawLine);
       if (!normalizedLine) continue;
       const key = stageLineKey(normalizedLine);
-      if (key === lastKey) continue;
+      if (seen.has(key)) continue;
+      seen.add(key);
       formatted.push(normalizedLine);
-      lastKey = key;
     }
     return formatted;
   }, [stageTrail, stage, statusMessage]);

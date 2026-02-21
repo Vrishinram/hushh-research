@@ -7,6 +7,13 @@ export type TickerUniverseRow = {
   title?: string | null;
   cik?: string | number | null;
   exchange?: string | null;
+  sic_code?: string | null;
+  sic_description?: string | null;
+  sector_primary?: string | null;
+  industry_primary?: string | null;
+  sector_tags?: string[] | null;
+  metadata_confidence?: number | null;
+  tradable?: boolean | null;
 };
 
 type CachePayload = {
@@ -15,8 +22,8 @@ type CachePayload = {
   rows: TickerUniverseRow[];
 };
 
-const STORAGE_KEY = "cache:kai:ticker-universe:v1";
-const CACHE_VERSION = 1;
+const STORAGE_KEY = "cache:kai:ticker-universe:v2";
+const CACHE_VERSION = 2;
 const DEFAULT_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
 
 let inMemory: CachePayload | null = null;
@@ -29,6 +36,25 @@ function normalizeRow(row: TickerUniverseRow): TickerUniverseRow {
     title: row.title ?? null,
     cik: row.cik ?? null,
     exchange: row.exchange ?? null,
+    sic_code: row.sic_code ?? null,
+    sic_description: row.sic_description ?? null,
+    sector_primary: row.sector_primary ?? null,
+    industry_primary: row.industry_primary ?? null,
+    sector_tags: Array.isArray(row.sector_tags)
+      ? row.sector_tags
+          .map((item) => String(item || "").trim())
+          .filter(Boolean)
+      : [],
+    metadata_confidence:
+      typeof row.metadata_confidence === "number" && Number.isFinite(row.metadata_confidence)
+        ? row.metadata_confidence
+        : null,
+    tradable:
+      typeof row.tradable === "boolean"
+        ? row.tradable
+        : row.tradable === null
+          ? null
+          : true,
   };
 }
 

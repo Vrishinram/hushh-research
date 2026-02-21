@@ -6,6 +6,7 @@ const path = require("node:path");
 const repoRoot = path.resolve(__dirname, "..");
 
 const LEGACY_ROUTE_TOKENS = [
+  "/agent-nav",
   "/dashboard/kai",
   "/dashboard/domain",
   "/dashboard/agent-nav",
@@ -56,6 +57,31 @@ const REQUIRED_CANONICAL_ROUTES = {
   KAI_IMPORT: "/kai/import",
   KAI_DASHBOARD: "/kai/dashboard",
 };
+
+const REQUIRED_OPERATIONAL_MARKERS = [
+  {
+    file: "docs/reference/api-contracts.md",
+    patterns: [
+      "/api/kai/market/insights/{user_id}",
+      "layout_version",
+      "meta.symbol_quality",
+      "meta.filtered_symbols",
+      "short_recommendation",
+      "analysis_degraded",
+      "degraded_agents",
+    ],
+  },
+  {
+    file: "docs/reference/streaming-contract.md",
+    patterns: [
+      "\"event\": \"decision\"",
+      "short_recommendation",
+      "analysis_degraded",
+      "degraded_agents",
+      "analysis_mode",
+    ],
+  },
+];
 
 function fail(message) {
   console.error(`ERROR: ${message}`);
@@ -272,6 +298,29 @@ function verifyNoGeneratedArtifacts() {
   }
 }
 
+function verifyRequiredOperationalMarkers() {
+  const offenders = [];
+
+  for (const rule of REQUIRED_OPERATIONAL_MARKERS) {
+    if (!exists(rule.file)) {
+      offenders.push(`${rule.file}: file missing`);
+      continue;
+    }
+    const src = read(rule.file);
+    for (const marker of rule.patterns) {
+      if (!src.includes(marker)) {
+        offenders.push(`${rule.file}: missing marker "${marker}"`);
+      }
+    }
+  }
+
+  if (offenders.length) {
+    fail(`Required operational contract markers missing:\n${offenders.map((x) => `- ${x}`).join("\n")}`);
+  } else {
+    ok("Operational docs include current Kai market + stream contract markers");
+  }
+}
+
 function main() {
   const operationalDocs = collectDocs(OPERATIONAL_DOC_TARGETS);
   const firstPartyDocs = collectDocs(FIRST_PARTY_DOC_TARGETS);
@@ -288,6 +337,7 @@ function main() {
   scanSpeculativeOperationalContent(operationalDocs);
   verifyDocPathReferences(operationalDocs);
   verifyCanonicalRouteContract(operationalDocs);
+  verifyRequiredOperationalMarkers();
   verifyNoGeneratedArtifacts();
 
   if (process.exitCode) {

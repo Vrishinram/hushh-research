@@ -36,6 +36,10 @@ For repo-level setup instructions, see the root [`readme.md`](../readme.md) and 
 | Use canonical stream events everywhere | [reference/streaming-contract.md](./reference/streaming-contract.md) |
 | Implement a new stream feature | [reference/streaming-implementation-guide.md](./reference/streaming-implementation-guide.md) |
 | Check Vertex streaming constraints | [reference/vertex-ai-streaming-notes.md](./reference/vertex-ai-streaming-notes.md) |
+| Understand Kai interconnections end-to-end | [reference/kai-interconnection-map.md](./reference/kai-interconnection-map.md) |
+| Assess blast radius before merges | [reference/kai-change-impact-matrix.md](./reference/kai-change-impact-matrix.md) |
+| Validate world-model evolution safely | [reference/world-model-compatibility-playbook.md](./reference/world-model-compatibility-playbook.md) |
+| Fill PR impact map consistently | [reference/pr-impact-checklist.md](./reference/pr-impact-checklist.md) |
 | Check plugin parity status | [audits/plugins-parity.md](./audits/plugins-parity.md) |
 | Read the product vision | [vision/README.md](./vision/README.md) |
 | Deep-dive Agent Kai vision | [vision/kai/README.md](./vision/kai/README.md) |
@@ -68,6 +72,11 @@ docs/
     streaming-contract.md            # Canonical SSE schema and event contract
     streaming-implementation-guide.md # Reusable implementation pattern
     vertex-ai-streaming-notes.md     # Vertex streaming constraints and anti-patterns
+    kai-interconnection-map.md       # End-to-end Kai route/service/cache/data map
+    kai-change-impact-matrix.md      # Blast-radius matrix and rollback guidance
+    mobile-kai-parity-map.md         # Route + feature parity map for Web/iOS/Android
+    world-model-compatibility-playbook.md # Migration-safe world-model rules
+    pr-impact-checklist.md           # Mandatory PR impact mapping
 
   guides/                            # How do I DO something
     getting-started.md               # Prerequisites, setup, run, deploy
@@ -77,6 +86,8 @@ docs/
 
   audits/                            # Living tracking matrices
     plugins-parity.md                # iOS/Android plugin parity matrix
+    kai-retro-change-map-2026-02-21.md # Retro mapping for current Kai branch
+    kai-launch-readiness-2026-02-21.md # Strict launch readiness checkpoint
 
   vision/                            # Where is this going
     README.md                        # Philosophy, roadmap, community strategy

@@ -7,6 +7,7 @@ import { KaiCommandPalette, type KaiCommandAction } from "@/components/kai/kai-c
 import { Button } from "@/lib/morphy-ux/button";
 import { Icon } from "@/lib/morphy-ux/ui";
 import { cn } from "@/lib/utils";
+import { useKaiBottomChromeVisibility } from "@/lib/navigation/kai-bottom-chrome-visibility";
 
 interface KaiSearchBarProps {
   onCommand: (command: KaiCommandAction, params?: Record<string, unknown>) => void;
@@ -20,11 +21,20 @@ export function KaiSearchBar({
   hasPortfolioData = true,
 }: KaiSearchBarProps) {
   const [open, setOpen] = useState(false);
+  const { hidden: hideBottomChrome } = useKaiBottomChromeVisibility(true);
 
   return (
     <>
-      <div className="fixed bottom-[var(--app-bottom-inset)] inset-x-0 z-[130] flex justify-center px-4 pointer-events-none">
-        <div className="pointer-events-auto w-[315px]">
+      <div
+        className={cn(
+          "fixed inset-x-0 z-[130] flex justify-center px-4 transition-all duration-300 ease-out",
+          hideBottomChrome
+            ? "pointer-events-none translate-y-[calc(100%+24px)] opacity-0"
+            : "pointer-events-none translate-y-0 opacity-100"
+        )}
+        style={{ bottom: "calc(var(--app-bottom-inset) + var(--kai-command-bottom-gap, 18px))" }}
+      >
+        <div className="pointer-events-auto w-full max-w-[420px]">
           <Button
             variant="none"
             effect="fade"

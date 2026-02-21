@@ -15,6 +15,19 @@
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyObj = Record<string, any>;
 
+const TRADE_ACTION_SYMBOLS = new Set([
+  "BUY",
+  "SELL",
+  "REINVEST",
+  "DIVIDEND",
+  "INTEREST",
+  "TRANSFER",
+  "WITHDRAWAL",
+  "DEPOSIT",
+]);
+
+const CASH_EQUIVALENT_SYMBOLS = new Set(["CASH", "MMF", "SWEEP", "QACDS"]);
+
 function parseMaybeNumber(value: unknown): number | undefined {
   if (value === null || value === undefined) return undefined;
   if (typeof value === "number") {
@@ -37,6 +50,30 @@ function firstPresent(obj: AnyObj, keys: string[]): unknown {
     }
   }
   return undefined;
+}
+
+function normalizeHoldingSymbol(rawSymbol: unknown, name: string, assetType: string): string {
+  const symbol = String(rawSymbol || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9.\-]/g, "");
+  if (!symbol) return "";
+  if (symbol.startsWith("HOLDING_")) return "";
+  if (TRADE_ACTION_SYMBOLS.has(symbol)) return "";
+  if (CASH_EQUIVALENT_SYMBOLS.has(symbol)) return "CASH";
+
+  const nameLc = name.trim().toLowerCase();
+  const assetTypeLc = assetType.trim().toLowerCase();
+  if (
+    nameLc.includes("cash") ||
+    nameLc.includes("sweep") ||
+    assetTypeLc.includes("cash") ||
+    assetTypeLc.includes("sweep") ||
+    assetTypeLc.includes("money market")
+  ) {
+    return "CASH";
+  }
+  return symbol;
 }
 
 /**
@@ -175,12 +212,17 @@ function normalizeHoldings(holdings: AnyObj[] | undefined): AnyObj[] | undefined
   if (!holdings || !Array.isArray(holdings)) return holdings;
 
   return holdings.map((h) => {
-    const symbol = String(
-      firstPresent(h, ["symbol", "symbol_cusip", "ticker", "cusip", "security_id", "security"]) || ""
+    const assetType = String(
+      firstPresent(h, ["asset_type", "asset_class", "security_type", "type"]) || h.asset_type || ""
     ).trim();
     const name = String(
       firstPresent(h, ["name", "description", "security_name", "holding_name"]) || "Unknown"
     ).trim();
+    const symbol = normalizeHoldingSymbol(
+      firstPresent(h, ["symbol", "symbol_cusip", "ticker", "cusip", "security_id", "security"]),
+      name,
+      assetType
+    );
     const quantity = parseMaybeNumber(firstPresent(h, ["quantity", "shares", "units", "qty"])) ?? 0;
     const price =
       parseMaybeNumber(
@@ -220,9 +262,7 @@ function normalizeHoldings(holdings: AnyObj[] | undefined): AnyObj[] | undefined
       cost_basis: costBasis,
       unrealized_gain_loss: unrealized,
       unrealized_gain_loss_pct: unrealizedPct,
-      asset_type:
-        (firstPresent(h, ["asset_type", "asset_class", "security_type", "type"]) as string | undefined) ??
-        h.asset_type,
+      asset_type: assetType || h.asset_type,
     };
   });
 }

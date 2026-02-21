@@ -38,10 +38,17 @@ function deriveAttributeCount(
 }
 
 function sanitizeDomainSummary(summary: DomainSummaryPatch): Record<string, unknown> {
-  const blocked = new Set(["holdings", "total_value", "vault_key", "password"]);
+  const blocked = new Set(["holdings", "vault_key", "password"]);
   const sanitized: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(summary)) {
+    if (key.toLowerCase() === "total_value") {
+      const parsed = toNumber(value);
+      if (parsed !== null) {
+        sanitized.portfolio_total_value = parsed;
+      }
+      continue;
+    }
     if (blocked.has(key.toLowerCase())) continue;
     sanitized[key] = value;
   }

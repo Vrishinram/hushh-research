@@ -105,6 +105,7 @@ If you add a new `.swift` file (e.g. a new plugin or helper) and need to edit `i
 - [ ] Add route to `hushh-webapp/route-contracts.json`
 - [ ] Update `docs/reference/api-contracts.md` if needed
 - [ ] Add JSDoc comments to service methods
+- [ ] Add/update PR impact map using `docs/reference/pr-impact-checklist.md`
 
 ## Common Mistakes to Avoid
 
@@ -219,6 +220,7 @@ Before marking feature as complete:
 - [ ] Tested on iOS simulator (if available)
 - [ ] No `fetch()` calls in components
 - [ ] Documentation updated
+- [ ] PR impact checklist sections completed
 - [ ] If AI-assisted: commit message includes `Signed-off-by` and `Tokens used` (when available); see [Contributing](../contributing.md)
 
 ## Platform-Specific Features
@@ -294,6 +296,7 @@ For features that use Server-Sent Events (SSE) streaming:
 - [API Contracts](../reference/api-contracts.md) - Endpoint documentation
 - [Route Contracts](../reference/route_contracts.md) - Next.js route governance
 - [Architecture](../reference/architecture.md) - System design
+- [PR Impact Checklist](../reference/pr-impact-checklist.md) - Required PR mapping
 - [Native Streaming Guide](./native_streaming.md) - SSE streaming patterns
 - [Testing Guide](../../TESTING.md) - BYOK-compliant testing
 - [Security Policy](../../SECURITY.md) - Security guidelines

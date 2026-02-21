@@ -59,22 +59,24 @@ export function HoldingsConcentrationChart({
           Holdings Concentration
         </CardTitle>
       </CardHeader>
-      <CardContent className="pt-0">
-        <ChartContainer config={chartConfig} className="h-[230px] w-full">
-          <BarChart data={chartData} layout="vertical" margin={{ top: 10, right: 8, left: 8, bottom: 0 }}>
+      <CardContent className="pt-0 min-w-0 overflow-hidden">
+        <ChartContainer config={chartConfig} className="h-[220px] w-full min-w-0 sm:h-[230px]">
+          <BarChart data={chartData} layout="vertical" margin={{ top: 10, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid horizontal={false} strokeDasharray="3 3" />
             <XAxis
               type="number"
               tickFormatter={(value) => `${Number(value).toFixed(0)}%`}
               axisLine={false}
               tickLine={false}
+              tick={{ fontSize: 10 }}
             />
             <YAxis
               type="category"
               dataKey="symbol"
-              width={56}
+              width={44}
               axisLine={false}
               tickLine={false}
+              tick={{ fontSize: 10 }}
             />
             <ChartTooltip
               cursor={false}

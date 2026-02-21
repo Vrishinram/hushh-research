@@ -54,6 +54,14 @@ export interface DecisionResult {
   confidence: number;
   consensus_reached: boolean;
   final_statement: string;
+  short_recommendation?: string;
+  analysis_degraded?: boolean;
+  degraded_agents?: string[];
+  stream_id?: string;
+  llm_calls_count?: number;
+  provider_calls_count?: number;
+  retry_counts?: Record<string, number>;
+  analysis_mode?: string;
   agent_votes?: Record<string, string>;
   dissenting_opinions?: string[];
   // Enriched data
@@ -133,6 +141,16 @@ export interface DecisionResult {
       horizon_fit?: string;
       error?: string;
       fallback?: boolean;
+    };
+    short_recommendation?: string;
+    analysis_degraded?: boolean;
+    degraded_agents?: string[];
+    stream_diagnostics?: {
+      stream_id?: string;
+      llm_calls_count?: number;
+      provider_calls_count?: number;
+      retry_counts?: Record<string, number>;
+      analysis_mode?: string;
     };
     // Renaissance Data (New)
     renaissance_tier?: "ACE" | "KING" | "QUEEN" | "JACK";

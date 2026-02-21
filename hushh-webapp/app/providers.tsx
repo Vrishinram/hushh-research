@@ -33,6 +33,10 @@ import { KaiCommandBarGlobal } from "@/components/kai/kai-command-bar-global";
 import { ROUTES, isKaiOnboardingRoute } from "@/lib/navigation/routes";
 import { useScrollReset } from "@/lib/navigation/use-scroll-reset";
 import { Capacitor } from "@capacitor/core";
+import {
+  onScroll as onKaiBottomChromeScroll,
+  resetKaiBottomChromeVisibility,
+} from "@/lib/navigation/kai-bottom-chrome-visibility";
 
 interface ProvidersProps {
   children: ReactNode;
@@ -65,6 +69,10 @@ export function Providers({ children }: ProvidersProps) {
   usePageEnterAnimation(pageRef, { enabled: true, key: pathname });
   useScrollReset(pathname, { enabled: true, behavior: "auto" });
 
+  useEffect(() => {
+    resetKaiBottomChromeVisibility();
+  }, [pathname]);
+
   return (
     <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
       <StepProgressProvider>
@@ -87,6 +95,9 @@ export function Providers({ children }: ProvidersProps) {
                     {/* Main scroll container: extends under fixed bar so content can scroll behind it; padding clears bar height */}
                     <div
                       data-app-scroll-root="true"
+                      onScroll={(event) => {
+                        onKaiBottomChromeScroll(event.currentTarget.scrollTop);
+                      }}
                       className={
                         hideGlobalChrome
                           ? // Landing is a full-screen onboarding flow: no page scroll, no extra top inset.

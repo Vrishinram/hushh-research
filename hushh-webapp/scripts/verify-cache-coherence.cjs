@@ -63,7 +63,7 @@ function checkRequiredCoordinatorUsage() {
     ["lib/services/kai-history-service.ts", ["CacheSyncService.onAnalysisHistoryMutated"]],
     ["lib/consent/use-consent-actions.ts", ["CacheSyncService.onConsentMutated"]],
     ["components/kai/views/portfolio-review-view.tsx", ["CacheSyncService.onPortfolioUpserted"]],
-    ["components/kai/kai-flow.tsx", ["CacheSyncService.onPortfolioUpserted", "CacheSyncService.onWorldModelDomainCleared"]],
+    ["components/kai/kai-flow.tsx", ["CacheSyncService.onPortfolioUpserted"]],
     ["app/kai/dashboard/manage/page.tsx", ["CacheSyncService.onPortfolioUpserted"]],
     ["lib/firebase/auth-context.tsx", ["CacheSyncService.onAuthSignedOut"]],
     ["app/profile/page.tsx", ["CacheSyncService.onAccountDeleted"]],

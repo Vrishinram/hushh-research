@@ -9,6 +9,7 @@ import { KaiProfileService, type KaiProfileV2 } from "@/lib/services/kai-profile
 import { useKaiSession } from "@/lib/stores/kai-session-store";
 import { consumeCanonicalKaiStream } from "@/lib/streaming/kai-stream-client";
 import type { KaiStreamEnvelope } from "@/lib/streaming/kai-stream-types";
+import { ensureKaiVaultOwnerToken, isKaiAuthStatus } from "@/lib/services/kai-token-guard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/lib/morphy-ux/card";
 import { Button } from "@/lib/morphy-ux/button";
 import { StreamingAccordion } from "@/lib/morphy-ux/streaming-accordion";
@@ -119,7 +120,7 @@ export default function PortfolioHealthPage() {
   const router = useRouter();
   const theme = useThemeAware();
   const { user, loading: authLoading } = useAuth();
-  const { vaultOwnerToken, vaultKey } = useVault();
+  const { vaultOwnerToken, vaultKey, tokenExpiresAt, unlockVault, getVaultOwnerToken } = useVault();
   const setBusyOperation = useKaiSession((s) => s.setBusyOperation);
 
   useEffect(() => {
@@ -264,9 +265,7 @@ export default function PortfolioHealthPage() {
         return;
       }
 
-      const effectiveToken = vaultOwnerToken;
-
-      if (!user || !effectiveToken) {
+      if (!user) {
         setLoading(false);
         setError("Missing session context. Please return to Kai dashboard.");
         return;
@@ -291,6 +290,21 @@ export default function PortfolioHealthPage() {
         // Create abort controller for cleanup
         abortControllerRef.current = new AbortController();
 
+        const resolveToken = async (forceRefresh = false): Promise<string> => {
+          const token = await ensureKaiVaultOwnerToken({
+            userId: user.uid,
+            currentToken: getVaultOwnerToken() ?? vaultOwnerToken,
+            currentExpiresAt: tokenExpiresAt,
+            forceRefresh,
+            onIssued: (issuedToken, expiresAt) => {
+              if (vaultKey) {
+                unlockVault(vaultKey, issuedToken, expiresAt);
+              }
+            },
+          });
+          return token;
+        };
+
         const userPreferences = {
           risk_profile: kaiProfile?.preferences.risk_profile ?? null,
           risk_score: kaiProfile?.preferences.risk_score ?? null,
@@ -307,7 +321,8 @@ export default function PortfolioHealthPage() {
           force_optimize: Boolean(input.forceOptimize),
         };
 
-        const response = await ApiService.analyzePortfolioLosersStream({
+        let effectiveToken = await resolveToken(false);
+        let response = await ApiService.analyzePortfolioLosersStream({
           userId: user.uid,
           losers: input.losers,
           thresholdPct: input.thresholdPct,
@@ -318,6 +333,21 @@ export default function PortfolioHealthPage() {
           userPreferences,
           signal: abortControllerRef.current.signal,
         });
+
+        if (!response.ok && isKaiAuthStatus(response.status)) {
+          effectiveToken = await resolveToken(true);
+          response = await ApiService.analyzePortfolioLosersStream({
+            userId: user.uid,
+            losers: input.losers,
+            thresholdPct: input.thresholdPct,
+            maxPositions: input.maxPositions,
+            vaultOwnerToken: effectiveToken,
+            holdings: input.holdings,
+            forceOptimize: input.forceOptimize,
+            userPreferences,
+            signal: abortControllerRef.current.signal,
+          });
+        }
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
@@ -467,6 +497,10 @@ export default function PortfolioHealthPage() {
     input,
     user,
     vaultOwnerToken,
+    tokenExpiresAt,
+    getVaultOwnerToken,
+    unlockVault,
+    vaultKey,
     setBusyOperation,
     kaiProfile,
     contextStats.holdingsCount,

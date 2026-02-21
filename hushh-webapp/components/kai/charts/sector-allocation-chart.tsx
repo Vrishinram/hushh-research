@@ -58,16 +58,21 @@ const CHART_COLORS = [
 
 function formatCurrency(value: number): string {
   if (value >= 1000000) {
-    return `$${(value / 1000000).toFixed(2)}M`;
+    return `$${(value / 1000000).toFixed(1)}M`;
   }
   if (value >= 1000) {
-    return `$${(value / 1000).toFixed(2)}K`;
+    return `$${(value / 1000).toFixed(0)}K`;
   }
-  return `$${value.toFixed(2)}`;
+  return `$${value.toFixed(0)}`;
 }
 
 function _formatPercent(value: number): string {
   return `${value.toFixed(2)}%`;
+}
+
+function compactSectorLabel(value: string): string {
+  if (value.length <= 12) return value;
+  return `${value.slice(0, 11)}…`;
 }
 
 export function SectorAllocationChart({
@@ -135,10 +140,10 @@ export function SectorAllocationChart({
 
   const leftMargin = useMemo(() => {
     if (!responsive) return 80;
-    // Mobile: 50px, Tablet: 60px, Desktop: 80px
-    if (windowWidth < 640) return 50;
-    if (windowWidth < 1024) return 60;
-    return 80;
+    // Mobile: 34px, Tablet: 44px, Desktop: 64px
+    if (windowWidth < 640) return 34;
+    if (windowWidth < 1024) return 44;
+    return 64;
   }, [responsive, windowWidth]);
 
   // Chart config for shadcn ChartContainer
@@ -165,25 +170,28 @@ export function SectorAllocationChart({
           Sector Allocation
         </CardTitle>
       </CardHeader>
-      <CardContent className="px-4 pb-4">
-        <ChartContainer config={chartConfig} className="w-full" style={{ height: `${chartHeight}px` }}>
+      <CardContent className="px-4 pb-4 min-w-0 overflow-hidden">
+        <ChartContainer config={chartConfig} className="w-full min-w-0" style={{ height: `${chartHeight}px` }}>
           <BarChart
             data={sectorData.data}
             layout="vertical"
-            margin={{ top: 5, right: 30, left: leftMargin, bottom: 5 }}
+            margin={{ top: 5, right: 10, left: leftMargin, bottom: 5 }}
           >
             <XAxis
               type="number"
               tickFormatter={(value) => formatCurrency(value)}
               axisLine={false}
               tickLine={false}
+              tick={{ fontSize: 10 }}
             />
             <YAxis
               type="category"
               dataKey="name"
+              tickFormatter={(value) => compactSectorLabel(String(value))}
               axisLine={false}
               tickLine={false}
-              width={75}
+              width={68}
+              tick={{ fontSize: 10 }}
             />
             <ChartTooltip
               content={

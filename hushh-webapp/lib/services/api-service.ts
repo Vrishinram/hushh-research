@@ -110,6 +110,126 @@ async function apiFetch(
   }
 }
 
+export interface KaiHomeSparkPoint {
+  t: number;
+  p: number;
+}
+
+export interface KaiHomeHero {
+  total_value: number | null;
+  day_change_value: number | null;
+  day_change_pct: number | null;
+  sparkline_points: KaiHomeSparkPoint[];
+  as_of: string | null;
+  source_tags: string[];
+  degraded: boolean;
+  holdings_count?: number | null;
+  portfolio_value_bucket?: string | null;
+}
+
+export interface KaiHomeWatchlistItem {
+  symbol: string;
+  symbol_quality?: string;
+  company_name: string;
+  price: number | null;
+  change_pct: number | null;
+  volume: number | null;
+  market_cap: number | null;
+  sector?: string | null;
+  recommendation: string;
+  recommendation_detail?: string | null;
+  source_tags: string[];
+  degraded: boolean;
+  as_of: string | null;
+}
+
+export interface KaiHomeMover {
+  symbol: string;
+  company_name: string;
+  price: number | null;
+  change_pct: number | null;
+  volume: number | null;
+  source_tags: string[];
+  degraded: boolean;
+  as_of: string | null;
+}
+
+export interface KaiHomeMovers {
+  gainers: KaiHomeMover[];
+  losers: KaiHomeMover[];
+  active: KaiHomeMover[];
+  as_of: string | null;
+  source_tags: string[];
+  degraded: boolean;
+}
+
+export interface KaiHomeSectorItem {
+  sector: string;
+  change_pct: number | null;
+  as_of: string | null;
+  source_tags: string[];
+  degraded: boolean;
+}
+
+export interface KaiHomeNewsItem {
+  symbol: string;
+  title: string;
+  url: string;
+  published_at: string;
+  source_name: string;
+  provider: string;
+  sentiment_hint?: string | null;
+  degraded: boolean;
+}
+
+export interface KaiHomeSignal {
+  id: string;
+  title: string;
+  summary: string;
+  confidence: number;
+  source_tags: string[];
+  degraded: boolean;
+}
+
+export interface KaiHomeMeta {
+  stale: boolean;
+  stale_reason?: string;
+  cache_age_seconds: number;
+  provider_status: Record<string, string>;
+  symbol_quality?: {
+    requested_count: number;
+    accepted_count: number;
+    filtered_count: number;
+  };
+  filtered_symbols?: Array<{
+    input_symbol: string;
+    normalized_symbol: string;
+    reason: string;
+    trust_tier: string;
+  }>;
+}
+
+export interface KaiHomeInsightsV2 {
+  layout_version?: string;
+  user_id?: string;
+  generated_at?: string;
+  stale?: boolean;
+  stale_reason?: string;
+  cache_age_seconds?: number;
+  provider_status?: Record<string, string>;
+  hero?: KaiHomeHero;
+  watchlist?: KaiHomeWatchlistItem[];
+  movers?: KaiHomeMovers;
+  sector_rotation?: KaiHomeSectorItem[];
+  news_tape?: KaiHomeNewsItem[];
+  signals?: KaiHomeSignal[];
+  meta?: KaiHomeMeta;
+  // Backward-compatible fields still supported during transition.
+  market_overview?: unknown[];
+  spotlights?: unknown[];
+  themes?: unknown[];
+}
+
 /**
  * API Service for platform-aware API calls
  */
@@ -1302,6 +1422,53 @@ export class ApiService {
         Authorization: `Bearer ${data.vaultOwnerToken}`,
       },
     });
+  }
+
+  /**
+   * Fetch cached live market insights for Kai home.
+   */
+  static async getKaiMarketInsights(data: {
+    userId: string;
+    vaultOwnerToken: string;
+    symbols?: string[];
+    daysBack?: number;
+    signal?: AbortSignal;
+  }): Promise<KaiHomeInsightsV2> {
+    const query = new URLSearchParams();
+    if (Array.isArray(data.symbols) && data.symbols.length > 0) {
+      query.set("symbols", data.symbols.join(","));
+    }
+    if (typeof data.daysBack === "number" && Number.isFinite(data.daysBack)) {
+      query.set("days_back", String(data.daysBack));
+    }
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    const path = `/api/kai/market/insights/${data.userId}${suffix}`;
+
+    if (Capacitor.isNativePlatform()) {
+      const response = await fetch(`${API_BASE}${path}`, {
+        method: "GET",
+        signal: data.signal,
+        headers: {
+          Authorization: `Bearer ${data.vaultOwnerToken}`,
+        },
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to load market insights: ${response.status}`);
+      }
+      return (await response.json()) as KaiHomeInsightsV2;
+    }
+
+    const response = await apiFetch(path, {
+      method: "GET",
+      signal: data.signal,
+      headers: {
+        Authorization: `Bearer ${data.vaultOwnerToken}`,
+      },
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to load market insights: ${response.status}`);
+    }
+    return (await response.json()) as KaiHomeInsightsV2;
   }
 
   /**

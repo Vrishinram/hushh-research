@@ -71,5 +71,8 @@ describe("KaiNavTour", () => {
     await waitFor(() => {
       expect(screen.getByText("Bottom Navigation Tour")).toBeTruthy();
     });
+
+    expect(screen.queryByText("Agent Nav")).toBeNull();
+    expect(screen.getByText(/1\/3/)).toBeTruthy();
   });
 });

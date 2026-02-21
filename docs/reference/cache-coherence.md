@@ -26,6 +26,12 @@ Dynamic user keys:
 - `domain_blob_${userId}_${domain}`
 - `stock_context_${userId}_${ticker}`
 
+Summary metadata write-through fields (when available):
+- `attribute_count`
+- `item_count`
+- `holdings_count` (financial/portfolio-like domains)
+- `portfolio_total_value`
+
 ## Mutation -> Cache Sync Matrix
 
 - World model store domain: `CacheSyncService.onWorldModelDomainStored(...)`
@@ -51,6 +57,7 @@ Do:
 - Patch cached world-model metadata in-place when safe summary fields are provided.
 - Keep `CacheContext` as state mirror only.
 - Use `invalidateUser(userId)` when purging a full user session.
+- Keep domain blob + metadata reconciliation aligned with world-model index semantics.
 
 Don't:
 - Add ad-hoc `CacheService.getInstance().invalidate(...)` calls in mutation flows.
@@ -63,3 +70,9 @@ Run:
 - `cd hushh-webapp && npm run verify:capacitor:e2e`
 
 The `verify:cache` script hard-fails when critical mutation/auth paths bypass `CacheSyncService`.
+
+## Reconciliation Notes
+
+- Domain metadata patches should preserve canonical summary counters (`attribute_count`, `item_count`, `holdings_count`).
+- Raw `total_value` is not retained in index summary cache patches; numeric values should map to `portfolio_total_value`.
+- If patch inputs are insufficient, invalidate metadata and force a clean re-fetch rather than persisting partial summaries.

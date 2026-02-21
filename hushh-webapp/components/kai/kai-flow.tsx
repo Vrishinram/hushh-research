@@ -171,6 +171,45 @@ function firstPresent(obj: Record<string, unknown>, keys: string[]): unknown {
   return undefined;
 }
 
+const TRADE_ACTION_SYMBOLS = new Set([
+  "BUY",
+  "SELL",
+  "REINVEST",
+  "DIVIDEND",
+  "INTEREST",
+  "TRANSFER",
+  "WITHDRAWAL",
+  "DEPOSIT",
+]);
+
+const CASH_EQUIVALENT_SYMBOLS = new Set(["CASH", "MMF", "SWEEP", "QACDS"]);
+
+function normalizeTickerSymbol(
+  value: unknown,
+  opts?: { name?: string; assetType?: string }
+): string {
+  if (value === null || value === undefined) return "";
+  const normalized = String(value)
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9.\-]/g, "");
+  if (!normalized || normalized.startsWith("HOLDING_")) return "";
+  if (TRADE_ACTION_SYMBOLS.has(normalized)) return "";
+  if (CASH_EQUIVALENT_SYMBOLS.has(normalized)) return "CASH";
+  const nameLc = String(opts?.name || "").trim().toLowerCase();
+  const assetTypeLc = String(opts?.assetType || "").trim().toLowerCase();
+  if (
+    nameLc.includes("cash") ||
+    nameLc.includes("sweep") ||
+    assetTypeLc.includes("cash") ||
+    assetTypeLc.includes("sweep") ||
+    assetTypeLc.includes("money market")
+  ) {
+    return "CASH";
+  }
+  return normalized;
+}
+
 function normalizePortfolioData(backendData: Record<string, unknown>): ReviewPortfolioData {
   console.log("[KaiFlow] Raw backend data:", JSON.stringify(backendData, null, 2).slice(0, 2000));
   
@@ -183,12 +222,16 @@ function normalizePortfolioData(backendData: Record<string, unknown>): ReviewPor
   
   // Normalize holdings - handle various field name formats
   const normalizedHoldings = rawHoldings.map((h) => {
-    const symbol = String(
-      firstPresent(h, ["symbol", "symbol_cusip", "ticker", "cusip", "security_id", "security"]) || ""
-    ).trim();
     const name = String(
       firstPresent(h, ["name", "description", "security_name", "holding_name"]) || "Unknown"
     ).trim();
+    const assetType = firstPresent(h, ["asset_type", "asset_class", "security_type", "type"])
+      ? String(firstPresent(h, ["asset_type", "asset_class", "security_type", "type"]))
+      : undefined;
+    const symbol = normalizeTickerSymbol(firstPresent(h, ["symbol", "ticker"]), {
+      name,
+      assetType,
+    });
     const quantity = parseNumberOrZero(firstPresent(h, ["quantity", "shares", "units", "qty"]));
     const price = parseNumberOrZero(
       firstPresent(h, ["price", "price_per_unit", "last_price", "unit_price", "current_price"])
@@ -238,6 +281,9 @@ function normalizePortfolioData(backendData: Record<string, unknown>): ReviewPor
           : undefined,
       asset_type: firstPresent(h, ["asset_type", "asset_class", "security_type", "type"])
         ? String(firstPresent(h, ["asset_type", "asset_class", "security_type", "type"]))
+        : undefined,
+      sector: firstPresent(h, ["sector", "gics_sector", "industry", "industry_group"])
+        ? String(firstPresent(h, ["sector", "gics_sector", "industry", "industry_group"]))
         : undefined,
     };
   });
@@ -293,6 +339,9 @@ function normalizePortfolioData(backendData: Record<string, unknown>): ReviewPor
     }
     if (!existing.asset_type && holding.asset_type) {
       existing.asset_type = holding.asset_type;
+    }
+    if (!existing.sector && holding.sector) {
+      existing.sector = holding.sector;
     }
   }
   const canonicalHoldings = Array.from(aggregatedBySymbol.values()).map((holding) => {
@@ -635,6 +684,12 @@ export function KaiFlow({
   useEffect(() => {
     async function checkFinancialData() {
       try {
+        // Import route should only perform this check during initial bootstrap.
+        // Re-running on vault token/key transitions can reset active import progress.
+        if (mode === "import" && stateRef.current !== "checking") {
+          return;
+        }
+
         // Avoid resetting active import/review UI when vault state changes mid-flow.
         if (
           mode === "import" &&
@@ -765,9 +820,6 @@ export function KaiFlow({
     userId,
     vaultKey,
     effectiveVaultOwnerToken,
-    vaultDialogOpen,
-    resumeUploadAfterUnlock,
-    queuedUploadFile,
     getPortfolioData,
     setPortfolioData,
     invalidateDomain,
@@ -985,8 +1037,8 @@ export function KaiFlow({
           if (!next) return trail;
           const line = normalizeTrailLine(next);
           if (!line) return trail;
-          const previous = trail[trail.length - 1];
-          if (previous && trailLineKey(previous) === trailLineKey(line)) return trail;
+          const key = trailLineKey(line);
+          if (trail.some((existingLine) => trailLineKey(existingLine) === key)) return trail;
           return [...trail, line];
         };
 
@@ -1211,7 +1263,12 @@ export function KaiFlow({
         setStreaming((prev) => ({
           ...prev,
           stage: "error",
-          stageTrail: [...prev.stageTrail, `[ERROR] ${err instanceof Error ? err.message : "Unknown error"}`],
+          stageTrail: (() => {
+            const nextLine = `[ERROR] ${err instanceof Error ? err.message : "Unknown error"}`;
+            return prev.stageTrail.includes(nextLine)
+              ? prev.stageTrail
+              : [...prev.stageTrail, nextLine];
+          })(),
           errorMessage: err instanceof Error ? err.message : "Unknown error",
           statusMessage: err instanceof Error ? err.message : "Import failed",
         }));
@@ -1415,13 +1472,12 @@ export function KaiFlow({
 
   // Handle re-import (upload new statement)
   const handleReimport = useCallback(() => {
-    CacheSyncService.onWorldModelDomainCleared(userId, "financial");
     if (mode === "dashboard") {
       router.push(ROUTES.KAI_IMPORT);
       return;
     }
     setState("import_required");
-  }, [mode, router, userId]);
+  }, [mode, router]);
 
   // Handle manage portfolio navigation
   const handleManagePortfolio = useCallback(() => {

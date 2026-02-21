@@ -168,6 +168,25 @@ If it exits 0, CI should pass. If it fails, fix the reported step before committ
 
 ---
 
+## Strict Launch Gate (Release Cut)
+
+Before creating a release tag/public rollout, run strict gate commands from repo root:
+
+```bash
+cd hushh-webapp && npm run verify:routes
+cd hushh-webapp && npm run verify:parity
+cd hushh-webapp && npm run verify:capacitor:routes
+cd hushh-webapp && npm run verify:cache
+cd hushh-webapp && npm run verify:docs
+python scripts/ops/kai-system-audit.py --api-base http://localhost:8000 --web-base http://localhost:3000
+bash scripts/verify-pre-launch.sh
+```
+
+Blocking rule:
+- Launch gate is strict-blocking. Any failing check or non-clean git tree is a release blocker.
+
+---
+
 ## Related Docs
 
 - [Getting Started](../guides/getting-started.md) -- Setup and local CI instructions.

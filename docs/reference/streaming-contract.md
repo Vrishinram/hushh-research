@@ -94,6 +94,30 @@ Analyze payload rules:
 - `debate_round` must include `round` and `phase=debate`.
 - `decision` must include `phase=decision`.
 
+### Decision Payload Extension (Current)
+
+The terminal `decision` payload must include final recommendation context and degradation transparency:
+
+```json
+{
+  "event": "decision",
+  "phase": "decision",
+  "short_recommendation": "Concise actionable recommendation",
+  "analysis_degraded": false,
+  "degraded_agents": [],
+  "stream_id": "strm_<uuid>",
+  "llm_calls_count": 0,
+  "provider_calls_count": 0,
+  "retry_counts": { "llm": 0, "providers": 0 },
+  "analysis_mode": "full_stream | lean_stream | degraded"
+}
+```
+
+Notes:
+- `short_recommendation` is mandatory in terminal decision output.
+- `analysis_degraded`/`degraded_agents` are mandatory when one or more agents/providers fail.
+- `stream_id` in payload should match envelope `stream_id`.
+
 ## Thought Events
 
 Thought summaries are best-effort telemetry.
@@ -127,3 +151,12 @@ Streaming changes must preserve this contract.
 - New events may be added if documented here.
 - Existing fields may not be removed without a version bump.
 - Any contract change requires parser tests and route-contract tests updates.
+
+## Degraded-Mode Guarantee
+
+For `stock_analyze`, partial provider/agent failures should degrade gracefully:
+
+- stream remains valid under canonical envelope rules,
+- terminal `decision` still emits when recoverable,
+- degraded metadata must be explicit (`analysis_degraded`, `degraded_agents`),
+- terminal `error` is reserved for unrecoverable failures only.

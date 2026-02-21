@@ -5,7 +5,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Mic, Shield, TrendingUp, User } from "lucide-react";
+import { Shield, TrendingUp, User } from "lucide-react";
 
 import { useAuth } from "@/hooks/use-auth";
 import { usePendingConsentCount } from "@/components/consent/notification-provider";
@@ -13,8 +13,10 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { useKaiSession } from "@/lib/stores/kai-session-store";
 import { getKaiChromeState } from "@/lib/navigation/kai-chrome-state";
 import { SegmentedPill, type SegmentedPillOption } from "@/lib/morphy-ux/ui";
+import { useKaiBottomChromeVisibility } from "@/lib/navigation/kai-bottom-chrome-visibility";
+import { cn } from "@/lib/utils";
 
-type NavKey = "kai" | "consents" | "profile" | "agent-nav";
+type NavKey = "kai" | "consents" | "profile";
 
 export const Navbar = () => {
   const pathname = usePathname();
@@ -25,6 +27,8 @@ export const Navbar = () => {
   const [kaiHref, setKaiHref] = useState("/kai");
   const chromeState = useMemo(() => getKaiChromeState(pathname), [pathname]);
   const useOnboardingChrome = chromeState.useOnboardingChrome;
+  const allowScrollHide = isAuthenticated && !useOnboardingChrome;
+  const { hidden: hideBottomChrome } = useKaiBottomChromeVisibility(allowScrollHide);
 
   const lastKaiPath = useKaiSession((s) => s.lastKaiPath);
   const busyOperations = useKaiSession((s) => s.busyOperations);
@@ -89,12 +93,6 @@ export const Navbar = () => {
         icon: User,
         dataTourId: "nav-profile",
       },
-      {
-        value: "agent-nav",
-        label: "Agent Nav",
-        icon: Mic,
-        dataTourId: "nav-agent-nav",
-      },
     ],
     [pendingConsents]
   );
@@ -117,9 +115,7 @@ export const Navbar = () => {
     ? "consents"
     : normalizedPathname.startsWith("/profile")
       ? "profile"
-      : normalizedPathname.startsWith("/agent-nav")
-        ? "agent-nav"
-        : "kai";
+      : "kai";
 
   const navigateTo = (value: string) => {
     const reviewDirty = Boolean(
@@ -142,9 +138,6 @@ export const Navbar = () => {
       case "profile":
         router.push("/profile");
         return;
-      case "agent-nav":
-        router.push("/agent-nav");
-        return;
       default:
         return;
     }
@@ -152,7 +145,12 @@ export const Navbar = () => {
 
   return (
     <nav
-      className="fixed inset-x-0 z-[120] flex justify-center px-4 pointer-events-none transform-gpu"
+      className={cn(
+        "fixed inset-x-0 z-[120] flex justify-center px-4 transform-gpu transition-all duration-300 ease-out",
+        hideBottomChrome
+          ? "pointer-events-none translate-y-[calc(100%+18px)] opacity-0"
+          : "pointer-events-none translate-y-0 opacity-100"
+      )}
       style={{ bottom: "max(var(--app-safe-area-bottom-effective), 0.75rem)" }}
     >
       <SegmentedPill

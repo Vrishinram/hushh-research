@@ -22,6 +22,7 @@ import {
 import {
   getTickerUniverseSnapshot,
   preloadTickerUniverse,
+  searchTickerUniverseRemote,
   searchTickerUniverse,
   type TickerUniverseRow,
 } from "@/lib/kai/ticker-universe-cache";
@@ -53,6 +54,7 @@ export function KaiCommandPalette({
     getTickerUniverseSnapshot()
   );
   const [loadingUniverse, setLoadingUniverse] = useState<boolean>(!universe);
+  const [remoteMatches, setRemoteMatches] = useState<TickerUniverseRow[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -80,17 +82,66 @@ export function KaiCommandPalette({
     };
   }, [universe]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const q = query.trim();
+    if (q.length < 2) {
+      setRemoteMatches([]);
+      return () => {
+        cancelled = true;
+      };
+    }
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const rows = await searchTickerUniverseRemote(q, 20);
+          if (!cancelled) {
+            setRemoteMatches(rows);
+          }
+        } catch {
+          if (!cancelled) {
+            setRemoteMatches([]);
+          }
+        }
+      })();
+    }, 160);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [query]);
+
   const tickerMatches = useMemo(() => {
     const rows = universe ?? [];
-    if (rows.length === 0) {
-      return [];
-    }
     const search = query.trim();
     if (!search) {
-      return rows.slice(0, 12);
+      return [...rows]
+        .filter((row) => row.tradable !== false)
+        .sort((a, b) => Number(b.metadata_confidence || 0) - Number(a.metadata_confidence || 0))
+        .slice(0, 12);
     }
-    return searchTickerUniverse(rows, search, 20);
-  }, [query, universe]);
+    const local = searchTickerUniverse(rows, search, 20);
+    const merged = [...local];
+    for (const row of remoteMatches) {
+      if (!merged.some((candidate) => candidate.ticker === row.ticker)) {
+        merged.push(row);
+      }
+    }
+    const qUpper = search.toUpperCase();
+    return merged
+      .filter((row) => row.tradable !== false)
+      .sort((a, b) => {
+        const aPrefix = a.ticker.startsWith(qUpper) ? 1 : 0;
+        const bPrefix = b.ticker.startsWith(qUpper) ? 1 : 0;
+        if (aPrefix !== bPrefix) return bPrefix - aPrefix;
+        const aScore = Number(a.metadata_confidence || 0);
+        const bScore = Number(b.metadata_confidence || 0);
+        if (aScore !== bScore) return bScore - aScore;
+        return a.ticker.localeCompare(b.ticker);
+      })
+      .slice(0, 20);
+  }, [query, universe, remoteMatches]);
 
   function run(command: KaiCommandAction, params?: Record<string, unknown>) {
     onOpenChange(false);
@@ -168,7 +219,7 @@ export function KaiCommandPalette({
               <CommandItem
                 className={commandItemClass}
                 key={`${ticker}:${title}`}
-                value={`${ticker} ${title}`}
+                value={`${ticker} ${title} ${row.sector_primary || ""} ${row.exchange || ""}`}
                 disabled={!hasPortfolioData}
                 onSelect={() => run("analyze", { symbol: ticker })}
               >
@@ -176,6 +227,7 @@ export function KaiCommandPalette({
                 <span className="font-semibold">{ticker}</span>
                 <span className="ml-2 text-xs text-muted-foreground truncate">
                   {title}
+                  {row.sector_primary ? ` • ${row.sector_primary}` : ""}
                 </span>
               </CommandItem>
             );

@@ -30,7 +30,8 @@
           "/portfolio/import/stream",
           "/portfolio/summary/{user_id}",
           "/portfolio/analyze-losers",
-          "/portfolio/analyze-losers/stream"
+          "/portfolio/analyze-losers/stream",
+          "/market/insights/{user_id}"
         ]
       },
       "native": {

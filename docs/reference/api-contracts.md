@@ -45,6 +45,8 @@ POST /api/consent/vault-owner-token  (Firebase Bearer)
 | GET | `/api/investors/{investor_id}` | Full investor profile by ID |
 | GET | `/api/investors/cik/{cik}` | Investor profile by SEC CIK |
 | GET | `/api/investors/stats` | Investor database statistics |
+| GET | `/api/tickers/search?q={query}&limit={n}` | Public ticker search with enrichment metadata |
+| GET | `/api/tickers/all` | Full ticker universe export with enrichment metadata |
 | POST | `/api/validate-token` | Validate a consent token |
 | GET | `/api/app-config/review-mode` | Review mode toggle (enabled only) |
 | POST | `/api/app-config/review-mode/session` | Mint Firebase custom token for `REVIEWER_UID` when review mode enabled |
@@ -121,6 +123,12 @@ POST /api/consent/vault-owner-token  (Firebase Bearer)
 | POST | `/api/kai/analyze/stream` | SSE streaming with context body |
 | POST | `/api/analysis/analyze` | Deep fundamental analysis |
 
+#### Kai Market Home
+
+| Method | Path | Description |
+| ------ | ---- | ----------- |
+| GET | `/api/kai/market/insights/{user_id}` | Token-gated market home payload (cache-backed, provider-fallback aware) |
+
 #### Kai Decisions
 
 | Method | Path | Description |
@@ -193,6 +201,55 @@ Security invariant:
 | GET | `/api/kai/decision/{id}` | `GET /api/kai/decisions/{user_id}` |
 | DELETE | `/api/kai/decision/{id}` | `POST /api/world-model/store-domain` with domain=`kai_decisions` |
 | `*` | `/api/identity/*` | Removed from app surface; compatibility stubs return `410` |
+
+---
+
+## Kai Market Insights v2 Payload (Additive)
+
+`GET /api/kai/market/insights/{user_id}` returns additive sections for `/kai`:
+
+- `layout_version`
+- `hero`
+- `watchlist`
+- `movers`
+- `sector_rotation`
+- `news_tape`
+- `signals`
+- `meta.symbol_quality`
+- `meta.filtered_symbols`
+- `meta.provider_status`
+
+Backward-compatible sections remain present while migration is active:
+- `market_overview`
+- `spotlights`
+- `themes`
+
+### Ticker Enrichment Fields (`/api/tickers/search`, `/api/tickers/all`)
+
+Each ticker row can include:
+
+- `sic_code`
+- `sic_description`
+- `sector_primary`
+- `industry_primary`
+- `sector_tags`
+- `metadata_confidence`
+- `tradable`
+
+### Analyze Stream Terminal Decision Metadata
+
+Terminal `decision` events from `/api/kai/analyze/stream` include:
+
+- `short_recommendation`
+- `analysis_degraded`
+- `degraded_agents`
+- `stream_id`
+- `llm_calls_count`
+- `provider_calls_count`
+- `retry_counts`
+- `analysis_mode`
+
+These fields are additive to the canonical decision payload and mirrored in `raw_card` where applicable.
 
 ---
 

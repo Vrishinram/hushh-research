@@ -420,7 +420,7 @@ export default function ProfilePage() {
       {/* Profile Header */}
       <div className="text-center space-y-4">
         <Avatar className="h-24 w-24 mx-auto ring-4 ring-primary/20">
-          <AvatarImage src={user?.photoURL || ""} alt={user?.displayName || "Profile"} />
+          <AvatarImage src={user?.photoURL || undefined} alt={user?.displayName || "Profile"} />
           <AvatarFallback className="bg-muted text-2xl font-semibold text-muted-foreground">
             {user?.displayName ? (
               user.displayName

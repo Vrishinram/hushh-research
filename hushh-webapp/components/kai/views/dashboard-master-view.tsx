@@ -12,6 +12,7 @@ import type { PortfolioData } from "@/components/kai/types/portfolio";
 import { Button as MorphyButton } from "@/lib/morphy-ux/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/lib/morphy-ux/card";
 import { Icon } from "@/lib/morphy-ux/ui";
+import { KAI_EXPERIENCE_CONTRACT } from "@/lib/kai/experience-contract";
 import { cn } from "@/lib/utils";
 import { mapPortfolioToDashboardViewModel } from "@/components/kai/views/dashboard-data-mapper";
 
@@ -30,6 +31,21 @@ function formatCurrency(value: number): string {
     currency: "USD",
     maximumFractionDigits: 2,
   }).format(value);
+}
+
+function DataQualityFallback({ title, detail }: { title: string; detail: string }) {
+  return (
+    <Card variant="none" effect="glass" className="h-full min-w-0">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm">{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="pt-0">
+        <div className="rounded-xl border border-dashed border-border/60 bg-background/60 p-3 text-xs text-muted-foreground">
+          {detail}
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
 export function DashboardMasterView({
@@ -106,57 +122,10 @@ export function DashboardMasterView({
         </MorphyButton>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card variant="none" effect="glass">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Allocation Mix</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <AssetAllocationDonut data={model.allocation} height={240} />
-          </CardContent>
-        </Card>
-
-        <PortfolioHistoryChart
-          data={model.history}
-          beginningValue={model.hero.beginningValue}
-          endingValue={model.hero.endingValue}
-          statementPeriod={model.hero.statementPeriod}
-          className="h-full"
-        />
-
-        <SectorAllocationChart
-          holdings={model.holdings.map((holding) => ({
-            symbol: holding.symbol,
-            name: holding.name,
-            market_value: holding.market_value,
-            sector: holding.sector,
-            asset_type: holding.asset_type,
-          }))}
-        />
-
-        <HoldingsConcentrationChart data={model.concentration} />
-
-        <GainLossDistributionChart data={model.gainLossDistribution} />
-
-        <Card variant="none" effect="glass">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Recommendations</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 pt-0">
-            {model.recommendations.map((item) => (
-              <div key={item.title} className="rounded-xl border border-border/60 bg-background/70 p-3">
-                <p className="text-sm font-semibold">{item.title}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{item.detail}</p>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card variant="none" effect="glass">
+      <Card variant="none" effect="glass" className="min-w-0">
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between gap-2">
-            <CardTitle className="text-sm">Current Holdings</CardTitle>
+            <CardTitle className="text-sm">Top Holdings</CardTitle>
             <MorphyButton variant="none" effect="fade" size="sm" onClick={onManagePortfolio}>
               Manage Holdings
             </MorphyButton>
@@ -171,7 +140,7 @@ export function DashboardMasterView({
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-sm font-semibold">{holding.symbol}</p>
-                  <p className="text-xs text-muted-foreground truncate">{holding.name}</p>
+                  <p className="truncate text-xs text-muted-foreground">{holding.name}</p>
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-semibold">{formatCurrency(holding.market_value)}</p>
@@ -181,7 +150,7 @@ export function DashboardMasterView({
                 </div>
               </div>
 
-              <div className="mt-2 flex items-center justify-between">
+              <div className="mt-2 flex items-center justify-between gap-2">
                 <p
                   className={cn(
                     "text-xs font-medium",
@@ -211,8 +180,99 @@ export function DashboardMasterView({
               No holdings found in this statement. Import another document to populate dashboard analytics.
             </div>
           )}
+          {model.holdings.length > 0 && (
+            <p className="px-1 text-xs text-muted-foreground">
+              {KAI_EXPERIENCE_CONTRACT.portfolioClarity.dashboardPrimaryDescription}
+            </p>
+          )}
         </CardContent>
       </Card>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        {model.quality.allocationReady ? (
+        <Card variant="none" effect="glass" className="min-w-0 overflow-hidden">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Allocation Mix</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <AssetAllocationDonut data={model.allocation} height={240} />
+          </CardContent>
+        </Card>
+        ) : (
+          <DataQualityFallback
+            title="Allocation Mix"
+            detail="Insufficient statement allocation fields to build a reliable mix chart."
+          />
+        )}
+
+        {model.quality.historyReady ? (
+          <PortfolioHistoryChart
+            data={model.history}
+            beginningValue={model.hero.beginningValue}
+            endingValue={model.hero.endingValue}
+            statementPeriod={model.hero.statementPeriod}
+            className="h-full min-w-0 overflow-hidden"
+          />
+        ) : (
+          <DataQualityFallback
+            title="Portfolio History"
+            detail="Insufficient statement period values to plot a defensible history trend."
+          />
+        )}
+
+        {model.quality.sectorReady ? (
+          <SectorAllocationChart
+            className="min-w-0 overflow-hidden"
+            holdings={model.holdings.map((holding) => ({
+              symbol: holding.symbol,
+              name: holding.name,
+              market_value: holding.market_value,
+              sector: holding.sector,
+              asset_type: holding.asset_type,
+            }))}
+          />
+        ) : (
+          <DataQualityFallback
+            title="Sector Allocation"
+            detail={`Only ${(model.quality.sectorCoveragePct * 100).toFixed(0)}% of holdings include sector labels.`}
+          />
+        )}
+
+        {model.quality.concentrationReady ? (
+          <HoldingsConcentrationChart className="min-w-0 overflow-hidden" data={model.concentration} />
+        ) : (
+          <DataQualityFallback
+            title="Holdings Concentration"
+            detail="Need at least three measurable holdings to compute concentration safely."
+          />
+        )}
+
+        {model.quality.gainLossReady ? (
+          <GainLossDistributionChart className="min-w-0 overflow-hidden" data={model.gainLossDistribution} />
+        ) : (
+          <DataQualityFallback
+            title="Gain/Loss Distribution"
+            detail="Statement lacks enough gain/loss percentages to build a reliable distribution."
+          />
+        )}
+
+        <Card variant="none" effect="glass" className="min-w-0 overflow-hidden">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Recommendations</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 pt-0">
+            <p className="text-xs text-muted-foreground">
+              {KAI_EXPERIENCE_CONTRACT.decisionConviction.dashboardRecommendationsDescription}
+            </p>
+            {model.recommendations.map((item) => (
+              <div key={item.title} className="rounded-xl border border-border/60 bg-background/70 p-3">
+                <p className="text-sm font-semibold">{item.title}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{item.detail}</p>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      </div>
 
       <Card variant="none" effect="glass">
         <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4 text-xs text-muted-foreground">

@@ -4,7 +4,7 @@
  * Navigation Context & Smart Back Navigation
  *
  * Provides layered navigation for mobile:
- * - Level 1: Root pages (/, /kai, /consents, /profile, /agent-nav)
+ * - Level 1: Root pages (/, /kai, /consents, /profile)
  * - Level 2+: Sub-pages (e.g. /kai/dashboard, /kai/dashboard/analysis)
  *
  * Back button behavior:
@@ -32,7 +32,6 @@ const LEVEL_1_PATHS = [
   "/kai",
   "/consents",
   "/profile",
-  "/agent-nav",
 ];
 
 interface NavigationContextType {

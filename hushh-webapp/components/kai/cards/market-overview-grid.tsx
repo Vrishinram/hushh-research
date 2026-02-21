@@ -1,13 +1,23 @@
 "use client";
 
-import { Activity, ChartColumnIncreasing, TrendingDown, TrendingUp } from "lucide-react";
+import { Activity, ChartColumnIncreasing, TrendingDown, TrendingUp, type LucideIcon } from "lucide-react";
 
 import { Card, CardContent } from "@/lib/morphy-ux/card";
 import { Icon } from "@/lib/morphy-ux/ui";
 import { cn } from "@/lib/utils";
 
-const METRICS = [
+export interface MarketOverviewMetric {
+  id?: string;
+  label: string;
+  value: string;
+  delta: string;
+  tone: "positive" | "negative" | "neutral" | "warning";
+  icon: LucideIcon;
+}
+
+const DEFAULT_METRICS: MarketOverviewMetric[] = [
   {
+    id: "spy",
     label: "S&P 500",
     value: "4,450",
     delta: "+0.8%",
@@ -15,6 +25,7 @@ const METRICS = [
     icon: TrendingUp,
   },
   {
+    id: "nasdaq",
     label: "NASDAQ",
     value: "13,780",
     delta: "-0.3%",
@@ -22,6 +33,7 @@ const METRICS = [
     icon: TrendingDown,
   },
   {
+    id: "yield",
     label: "10Y Yield",
     value: "4.2%",
     delta: "Rising",
@@ -29,6 +41,7 @@ const METRICS = [
     icon: ChartColumnIncreasing,
   },
   {
+    id: "volatility",
     label: "Volatility",
     value: "Moderate",
     delta: "VIX 15.4",
@@ -37,12 +50,12 @@ const METRICS = [
   },
 ];
 
-export function MarketOverviewGrid() {
+export function MarketOverviewGrid({ metrics = DEFAULT_METRICS }: { metrics?: MarketOverviewMetric[] }) {
   return (
     <div className="grid grid-cols-2 gap-3">
-      {METRICS.map((metric) => (
+      {metrics.map((metric) => (
         <Card
-          key={metric.label}
+          key={metric.id || metric.label}
           variant="muted"
           effect="fill"
           className="rounded-xl p-0"

@@ -534,7 +534,7 @@ The app follows a **Layered Navigation** model:
 
 | Level  | Description | Examples                      | Back Button        |
 | ------ | ----------- | ----------------------------- | ------------------ |
-| **1**  | Root Tabs   | `/kai`, `/consents`, `/profile`, `/agent-nav` | Exit/Lock Dialog |
+| **1**  | Root Tabs   | `/kai`, `/consents`, `/profile` | Exit/Lock Dialog |
 | **2+** | Sub Pages   | `/kai/onboarding`, `/kai/import`, `/kai/dashboard` | Navigate to Parent |
 
 ### Exit Dialog Security
@@ -599,8 +599,7 @@ For Server-Sent Events (SSE) streaming on native:
 
 Before releasing mobile updates:
 
-- [ ] All 12 plugins registered on both platforms
-- [ ] All 10 plugins registered on both platforms
+- [ ] All required plugins registered on both platforms (see `docs/audits/plugins-parity.md`)
 - [ ] Firebase authentication works (Google Sign-In)
 - [ ] Apple Sign-In works on iOS
 - [ ] Vault operations work end-to-end

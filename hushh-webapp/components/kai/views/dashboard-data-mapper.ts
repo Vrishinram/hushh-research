@@ -39,6 +39,16 @@ export interface DashboardHeroData {
   statementPeriod?: string;
 }
 
+export interface DashboardQualityFlags {
+  allocationReady: boolean;
+  sectorReady: boolean;
+  historyReady: boolean;
+  concentrationReady: boolean;
+  gainLossReady: boolean;
+  sectorCoveragePct: number;
+  gainLossCoveragePct: number;
+}
+
 export interface DashboardViewModel {
   hero: DashboardHeroData;
   holdings: Holding[];
@@ -48,6 +58,7 @@ export interface DashboardViewModel {
   gainLossDistribution: GainLossBandDatum[];
   recommendations: DashboardRecommendation[];
   sourceBrokerage?: string;
+  quality: DashboardQualityFlags;
 }
 
 function toNumber(value: unknown): number | undefined {
@@ -67,6 +78,14 @@ function toSafeHolding(raw: Holding): Holding | null {
   const symbol = String(raw.symbol || "").trim().toUpperCase();
   if (!symbol) return null;
   const marketValue = toNumber(raw.market_value) ?? 0;
+  const sector =
+    typeof raw.sector === "string" && raw.sector.trim().length > 0
+      ? raw.sector.trim()
+      : undefined;
+  const assetType =
+    typeof raw.asset_type === "string" && raw.asset_type.trim().length > 0
+      ? raw.asset_type.trim()
+      : undefined;
 
   return {
     ...raw,
@@ -78,6 +97,8 @@ function toSafeHolding(raw: Holding): Holding | null {
     cost_basis: toNumber(raw.cost_basis),
     unrealized_gain_loss: toNumber(raw.unrealized_gain_loss),
     unrealized_gain_loss_pct: toNumber(raw.unrealized_gain_loss_pct),
+    sector,
+    asset_type: assetType,
   };
 }
 
@@ -283,7 +304,10 @@ export function mapPortfolioToDashboardViewModel(portfolioData: PortfolioData): 
     portfolioData.detailed_holdings ||
     []
   ) as Holding[];
-  const holdings = rawHoldings.map(toSafeHolding).filter((row): row is Holding => Boolean(row));
+  const holdings = rawHoldings
+    .map(toSafeHolding)
+    .filter((row): row is Holding => Boolean(row))
+    .sort((a, b) => (toNumber(b.market_value) ?? 0) - (toNumber(a.market_value) ?? 0));
   const holdingsCount = holdings.length;
 
   const endingValue =
@@ -307,6 +331,24 @@ export function mapPortfolioToDashboardViewModel(portfolioData: PortfolioData): 
     gainLossDistribution,
     allocation
   );
+  const sectorCoverageCount = holdings.filter((holding) => {
+    const value = (holding.sector || holding.asset_type || "").trim().toLowerCase();
+    return value.length > 0 && value !== "unknown" && value !== "other";
+  }).length;
+  const gainLossCoverageCount = holdings.filter(
+    (holding) => typeof toNumber(holding.unrealized_gain_loss_pct) === "number"
+  ).length;
+  const sectorCoveragePct = holdingsCount > 0 ? sectorCoverageCount / holdingsCount : 0;
+  const gainLossCoveragePct = holdingsCount > 0 ? gainLossCoverageCount / holdingsCount : 0;
+  const quality: DashboardQualityFlags = {
+    allocationReady: allocation.length >= 2,
+    sectorReady: holdingsCount > 0 && sectorCoveragePct >= 0.35,
+    historyReady: history.length >= 2,
+    concentrationReady: concentration.length >= 3,
+    gainLossReady: gainLossDistribution.some((row) => row.count > 0) && gainLossCoveragePct >= 0.35,
+    sectorCoveragePct,
+    gainLossCoveragePct,
+  };
 
   return {
     hero: {
@@ -326,5 +368,6 @@ export function mapPortfolioToDashboardViewModel(portfolioData: PortfolioData): 
     gainLossDistribution,
     recommendations,
     sourceBrokerage: portfolioData.account_info?.brokerage_name,
+    quality,
   };
 }

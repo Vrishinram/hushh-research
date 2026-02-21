@@ -17,6 +17,7 @@ import { Icon } from "@/lib/morphy-ux/ui";
 import { prefersReducedMotion, getGsap } from "@/lib/morphy-ux/gsap";
 import { ensureMorphyGsapReady, getMorphyEaseName } from "@/lib/morphy-ux/gsap-init";
 import { getMotionCssVars } from "@/lib/morphy-ux/motion";
+import { KAI_EXPERIENCE_CONTRACT } from "@/lib/kai/experience-contract";
 
 import { KycPreviewCompact } from "@/components/onboarding/previews/KycPreviewCompact";
 import { PortfolioPreviewCompact } from "@/components/onboarding/previews/PortfolioPreviewCompact";
@@ -40,14 +41,14 @@ export function PreviewCarouselStep({ onContinue }: { onContinue: () => void }) 
         preview: <KycPreviewCompact />,
       },
       {
-        title: "See your portfolio",
-        accent: "clearly",
+        title: KAI_EXPERIENCE_CONTRACT.portfolioClarity.carouselTitle,
+        accent: KAI_EXPERIENCE_CONTRACT.portfolioClarity.carouselAccent,
         subtitle: "Performance, allocation, and risk — organized in one place.",
         preview: <PortfolioPreviewCompact />,
       },
       {
-        title: "Decide with",
-        accent: "conviction",
+        title: KAI_EXPERIENCE_CONTRACT.decisionConviction.carouselTitle,
+        accent: KAI_EXPERIENCE_CONTRACT.decisionConviction.carouselAccent,
         subtitle:
           "Every decision is backed by structured analysis and aligned to your risk profile.",
         preview: <DecisionPreviewCompact />,

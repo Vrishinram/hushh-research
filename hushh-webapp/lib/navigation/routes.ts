@@ -11,7 +11,6 @@ export const ROUTES = {
   DOCS: "/docs",
   PROFILE: "/profile",
   CONSENTS: "/consents",
-  AGENT_NAV: "/agent-nav",
   KAI_HOME: "/kai",
   KAI_ONBOARDING: "/kai/onboarding",
   KAI_IMPORT: "/kai/import",

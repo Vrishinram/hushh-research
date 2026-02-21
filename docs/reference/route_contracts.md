@@ -18,6 +18,20 @@ This supports the repo's north-star invariants: **Tri-Flow**, **consent-first bo
 - Verifier: `hushh-webapp/scripts/verify-route-contracts.cjs`
 - Run locally:
   - `cd hushh-webapp && npm run verify:routes`
+  - `cd hushh-webapp && npm run verify:capacitor:routes`
+
+## Canonical App Routes (Current)
+
+Keep navigation contract aligned with `hushh-webapp/lib/navigation/routes.ts`:
+
+- `/`
+- `/login`
+- `/kai/onboarding`
+- `/kai/import`
+- `/kai`
+- `/kai/dashboard`
+
+Legacy alias routes and legacy nav surfaces (for example, `agent-nav`) must not be reintroduced into primary navigation contracts.
 
 ## When To Update `route-contracts.json`
 
@@ -55,4 +69,3 @@ Default stance:
 
 - `docs/reference/api-contracts.md` documents the endpoint surface (what exists and how to call it).
 - `route-contracts.json` is a governance manifest that prevents drift and undeclared routes in `hushh-webapp/app/api/`.
-

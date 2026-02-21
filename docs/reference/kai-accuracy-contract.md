@@ -5,7 +5,7 @@ This document defines production behavior for Kai analysis/import surfaces.
 ## Non-Negotiables
 - Real data only for portfolio decisions and recommendations.
 - No mock fallback on decision-critical paths.
-- Fail closed when required realtime dependencies are missing.
+- Fail closed when required realtime dependencies are missing on deterministic decision-critical paths.
 - Every dashboard KPI must map to explicit provenance.
 
 ## Realtime Provider Matrix
@@ -15,9 +15,13 @@ This document defines production behavior for Kai analysis/import surfaces.
 - Renaissance policy context: Supabase `renaissance_*` tables.
 
 ## Fail-Closed Policy
-- Analyze/optimize routes return `REALTIME_DATA_UNAVAILABLE` when required sources fail.
-- No speculative recommendation should be emitted after this code path.
-- Client should render actionable retry messaging and avoid confidence claims.
+- Deterministic optimize/dependency-critical paths return `REALTIME_DATA_UNAVAILABLE` when required sources fail.
+- Analyze stream may complete in explicit degraded mode for partial failures, but must emit:
+  - `analysis_degraded=true`
+  - `degraded_agents=[...]`
+  - non-empty `short_recommendation`
+- No speculative recommendation should be emitted without explicit degraded markers.
+- Client should render actionable retry messaging and avoid overstating confidence.
 
 ## Portfolio Parser Quality Gates
 - `placeholder_symbol_count == 0`
@@ -34,6 +38,16 @@ This document defines production behavior for Kai analysis/import surfaces.
 - `holdings_aggregated_count`
 - `holdings_dropped_reasons`
 - per-holding `confidence` and `provenance`
+
+`/api/kai/analyze/stream` terminal decision includes:
+- `short_recommendation`
+- `analysis_degraded`
+- `degraded_agents`
+- `stream_id`
+- `llm_calls_count`
+- `provider_calls_count`
+- `retry_counts`
+- `analysis_mode`
 
 ## Dashboard Rendering Contract
 - Render only validated holdings from `portfolio_data.holdings`.
