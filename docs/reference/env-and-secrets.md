@@ -166,7 +166,7 @@ Secret Manager must hold **exactly** the keys the code uses. No extra secrets; n
 
 **Strict parity:** `DATABASE_URL` is not used anywhere. Migrations (`db/migrate.py`) use **DB_*** only, via `db.connection.get_database_url()`. Do **not** create or keep `DATABASE_URL` in Secret Manager; delete it if present.
 
-### Frontend (7 centrally-managed values, build-time only) — all used by `deploy/frontend.cloudbuild.yaml`
+### Frontend (8 centrally-managed values, build-time only) — all used by `deploy/frontend.cloudbuild.yaml`
 
 | Secret name | Build-arg / usage in code |
 |-------------|---------------------------|
@@ -177,28 +177,29 @@ Secret Manager must hold **exactly** the keys the code uses. No extra secrets; n
 | `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` | `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` |
 | `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` |
 | `NEXT_PUBLIC_FIREBASE_APP_ID` | `NEXT_PUBLIC_FIREBASE_APP_ID` |
+| `NEXT_PUBLIC_FIREBASE_VAPID_KEY` | `NEXT_PUBLIC_FIREBASE_VAPID_KEY` (Web FCM push key) |
 
 ### gcloud CLI: list and create only these secrets
 
 ```bash
-# List existing secrets (ensure only the 16 above exist for this project)
+# List existing secrets (ensure only the 17 above exist for this project)
 gcloud secrets list --project=YOUR_PROJECT_ID
 
 # Create a missing backend secret (repeat for each of the 9 names)
 gcloud secrets create SECRET_KEY --replication-policy=automatic --project=YOUR_PROJECT_ID
 echo -n "your-value" | gcloud secrets versions add SECRET_KEY --data-file=- --project=YOUR_PROJECT_ID
 
-# Create missing frontend values in Secret Manager (repeat for each of the 7 names)
+# Create missing frontend values in Secret Manager (repeat for each of the 8 names)
 gcloud secrets create BACKEND_URL --replication-policy=automatic --project=YOUR_PROJECT_ID
 echo -n "https://your-backend.run.app" | gcloud secrets versions add BACKEND_URL --data-file=- --project=YOUR_PROJECT_ID
 ```
 
 **Required backend 9:** `SECRET_KEY`, `VAULT_ENCRYPTION_KEY`, `GOOGLE_API_KEY`, `FIREBASE_SERVICE_ACCOUNT_JSON`, `FRONTEND_URL`, `DB_USER`, `DB_PASSWORD`, `REVIEWER_UID`, `MCP_DEVELOPER_TOKEN`.
-**Required frontend 7:** `BACKEND_URL`, `NEXT_PUBLIC_FIREBASE_API_KEY`, `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`, `NEXT_PUBLIC_FIREBASE_PROJECT_ID`, `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`, `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`, `NEXT_PUBLIC_FIREBASE_APP_ID`.
+**Required frontend 8:** `BACKEND_URL`, `NEXT_PUBLIC_FIREBASE_API_KEY`, `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`, `NEXT_PUBLIC_FIREBASE_PROJECT_ID`, `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`, `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`, `NEXT_PUBLIC_FIREBASE_APP_ID`, `NEXT_PUBLIC_FIREBASE_VAPID_KEY`.
 
 These Firebase values are public client config, but storing them in Secret Manager keeps deployment manifests free of hardcoded production values.
 
-**Note:** Consent push on web uses FCM and requires `NEXT_PUBLIC_FIREBASE_VAPID_KEY` (from Firebase Console, not Secret Manager). See [fcm-notifications.md](../../consent-protocol/docs/reference/fcm-notifications.md).
+**Note:** Consent push on web uses FCM and requires `NEXT_PUBLIC_FIREBASE_VAPID_KEY`. The value comes from Firebase Console (Cloud Messaging -> Web Push certificates), and deployment should source it through Secret Manager for consistency.
 
 **Delete if present (strict parity):** `DATABASE_URL` is not used anywhere. To remove:
 ```bash
