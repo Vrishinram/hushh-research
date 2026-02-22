@@ -234,7 +234,7 @@ export class CacheSyncService {
 
   static onAnalysisHistoryMutated(userId: string, ticker?: string): void {
     const cache = CacheService.getInstance();
-    cache.invalidate(CACHE_KEYS.DOMAIN_DATA(userId, "kai_analysis_history"));
+    cache.invalidate(CACHE_KEYS.DOMAIN_DATA(userId, "financial"));
     cache.invalidate(CACHE_KEYS.WORLD_MODEL_METADATA(userId));
     if (ticker) {
       cache.invalidate(CACHE_KEYS.STOCK_CONTEXT(userId, ticker.toUpperCase()));

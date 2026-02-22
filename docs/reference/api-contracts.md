@@ -41,6 +41,7 @@ POST /api/consent/vault-owner-token  (Firebase Bearer)
 | GET | `/api/kai/health` | Kai subsystem health |
 | GET | `/api/v1` | Developer API root (non-production only; `410` in production) |
 | GET | `/api/v1/list-scopes` | List all available consent scopes (non-production only; `410` in production) |
+| GET | `/api/v1/user-scopes/{user_id}` | Discover dynamic user scopes filtered by developer-approved scopes (requires developer token; non-production only; `410` in production) |
 | GET | `/api/investors/search?q={name}` | Fuzzy search investors by name |
 | GET | `/api/investors/{investor_id}` | Full investor profile by ID |
 | GET | `/api/investors/cik/{cik}` | Investor profile by SEC CIK |
@@ -111,6 +112,7 @@ POST /api/consent/vault-owner-token  (Firebase Bearer)
 | POST | `/api/kai/portfolio/import` | Import brokerage statement (CSV/PDF) |
 | POST | `/api/kai/portfolio/import/stream` | Streaming import with Gemini progress |
 | GET | `/api/kai/portfolio/summary/{user_id}` | Portfolio summary from world model |
+| GET | `/api/kai/dashboard/profile-picks/{user_id}` | Real profile-based picks for dashboard cards (`symbols`, `limit`) |
 | POST | `/api/kai/portfolio/analyze-losers` | Analyze losers vs Renaissance |
 | POST | `/api/kai/portfolio/analyze-losers/stream` | Streaming losers analysis (SSE) |
 
@@ -138,7 +140,7 @@ POST /api/consent/vault-owner-token  (Firebase Bearer)
 #### Kai Personalization
 
 Kai personalization no longer uses dedicated `/api/kai/preferences/*` endpoints.
-Optional intro fields are persisted in encrypted world-model domain `kai_profile`.
+Optional intro fields are persisted in encrypted world-model path `financial.profile`.
 Frontend reads/writes these fields through the centralized onboarding/profile flows that call world-model APIs.
 
 #### Account & Sync
@@ -197,9 +199,9 @@ Security invariant:
 | POST | `/api/v1/food-data` | `GET /api/world-model/domain-data/{uid}/food` |
 | POST | `/api/v1/professional-data` | `GET /api/world-model/domain-data/{uid}/professional` |
 | DELETE | `/api/world-model/attributes/{uid}/{domain}/{key}` | Client-side BYOK operation |
-| POST | `/api/kai/decision/store` | `POST /api/world-model/store-domain` with domain=`kai_decisions` |
+| POST | `/api/kai/decision/store` | `POST /api/world-model/store-domain` with domain=`financial` |
 | GET | `/api/kai/decision/{id}` | `GET /api/kai/decisions/{user_id}` |
-| DELETE | `/api/kai/decision/{id}` | `POST /api/world-model/store-domain` with domain=`kai_decisions` |
+| DELETE | `/api/kai/decision/{id}` | `POST /api/world-model/store-domain` with domain=`financial` |
 | `*` | `/api/identity/*` | Removed from app surface; compatibility stubs return `410` |
 
 ---
@@ -243,6 +245,13 @@ Terminal `decision` events from `/api/kai/analyze/stream` include:
 - `short_recommendation`
 - `analysis_degraded`
 - `degraded_agents`
+- `company_strength_score` (0-10 deterministic score)
+- `market_trend_label`
+- `market_trend_score` (0-10 deterministic score)
+- `fair_value_label`
+- `fair_value_score` (0-10 deterministic score)
+- `fair_value_gap_pct`
+- `analysis_updated_at` (UTC ISO-8601)
 - `stream_id`
 - `llm_calls_count`
 - `provider_calls_count`
@@ -283,13 +292,18 @@ Production policy:
 ### Available Scopes
 
 ```
-attr.financial.*      # Financial data (portfolio, preferences)
-attr.food.*           # Food & dining preferences
-attr.professional.*   # Professional profile
-attr.health.*         # Health & wellness data
-attr.kai_decisions.*  # Kai analysis decisions
-vault.owner           # Full vault access (owner only)
+world_model.read
+world_model.write
+attr.{domain}.*
+attr.{domain}.{subintent}.*
+attr.{domain}.{subintent}.{attribute}
 ```
+
+Scope strings are dynamic. Do not hardcode domain keys. Discover user-available scopes via:
+
+- `GET /api/world-model/scopes/{user_id}`
+- `GET /api/v1/user-scopes/{user_id}` with `X-MCP-Developer-Token`
+- `discover_user_domains(user_id)` in MCP
 
 ### Token Format
 

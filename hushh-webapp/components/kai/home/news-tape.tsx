@@ -32,7 +32,7 @@ export function NewsTape({ rows }: NewsTapeProps) {
   }
 
   return (
-    <div className="-mx-4 overflow-x-auto px-4 pb-2">
+    <div className="-mx-4 overflow-x-auto overflow-y-visible px-6 py-3">
       <div className="flex min-w-0 gap-3">
         {rows.slice(0, 8).map((row, index) => (
           <a
@@ -42,7 +42,11 @@ export function NewsTape({ rows }: NewsTapeProps) {
             rel="noreferrer"
             className="w-[260px] shrink-0"
           >
-            <Card variant="none" effect="glass" className="h-full rounded-xl p-0">
+            <Card
+              variant="none"
+              effect="glass"
+              className="h-full rounded-xl p-0 shadow-[0_10px_24px_rgba(15,23,42,0.06)]"
+            >
               <CardContent className="space-y-2 p-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="rounded-full bg-background/70 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
@@ -52,7 +56,7 @@ export function NewsTape({ rows }: NewsTapeProps) {
                 </div>
                 <p className="line-clamp-3 text-sm font-semibold leading-snug">{row.title}</p>
                 <div className="text-[11px] text-muted-foreground">
-                  <p>{row.source_name} • {row.provider}</p>
+                  <p>{row.source_name}</p>
                   <p>{formatPublished(row.published_at)}</p>
                 </div>
               </CardContent>

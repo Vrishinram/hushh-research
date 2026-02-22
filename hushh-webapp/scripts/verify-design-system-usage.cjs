@@ -18,7 +18,6 @@ const fs = require("node:fs");
 const SONNER_IMPORT_ALLOWLIST = new Set([
   "app/profile/page.tsx",
   "app/kai/onboarding/page.tsx",
-  "app/kai/dashboard/manage/page.tsx",
   "app/consents/page.tsx",
   "lib/services/auth-service.ts",
   "lib/consent/use-consent-actions.ts",
@@ -28,6 +27,7 @@ const SONNER_IMPORT_ALLOWLIST = new Set([
   "components/kai/onboarding/KaiPreferencesSheet.tsx",
   "components/kai/kai-flow.tsx",
   "components/kai/views/kai-mock-sonner-notice.tsx",
+  "components/kai/views/manage-portfolio-view.tsx",
   "components/kai/views/stock-search.tsx",
   "components/kai/views/dashboard-view.tsx",
   "components/kai/views/analysis-history-dashboard.tsx",

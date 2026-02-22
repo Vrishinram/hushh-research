@@ -673,7 +673,7 @@ export default function PortfolioHealthPage() {
                 size="default"
                 variant="blue-gradient"
                 effect="fade"
-                onClick={() => router.push("/kai/dashboard/manage")}
+                onClick={() => router.push("/kai/dashboard?tab=holdings")}
               >
                 Manage portfolio
               </Button>

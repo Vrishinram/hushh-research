@@ -191,6 +191,38 @@ export interface KaiHomeSignal {
   degraded: boolean;
 }
 
+export interface KaiHomeOverviewItem {
+  label: string;
+  value: string | number | null;
+  delta_pct: number | null;
+  as_of: string | null;
+  source: string;
+  degraded: boolean;
+}
+
+export interface KaiHomeSpotlightItem {
+  symbol: string;
+  company_name: string;
+  price: number | null;
+  change_pct: number | null;
+  recommendation: string;
+  recommendation_detail?: string | null;
+  headline?: string | null;
+  source_tags: string[];
+  as_of: string | null;
+  degraded: boolean;
+}
+
+export interface KaiHomeThemeItem {
+  title: string;
+  subtitle: string;
+  symbol?: string;
+  change_pct?: number | null;
+  headline?: string | null;
+  source_tags: string[];
+  degraded: boolean;
+}
+
 export interface KaiHomeMeta {
   stale: boolean;
   stale_reason?: string;
@@ -229,9 +261,32 @@ export interface KaiHomeInsightsV2 {
   signals?: KaiHomeSignal[];
   meta?: KaiHomeMeta;
   // Backward-compatible fields still supported during transition.
-  market_overview?: unknown[];
-  spotlights?: unknown[];
-  themes?: unknown[];
+  market_overview?: KaiHomeOverviewItem[];
+  spotlights?: KaiHomeSpotlightItem[];
+  themes?: KaiHomeThemeItem[];
+}
+
+export interface KaiDashboardProfilePick {
+  symbol: string;
+  company_name: string;
+  sector?: string | null;
+  tier?: string | null;
+  conviction_weight: number;
+  price?: number | null;
+  change_percent?: number | null;
+  recommendation_bias?: string | null;
+  rationale: string;
+  source_tags: string[];
+  degraded: boolean;
+  as_of?: string | null;
+}
+
+export interface KaiDashboardProfilePicksResponse {
+  user_id: string;
+  generated_at: string;
+  risk_profile: string;
+  picks: KaiDashboardProfilePick[];
+  context?: Record<string, unknown>;
 }
 
 /**
@@ -1473,6 +1528,53 @@ export class ApiService {
       throw new Error(`Failed to load market insights: ${response.status}`);
     }
     return (await response.json()) as KaiHomeInsightsV2;
+  }
+
+  /**
+   * Fetch profile-based picks for dashboard cards (real-user context only).
+   */
+  static async getDashboardProfilePicks(data: {
+    userId: string;
+    vaultOwnerToken: string;
+    symbols?: string[];
+    limit?: number;
+    signal?: AbortSignal;
+  }): Promise<KaiDashboardProfilePicksResponse> {
+    const query = new URLSearchParams();
+    if (Array.isArray(data.symbols) && data.symbols.length > 0) {
+      query.set("symbols", data.symbols.join(","));
+    }
+    if (typeof data.limit === "number" && Number.isFinite(data.limit)) {
+      query.set("limit", String(data.limit));
+    }
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    const path = `/api/kai/dashboard/profile-picks/${data.userId}${suffix}`;
+
+    if (Capacitor.isNativePlatform()) {
+      const response = await fetch(`${API_BASE}${path}`, {
+        method: "GET",
+        signal: data.signal,
+        headers: {
+          Authorization: `Bearer ${data.vaultOwnerToken}`,
+        },
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to load profile picks: ${response.status}`);
+      }
+      return (await response.json()) as KaiDashboardProfilePicksResponse;
+    }
+
+    const response = await apiFetch(path, {
+      method: "GET",
+      signal: data.signal,
+      headers: {
+        Authorization: `Bearer ${data.vaultOwnerToken}`,
+      },
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to load profile picks: ${response.status}`);
+    }
+    return (await response.json()) as KaiDashboardProfilePicksResponse;
   }
 
   /**

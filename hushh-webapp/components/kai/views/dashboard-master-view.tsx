@@ -9,6 +9,7 @@ import { HoldingsConcentrationChart } from "@/components/kai/charts/holdings-con
 import { PortfolioHistoryChart } from "@/components/kai/charts/portfolio-history-chart";
 import { SectorAllocationChart } from "@/components/kai/charts/sector-allocation-chart";
 import type { PortfolioData } from "@/components/kai/types/portfolio";
+import { ProfileBasedPicksList } from "@/components/kai/cards/profile-based-picks-list";
 import { Button as MorphyButton } from "@/lib/morphy-ux/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/lib/morphy-ux/card";
 import { Icon } from "@/lib/morphy-ux/ui";
@@ -17,6 +18,8 @@ import { cn } from "@/lib/utils";
 import { mapPortfolioToDashboardViewModel } from "@/components/kai/views/dashboard-data-mapper";
 
 interface DashboardMasterViewProps {
+  userId: string;
+  vaultOwnerToken: string;
   portfolioData: PortfolioData;
   onManagePortfolio: () => void;
   onAnalyzeStock?: (symbol: string) => void;
@@ -49,6 +52,8 @@ function DataQualityFallback({ title, detail }: { title: string; detail: string 
 }
 
 export function DashboardMasterView({
+  userId,
+  vaultOwnerToken,
   portfolioData,
   onManagePortfolio,
   onAnalyzeStock,
@@ -57,6 +62,14 @@ export function DashboardMasterView({
   onViewHistory,
 }: DashboardMasterViewProps) {
   const model = useMemo(() => mapPortfolioToDashboardViewModel(portfolioData), [portfolioData]);
+  const holdingSymbols = useMemo(
+    () =>
+      model.holdings
+        .map((holding) => String(holding.symbol || "").trim().toUpperCase())
+        .filter((symbol, idx, arr) => Boolean(symbol) && arr.indexOf(symbol) === idx)
+        .slice(0, 20),
+    [model.holdings]
+  );
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6 px-4 pb-[calc(148px+var(--app-bottom-inset))] pt-2 sm:px-6">
@@ -270,6 +283,20 @@ export function DashboardMasterView({
                 <p className="mt-1 text-xs text-muted-foreground">{item.detail}</p>
               </div>
             ))}
+          </CardContent>
+        </Card>
+
+        <Card variant="none" effect="glass" className="min-w-0 overflow-hidden">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Profile Picks</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <ProfileBasedPicksList
+              userId={userId}
+              vaultOwnerToken={vaultOwnerToken}
+              symbols={holdingSymbols}
+              onAdd={(symbol) => onAnalyzeStock?.(symbol)}
+            />
           </CardContent>
         </Card>
       </div>

@@ -7,7 +7,7 @@ import { PostUnlockSyncService } from "@/lib/services/post-unlock-sync-service";
 import { useVault } from "@/lib/vault/vault-context";
 
 /**
- * Syncs locally captured pre-vault onboarding answers into encrypted kai_profile
+ * Syncs locally captured pre-vault onboarding answers into encrypted financial.profile
  * after vault creation/unlock succeeds.
  */
 export function PostAuthOnboardingSyncBridge() {

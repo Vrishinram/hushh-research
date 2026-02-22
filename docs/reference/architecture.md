@@ -212,8 +212,8 @@ Flow orchestration:
 - Local temporary state:
   - `kai_nav_tour_v1:${userId}` (Capacitor Preferences)
 - Canonical cross-device state:
-  - `kai_profile.onboarding.nav_tour_completed_at`
-  - `kai_profile.onboarding.nav_tour_skipped_at`
+  - `financial.profile.onboarding.nav_tour_completed_at`
+  - `financial.profile.onboarding.nav_tour_skipped_at`
 - Sync occurs through onboarding sync bridge once vault context is available.
 
 ### Stack

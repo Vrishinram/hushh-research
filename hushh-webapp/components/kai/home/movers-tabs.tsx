@@ -25,7 +25,7 @@ function formatRowChange(value: number | null | undefined): string {
 
 function MoversList({ rows }: { rows: KaiHomeMover[] }) {
   if (!rows.length) {
-    return <p className="text-sm text-muted-foreground">Insufficient live market breadth data.</p>;
+    return <p className="text-sm text-muted-foreground">Market data is unavailable right now.</p>;
   }
 
   return (
@@ -60,14 +60,7 @@ export function MoversTabs({ movers }: MoversTabsProps) {
   return (
     <Card variant="none" effect="glass" className="rounded-xl p-0">
       <CardContent className="space-y-3 p-4">
-        <div className="flex items-center justify-between">
-          <p className="text-sm font-black tracking-tight">Market Movers</p>
-          {movers?.degraded ? (
-            <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-semibold text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
-              Partial
-            </span>
-          ) : null}
-        </div>
+        <p className="text-sm font-black tracking-tight">Market Movers</p>
 
         <div className="flex gap-2 overflow-x-auto pb-1">
           {TABS.map((item) => (
@@ -86,16 +79,6 @@ export function MoversTabs({ movers }: MoversTabsProps) {
         </div>
 
         <MoversList rows={rows} />
-
-        {(movers?.source_tags || []).length ? (
-          <div className="flex flex-wrap gap-1">
-            {movers?.source_tags.slice(0, 3).map((tag) => (
-              <span key={tag} className="rounded-full bg-background/70 px-2 py-0.5 text-[10px] text-muted-foreground">
-                {tag}
-              </span>
-            ))}
-          </div>
-        ) : null}
       </CardContent>
     </Card>
   );

@@ -335,7 +335,7 @@ export function DebateStreamView({ ticker, userId, riskProfile: riskProfileProp,
                 risk_profile_selected_at:
                   profile.preferences.risk_profile_selected_at,
               },
-              kai_profile: profile,
+              financial_profile: profile,
             };
           } catch (err) {
             console.warn("[DebateStreamView] Failed to load Kai profile context:", err);

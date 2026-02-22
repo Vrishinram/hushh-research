@@ -4,13 +4,16 @@
  * Manages analysis history within the encrypted world model blob.
  * Uses FIFO strategy: max 3 analyses per ticker, newest first.
  *
- * Domain: "kai_analysis_history"
+ * Canonical storage path:
+ *   financial.analysis_history
  *
  * Structure inside encrypted blob:
  * {
- *   "kai_analysis_history": {
+ *   "financial": {
+ *     "analysis_history": {
  *     "AMZN": [entry3, entry2, entry1],  // newest first, max 3
  *     "AAPL": [entry2, entry1],
+ *     }
  *   }
  * }
  */
@@ -20,7 +23,17 @@ import { CacheSyncService } from "@/lib/cache/cache-sync-service";
 
 
 const MAX_HISTORY_PER_TICKER = 3;
-const DOMAIN = "kai_analysis_history";
+const FINANCIAL_DOMAIN = "financial";
+const FINANCIAL_SCHEMA_VERSION = 3;
+const FINANCIAL_CONTRACT_VERSION = 1;
+const FINANCIAL_INTENT_MAP = [
+  "portfolio",
+  "profile",
+  "documents",
+  "analysis_history",
+  "runtime",
+  "analysis.decisions",
+] as const;
 
 // ============================================================================
 // Types
@@ -52,7 +65,12 @@ function buildHistorySummary(
   const totalAnalyses = Object.values(historyMap).reduce((sum, arr) => sum + arr.length, 0);
 
   const summary: Record<string, unknown> = {
-    domain_intent: "kai_analysis_history",
+    domain_contract_version: FINANCIAL_CONTRACT_VERSION,
+    intent_map: [...FINANCIAL_INTENT_MAP],
+    analysis_total_analyses: totalAnalyses,
+    analysis_tickers_analyzed: tickers,
+    analysis_last_updated: new Date().toISOString(),
+    // Compatibility keys retained for existing dashboards.
     total_analyses: totalAnalyses,
     tickers_analyzed: tickers,
     last_updated: new Date().toISOString(),
@@ -66,6 +84,80 @@ function buildHistorySummary(
   }
 
   return summary;
+}
+
+function selectFinancialDomain(fullBlob: Record<string, unknown>): Record<string, unknown> {
+  const raw = fullBlob[FINANCIAL_DOMAIN];
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return {};
+  }
+  return { ...(raw as Record<string, unknown>) };
+}
+
+function extractHistoryMap(fullBlob: Record<string, unknown>): AnalysisHistoryMap {
+  const financialRaw = fullBlob[FINANCIAL_DOMAIN];
+  if (financialRaw && typeof financialRaw === "object" && !Array.isArray(financialRaw)) {
+    const financial = financialRaw as Record<string, unknown>;
+    const canonicalHistory = financial.analysis_history;
+    if (
+      canonicalHistory &&
+      typeof canonicalHistory === "object" &&
+      !Array.isArray(canonicalHistory)
+    ) {
+      return canonicalHistory as AnalysisHistoryMap;
+    }
+  }
+
+  return {};
+}
+
+function buildFinancialDomainWithHistory(params: {
+  fullBlob: Record<string, unknown>;
+  historyMap: AnalysisHistoryMap;
+  nowIso: string;
+}): Record<string, unknown> {
+  const existingFinancial = selectFinancialDomain(params.fullBlob);
+  const existingAnalysisRaw = existingFinancial.analysis;
+  const existingAnalysis =
+    existingAnalysisRaw && typeof existingAnalysisRaw === "object" && !Array.isArray(existingAnalysisRaw)
+      ? (existingAnalysisRaw as Record<string, unknown>)
+      : {};
+
+  return {
+    ...existingFinancial,
+    schema_version: FINANCIAL_SCHEMA_VERSION,
+    domain_intent: {
+      primary: "financial",
+      source: "domain_registry_prepopulate",
+      contract_version: FINANCIAL_CONTRACT_VERSION,
+      updated_at: params.nowIso,
+    },
+    analysis_history: {
+      ...params.historyMap,
+      domain_intent: {
+        primary: "financial",
+        secondary: "analysis_history",
+        source: "kai_analysis_stream",
+        updated_at: params.nowIso,
+      },
+    },
+    analysis: {
+      ...existingAnalysis,
+      domain_intent: {
+        primary: "financial",
+        secondary: "analysis",
+        source: "kai_analysis_stream",
+        updated_at: params.nowIso,
+      },
+      decisions:
+        existingAnalysis.decisions &&
+        typeof existingAnalysis.decisions === "object" &&
+        !Array.isArray(existingAnalysis.decisions)
+          ? existingAnalysis.decisions
+          : {},
+    },
+    updated_at: params.nowIso,
+  };
 }
 
 // ============================================================================
@@ -99,13 +191,7 @@ export class KaiHistoryService {
       });
 
       // 2. Get or create the history map
-      const existingHistory = fullBlob[DOMAIN];
-      const historyMap: AnalysisHistoryMap =
-        existingHistory &&
-        typeof existingHistory === "object" &&
-        !Array.isArray(existingHistory)
-          ? (existingHistory as AnalysisHistoryMap)
-          : {};
+      const historyMap: AnalysisHistoryMap = extractHistoryMap(fullBlob);
 
       // 3. Get or create the ticker array
       const tickerHistory = historyMap[entry.ticker] || [];
@@ -121,13 +207,19 @@ export class KaiHistoryService {
       // 6. Update the map
       historyMap[entry.ticker] = tickerHistory;
       const summary = buildHistorySummary(historyMap, entry.ticker, entry.timestamp);
+      const nowIso = new Date().toISOString();
+      const financialDomain = buildFinancialDomainWithHistory({
+        fullBlob,
+        historyMap,
+        nowIso,
+      });
 
       // 7. Re-encrypt and store merged domain
       const result = await WorldModelService.storeMergedDomain({
         userId,
         vaultKey,
-        domain: DOMAIN,
-        domainData: historyMap as unknown as Record<string, unknown>,
+        domain: FINANCIAL_DOMAIN,
+        domainData: financialDomain,
         summary,
         vaultOwnerToken,
       });
@@ -179,11 +271,7 @@ export class KaiHistoryService {
         vaultKey,
         vaultOwnerToken,
       });
-      const history = fullBlob[DOMAIN];
-      if (!history || typeof history !== "object" || Array.isArray(history)) {
-        return {};
-      }
-      return history as AnalysisHistoryMap;
+      return extractHistoryMap(fullBlob);
     } catch (error) {
       console.error("[KaiHistory] Failed to get history:", error);
       return {};
@@ -211,13 +299,7 @@ export class KaiHistoryService {
       }).catch(() => ({} as Record<string, unknown>));
 
       // 2. Modify
-      const existingHistory = fullBlob[DOMAIN];
-      const historyMap: AnalysisHistoryMap =
-        existingHistory &&
-        typeof existingHistory === "object" &&
-        !Array.isArray(existingHistory)
-          ? (existingHistory as AnalysisHistoryMap)
-          : {};
+      const historyMap: AnalysisHistoryMap = extractHistoryMap(fullBlob);
       if (!historyMap[ticker]) return false;
 
       const originalLen = historyMap[ticker].length;
@@ -232,11 +314,16 @@ export class KaiHistoryService {
       }
 
       // 3. Encrypt & Save
+      const nowIso = new Date().toISOString();
       const result = await WorldModelService.storeMergedDomain({
         userId,
         vaultKey,
-        domain: DOMAIN,
-        domainData: historyMap as unknown as Record<string, unknown>,
+        domain: FINANCIAL_DOMAIN,
+        domainData: buildFinancialDomainWithHistory({
+          fullBlob,
+          historyMap,
+          nowIso,
+        }),
         summary: buildHistorySummary(historyMap),
         vaultOwnerToken,
       });
@@ -272,22 +359,21 @@ export class KaiHistoryService {
       }).catch(() => ({} as Record<string, unknown>));
 
       // 2. Modify
-      const existingHistory = fullBlob[DOMAIN];
-      const historyMap: AnalysisHistoryMap =
-        existingHistory &&
-        typeof existingHistory === "object" &&
-        !Array.isArray(existingHistory)
-          ? (existingHistory as AnalysisHistoryMap)
-          : {};
+      const historyMap: AnalysisHistoryMap = extractHistoryMap(fullBlob);
       if (!historyMap[ticker]) return false;
 
       delete historyMap[ticker];
       // 3. Encrypt & Save
+      const nowIso = new Date().toISOString();
       const result = await WorldModelService.storeMergedDomain({
         userId,
         vaultKey,
-        domain: DOMAIN,
-        domainData: historyMap as unknown as Record<string, unknown>,
+        domain: FINANCIAL_DOMAIN,
+        domainData: buildFinancialDomainWithHistory({
+          fullBlob,
+          historyMap,
+          nowIso,
+        }),
         summary: buildHistorySummary(historyMap),
         vaultOwnerToken,
       });

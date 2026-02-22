@@ -540,40 +540,29 @@ export function PortfolioReviewView({
         current_price: h.price,
       }));
 
-      const financialSummary = {
-        domain_intent: "financial",
-        intent_source: "kai_import_llm",
-        holdings_count: activeHoldings.length,
-        holdings: holdingsSummary,
-        risk_bucket: riskBucket,
-        has_income_data: !!(incomeSummary.total_income),
-        has_realized_gains: !!(realizedGainLoss.net_realized),
-        last_updated: new Date().toISOString(),
-      };
-
-      // 3. Store canonical financial domain with full-blob merge semantics.
-      const financialResult = await WorldModelService.storeMergedDomain({
+      const nowIso = new Date().toISOString();
+      const fullBlob = await WorldModelService.loadFullBlob({
         userId,
         vaultKey: effectiveVaultKey,
-        domain: "financial",
-        domainData: portfolioToSave as unknown as Record<string, unknown>,
-        summary: financialSummary,
         vaultOwnerToken: effectiveVaultOwnerToken,
-      });
+      }).catch(() => ({} as Record<string, unknown>));
+      const existingFinancialValue = fullBlob.financial;
+      const existingFinancial =
+        existingFinancialValue &&
+        typeof existingFinancialValue === "object" &&
+        !Array.isArray(existingFinancialValue)
+          ? ({ ...(existingFinancialValue as Record<string, unknown>) } as Record<string, unknown>)
+          : {};
 
-      if (!financialResult.success) {
-        throw new Error("Backend returned failure on store");
-      }
-
-      // 4. Append structured statement snapshot (no raw PDF bytes).
-      const documentsDomain = "financial_documents";
-      const existingDocsValue = financialResult.fullBlob[documentsDomain];
-      const existingDocs =
+      // 3. Append structured statement snapshot (no raw PDF bytes).
+      const existingDocsValue = existingFinancial.documents;
+      const existingDocsSource =
         existingDocsValue &&
         typeof existingDocsValue === "object" &&
         !Array.isArray(existingDocsValue)
           ? (existingDocsValue as Record<string, unknown>)
           : {};
+      const existingDocs = { ...existingDocsSource };
       const existingStatementsValue = existingDocs.statements;
       const existingStatements = Array.isArray(existingStatementsValue)
         ? [...existingStatementsValue]
@@ -582,11 +571,12 @@ export function PortfolioReviewView({
       const snapshotId = `stmt_${Date.now()}`;
       const snapshot = {
         id: snapshotId,
-        imported_at: new Date().toISOString(),
+        imported_at: nowIso,
         domain_intent: {
           primary: "financial",
-          secondary: "financial_documents",
+          secondary: "documents",
           source: "kai_import_llm",
+          updated_at: nowIso,
         },
         source: {
           brokerage: accountInfo.brokerage || null,
@@ -616,11 +606,11 @@ export function PortfolioReviewView({
         schema_version: 1,
         statements: existingStatements.slice(0, 25),
         domain_intent: {
-          primary: "financial_documents",
-          parent_domain: "financial",
+          primary: "financial",
+          secondary: "documents",
           source: "kai_import_llm",
           captured_sections: capturedSections,
-          updated_at: new Date().toISOString(),
+          updated_at: nowIso,
         },
       };
 
@@ -633,31 +623,77 @@ export function PortfolioReviewView({
           : undefined;
 
       const docsSummary: Record<string, unknown> = {
-        domain_intent: "financial_documents",
-        parent_domain: "financial",
         documents_count: nextDocsDomain.statements.length,
         last_statement_end: accountInfo.statement_period_end || null,
         last_brokerage: accountInfo.brokerage || null,
-        last_updated: new Date().toISOString(),
+        last_updated: nowIso,
       };
       if (lastQualityScore !== undefined) {
         docsSummary.last_quality_score = lastQualityScore;
       }
 
-      const docsResult = await WorldModelService.storeMergedDomain({
+      const canonicalPortfolio = {
+        ...portfolioToSave,
+        domain_intent: {
+          primary: "financial",
+          secondary: "portfolio",
+          source: "kai_import_llm",
+          captured_sections: capturedSections,
+          updated_at: nowIso,
+        },
+      };
+
+      const nextFinancialDomain = {
+        ...existingFinancial,
+        // Keep compatibility fields while transitioning all readers to `financial.portfolio`.
+        ...portfolioToSave,
+        schema_version: 3,
+        domain_intent: {
+          primary: "financial",
+          source: "domain_registry_prepopulate",
+          contract_version: 1,
+          updated_at: nowIso,
+        },
+        portfolio: canonicalPortfolio,
+        documents: nextDocsDomain,
+        updated_at: nowIso,
+      };
+
+      const financialSummary = {
+        intent_source: "kai_import_llm",
+        holdings_count: activeHoldings.length,
+        holdings: holdingsSummary,
+        risk_bucket: riskBucket,
+        has_income_data: !!incomeSummary.total_income,
+        has_realized_gains: !!realizedGainLoss.net_realized,
+        domain_contract_version: 1,
+        intent_map: [
+          "portfolio",
+          "profile",
+          "documents",
+          "analysis_history",
+          "runtime",
+          "analysis.decisions",
+        ],
+        ...docsSummary,
+        last_updated: nowIso,
+      };
+
+      // 4. Store canonical financial domain with full-blob merge semantics.
+      const financialResult = await WorldModelService.storeMergedDomain({
         userId,
         vaultKey: effectiveVaultKey,
-        domain: documentsDomain,
-        domainData: nextDocsDomain as unknown as Record<string, unknown>,
-        summary: docsSummary,
+        domain: "financial",
+        domainData: nextFinancialDomain as unknown as Record<string, unknown>,
+        summary: financialSummary,
         vaultOwnerToken: effectiveVaultOwnerToken,
       });
 
-      if (!docsResult.success) {
-        throw new Error("Failed to store financial_documents snapshot");
+      if (!financialResult.success) {
+        throw new Error("Backend returned failure on store");
       }
 
-      // 5b. Prime/invalidate deterministic cache entries for all financial reads.
+      // 5. Prime/invalidate deterministic cache entries for all financial reads.
       CacheSyncService.onPortfolioUpserted(
         userId,
         portfolioToSave as unknown as CachedPortfolioData

@@ -1,15 +1,26 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle } from "lucide-react";
+import {
+  Activity,
+  AlertTriangle,
+  ChartColumnIncreasing,
+  Cpu,
+  LineChart,
+  Percent,
+  TrendingDown,
+  TrendingUp,
+  type LucideIcon,
+  Zap,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { HeroStrip } from "@/components/kai/home/hero-strip";
-import { MoversTabs } from "@/components/kai/home/movers-tabs";
 import { NewsTape } from "@/components/kai/home/news-tape";
-import { SectorRotationCard } from "@/components/kai/home/sector-rotation-card";
-import { SignalChips } from "@/components/kai/home/signal-chips";
-import { WatchlistStrip } from "@/components/kai/home/watchlist-strip";
+import { ConnectPortfolioCta } from "@/components/kai/cards/connect-portfolio-cta";
+import { MarketOverviewGrid, type MarketOverviewMetric } from "@/components/kai/cards/market-overview-grid";
+import { SpotlightCard } from "@/components/kai/cards/spotlight-card";
+import { ThemeFocusList, type ThemeFocusItem } from "@/components/kai/cards/theme-focus-list";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/lib/morphy-ux/button";
 import { Card, CardContent } from "@/lib/morphy-ux/card";
@@ -18,7 +29,6 @@ import { ensureKaiVaultOwnerToken } from "@/lib/services/kai-token-guard";
 import { ApiService, type KaiHomeInsightsV2 } from "@/lib/services/api-service";
 import { UnlockWarmOrchestrator } from "@/lib/services/unlock-warm-orchestrator";
 import { useVault } from "@/lib/vault/vault-context";
-import { cn } from "@/lib/utils";
 
 function SectionLabel({ children }: { children: string }) {
   return (
@@ -48,6 +58,100 @@ const EXCLUDED_SYMBOLS = new Set([
   "DEPOSIT",
 ]);
 
+const THEME_ICON_MAP: Array<{ test: RegExp; icon: LucideIcon }> = [
+  { test: /ai|chip|semi|data|cloud|infra/i, icon: Cpu },
+  { test: /rate|yield|inflation|macro/i, icon: Percent },
+  { test: /energy|oil|gas|renewable|power/i, icon: Zap },
+];
+
+function toSpotlightDecision(input: string | undefined): "BUY" | "HOLD" | "REDUCE" {
+  const text = String(input || "").trim().toUpperCase();
+  if (text === "BUY" || text === "STRONG_BUY") return "BUY";
+  if (text === "REDUCE" || text === "SELL") return "REDUCE";
+  return "HOLD";
+}
+
+function formatSpotlightPrice(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "Price unavailable";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function formatOverviewValue(value: string | number | null | undefined): string {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    if (Math.abs(value) >= 1000) {
+      return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(value);
+    }
+    return new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(value);
+  }
+  if (typeof value === "string" && value.trim()) return value;
+  return "Unavailable";
+}
+
+function formatOverviewDelta(deltaPct: number | null | undefined): string {
+  if (typeof deltaPct !== "number" || !Number.isFinite(deltaPct)) return "N/A";
+  const sign = deltaPct >= 0 ? "+" : "";
+  return `${sign}${deltaPct.toFixed(2)}%`;
+}
+
+function toOverviewTone(deltaPct: number | null | undefined): MarketOverviewMetric["tone"] {
+  if (typeof deltaPct !== "number" || !Number.isFinite(deltaPct)) return "neutral";
+  if (deltaPct > 0.25) return "positive";
+  if (deltaPct < -0.25) return "negative";
+  return "neutral";
+}
+
+function iconForOverview(label: string, tone: MarketOverviewMetric["tone"]): LucideIcon {
+  const lower = label.toLowerCase();
+  if (lower.includes("volatility") || lower.includes("vix")) return Activity;
+  if (lower.includes("yield") || lower.includes("rate")) return ChartColumnIncreasing;
+  if (tone === "positive") return TrendingUp;
+  if (tone === "negative") return TrendingDown;
+  return LineChart;
+}
+
+function toOverviewMetrics(payload: KaiHomeInsightsV2 | null): MarketOverviewMetric[] {
+  const rows = payload?.market_overview || [];
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .filter((row): row is NonNullable<KaiHomeInsightsV2["market_overview"]>[number] => Boolean(row))
+    .map((row, idx) => {
+      const tone = toOverviewTone(row.delta_pct);
+      const label = String(row.label || `Metric ${idx + 1}`);
+      return {
+        id: `${label}-${idx}`,
+        label,
+        value: formatOverviewValue(row.value),
+        delta: formatOverviewDelta(row.delta_pct),
+        tone,
+        icon: iconForOverview(label, tone),
+      };
+    })
+    .slice(0, 4);
+}
+
+function toThemeIcon(title: string): LucideIcon {
+  const matched = THEME_ICON_MAP.find((row) => row.test.test(title));
+  return matched?.icon || LineChart;
+}
+
+function toThemeItems(payload: KaiHomeInsightsV2 | null): ThemeFocusItem[] {
+  const themes = payload?.themes || [];
+  if (!Array.isArray(themes)) return [];
+  return themes
+    .filter((theme): theme is NonNullable<KaiHomeInsightsV2["themes"]>[number] => Boolean(theme))
+    .map((theme, idx) => ({
+      id: `${String(theme.title || "theme")}-${idx}`,
+      title: String(theme.title || "Theme"),
+      subtitle: String(theme.subtitle || "Sector focus"),
+      icon: toThemeIcon(String(theme.title || "")),
+    }))
+    .slice(0, 3);
+}
+
 function readAnyKaiHomeCache(cache: CacheService, userId: string, daysBack = 7): KaiHomeInsightsV2 | null {
   const prefix = `kai_market_home_${userId}_`;
   const suffix = `_${daysBack}`;
@@ -62,6 +166,18 @@ function readAnyKaiHomeCache(cache: CacheService, userId: string, daysBack = 7):
   return null;
 }
 
+function readCachedPortfolioHoldings(
+  cache: CacheService,
+  userId: string
+): Array<Record<string, unknown>> {
+  const cachedPortfolio = cache.get<Record<string, unknown>>(CACHE_KEYS.PORTFOLIO_DATA(userId));
+  return (
+    (Array.isArray(cachedPortfolio?.holdings) && cachedPortfolio.holdings) ||
+    (Array.isArray(cachedPortfolio?.detailed_holdings) && cachedPortfolio.detailed_holdings) ||
+    []
+  ) as Array<Record<string, unknown>>;
+}
+
 export function KaiMarketPreviewView() {
   const router = useRouter();
   const { user, loading } = useAuth();
@@ -74,8 +190,8 @@ export function KaiMarketPreviewView() {
   } = useVault();
 
   const [payload, setPayload] = useState<KaiHomeInsightsV2 | null>(null);
-  const [loadingInitial, setLoadingInitial] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const [, setLoadingInitial] = useState(true);
+  const [, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
@@ -106,12 +222,7 @@ export function KaiMarketPreviewView() {
   const resolveTrackedSymbols = useCallback(() => {
     if (!user?.uid) return [];
     const cache = CacheService.getInstance();
-    const cachedPortfolio = cache.get<Record<string, unknown>>(CACHE_KEYS.PORTFOLIO_DATA(user.uid));
-    const sourceHoldings = (
-      (Array.isArray(cachedPortfolio?.holdings) && cachedPortfolio.holdings) ||
-      (Array.isArray(cachedPortfolio?.detailed_holdings) && cachedPortfolio.detailed_holdings) ||
-      []
-    ) as Array<Record<string, unknown>>;
+    const sourceHoldings = readCachedPortfolioHoldings(cache, user.uid);
 
     return sourceHoldings
       .filter((holding) => {
@@ -132,6 +243,7 @@ export function KaiMarketPreviewView() {
       )
       .slice(0, 8);
   }, [user?.uid]);
+
   const sessionCacheKey = useMemo(() => {
     if (!user?.uid) return null;
     return `kai_market_home_session_${user.uid}`;
@@ -312,43 +424,37 @@ export function KaiMarketPreviewView() {
     };
   }, [loadInsights, loading, user?.uid]);
 
-  const stale = Boolean(payload?.meta?.stale ?? payload?.stale);
   const hasPayload = Boolean(payload);
-  const hasRefreshError = Boolean(error);
-  const effectiveDegraded = stale || hasRefreshError;
-  const statusMessage = loadingInitial
-    ? "Loading live insights..."
-    : hasRefreshError
-      ? hasPayload
-        ? "Showing cached data while refresh retries."
-        : "Live feeds are temporarily unavailable. Tap retry to reconnect."
-      : stale
-        ? "Showing partial data while provider feeds recover."
-        : "Live feeds are healthy.";
+  const overviewMetrics = useMemo(() => toOverviewMetrics(payload), [payload]);
+  const themeItems = useMemo(() => toThemeItems(payload), [payload]);
+  const spotlightRows = useMemo(
+    () =>
+      Array.isArray(payload?.spotlights)
+        ? payload.spotlights.filter((row) => Boolean(row?.symbol)).slice(0, 2)
+        : [],
+    [payload?.spotlights]
+  );
+  const scenarioSignal = useMemo(
+    () => (Array.isArray(payload?.signals) ? payload.signals[0] : undefined),
+    [payload?.signals]
+  );
+  const showConnectPortfolio = useMemo(() => {
+    if (!hasPayload) return false;
+    const count = Number(payload?.hero?.holdings_count ?? 0);
+    return !Number.isFinite(count) || count <= 0;
+  }, [hasPayload, payload?.hero?.holdings_count]);
 
   return (
     <div className="mx-auto w-full max-w-md px-4 py-7 pb-[calc(148px+var(--app-bottom-inset))]">
-      <header className="space-y-3 text-center">
+      <header className="space-y-2 text-center">
         <h1 className="text-2xl font-black tracking-tight leading-tight">Kai Market Home</h1>
         <p className="mx-auto max-w-[22rem] text-sm text-muted-foreground">
-          Live, provider-backed market context with explicit fallback provenance.
-        </p>
-        <p
-          className={cn(
-            "mx-auto text-xs",
-            effectiveDegraded ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"
-          )}
-        >
-          {statusMessage}
+          Market snapshot for your tracked symbols.
         </p>
       </header>
 
-      <section className="mt-7">
+      <section className="mt-6">
         <HeroStrip
-          hero={payload?.hero}
-          stale={effectiveDegraded}
-          refreshing={refreshing}
-          onRefresh={() => void loadInsights({ manual: true })}
           onOpenDashboard={() => router.push("/kai/dashboard")}
         />
       </section>
@@ -373,16 +479,62 @@ export function KaiMarketPreviewView() {
       ) : null}
 
       <section className="mt-10">
-        <SectionLabel>Top Holdings / Watchlist</SectionLabel>
-        <WatchlistStrip items={payload?.watchlist || []} />
+        <SectionLabel>Today's Spotlight</SectionLabel>
+        {spotlightRows.length > 0 ? (
+          <div className="space-y-3">
+            {spotlightRows.map((row) => (
+              <SpotlightCard
+                key={row.symbol}
+                title={String(row.company_name || row.symbol || "Unknown")}
+                price={formatSpotlightPrice(row.price)}
+                decision={toSpotlightDecision(row.recommendation)}
+                summary={String(
+                  row.recommendation_detail || row.headline || "No recommendation detail available."
+                )}
+                context={String(row.headline || "Real-time watchlist context")}
+              />
+            ))}
+          </div>
+        ) : (
+          <Card variant="muted" effect="fill" className="rounded-xl p-0">
+            <CardContent className="p-4 text-sm text-muted-foreground">
+              No spotlight rows are available from the current market cache.
+            </CardContent>
+          </Card>
+        )}
       </section>
 
       <section className="mt-10">
-        <MoversTabs movers={payload?.movers} />
+        <SectionLabel>Market Overview</SectionLabel>
+        <MarketOverviewGrid metrics={overviewMetrics} />
       </section>
 
       <section className="mt-10">
-        <SectorRotationCard rows={payload?.sector_rotation || []} />
+        <SectionLabel>Scenario Insight</SectionLabel>
+        {scenarioSignal ? (
+          <Card variant="muted" effect="fill" className="rounded-xl p-0">
+            <CardContent className="space-y-2 p-4">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-bold">{scenarioSignal.title}</p>
+                <span className="rounded-full bg-background px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  {(scenarioSignal.confidence * 100).toFixed(0)}% conf.
+                </span>
+              </div>
+              <p className="text-sm text-muted-foreground">{scenarioSignal.summary}</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card variant="muted" effect="fill" className="rounded-xl p-0">
+            <CardContent className="p-4 text-sm text-muted-foreground">
+              Scenario insight will appear when a signal is available in market cache.
+            </CardContent>
+          </Card>
+        )}
+      </section>
+
+      <section className="mt-10">
+        <SectionLabel>Themes In Focus</SectionLabel>
+        <ThemeFocusList themes={themeItems} />
       </section>
 
       <section className="mt-10">
@@ -390,10 +542,11 @@ export function KaiMarketPreviewView() {
         <NewsTape rows={payload?.news_tape || []} />
       </section>
 
-      <section className="mt-10">
-        <SectionLabel>Signal Chips</SectionLabel>
-        <SignalChips signals={payload?.signals || []} />
-      </section>
+      {showConnectPortfolio ? (
+        <section className="mt-10">
+          <ConnectPortfolioCta />
+        </section>
+      ) : null}
     </div>
   );
 }

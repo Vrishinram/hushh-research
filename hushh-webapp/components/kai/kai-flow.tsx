@@ -1481,7 +1481,7 @@ export function KaiFlow({
 
   // Handle manage portfolio navigation
   const handleManagePortfolio = useCallback(() => {
-    router.push(`${ROUTES.KAI_DASHBOARD}/manage`);
+    router.push(`${ROUTES.KAI_DASHBOARD}?tab=holdings`);
   }, [router]);
 
   // Handle analyze stock - starts streaming analysis
@@ -1629,6 +1629,8 @@ export function KaiFlow({
 
       {isDashboardMode && state === "dashboard" && flowData.portfolioData && (
         <DashboardMasterView
+          userId={userId}
+          vaultOwnerToken={effectiveVaultOwnerToken}
           portfolioData={flowData.portfolioData}
           onManagePortfolio={handleManagePortfolio}
           onAnalyzeStock={handleAnalyzeStock}

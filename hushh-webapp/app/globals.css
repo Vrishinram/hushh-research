@@ -733,50 +733,22 @@ md-ripple.morphy-md-ripple {
   pointer-events: none;
 }
 
-/* Subtle App Background Gradients - Clean Professional Theme */
+/* Root app background: neutral surfaces only (no blue gradient cast). */
 .morphy-app-bg {
-  background: linear-gradient(
-    180deg,
-    #ffffff 0%,
-    #fcfeff 18%,
-    #f4f9ff 46%,
-    #e8f2ff 74%,
-    #dbe9ff 100%
-  );
+  background: #ffffff;
 }
 
 .dark .morphy-app-bg {
-  background: linear-gradient(
-    145deg,
-    #09090c 0%,
-    #0c0c14 15%,
-    #0f0f1a 30%,
-    #121218 50%,
-    #0f101a 65%,
-    #0c0c14 80%,
-    #09090c 100%
-  );
+  background: #000000;
 }
 
-/* Radial glow overlay - subtle brand color accent from top */
+/* Keep class defined for compatibility; root overlay is intentionally disabled. */
 .morphy-app-bg-radial {
-  background: radial-gradient(
-    ellipse at 50% 0%,
-    rgba(0, 113, 227, 0.14) 0%,
-    rgba(59, 130, 246, 0.1) 22%,
-    rgba(59, 130, 246, 0.05) 44%,
-    transparent 70%
-  );
+  background: transparent;
 }
 
 .dark .morphy-app-bg-radial {
-  background: radial-gradient(
-    ellipse at 50% 0%,
-    rgba(96, 165, 250, 0.06) 0%,
-    rgba(59, 130, 246, 0.04) 25%,
-    rgba(59, 130, 246, 0.02) 45%,
-    transparent 70%
-  );
+  background: transparent;
 }
 
 /* Custom Scrollbar Styles */

@@ -2,8 +2,18 @@
 
 import { WorldModelService } from "@/lib/services/world-model-service";
 
-const DOMAIN = "kai_profile";
+const FINANCIAL_DOMAIN = "financial";
 const SCHEMA_VERSION = 2 as const;
+const FINANCIAL_SCHEMA_VERSION = 3 as const;
+const FINANCIAL_CONTRACT_VERSION = 1 as const;
+const FINANCIAL_INTENT_MAP = [
+  "portfolio",
+  "profile",
+  "documents",
+  "analysis_history",
+  "runtime",
+  "analysis.decisions",
+] as const;
 
 export type InvestmentHorizon = "short_term" | "medium_term" | "long_term";
 export type DrawdownResponse = "reduce" | "stay" | "buy_more";
@@ -300,11 +310,72 @@ async function getFullBlob(params: {
 }
 
 function selectProfile(fullBlob: Record<string, unknown>): KaiProfileV2 {
-  const nested = fullBlob[DOMAIN];
-  if (nested && typeof nested === "object" && !Array.isArray(nested)) {
-    return normalizeProfile(nested);
+  const financialValue = fullBlob[FINANCIAL_DOMAIN];
+  if (financialValue && typeof financialValue === "object" && !Array.isArray(financialValue)) {
+    const financialRecord = financialValue as Record<string, unknown>;
+    const canonicalProfile = financialRecord.profile;
+    if (
+      canonicalProfile &&
+      typeof canonicalProfile === "object" &&
+      !Array.isArray(canonicalProfile)
+    ) {
+      return normalizeProfile(canonicalProfile);
+    }
   }
-  return normalizeProfile(fullBlob);
+  return createDefaultProfile();
+}
+
+function selectFinancialDomain(fullBlob: Record<string, unknown>): Record<string, unknown> {
+  const raw = fullBlob[FINANCIAL_DOMAIN];
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return {};
+  }
+  return { ...(raw as Record<string, unknown>) };
+}
+
+function buildFinancialProfileDomain(params: {
+  fullBlob: Record<string, unknown>;
+  profile: KaiProfileV2;
+  updatedAtIso: string;
+}): Record<string, unknown> {
+  const existingFinancial = selectFinancialDomain(params.fullBlob);
+  const profileDomainIntent = {
+    primary: "financial",
+    secondary: "profile",
+    source: "financial_profile_sync",
+    updated_at: params.updatedAtIso,
+  } as const;
+
+  return {
+    ...existingFinancial,
+    schema_version: FINANCIAL_SCHEMA_VERSION,
+    domain_intent: {
+      primary: "financial",
+      source: "domain_registry_prepopulate",
+      contract_version: FINANCIAL_CONTRACT_VERSION,
+      updated_at: params.updatedAtIso,
+    },
+    profile: {
+      ...params.profile,
+      domain_intent: profileDomainIntent,
+    },
+    updated_at: params.updatedAtIso,
+  };
+}
+
+function buildProfileSummary(profile: KaiProfileV2): Record<string, unknown> {
+  return {
+    domain_contract_version: FINANCIAL_CONTRACT_VERSION,
+    intent_map: [...FINANCIAL_INTENT_MAP],
+    profile_completed: profile.onboarding.completed,
+    profile_skipped_preferences: profile.onboarding.skipped_preferences,
+    risk_profile: profile.preferences.risk_profile,
+    risk_score: profile.preferences.risk_score,
+    has_investment_horizon: Boolean(profile.preferences.investment_horizon),
+    has_drawdown_response: Boolean(profile.preferences.drawdown_response),
+    has_volatility_preference: Boolean(profile.preferences.volatility_preference),
+    last_updated: profile.updated_at,
+  };
 }
 
 function recomputeDerived(
@@ -344,7 +415,7 @@ export class KaiProfileService {
       const fullBlob = await getFullBlob(params);
       return selectProfile(fullBlob);
     } catch (error) {
-      console.warn("[KaiProfileService] Failed to load kai_profile:", error);
+      console.warn("[KaiProfileService] Failed to load financial.profile:", error);
       return createDefaultProfile();
     }
   }
@@ -423,27 +494,23 @@ export class KaiProfileService {
     }
 
     next.preferences = recomputeDerived(next.preferences, iso);
+    const financialDomain = buildFinancialProfileDomain({
+      fullBlob,
+      profile: next,
+      updatedAtIso: iso,
+    });
 
     const result = await WorldModelService.storeMergedDomain({
       userId: params.userId,
       vaultKey: params.vaultKey,
-      domain: DOMAIN,
-      domainData: next as unknown as Record<string, unknown>,
-      summary: {
-        domain_intent: "kai_profile",
-        onboarding_completed: next.onboarding.completed,
-        risk_profile: next.preferences.risk_profile,
-        risk_score: next.preferences.risk_score,
-        has_investment_horizon: Boolean(next.preferences.investment_horizon),
-        has_drawdown_response: Boolean(next.preferences.drawdown_response),
-        has_volatility_preference: Boolean(next.preferences.volatility_preference),
-        last_updated: next.updated_at,
-      },
+      domain: FINANCIAL_DOMAIN,
+      domainData: financialDomain,
+      summary: buildProfileSummary(next),
       vaultOwnerToken: params.vaultOwnerToken,
     });
 
     if (!result.success) {
-      throw new Error("Failed to persist kai_profile preferences");
+      throw new Error("Failed to persist financial.profile preferences");
     }
 
     return next;
@@ -472,27 +539,23 @@ export class KaiProfileService {
       },
       updated_at: iso,
     };
+    const financialDomain = buildFinancialProfileDomain({
+      fullBlob,
+      profile: next,
+      updatedAtIso: iso,
+    });
 
     const result = await WorldModelService.storeMergedDomain({
       userId: params.userId,
       vaultKey: params.vaultKey,
-      domain: DOMAIN,
-      domainData: next as unknown as Record<string, unknown>,
-      summary: {
-        domain_intent: "kai_profile",
-        onboarding_completed: next.onboarding.completed,
-        risk_profile: next.preferences.risk_profile,
-        risk_score: next.preferences.risk_score,
-        has_investment_horizon: Boolean(next.preferences.investment_horizon),
-        has_drawdown_response: Boolean(next.preferences.drawdown_response),
-        has_volatility_preference: Boolean(next.preferences.volatility_preference),
-        last_updated: next.updated_at,
-      },
+      domain: FINANCIAL_DOMAIN,
+      domainData: financialDomain,
+      summary: buildProfileSummary(next),
       vaultOwnerToken: params.vaultOwnerToken,
     });
 
     if (!result.success) {
-      throw new Error("Failed to persist kai_profile onboarding completion");
+      throw new Error("Failed to persist financial.profile onboarding completion");
     }
 
     return next;
@@ -527,28 +590,26 @@ export class KaiProfileService {
       },
       updated_at: iso,
     };
+    const financialDomain = buildFinancialProfileDomain({
+      fullBlob,
+      profile: next,
+      updatedAtIso: iso,
+    });
 
     const result = await WorldModelService.storeMergedDomain({
       userId: params.userId,
       vaultKey: params.vaultKey,
-      domain: DOMAIN,
-      domainData: next as unknown as Record<string, unknown>,
+      domain: FINANCIAL_DOMAIN,
+      domainData: financialDomain,
       summary: {
-        domain_intent: "kai_profile",
-        onboarding_completed: next.onboarding.completed,
+        ...buildProfileSummary(next),
         nav_tour_completed: Boolean(next.onboarding.nav_tour_completed_at),
-        risk_profile: next.preferences.risk_profile,
-        risk_score: next.preferences.risk_score,
-        has_investment_horizon: Boolean(next.preferences.investment_horizon),
-        has_drawdown_response: Boolean(next.preferences.drawdown_response),
-        has_volatility_preference: Boolean(next.preferences.volatility_preference),
-        last_updated: next.updated_at,
       },
       vaultOwnerToken: params.vaultOwnerToken,
     });
 
     if (!result.success) {
-      throw new Error("Failed to persist kai_profile nav tour state");
+      throw new Error("Failed to persist financial.profile nav tour state");
     }
 
     return next;

@@ -358,7 +358,7 @@ Use when: First-time education for bottom navigation tabs on `/kai`.
 Do:
 - Render tour only on `/kai`.
 - Persist local pending state via `KaiNavTourLocalService`.
-- Sync to `kai_profile` (`nav_tour_completed_at`, `nav_tour_skipped_at`) when vault context is available.
+- Sync to `financial.profile` (`nav_tour_completed_at`, `nav_tour_skipped_at`) when vault context is available.
 
 Don't:
 - Show tour on onboarding/import routes.

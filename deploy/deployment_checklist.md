@@ -32,24 +32,29 @@
 
 - [x] Verify existing secrets
 
-  ```powershell
-  cd deploy
-  .\verify-secrets.ps1
+  ```bash
+  python3 scripts/ops/verify-env-secrets-parity.py \
+    --project hushh-pda \
+    --region us-central1 \
+    --backend-service consent-protocol \
+    --frontend-service hushh-webapp
   ```
 
 - [x] Clean up obsolete secrets (if any)
 
-  ```powershell
-  .\verify-secrets.ps1 -CleanupObsolete
+  ```bash
+  # Delete only keys reported as legacy by parity audit
+  gcloud secrets delete <LEGACY_SECRET_NAME> --project hushh-pda
   ```
 
 - [x] Create missing secrets
 
-  ```powershell
-  .\verify-secrets.ps1 -UpdateValues
+  ```bash
+  gcloud secrets create <SECRET_NAME> --replication-policy=automatic --project hushh-pda
+  echo -n '<value>' | gcloud secrets versions add <SECRET_NAME> --data-file=- --project hushh-pda
   ```
 
-- [x] Verify all 9 required backend secrets exist:
+- [x] Verify all 10 required backend secrets exist:
   - [x] `SECRET_KEY`
   - [x] `VAULT_ENCRYPTION_KEY`
   - [x] `GOOGLE_API_KEY`
@@ -57,10 +62,11 @@
   - [x] `FRONTEND_URL`
   - [x] `DB_USER`
   - [x] `DB_PASSWORD`
+  - [x] `APP_REVIEW_MODE`
   - [x] `REVIEWER_UID`
   - [x] `MCP_DEVELOPER_TOKEN`
   
-  **Note:** `DB_HOST`, `DB_PORT`, `DB_NAME`, `APP_REVIEW_MODE`, `CONSENT_SSE_ENABLED`, `SYNC_REMOTE_ENABLED`, `DEVELOPER_API_ENABLED`, and `CORS_ALLOWED_ORIGINS` are Cloud Run env vars (not secrets). Do not use `DATABASE_URL`; migrations use DB_* only. Delete `DATABASE_URL` from Secret Manager for strict parity.
+  **Note:** `DB_HOST`, `DB_PORT`, `DB_NAME`, `CONSENT_SSE_ENABLED`, `SYNC_REMOTE_ENABLED`, `DEVELOPER_API_ENABLED`, and `CORS_ALLOWED_ORIGINS` are Cloud Run env vars (not secrets). Do not use `DATABASE_URL`; migrations use DB_* only. Delete `DATABASE_URL` from Secret Manager for strict parity.
 
 ---
 
@@ -248,7 +254,7 @@
 If issues occur, check:
 
 1. **Logs**: `gcloud run services logs read SERVICE_NAME --region=us-central1 --limit=50`
-2. **Secrets**: `.\verify-secrets.ps1`
+2. **Secrets**: `python3 scripts/ops/verify-env-secrets-parity.py --project hushh-pda --region us-central1 --backend-service consent-protocol --frontend-service hushh-webapp`
 3. **CORS**: Browser DevTools Console
 4. **Cloud SQL**: Backend logs for connection errors
 5. **README.md**: Troubleshooting section

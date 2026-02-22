@@ -428,7 +428,7 @@ First-time `/kai` guided tour is implemented by:
 Persistence layers:
 - Local (pre-vault or fallback): `hushh-webapp/lib/services/kai-nav-tour-local-service.ts`
 - Vault-backed canonical sync: `hushh-webapp/lib/services/kai-nav-tour-sync-service.ts`
-- Domain fields in `kai_profile`:
+- Domain fields in `financial.profile`:
   - `onboarding.nav_tour_completed_at`
   - `onboarding.nav_tour_skipped_at`
 

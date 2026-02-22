@@ -13,7 +13,7 @@ export function SectorRotationCard({ rows }: SectorRotationCardProps) {
     return (
       <Card variant="muted" effect="fill" className="rounded-xl p-0">
         <CardContent className="p-4 text-sm text-muted-foreground">
-          Insufficient sector data from current statement and live feeds.
+          Sector movement data is unavailable right now.
         </CardContent>
       </Card>
     );
@@ -52,13 +52,6 @@ export function SectorRotationCard({ rows }: SectorRotationCardProps) {
           })}
         </div>
 
-        <div className="flex flex-wrap gap-1">
-          {rows[0]?.source_tags?.slice(0, 2).map((tag) => (
-            <span key={tag} className="rounded-full bg-background/70 px-2 py-0.5 text-[10px] text-muted-foreground">
-              {tag}
-            </span>
-          ))}
-        </div>
       </CardContent>
     </Card>
   );

@@ -15,42 +15,24 @@ export interface MarketOverviewMetric {
   icon: LucideIcon;
 }
 
-const DEFAULT_METRICS: MarketOverviewMetric[] = [
-  {
-    id: "spy",
-    label: "S&P 500",
-    value: "4,450",
-    delta: "+0.8%",
-    tone: "positive" as const,
-    icon: TrendingUp,
-  },
-  {
-    id: "nasdaq",
-    label: "NASDAQ",
-    value: "13,780",
-    delta: "-0.3%",
-    tone: "negative" as const,
-    icon: TrendingDown,
-  },
-  {
-    id: "yield",
-    label: "10Y Yield",
-    value: "4.2%",
-    delta: "Rising",
-    tone: "neutral" as const,
-    icon: ChartColumnIncreasing,
-  },
-  {
-    id: "volatility",
-    label: "Volatility",
-    value: "Moderate",
-    delta: "VIX 15.4",
-    tone: "warning" as const,
-    icon: Activity,
-  },
-];
+const FALLBACK_ICON: Record<MarketOverviewMetric["tone"], LucideIcon> = {
+  positive: TrendingUp,
+  negative: TrendingDown,
+  neutral: ChartColumnIncreasing,
+  warning: Activity,
+};
 
-export function MarketOverviewGrid({ metrics = DEFAULT_METRICS }: { metrics?: MarketOverviewMetric[] }) {
+export function MarketOverviewGrid({ metrics = [] }: { metrics?: MarketOverviewMetric[] }) {
+  if (!metrics.length) {
+    return (
+      <Card variant="muted" effect="fill" className="rounded-xl p-0">
+        <CardContent className="p-4 text-sm text-muted-foreground">
+          No market overview metrics are available from the current cache snapshot.
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <div className="grid grid-cols-2 gap-3">
       {metrics.map((metric) => (
@@ -63,7 +45,7 @@ export function MarketOverviewGrid({ metrics = DEFAULT_METRICS }: { metrics?: Ma
           <CardContent className="flex h-[110px] flex-col justify-between p-4">
             <div className="flex items-start justify-between gap-2">
               <span className="text-xs font-semibold text-muted-foreground">{metric.label}</span>
-              <Icon icon={metric.icon} size="sm" className="text-muted-foreground" />
+              <Icon icon={metric.icon || FALLBACK_ICON[metric.tone]} size="sm" className="text-muted-foreground" />
             </div>
             <div className="space-y-1">
               <p className="text-lg font-black tracking-tight leading-none">{metric.value}</p>

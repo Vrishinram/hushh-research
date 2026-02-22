@@ -30,10 +30,8 @@ export function RootLayoutClient({
       suppressHydrationWarning
       className={`${fontClasses} font-sans antialiased h-screen min-h-[100dvh] flex flex-col overflow-hidden`}
     >
-      {/* Fixed App Background - Oversized to prevent mobile gaps */}
+      {/* Fixed app background surface (oversized to prevent mobile gaps). */}
       <div className="fixed top-[-10vh] left-0 w-full h-[120vh] -z-20 morphy-app-bg pointer-events-none" />
-      {/* Subtle radial glow overlay */}
-      <div className="fixed inset-0 pointer-events-none morphy-app-bg-radial z-1" />
 
       <Providers>
         {children}

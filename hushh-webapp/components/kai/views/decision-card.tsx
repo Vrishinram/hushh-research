@@ -549,18 +549,6 @@ export function DecisionCard({ result }: { result: DecisionResult }) {
   const debateHighlights = (rawCard?.debate_highlights || [])
     .filter((entry) => Boolean(entry?.content))
     .slice(0, 12);
-  const alphaTrace = rawCard?.alphaagents_trace;
-  const renaissanceContext = rawCard?.renaissance_context;
-  const worldModelContext = rawCard?.world_model_context;
-  const worldModelPreferences = (worldModelContext?.preferences || {}) as Record<string, unknown>;
-  const investmentHorizon =
-    typeof worldModelPreferences.investment_horizon === "string"
-      ? worldModelPreferences.investment_horizon
-      : undefined;
-  const investmentStyle =
-    typeof worldModelPreferences.investment_style === "string"
-      ? worldModelPreferences.investment_style
-      : undefined;
 
   return (
     <Card
@@ -752,7 +740,7 @@ export function DecisionCard({ result }: { result: DecisionResult }) {
               </p>
               {llmSynthesis?.fallback && (
                 <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
-                  Deterministic
+                  Simplified
                 </Badge>
               )}
             </div>
@@ -769,7 +757,7 @@ export function DecisionCard({ result }: { result: DecisionResult }) {
             )}
             {llmSynthesis?.error && (
               <p className="text-xs text-amber-600 dark:text-amber-400">
-                Synthesis warning: {llmSynthesis.error}
+                Some advanced synthesis context was unavailable in this run.
               </p>
             )}
           </div>
@@ -854,71 +842,6 @@ export function DecisionCard({ result }: { result: DecisionResult }) {
                     </li>
                   ))}
                 </ul>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* CONTEXT + PROTOCOL TRACE */}
-        {(worldModelContext || renaissanceContext || alphaTrace) && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {worldModelContext && (
-              <div className="p-4 bg-card/50 rounded-2xl border border-border/50 space-y-2">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                  World Model Context
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Risk: {String(worldModelContext.risk_profile || "balanced")}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Holdings: {worldModelContext.holdings_count ?? 0}
-                </p>
-                {investmentHorizon && (
-                  <p className="text-xs text-muted-foreground">Horizon: {investmentHorizon}</p>
-                )}
-                {investmentStyle && (
-                  <p className="text-xs text-muted-foreground">Style: {investmentStyle}</p>
-                )}
-              </div>
-            )}
-            {renaissanceContext && (
-              <div className="p-4 bg-card/50 rounded-2xl border border-border/50 space-y-2">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                  Renaissance Context
-                </p>
-                <p className="text-xs">
-                  Tier: <span className="font-semibold">{renaissanceContext.tier || "N/A"}</span>
-                  {renaissanceContext.recommendation_bias
-                    ? ` (${renaissanceContext.recommendation_bias})`
-                    : ""}
-                </p>
-                {typeof renaissanceContext.conviction_weight === "number" && (
-                  <p className="text-xs text-muted-foreground">
-                    Conviction: {(renaissanceContext.conviction_weight * 100).toFixed(0)}%
-                  </p>
-                )}
-                {renaissanceContext.investment_thesis && (
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    {renaissanceContext.investment_thesis}
-                  </p>
-                )}
-              </div>
-            )}
-            {alphaTrace && (
-              <div className="p-4 bg-card/50 rounded-2xl border border-border/50 space-y-2">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                  AlphaAgents Protocol
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Paper: {alphaTrace.paper || "N/A"}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Rounds: {alphaTrace.rounds_executed ?? 0} | Turns/Agent:{" "}
-                  {alphaTrace.turns_per_agent ?? 0}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Consensus Method: {alphaTrace.consensus_method || "weighted_vote"}
-                </p>
               </div>
             )}
           </div>
