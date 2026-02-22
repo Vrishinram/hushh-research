@@ -1,6 +1,7 @@
 "use client";
 
 import { WorldModelService } from "@/lib/services/world-model-service";
+import { CacheService, CACHE_KEYS, CACHE_TTL } from "@/lib/services/cache-service";
 
 const FINANCIAL_DOMAIN = "financial";
 const SCHEMA_VERSION = 2 as const;
@@ -410,13 +411,26 @@ export class KaiProfileService {
     userId: string;
     vaultKey: string;
     vaultOwnerToken?: string;
+    forceRefresh?: boolean;
   }): Promise<KaiProfileV2> {
+    const cache = CacheService.getInstance();
+    const cacheKey = CACHE_KEYS.KAI_PROFILE(params.userId);
+    if (!params.forceRefresh) {
+      const cached = cache.get<KaiProfileV2>(cacheKey);
+      if (cached) {
+        return cached;
+      }
+    }
     try {
       const fullBlob = await getFullBlob(params);
-      return selectProfile(fullBlob);
+      const profile = selectProfile(fullBlob);
+      cache.set(cacheKey, profile, CACHE_TTL.SESSION);
+      return profile;
     } catch (error) {
       console.warn("[KaiProfileService] Failed to load financial.profile:", error);
-      return createDefaultProfile();
+      const fallback = createDefaultProfile();
+      cache.set(cacheKey, fallback, CACHE_TTL.SHORT);
+      return fallback;
     }
   }
 
@@ -513,6 +527,7 @@ export class KaiProfileService {
       throw new Error("Failed to persist financial.profile preferences");
     }
 
+    CacheService.getInstance().set(CACHE_KEYS.KAI_PROFILE(params.userId), next, CACHE_TTL.SESSION);
     return next;
   }
 
@@ -558,6 +573,7 @@ export class KaiProfileService {
       throw new Error("Failed to persist financial.profile onboarding completion");
     }
 
+    CacheService.getInstance().set(CACHE_KEYS.KAI_PROFILE(params.userId), next, CACHE_TTL.SESSION);
     return next;
   }
 

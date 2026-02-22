@@ -1312,40 +1312,34 @@ export function PortfolioReviewView({
           }}
         >
           <DialogContent className="sm:max-w-md p-0 border-none bg-transparent shadow-none">
-            <div className="bg-background/95 backdrop-blur-xl border rounded-xl overflow-hidden shadow-2xl">
-              <div className="p-4 border-b">
-                <DialogTitle className="font-semibold text-center text-base">
-                  {hasVault === false
-                    ? "Create vault to save portfolio"
-                    : "Unlock vault to save portfolio"}
-                </DialogTitle>
-                <DialogDescription className="sr-only">
-                  Create or unlock your vault to securely save this portfolio to your world model.
-                </DialogDescription>
-              </div>
-              <div className="p-4">
-                <VaultFlow
-                  user={user}
-                  enableGeneratedDefault={hasVault === false}
-                  onSuccess={(meta) => {
-                    createdVaultModeRef.current = meta?.mode ?? null;
-                    setVaultDialogOpen(false);
-                    if (
-                      effectiveVaultKey &&
-                      effectiveVaultOwnerToken &&
-                      !continuationInFlightRef.current
-                    ) {
-                      continuationInFlightRef.current = true;
-                      void handleSave().finally(() => {
-                        continuationInFlightRef.current = false;
-                      });
-                      return;
-                    }
-                    setPendingVaultSave(true);
-                  }}
-                />
-              </div>
-            </div>
+            <DialogTitle className="sr-only">
+              {hasVault === false
+                ? "Create vault to save portfolio"
+                : "Unlock vault to save portfolio"}
+            </DialogTitle>
+            <DialogDescription className="sr-only">
+              Create or unlock your vault to securely save this portfolio to your world model.
+            </DialogDescription>
+            <VaultFlow
+              user={user}
+              enableGeneratedDefault={hasVault === false}
+              onSuccess={(meta) => {
+                createdVaultModeRef.current = meta?.mode ?? null;
+                setVaultDialogOpen(false);
+                if (
+                  effectiveVaultKey &&
+                  effectiveVaultOwnerToken &&
+                  !continuationInFlightRef.current
+                ) {
+                  continuationInFlightRef.current = true;
+                  void handleSave().finally(() => {
+                    continuationInFlightRef.current = false;
+                  });
+                  return;
+                }
+                setPendingVaultSave(true);
+              }}
+            />
           </DialogContent>
         </Dialog>
       )}

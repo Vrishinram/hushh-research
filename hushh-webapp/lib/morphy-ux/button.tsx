@@ -103,11 +103,12 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     const iconBoxClass = icon?.gradient
       ? "bg-gradient-to-r from-[var(--morphy-primary-start)] to-[var(--morphy-primary-end)] border-transparent"
       : "bg-transparent border-transparent";
+    const shouldShowRipple = showRipple !== false;
     const iconColorClass = icon?.gradient
       ? "text-white dark:text-black"
-      : effect === "fill" && variant !== "none"
-      ? "text-inherit"
-      : "text-[var(--morphy-primary-start)]";
+      : variant === "none" && effect !== "fill"
+        ? "text-[var(--morphy-primary-start)]"
+        : "text-inherit";
 
     return (
       <StockButton
@@ -121,7 +122,9 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         className={cn(
           "relative overflow-hidden transition-[border-color,box-shadow,background-color] duration-200",
           variantStyles,
-          variant !== "none" && variant !== "link" ? "border border-transparent" : "border-transparent",
+          effect === "fill" && variant !== "none" && variant !== "link"
+            ? "border border-transparent"
+            : "border-transparent",
           isXl ? "h-16 px-12 text-lg" : "",
           fullWidth ? "w-full" : "",
           loading ? "cursor-wait" : "",
@@ -129,7 +132,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         )}
         {...props}
       >
-        {showRipple ? (
+        {shouldShowRipple ? (
           <MaterialRipple
             variant={variant}
             effect={effect}

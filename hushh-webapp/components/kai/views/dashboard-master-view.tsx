@@ -690,9 +690,9 @@ export function DashboardMasterView({
       </Card>
 
       <section className="space-y-3">
-        <h3 className="px-1 text-xs font-bold uppercase tracking-widest text-muted-foreground">
+        <h2 className="app-section-heading px-1 uppercase tracking-[0.12em] text-muted-foreground">
           Sector Allocation
-        </h3>
+        </h2>
         {model.quality.sectorReady ? (
           <SectorAllocationChart
             className="min-w-0 overflow-hidden rounded-[22px]"
@@ -779,9 +779,9 @@ export function DashboardMasterView({
       </Card>
 
       <section className="space-y-3">
-        <h3 className="px-1 text-xs font-bold uppercase tracking-widest text-muted-foreground">
+        <h2 className="app-section-heading px-1 uppercase tracking-[0.12em] text-muted-foreground">
           Portfolio Insights
-        </h3>
+        </h2>
         <div className="grid gap-4 lg:grid-cols-2">
           {model.quality.allocationReady ? (
             <Card variant="none" effect="glass" className="min-w-0 overflow-hidden rounded-[22px]">

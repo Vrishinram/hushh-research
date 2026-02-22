@@ -45,10 +45,9 @@ export const getVariantStyles = (
   switch (variant) {
     case "gradient":
       if (effect === "fill") {
-        return `bg-gradient-to-r from-[var(--morphy-primary-start)] to-[var(--morphy-primary-end)] hover:from-black/90 hover:to-black/90 dark:hover:from-[var(--morphy-primary-start)]/90 dark:hover:to-[var(--morphy-primary-end)]/90 text-white dark:text-black shadow-[0_18px_60px_var(--morphy-cta-shadow)] transition-shadow,transition-colors duration-200`;
+        return `bg-gradient-to-r from-[var(--morphy-primary-start)] to-[var(--morphy-primary-end)] text-white shadow-[0_18px_60px_var(--morphy-cta-shadow)] hover:brightness-105 transition-shadow transition-colors duration-200`;
       } else if (effect === "fade") {
-        // Dark mode: black text for visibility on gold/yellow gradient
-        return "bg-gradient-to-r from-[var(--morphy-primary-start)]/10 to-[var(--morphy-primary-end)]/10 border border-[var(--morphy-primary-start)]/20 text-[var(--morphy-primary-start)] dark:text-black transition-colors duration-200";
+        return "bg-gradient-to-r from-[var(--morphy-primary-start)]/12 to-[var(--morphy-primary-end)]/12 border border-[var(--morphy-primary-start)]/24 text-[var(--morphy-primary-start)] hover:from-[var(--morphy-primary-start)] hover:to-[var(--morphy-primary-end)] hover:text-white transition-colors duration-200";
       } else {
         // Silver accent border in dark mode for hushh brand
         return "bg-white/50 dark:bg-black/50 shadow-sm border border-white/20 dark:border-white/10 backdrop-blur-md hover:bg-white/60 dark:hover:bg-black/60 transition-all duration-200";
@@ -56,36 +55,36 @@ export const getVariantStyles = (
 
     case "blue":
       if (effect === "fill") {
-        return "bg-gradient-to-r from-[var(--morphy-primary-end)] to-[var(--morphy-primary-start)] text-white shadow-[0_18px_60px_var(--morphy-cta-shadow)] transition-shadow,transition-colors duration-200 dark:from-[#fbbf24] dark:to-[#f59e0b] dark:text-black";
+        return "bg-gradient-to-r from-[var(--morphy-primary-end)] to-[var(--morphy-primary-start)] text-white shadow-[0_18px_60px_var(--morphy-cta-shadow)] hover:brightness-105 transition-shadow transition-colors duration-200";
       } else if (effect === "fade") {
-        return "bg-gradient-to-r from-[var(--morphy-primary-start)]/10 to-[var(--morphy-primary-end)]/10 border border-[var(--morphy-primary-start)]/20 text-[var(--morphy-primary-start)] transition-colors duration-200";
+        return "bg-gradient-to-r from-[var(--morphy-primary-start)]/12 to-[var(--morphy-primary-end)]/12 border border-[var(--morphy-primary-start)]/24 text-[var(--morphy-primary-start)] hover:from-[var(--morphy-primary-end)] hover:to-[var(--morphy-primary-start)] hover:text-white transition-colors duration-200";
       } else {
         return "bg-white/50 dark:bg-black/50 shadow-sm border border-white/20 dark:border-white/10 backdrop-blur-md hover:bg-white/60 dark:hover:bg-black/60 transition-all duration-200";
       }
 
     case "blue-gradient":
       if (effect === "fill") {
-        return `bg-gradient-to-r ${gradientPresets.primary} text-white dark:text-black shadow-[0_18px_60px_var(--morphy-cta-shadow)] transition-shadow,transition-colors duration-200`;
+        return `bg-gradient-to-r ${gradientPresets.primary} text-white shadow-[0_18px_60px_var(--morphy-cta-shadow)] hover:brightness-105 transition-shadow transition-colors duration-200`;
       } else if (effect === "fade") {
-        return "bg-gradient-to-r from-[var(--morphy-primary-start)]/10 to-[var(--morphy-primary-end)]/10 border border-[var(--morphy-primary-start)]/20 text-[var(--morphy-primary-start)] transition-colors duration-200";
+        return "bg-gradient-to-r from-[var(--morphy-primary-start)]/12 to-[var(--morphy-primary-end)]/12 border border-[var(--morphy-primary-start)]/24 text-[var(--morphy-primary-start)] hover:from-[var(--morphy-primary-start)] hover:to-[var(--morphy-primary-end)] hover:text-white transition-colors duration-200";
       } else {
         return "bg-white/50 dark:bg-black/50 shadow-sm border border-white/20 dark:border-white/10 backdrop-blur-md hover:bg-white/60 dark:hover:bg-black/60 transition-all duration-200";
       }
 
     case "yellow":
       if (effect === "fill") {
-        return `bg-gradient-to-r ${gradientPresets.accent} text-black shadow-md transition-shadow,transition-colors duration-200`;
+        return `bg-gradient-to-r ${gradientPresets.accent} text-black shadow-md transition-shadow transition-colors duration-200`;
       } else if (effect === "fade") {
-        return "bg-gradient-to-r from-[#fbbf24]/10 to-[#f59e0b]/10 border border-[#fbbf24]/20 text-[#fbbf24] transition-colors duration-200";
+        return "bg-gradient-to-r from-[#fbbf24]/12 to-[#f59e0b]/12 border border-[#fbbf24]/24 text-[#b97700] hover:from-[#fbbf24] hover:to-[#f59e0b] hover:text-black transition-colors duration-200";
       } else {
         return "bg-white/50 dark:bg-black/50 shadow-sm border border-[#fbbf24]/20 backdrop-blur-md hover:bg-white/60 dark:hover:bg-black/60 transition-all duration-200";
       }
 
     case "yellow-gradient":
       if (effect === "fill") {
-        return `bg-gradient-to-r ${gradientPresets.accent} text-black shadow-lg transition-shadow,transition-colors duration-200`;
+        return `bg-gradient-to-r ${gradientPresets.accent} text-black shadow-lg transition-shadow transition-colors duration-200`;
       } else if (effect === "fade") {
-        return "bg-gradient-to-r from-[#fbbf24]/10 to-[#f59e0b]/10 border border-[#fbbf24]/20 text-[#fbbf24] transition-colors duration-200";
+        return "bg-gradient-to-r from-[#fbbf24]/12 to-[#f59e0b]/12 border border-[#fbbf24]/24 text-[#b97700] hover:from-[#fbbf24] hover:to-[#f59e0b] hover:text-black transition-colors duration-200";
       } else {
         return "bg-white/50 dark:bg-black/50 shadow-sm border border-[#fbbf24]/20 backdrop-blur-md hover:bg-white/60 dark:hover:bg-black/60 transition-all duration-200";
       }
@@ -94,9 +93,9 @@ export const getVariantStyles = (
     case "purple-gradient":
       // Use primary gradient (purple is part of hushh brand)
       if (effect === "fill") {
-        return `bg-gradient-to-r ${gradientPresets.primary} text-white shadow-md transition-shadow,transition-colors duration-200`;
+        return "bg-gradient-to-r from-[#7c3aed] to-[#8b5cf6] text-white shadow-md hover:brightness-105 transition-shadow transition-colors duration-200";
       } else if (effect === "fade") {
-        return "bg-gradient-to-r from-[#7c3aed]/10 to-[#8b5cf6]/10 border border-[#7c3aed]/20 text-[#7c3aed] transition-colors duration-200";
+        return "bg-gradient-to-r from-[#7c3aed]/12 to-[#8b5cf6]/12 border border-[#7c3aed]/24 text-[#7c3aed] hover:from-[#7c3aed] hover:to-[#8b5cf6] hover:text-white transition-colors duration-200";
       } else {
         return "bg-white/50 dark:bg-black/50 shadow-sm border border-[var(--morphy-primary-start)]/20 backdrop-blur-md hover:bg-white/60 dark:hover:bg-black/60 transition-all duration-200";
       }
@@ -105,9 +104,9 @@ export const getVariantStyles = (
     case "green-gradient":
       // Use success gradient (emerald)
       if (effect === "fill") {
-        return `bg-gradient-to-r ${gradientPresets.success} text-white shadow-md transition-shadow,transition-colors duration-200`;
+        return `bg-gradient-to-r ${gradientPresets.success} text-white shadow-md hover:brightness-105 transition-shadow transition-colors duration-200`;
       } else if (effect === "fade") {
-        return "bg-gradient-to-r from-[#10b981]/10 to-[#059669]/10 border border-[#10b981]/20 text-[#10b981] transition-colors duration-200";
+        return "bg-gradient-to-r from-[#10b981]/12 to-[#059669]/12 border border-[#10b981]/24 text-[#0f9a72] hover:from-[#10b981] hover:to-[#059669] hover:text-white transition-colors duration-200";
       } else {
         return "bg-white/50 dark:bg-black/50 shadow-sm border border-[#10b981]/20 backdrop-blur-md hover:bg-white/60 dark:hover:bg-black/60 transition-all duration-200";
       }
@@ -116,20 +115,20 @@ export const getVariantStyles = (
     case "orange-gradient":
       // Use accent/warning gradient (gold/orange)
       if (effect === "fill") {
-        return `bg-gradient-to-r ${gradientPresets.warning} text-black shadow-md transition-shadow,transition-colors duration-200`;
+        return `bg-gradient-to-r ${gradientPresets.warning} text-black shadow-md hover:brightness-105 transition-shadow transition-colors duration-200`;
       } else if (effect === "fade") {
-        return "bg-gradient-to-r from-[#f59e0b]/10 to-[#d97706]/10 border border-[#f59e0b]/20 text-[#f59e0b] transition-colors duration-200";
+        return "bg-gradient-to-r from-[#f59e0b]/12 to-[#d97706]/12 border border-[#f59e0b]/24 text-[#c77708] hover:from-[#f59e0b] hover:to-[#d97706] hover:text-black transition-colors duration-200";
       } else {
         return "bg-white/50 dark:bg-black/50 shadow-sm border border-[#f59e0b]/20 backdrop-blur-md hover:bg-white/60 dark:hover:bg-black/60 transition-all duration-200";
       }
 
     case "metallic":
       if (effect === "fill") {
-        return `bg-gradient-to-br ${gradientPresets.metallic} text-gray-900 shadow-md transition-shadow,transition-colors duration-200`;
+        return `bg-gradient-to-br ${gradientPresets.metallic} text-gray-900 shadow-md transition-shadow transition-colors duration-200`;
       } else if (effect === "fade") {
         return "bg-gradient-to-br from-gray-50/10 via-gray-100/10 to-gray-200/10 border border-gray-200/20 text-gray-700 transition-colors duration-200";
       } else {
-        return `bg-gradient-to-br ${gradientPresets.metallic} shadow-[0px_4px_12px_rgba(0,0,0,0.1)] border border-gray-200/20 backdrop-blur-[6px] transition-shadow,transition-colors duration-200`;
+        return `bg-gradient-to-br ${gradientPresets.metallic} shadow-[0px_4px_12px_rgba(0,0,0,0.1)] border border-gray-200/20 backdrop-blur-[6px] transition-shadow transition-colors duration-200`;
       }
 
     case "mettalic-gradient":
@@ -144,7 +143,7 @@ export const getVariantStyles = (
           "shadow-[inset_0_1px_0_rgba(255,255,255,0.20),inset_0_-1px_0_rgba(0,0,0,0.12),0px_6px_18px_rgba(0,0,0,0.12)]",
           // Slight ring to separate from page background
           "ring-1 ring-gray-300/40 dark:ring-gray-700/50",
-          "text-gray-900 dark:text-gray-100 transition-shadow,transition-colors duration-200",
+          "text-gray-900 dark:text-gray-100 transition-shadow transition-colors duration-200",
         ].join(" ");
       } else if (effect === "fade") {
         return [
@@ -164,16 +163,15 @@ export const getVariantStyles = (
           "bg-blend-overlay",
           "shadow-[inset_0_1px_0_rgba(255,255,255,0.18),inset_0_-1px_0_rgba(0,0,0,0.10),0px_6px_18px_rgba(0,0,0,0.12)]",
           "border border-gray-300/30 dark:border-gray-700/40",
-          "backdrop-blur-[4px] transition-shadow,transition-colors duration-200",
+          "backdrop-blur-[4px] transition-shadow transition-colors duration-200",
         ].join(" ");
       }
 
     case "multi":
       if (effect === "fill") {
-        // Multi: silver gradient in dark mode for hushh brand
-        return "bg-gradient-to-r from-[var(--morphy-primary-start)] to-[var(--morphy-primary-end)] dark:from-[#c0c0c0] dark:to-[#a0a0a0] text-white dark:text-black shadow-md transition-shadow,transition-colors duration-200";
+        return "bg-gradient-to-r from-[var(--morphy-primary-start)] to-[var(--morphy-primary-end)] text-white shadow-md hover:brightness-105 transition-shadow transition-colors duration-200";
       } else if (effect === "fade") {
-        return "bg-gradient-to-r from-[var(--morphy-primary-start)]/10 to-[var(--morphy-primary-end)]/10 dark:from-[#c0c0c0]/10 dark:to-[#a0a0a0]/10 border border-[var(--morphy-primary-start)]/20 dark:border-[#c0c0c0]/20 text-[var(--morphy-primary-start)] dark:text-[#c0c0c0] transition-colors duration-200";
+        return "bg-gradient-to-r from-[var(--morphy-primary-start)]/12 to-[var(--morphy-primary-end)]/12 border border-[var(--morphy-primary-start)]/24 text-[var(--morphy-primary-start)] hover:from-[var(--morphy-primary-start)] hover:to-[var(--morphy-primary-end)] hover:text-white transition-colors duration-200";
       } else {
         return "bg-white/50 dark:bg-black/50 shadow-sm border border-[var(--morphy-primary-start)]/20 dark:border-[#c0c0c0]/20 backdrop-blur-md hover:bg-white/60 dark:hover:bg-black/60 transition-all duration-200";
       }
@@ -202,12 +200,12 @@ export const getVariantStyles = (
 
     case "destructive":
       if (effect === "fill") {
-        return "bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-md transition-all duration-200 border border-transparent";
+        return "bg-destructive text-white hover:bg-destructive/90 shadow-md transition-all duration-200 border border-transparent";
       } else if (effect === "fade") {
-        return "bg-destructive/10 text-destructive border border-destructive/20 hover:bg-destructive/20 transition-all duration-200";
+        return "bg-gradient-to-r from-red-500/12 to-rose-500/12 text-red-600 border border-red-300/80 hover:from-red-500 hover:to-rose-500 hover:text-white dark:from-red-500/12 dark:to-rose-500/12 dark:text-red-600 dark:border-red-300/80 dark:hover:from-red-500 dark:hover:to-rose-500 dark:hover:text-white transition-all duration-200";
       } else {
         // glass
-        return "bg-destructive/10 text-destructive border border-destructive/20 shadow-sm backdrop-blur-md hover:bg-destructive/20 transition-all duration-200";
+        return "bg-transparent text-red-600 border border-red-300/80 shadow-sm backdrop-blur-md hover:bg-red-50 dark:bg-transparent dark:text-red-600 dark:border-red-300/80 dark:hover:bg-red-50 transition-all duration-200";
       }
 
     case "none":
@@ -332,6 +330,15 @@ export const getVariantStylesNoHover = (
 
     case "link":
       return "text-university-gray-700 dark:text-university-gray-200 underline-offset-4 transition-colors duration-200 bg-transparent border-none shadow-none";
+
+    case "destructive":
+      if (effect === "fill") {
+        return "bg-destructive text-destructive-foreground border border-transparent shadow-md transition-all duration-200";
+      }
+      if (effect === "fade") {
+        return "bg-transparent bg-gradient-to-r from-red-500/12 to-rose-500/12 text-red-600 border border-red-300/80 dark:bg-transparent dark:bg-gradient-to-r dark:from-red-500/12 dark:to-rose-500/12 dark:text-red-600 dark:border-red-300/80 transition-all duration-200";
+      }
+      return "bg-transparent text-red-600 border border-red-300/80 shadow-sm backdrop-blur-md dark:bg-transparent dark:text-red-600 dark:border-red-300/80 transition-all duration-200";
 
     case "none":
     default:

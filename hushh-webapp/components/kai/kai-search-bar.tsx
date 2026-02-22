@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Search } from "lucide-react";
+import { Mic, Search } from "lucide-react";
+import { toast } from "sonner";
 
 import { KaiCommandPalette, type KaiCommandAction } from "@/components/kai/kai-command-palette";
 import { Button } from "@/lib/morphy-ux/button";
@@ -44,20 +45,35 @@ export function KaiSearchBar({
           className="pointer-events-none absolute bottom-0 left-1/2 h-[72px] w-screen -translate-x-1/2 bottom-bar-glass"
         />
         <div className="pointer-events-auto w-full max-w-[420px]">
-          <Button
-            variant="none"
-            effect="fade"
-            fullWidth
-            size="default"
-            className={cn(
-              "h-12 justify-start rounded-full px-4 text-sm text-muted-foreground",
-              disabled && "pointer-events-none opacity-50"
-            )}
-            onClick={() => setOpen(true)}
-          >
-            <Icon icon={Search} size="sm" className="mr-2 text-muted-foreground" />
-            Analyze, optimize, manage with Kai
-          </Button>
+          <div className="relative">
+            <Button
+              variant="none"
+              effect="fade"
+              fullWidth
+              size="default"
+              className={cn(
+                "h-12 justify-start rounded-full px-4 pr-12 text-sm text-muted-foreground",
+                disabled && "pointer-events-none opacity-50"
+              )}
+              onClick={() => setOpen(true)}
+            >
+              <Icon icon={Search} size="sm" className="mr-2 text-muted-foreground" />
+              Analyze, optimize, manage with Kai
+            </Button>
+            <button
+              type="button"
+              aria-label="Hushh Voice (Coming soon)"
+              data-no-route-swipe
+              className="absolute right-2 top-1/2 z-10 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                toast.info("Coming soon Hushh Voice Feature");
+              }}
+            >
+              <Icon icon={Mic} size="sm" />
+            </button>
+          </div>
         </div>
       </div>
 

@@ -133,12 +133,13 @@ export function VaultProvider({ children }: VaultProviderProps) {
    * Declared before unlockVault so it can be called from it (react-hooks/immutability).
    */
   const prefetchDashboardData = useCallback(
-    async (userId: string, token: string, key: string) => {
+    async (userId: string, token: string, key: string, routePath?: string) => {
       try {
         await UnlockWarmOrchestrator.run({
           userId,
           vaultKey: key,
           vaultOwnerToken: token,
+          routePath,
         });
       } catch (error) {
         console.warn("[VaultContext] Unlock warm orchestration failed:", error);
@@ -157,7 +158,9 @@ export function VaultProvider({ children }: VaultProviderProps) {
       setTokenExpiresAt(expiresAt);
 
       if (user?.uid) {
-        prefetchDashboardData(user.uid, token, key);
+        const routePath =
+          typeof window !== "undefined" ? window.location.pathname : undefined;
+        prefetchDashboardData(user.uid, token, key, routePath);
       }
     },
     [user, prefetchDashboardData]

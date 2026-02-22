@@ -234,6 +234,8 @@ export class CacheSyncService {
 
   static onAnalysisHistoryMutated(userId: string, ticker?: string): void {
     const cache = CacheService.getInstance();
+    cache.invalidate(CACHE_KEYS.WORLD_MODEL_BLOB(userId));
+    cache.invalidate(CACHE_KEYS.ENCRYPTED_DOMAIN_BLOB(userId, "financial"));
     cache.invalidate(CACHE_KEYS.DOMAIN_DATA(userId, "financial"));
     cache.invalidate(CACHE_KEYS.WORLD_MODEL_METADATA(userId));
     if (ticker) {

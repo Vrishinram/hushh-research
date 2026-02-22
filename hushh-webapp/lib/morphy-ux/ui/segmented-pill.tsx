@@ -91,7 +91,7 @@ export const SegmentedPill = React.forwardRef<HTMLDivElement, SegmentedPillProps
           className="pointer-events-none absolute left-1 top-1 bottom-1 rounded-full bg-zinc-900 text-zinc-50 shadow-sm ring-1 ring-black/10 dark:bg-zinc-50 dark:text-zinc-900 dark:ring-white/20 transition-transform duration-500 ease-[cubic-bezier(0.25,1,0.5,1)]"
           style={{
             width: `calc((100% - 0.5rem) / ${Math.max(options.length, 1)})`,
-            transform: `translateX(${activeIndex * 100}%)`,
+            transform: `translateX(calc(${activeIndex * 100}% + var(--segment-drag-x, 0px)))`,
           }}
         />
         {options.map((option) => {

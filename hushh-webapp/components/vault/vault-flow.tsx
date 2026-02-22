@@ -389,7 +389,7 @@ export function VaultFlow({
   if (step === "checking") {
     if (error) {
       return (
-        <Card variant="none" effect="glass">
+        <Card variant="none" effect="fill">
           <CardContent className="p-6 text-center py-8">
             <div className="space-y-4">
               <div className="text-destructive mb-2">
@@ -414,7 +414,7 @@ export function VaultFlow({
 
   return (
     <>
-      <Card variant="none" effect="glass">
+      <Card variant="none" effect="fill">
         <CardContent className="p-6 space-y-4">
           {/* Intro / Education Step */}
           {step === "intro" && (

@@ -1616,41 +1616,35 @@ export function KaiFlow({
           }}
         >
           <DialogContent className="sm:max-w-md p-0 border-none bg-transparent shadow-none">
-            <div className="bg-background/95 backdrop-blur-xl border rounded-xl overflow-hidden shadow-2xl">
-              <div className="p-4 border-b">
-                <DialogTitle className="font-semibold text-center text-base">
-                  Create or unlock vault to import portfolio
-                </DialogTitle>
-                <DialogDescription className="sr-only">
-                  Create or unlock your vault to connect financial data to Kai.
-                </DialogDescription>
-              </div>
-              <div className="p-4">
-                <VaultFlow
-                  user={user}
-                  enableGeneratedDefault
-                  onSuccess={() => {
-                    setVaultResolvedForUpload(true);
-                    setVaultDialogOpen(false);
-                    if (resumeUploadAfterUnlock && queuedUploadFile) {
-                      const fileToResume = queuedUploadFile;
-                      if (vaultKey && effectiveVaultOwnerToken) {
-                        // Restart immediately when unlock context is already available.
-                        setResumeUploadAfterUnlock(false);
-                        setQueuedUploadFile(null);
-                        window.setTimeout(() => {
-                          void handleFileUpload(fileToResume);
-                        }, 120);
-                      } else {
-                        // Keep pending flags so the resume effect can restart once context arrives.
-                        setQueuedUploadFile(fileToResume);
-                        setResumeUploadAfterUnlock(true);
-                      }
-                    }
-                  }}
-                />
-              </div>
-            </div>
+            <DialogTitle className="sr-only">
+              Create or unlock vault to import portfolio
+            </DialogTitle>
+            <DialogDescription className="sr-only">
+              Create or unlock your vault to connect financial data to Kai.
+            </DialogDescription>
+            <VaultFlow
+              user={user}
+              enableGeneratedDefault
+              onSuccess={() => {
+                setVaultResolvedForUpload(true);
+                setVaultDialogOpen(false);
+                if (resumeUploadAfterUnlock && queuedUploadFile) {
+                  const fileToResume = queuedUploadFile;
+                  if (vaultKey && effectiveVaultOwnerToken) {
+                    // Restart immediately when unlock context is already available.
+                    setResumeUploadAfterUnlock(false);
+                    setQueuedUploadFile(null);
+                    window.setTimeout(() => {
+                      void handleFileUpload(fileToResume);
+                    }, 120);
+                  } else {
+                    // Keep pending flags so the resume effect can restart once context arrives.
+                    setQueuedUploadFile(fileToResume);
+                    setResumeUploadAfterUnlock(true);
+                  }
+                }
+              }}
+            />
           </DialogContent>
         </Dialog>
       )}

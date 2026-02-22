@@ -13,6 +13,10 @@ import { DashboardRouteTabs } from "@/components/kai/layout/dashboard-route-tabs
 import { VaultMethodPrompt } from "@/components/vault/vault-method-prompt";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { useEffect } from "react";
+import { useAuth } from "@/lib/firebase/auth-context";
+import { useVault } from "@/lib/vault/vault-context";
+import { UnlockWarmOrchestrator } from "@/lib/services/unlock-warm-orchestrator";
 
 export default function KaiLayout({
   children,
@@ -20,10 +24,26 @@ export default function KaiLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const { user } = useAuth();
+  const { vaultKey, vaultOwnerToken } = useVault();
   const onOnboardingRoute = pathname.startsWith("/kai/onboarding");
   const onImportRoute = pathname.startsWith("/kai/import");
   const showKaiRouteTabs = !onOnboardingRoute && !onImportRoute;
   const shouldEnableMethodPrompt = !onOnboardingRoute && !onImportRoute;
+
+  useEffect(() => {
+    if (onOnboardingRoute || onImportRoute) return;
+    if (!user?.uid || !vaultKey || !vaultOwnerToken) return;
+
+    void UnlockWarmOrchestrator.run({
+      userId: user.uid,
+      vaultKey,
+      vaultOwnerToken,
+      routePath: pathname,
+    }).catch((error) => {
+      console.warn("[KaiLayout] Route-priority warm orchestration failed:", error);
+    });
+  }, [onImportRoute, onOnboardingRoute, pathname, user?.uid, vaultKey, vaultOwnerToken]);
 
   return (
     <VaultLockGuard>

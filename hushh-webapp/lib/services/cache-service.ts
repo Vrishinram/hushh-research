@@ -142,6 +142,7 @@ class CacheService {
       CACHE_KEYS.PENDING_CONSENTS(userId),
       CACHE_KEYS.CONSENT_AUDIT_LOG(userId),
       CACHE_KEYS.PORTFOLIO_DATA(userId),
+      CACHE_KEYS.KAI_PROFILE(userId),
     ]);
 
     for (const key of this.cache.keys()) {
@@ -220,6 +221,7 @@ export const CACHE_KEYS = {
   ENCRYPTED_DOMAIN_BLOB: (userId: string, domain: string) => `domain_blob_${userId}_${domain}`,
   PENDING_CONSENTS: (userId: string) => `pending_consents_${userId}`,
   CONSENT_AUDIT_LOG: (userId: string) => `consent_audit_log_${userId}`,
+  KAI_PROFILE: (userId: string) => `kai_profile_${userId}`,
   STOCK_CONTEXT: (userId: string, ticker: string) => `stock_context_${userId}_${ticker}`,
   KAI_MARKET_HOME: (userId: string, symbolsKey: string, daysBack: number) =>
     `kai_market_home_${userId}_${symbolsKey}_${daysBack}`,

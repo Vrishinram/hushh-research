@@ -9,10 +9,8 @@ import {
   BarChart3,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Card } from "@/lib/morphy-ux/card";
 import { Icon } from "@/lib/morphy-ux/ui";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
 // Search is provided globally via Kai layout (bottom bar)
 import {
   KaiHistoryService,
@@ -30,6 +28,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/lib/morphy-ux/button";
 import { format } from "date-fns";
+import { HushhLoader } from "@/components/app-ui/hushh-loader";
 
 // ============================================================================
 // Props
@@ -115,32 +114,6 @@ function processHistory(map: AnalysisHistoryMap): HistoryEntryWithVersion[] {
 }
 
 // ============================================================================
-// Skeleton Card
-// ============================================================================
-
-function HistoryCardSkeleton() {
-  return (
-    <Card variant="none" effect="glass" showRipple={false} className="p-4">
-      <div className="flex items-start justify-between">
-        <div className="space-y-2">
-          <Skeleton className="h-6 w-16" />
-          <Skeleton className="h-4 w-20" />
-        </div>
-        <Skeleton className="h-5 w-14 rounded-full" />
-      </div>
-      <div className="mt-3 space-y-2">
-        <Skeleton className="h-3 w-full" />
-        <Skeleton className="h-3 w-3/4" />
-      </div>
-      <div className="mt-3 flex items-center justify-between">
-        <Skeleton className="h-3 w-16" />
-        <Skeleton className="h-3 w-12" />
-      </div>
-    </Card>
-  );
-}
-
-// ============================================================================
 // Empty State
 // ============================================================================
 
@@ -195,17 +168,21 @@ export function AnalysisHistoryDashboard({
     } finally {
       setLoading(false);
     }
-  }, [userId, vaultKey]);
+  }, [userId, vaultKey, vaultOwnerToken]);
 
   // ----- Delete Handlers -----
 
   const handleDeleteEntry = useCallback(async (entry: AnalysisHistoryEntry) => {
+    const rawCard = entry.raw_card as Record<string, unknown> | undefined;
+    const diagnostics = rawCard?.stream_diagnostics as Record<string, unknown> | undefined;
+    const streamId = typeof diagnostics?.stream_id === "string" ? diagnostics.stream_id : null;
     const success = await KaiHistoryService.deleteEntry({
       userId,
       vaultKey,
       vaultOwnerToken,
       ticker: entry.ticker,
       timestamp: entry.timestamp,
+      streamId,
     });
 
     if (success) {
@@ -276,16 +253,9 @@ export function AnalysisHistoryDashboard({
   // ----- Loading state -----
   if (loading) {
     return (
-      <div className="space-y-6 px-4 sm:px-6 pb-safe max-w-4xl mx-auto">
-        {/* Search skeleton */}
-        <div className="flex items-center gap-3">
-          <Skeleton className="h-9 w-[250px] rounded-md" />
-        </div>
-        {/* Card skeletons */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <HistoryCardSkeleton key={i} />
-          ))}
+      <div className="px-4 sm:px-6 pb-safe max-w-4xl mx-auto">
+        <div className="flex min-h-52 items-center justify-center rounded-2xl border border-border/40 bg-card/60">
+          <HushhLoader variant="inline" label="Loading analysis history…" />
         </div>
       </div>
     );
@@ -302,7 +272,7 @@ export function AnalysisHistoryDashboard({
       {/* Header (search is global in Kai layout) */}
       <div className="flex items-center gap-2">
         <Icon icon={Search} size="sm" className="text-muted-foreground" />
-        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+        <h2 className="app-section-heading text-muted-foreground uppercase tracking-[0.12em]">
           Analysis History
         </h2>
         <Badge variant="secondary" className="text-[10px]">

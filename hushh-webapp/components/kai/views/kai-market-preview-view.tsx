@@ -13,9 +13,7 @@ import {
   type LucideIcon,
   Zap,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
 
-import { HeroStrip } from "@/components/kai/home/hero-strip";
 import { NewsTape } from "@/components/kai/home/news-tape";
 import { ConnectPortfolioCta } from "@/components/kai/cards/connect-portfolio-cta";
 import { MarketOverviewGrid, type MarketOverviewMetric } from "@/components/kai/cards/market-overview-grid";
@@ -32,7 +30,7 @@ import { useVault } from "@/lib/vault/vault-context";
 
 function SectionLabel({ children }: { children: string }) {
   return (
-    <h2 className="mb-3 pl-1 text-[11px] font-black uppercase tracking-[0.16em] text-muted-foreground">
+    <h2 className="app-section-heading mb-3 pl-1 uppercase tracking-[0.12em] text-muted-foreground">
       {children}
     </h2>
   );
@@ -179,7 +177,6 @@ function readCachedPortfolioHoldings(
 }
 
 export function KaiMarketPreviewView() {
-  const router = useRouter();
   const { user, loading } = useAuth();
   const {
     vaultKey,
@@ -452,12 +449,6 @@ export function KaiMarketPreviewView() {
           Structured insights, even before connecting your portfolio.
         </p>
       </header>
-
-      <section className="mt-6">
-        <HeroStrip
-          onOpenDashboard={() => router.push("/kai/dashboard")}
-        />
-      </section>
 
       {error ? (
         <section className="mt-7">

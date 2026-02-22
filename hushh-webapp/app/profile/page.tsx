@@ -108,6 +108,9 @@ export default function ProfilePage() {
   const { vaultKey, vaultOwnerToken, isVaultUnlocked } = useVault();
   const { registerSteps, completeStep, reset } = useStepProgress();
   const [showVaultUnlock, setShowVaultUnlock] = useState(false);
+  const [vaultUnlockReason, setVaultUnlockReason] = useState<
+    "profile_data" | "delete_account"
+  >("profile_data");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [hasVault, setHasVault] = useState<boolean | null>(null);
@@ -274,6 +277,7 @@ export default function ProfilePage() {
       if (resolution.kind === "needs_unlock") {
         toast.error("Please unlock your vault first to delete your account.");
         setShowDeleteConfirm(false);
+        setVaultUnlockReason("delete_account");
         setShowVaultUnlock(true);
         return;
       }
@@ -324,6 +328,7 @@ export default function ProfilePage() {
     if (isVaultUnlocked) {
       setShowDeleteConfirm(true);
     } else {
+      setVaultUnlockReason("delete_account");
       setShowVaultUnlock(true);
     }
   };
@@ -388,6 +393,14 @@ export default function ProfilePage() {
       typeof vaultOwnerToken === "string" &&
       vaultOwnerToken.length > 0
   );
+  const unlockDialogTitle =
+    vaultUnlockReason === "delete_account"
+      ? "Unlock Vault to Delete Account"
+      : "Unlock Vault";
+  const unlockDialogDescription =
+    vaultUnlockReason === "delete_account"
+      ? "Unlock your vault to confirm deletion. This is permanent and removes all encrypted data."
+      : "Unlock your vault to access profile data and settings.";
 
   async function switchVaultMethod(targetMethod: VaultMethod, passphrase?: string) {
     if (!user?.uid) return;
@@ -455,17 +468,17 @@ export default function ProfilePage() {
       {/* World Model KPI Cards */}
       <Card variant="none" effect="glass">
         <CardHeader className="pb-2">
-          <CardTitle className="text-lg flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
+          <CardTitle className="text-lg flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="h-10 w-10 shrink-0 rounded-xl bg-primary/10 flex items-center justify-center">
                 <Icon icon={Folder} size="md" className="text-primary" />
               </div>
-              <span>Your Data Profile</span>
+              <span className="truncate">Your Data Profile</span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
               {hasVault === true && (
                 <Button
-                  variant="none"
+                  variant="blue-gradient"
                   effect="fade"
                   size="sm"
                   disabled={!canEditKaiPreferences}
@@ -541,9 +554,22 @@ export default function ProfilePage() {
                   </Button>
                 </>
               ) : hasVault === true && !vaultOwnerToken ? (
-                <p className="text-sm text-muted-foreground">
-                  Unlock your vault to view your data profile.
-                </p>
+                <>
+                  <p className="text-sm text-muted-foreground mb-3">
+                    Unlock your vault to view your data profile.
+                  </p>
+                  <Button
+                    variant="none"
+                    effect="fade"
+                    size="sm"
+                    onClick={() => {
+                      setVaultUnlockReason("profile_data");
+                      setShowVaultUnlock(true);
+                    }}
+                  >
+                    Unlock Vault
+                  </Button>
+                </>
               ) : (
                 <>
                   <p className="text-sm text-muted-foreground mb-3">
@@ -739,6 +765,20 @@ export default function ProfilePage() {
         </CardContent>
       </Card>
 
+      {/* Sign Out Button */}
+      <div className="flex">
+        <Button
+          variant="destructive"
+          effect="fade"
+          size="default"
+          className="w-auto min-w-[9rem] px-5"
+          onClick={handleSignOut}
+        >
+          <Icon icon={LogOut} size="md" className="mr-2" />
+          Sign Out
+        </Button>
+      </div>
+
       {/* Danger Zone */}
       <Card variant="none" className="border-destructive/20 bg-destructive/5 dark:bg-destructive/10">
         <CardHeader className="pb-2">
@@ -782,27 +822,23 @@ export default function ProfilePage() {
       {hasVault === true && (
         <Dialog open={showVaultUnlock} onOpenChange={setShowVaultUnlock}>
           <DialogContent className="sm:max-w-md p-0 border-none bg-transparent shadow-none">
+            <DialogTitle className="sr-only">{unlockDialogTitle}</DialogTitle>
+            <DialogDescription className="sr-only">
+              {unlockDialogDescription}
+            </DialogDescription>
             {user && (
-              <div className="bg-background/95 backdrop-blur-xl border rounded-xl overflow-hidden shadow-2xl">
-                <div className="p-4 border-b">
-                  <DialogTitle className="font-semibold text-center text-base">
-                    Unlock Vault to Delete Account
-                  </DialogTitle>
-                  <DialogDescription className="sr-only">
-                    Unlock your vault to confirm deletion. This is permanent and removes all encrypted data.
-                  </DialogDescription>
-                </div>
-                <div className="p-4">
-                  <VaultFlow
-                    user={user}
-                    onSuccess={() => {
-                      setShowVaultUnlock(false);
-                      // Small delay to let closing animation finish before showing confirm
-                      setTimeout(() => setShowDeleteConfirm(true), 300);
-                    }}
-                  />
-                </div>
-              </div>
+              <VaultFlow
+                user={user}
+                onSuccess={() => {
+                  setShowVaultUnlock(false);
+                  if (vaultUnlockReason === "delete_account") {
+                    // Small delay to let closing animation finish before showing confirm
+                    setTimeout(() => setShowDeleteConfirm(true), 300);
+                    return;
+                  }
+                  toast.success("Vault unlocked.");
+                }}
+              />
             )}
           </DialogContent>
         </Dialog>
@@ -891,18 +927,6 @@ export default function ProfilePage() {
           vaultOwnerToken={vaultOwnerToken as string}
         />
       )}
-
-      {/* Sign Out Button */}
-      <Button
-        variant="destructive"
-        effect="fade"
-        size="lg"
-        className="w-full"
-        onClick={handleSignOut}
-      >
-        <Icon icon={LogOut} size="md" className="mr-2" />
-        Sign Out
-      </Button>
 
       {/* Security Footer */}
       <p className="text-center text-xs text-muted-foreground">

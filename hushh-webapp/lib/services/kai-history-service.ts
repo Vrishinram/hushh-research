@@ -56,6 +56,30 @@ export interface AnalysisHistoryEntry {
 
 export type AnalysisHistoryMap = Record<string, AnalysisHistoryEntry[]>;
 
+function normalizeTickerKey(
+  historyMap: AnalysisHistoryMap,
+  ticker: string
+): string | null {
+  const wanted = String(ticker || "").trim().toUpperCase();
+  if (!wanted) return null;
+  if (Object.prototype.hasOwnProperty.call(historyMap, wanted)) return wanted;
+  const matched = Object.keys(historyMap).find(
+    (key) => key.toUpperCase() === wanted
+  );
+  return matched ?? null;
+}
+
+function extractStreamId(entry: AnalysisHistoryEntry): string | null {
+  const rawCard = entry.raw_card;
+  if (!rawCard || typeof rawCard !== "object") return null;
+  const diagnostics = (rawCard as Record<string, unknown>).stream_diagnostics;
+  if (!diagnostics || typeof diagnostics !== "object") return null;
+  const streamId = (diagnostics as Record<string, unknown>).stream_id;
+  if (typeof streamId !== "string") return null;
+  const trimmed = streamId.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 function buildHistorySummary(
   historyMap: AnalysisHistoryMap,
   lastTicker?: string,
@@ -287,8 +311,9 @@ export class KaiHistoryService {
     vaultOwnerToken?: string;
     ticker: string;
     timestamp: string;
+    streamId?: string | null;
   }): Promise<boolean> {
-    const { userId, vaultKey, vaultOwnerToken, ticker, timestamp } = params;
+    const { userId, vaultKey, vaultOwnerToken, ticker, timestamp, streamId } = params;
 
     try {
       // 1. Fetch & Decrypt
@@ -300,16 +325,33 @@ export class KaiHistoryService {
 
       // 2. Modify
       const historyMap: AnalysisHistoryMap = extractHistoryMap(fullBlob);
-      if (!historyMap[ticker]) return false;
+      const tickerKey = normalizeTickerKey(historyMap, ticker);
+      if (!tickerKey) return false;
 
-      const originalLen = historyMap[ticker].length;
-      historyMap[ticker] = historyMap[ticker].filter((e) => e.timestamp !== timestamp);
+      const wantedTimestamp = String(timestamp || "").trim();
+      const wantedStreamId =
+        typeof streamId === "string" && streamId.trim().length > 0
+          ? streamId.trim()
+          : null;
 
-      if (historyMap[ticker].length === 0) {
-        delete historyMap[ticker];
+      const currentTickerHistory = historyMap[tickerKey] ?? [];
+      if (currentTickerHistory.length === 0) return false;
+
+      const originalLen = currentTickerHistory.length;
+      historyMap[tickerKey] = currentTickerHistory.filter((entry) => {
+        const byTimestamp =
+          wantedTimestamp.length > 0 &&
+          String(entry.timestamp || "").trim() === wantedTimestamp;
+        const byStreamId =
+          wantedStreamId !== null && extractStreamId(entry) === wantedStreamId;
+        return !(byTimestamp || byStreamId);
+      });
+
+      if (historyMap[tickerKey].length === 0) {
+        delete historyMap[tickerKey];
       }
 
-      if (historyMap[ticker]?.length === originalLen && historyMap[ticker]) {
+      if (historyMap[tickerKey]?.length === originalLen && historyMap[tickerKey]) {
         return false; // No change
       }
 
@@ -329,7 +371,7 @@ export class KaiHistoryService {
       });
 
       if (result.success) {
-        CacheSyncService.onAnalysisHistoryMutated(userId, ticker);
+        CacheSyncService.onAnalysisHistoryMutated(userId, tickerKey);
       }
 
       return result.success;
@@ -360,9 +402,10 @@ export class KaiHistoryService {
 
       // 2. Modify
       const historyMap: AnalysisHistoryMap = extractHistoryMap(fullBlob);
-      if (!historyMap[ticker]) return false;
+      const tickerKey = normalizeTickerKey(historyMap, ticker);
+      if (!tickerKey) return false;
 
-      delete historyMap[ticker];
+      delete historyMap[tickerKey];
       // 3. Encrypt & Save
       const nowIso = new Date().toISOString();
       const result = await WorldModelService.storeMergedDomain({
@@ -379,7 +422,7 @@ export class KaiHistoryService {
       });
 
       if (result.success) {
-        CacheSyncService.onAnalysisHistoryMutated(userId, ticker);
+        CacheSyncService.onAnalysisHistoryMutated(userId, tickerKey);
       }
 
       return result.success;
