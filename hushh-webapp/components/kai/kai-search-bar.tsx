@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import { Mic, Search } from "lucide-react";
-import { toast } from "sonner";
 
 import { KaiCommandPalette, type KaiCommandAction } from "@/components/kai/kai-command-palette";
 import { Button } from "@/lib/morphy-ux/button";
+import { morphyToast as toast } from "@/lib/morphy-ux/morphy";
 import { Icon } from "@/lib/morphy-ux/ui";
 import { cn } from "@/lib/utils";
 import { useKaiBottomChromeVisibility } from "@/lib/navigation/kai-bottom-chrome-visibility";
