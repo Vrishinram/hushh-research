@@ -183,8 +183,11 @@ function extractDebatePortfolioContext(
 
   const holdingsRaw = Array.isArray(cached.holdings)
     ? cached.holdings
-    : Array.isArray(cached.detailed_holdings)
-      ? cached.detailed_holdings
+    : cached.portfolio &&
+        typeof cached.portfolio === "object" &&
+        !Array.isArray(cached.portfolio) &&
+        Array.isArray((cached.portfolio as Record<string, unknown>).holdings)
+      ? ((cached.portfolio as Record<string, unknown>).holdings as unknown[])
       : [];
 
   const holdings = holdingsRaw
@@ -203,6 +206,22 @@ function extractDebatePortfolioContext(
           : typeof row.asset_class === "string"
             ? row.asset_class
             : undefined,
+      is_investable: typeof row.is_investable === "boolean" ? row.is_investable : undefined,
+      is_cash_equivalent:
+        typeof row.is_cash_equivalent === "boolean" ? row.is_cash_equivalent : undefined,
+      is_sec_common_equity_ticker:
+        typeof row.is_sec_common_equity_ticker === "boolean"
+          ? row.is_sec_common_equity_ticker
+          : undefined,
+      symbol_kind: typeof row.symbol_kind === "string" ? row.symbol_kind : undefined,
+      security_listing_status:
+        typeof row.security_listing_status === "string"
+          ? row.security_listing_status
+          : undefined,
+      analyze_eligible_reason:
+        typeof row.analyze_eligible_reason === "string"
+          ? row.analyze_eligible_reason
+          : undefined,
     }))
     .filter((row) => row.symbol.length > 0 || row.name.length > 0);
 
@@ -273,9 +292,9 @@ function extractDebatePortfolioContext(
       cached.realized_gain_loss && typeof cached.realized_gain_loss === "object"
         ? cached.realized_gain_loss
         : undefined,
-    quality_report:
-      cached.quality_report && typeof cached.quality_report === "object"
-        ? cached.quality_report
+    quality_report_v2:
+      cached.quality_report_v2 && typeof cached.quality_report_v2 === "object"
+        ? cached.quality_report_v2
         : undefined,
     total_value: toFiniteNumber(cached.total_value),
     cash_balance: toFiniteNumber(cached.cash_balance),
@@ -932,21 +951,9 @@ export function DebateStreamView({ ticker, userId, riskProfile: riskProfileProp,
   useEffect(() => {
     startStream();
 
-    // Production-grade disconnect: abort on force-close, mobile swipe-away
+    // Keep analysis stream alive when app/tab is backgrounded; abort only on explicit unload.
     const abortStream = () => abortControllerRef.current?.abort();
     window.addEventListener('beforeunload', abortStream);
-    window.addEventListener('pagehide', abortStream);
-
-    let visibilityTimeout: NodeJS.Timeout | undefined;
-    const handleVisibility = () => {
-      if (document.visibilityState === 'hidden') {
-        // Mobile: abort after 5s in background (catches swipe-away)
-        visibilityTimeout = setTimeout(abortStream, 5000);
-      } else {
-        clearTimeout(visibilityTimeout);
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibility);
 
     return () => {
       if (abortControllerRef.current) {
@@ -956,9 +963,6 @@ export function DebateStreamView({ ticker, userId, riskProfile: riskProfileProp,
         clearTimeout(retryTimerRef.current);
       }
       window.removeEventListener('beforeunload', abortStream);
-      window.removeEventListener('pagehide', abortStream);
-      document.removeEventListener('visibilitychange', handleVisibility);
-      clearTimeout(visibilityTimeout);
       setBusyOperation("stock_analysis_stream", false);
     };
   }, [startStream, setBusyOperation]);

@@ -111,6 +111,10 @@ export class WorldModelService {
   private static metadataInflight = new Map<string, Promise<WorldModelMetadata>>();
   private static encryptedDataInflight = new Map<string, Promise<EncryptedUserBlob | null>>();
   private static domainDataInflight = new Map<string, Promise<EncryptedValue | null>>();
+  private static tickerSyncInflight = new Map<string, Promise<void>>();
+  private static tickerSyncSignatureByUser = new Map<string, string>();
+  private static tickerSyncLastAt = new Map<string, number>();
+  private static readonly TICKER_SYNC_THROTTLE_MS = 5 * 60 * 1000;
 
   private static inflightKey(
     keyParts: Array<string | number | boolean | undefined | null>
@@ -123,7 +127,172 @@ export class WorldModelService {
       return false;
     }
     const record = value as Record<string, unknown>;
-    return Array.isArray(record.holdings) || Array.isArray(record.detailed_holdings);
+    const portfolio = record.portfolio;
+    if (portfolio && typeof portfolio === "object" && !Array.isArray(portfolio)) {
+      const portfolioRecord = portfolio as Record<string, unknown>;
+      return Array.isArray(portfolioRecord.holdings);
+    }
+    return false;
+  }
+
+  private static normalizeHoldingSymbolCandidate(value: unknown): string {
+    const raw = String(value ?? "")
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9.\-]/g, "");
+    if (!raw) return "";
+    if (["CASH", "MMF", "SWEEP", "QACDS"].includes(raw)) return "CASH";
+    if (!/^[A-Z][A-Z0-9.\-]{0,5}$/.test(raw)) return "";
+    return raw;
+  }
+
+  private static extractHoldingsForTickerSync(fullBlob: Record<string, unknown>): Array<Record<string, unknown>> {
+    const financial =
+      fullBlob.financial && typeof fullBlob.financial === "object" && !Array.isArray(fullBlob.financial)
+        ? (fullBlob.financial as Record<string, unknown>)
+        : null;
+    if (!financial) return [];
+
+    const canonicalPortfolio =
+      financial.portfolio &&
+      typeof financial.portfolio === "object" &&
+      !Array.isArray(financial.portfolio)
+        ? (financial.portfolio as Record<string, unknown>)
+        : null;
+
+    const holdingsSource = Array.isArray(canonicalPortfolio?.holdings)
+      ? canonicalPortfolio?.holdings
+      : Array.isArray(financial.holdings)
+        ? financial.holdings
+        : [];
+
+    if (!Array.isArray(holdingsSource)) return [];
+
+    const out: Array<Record<string, unknown>> = [];
+    for (const row of holdingsSource) {
+      if (!row || typeof row !== "object" || Array.isArray(row)) {
+        continue;
+      }
+      const holding = row as Record<string, unknown>;
+      const symbol = this.normalizeHoldingSymbolCandidate(
+        holding.symbol ??
+          holding.ticker ??
+          holding.ticker_symbol ??
+          holding.display_ticker ??
+          holding.security_symbol
+      );
+      if (!symbol) continue;
+      out.push({
+        symbol,
+        ticker: symbol,
+        name: holding.name ?? holding.description ?? holding.title ?? holding.company_name ?? symbol,
+        sector: holding.sector ?? holding.sector_primary ?? holding.asset_category ?? holding.asset_type,
+        industry: holding.industry ?? holding.industry_primary,
+        asset_type: holding.asset_type ?? holding.asset_class ?? holding.instrument_kind,
+        security_listing_status: holding.security_listing_status,
+        instrument_kind: holding.instrument_kind,
+        is_cash_equivalent: holding.is_cash_equivalent,
+        is_investable: holding.is_investable,
+      });
+      if (out.length >= 250) {
+        break;
+      }
+    }
+    return out;
+  }
+
+  private static async maybeSyncTickersFromFinancialBlob(params: {
+    userId: string;
+    fullBlob: Record<string, unknown>;
+    vaultOwnerToken?: string;
+  }): Promise<void> {
+    if (Capacitor.isNativePlatform()) {
+      return;
+    }
+    if (!params.vaultOwnerToken) {
+      return;
+    }
+
+    const holdings = this.extractHoldingsForTickerSync(params.fullBlob);
+    if (!holdings.length) {
+      return;
+    }
+
+    const signature = holdings
+      .map((row) => String(row.symbol || ""))
+      .filter(Boolean)
+      .sort()
+      .join(",");
+    if (!signature) {
+      return;
+    }
+
+    const now = Date.now();
+    const priorSignature = this.tickerSyncSignatureByUser.get(params.userId);
+    const priorAt = this.tickerSyncLastAt.get(params.userId) || 0;
+    if (
+      priorSignature === signature &&
+      now - priorAt < WorldModelService.TICKER_SYNC_THROTTLE_MS
+    ) {
+      return;
+    }
+
+    const dedupeKey = this.inflightKey(["ticker_sync", params.userId, signature]);
+    if (this.tickerSyncInflight.has(dedupeKey)) {
+      return;
+    }
+
+    const request = (async () => {
+      try {
+        const response = await ApiService.apiFetch(
+          `/api/tickers/sync-holdings/${encodeURIComponent(params.userId)}`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...this.getAuthHeaders(params.vaultOwnerToken),
+            },
+            body: JSON.stringify({
+              holdings,
+              max_symbols: 250,
+              enrich_missing: true,
+              refresh_cache: true,
+            }),
+          }
+        );
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => "");
+          console.warn(
+            `[WorldModelService] ticker sync failed (${response.status}) for ${params.userId}: ${errorText}`
+          );
+          return;
+        }
+
+        const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+        const changeCount =
+          Number(payload.seeded_rows || 0) +
+          Number(payload.seed_updates || 0) +
+          Number(payload.enrichment_updated || 0);
+        if (changeCount > 0) {
+          const { preloadTickerUniverse } = await import("@/lib/kai/ticker-universe-cache");
+          await preloadTickerUniverse({ forceRefresh: true }).catch(() => undefined);
+        }
+
+        this.tickerSyncSignatureByUser.set(params.userId, signature);
+        this.tickerSyncLastAt.set(params.userId, Date.now());
+      } catch (error) {
+        console.warn("[WorldModelService] ticker sync request failed:", error);
+      }
+    })();
+
+    this.tickerSyncInflight.set(dedupeKey, request);
+    try {
+      await request;
+    } finally {
+      if (this.tickerSyncInflight.get(dedupeKey) === request) {
+        this.tickerSyncInflight.delete(dedupeKey);
+      }
+    }
   }
 
   /**
@@ -936,8 +1105,13 @@ export class WorldModelService {
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       return {};
     }
-
-    return parsed as Record<string, unknown>;
+    const parsedBlob = parsed as Record<string, unknown>;
+    void this.maybeSyncTickersFromFinancialBlob({
+      userId: params.userId,
+      fullBlob: parsedBlob,
+      vaultOwnerToken: params.vaultOwnerToken,
+    });
+    return parsedBlob;
   }
 
   /**
@@ -1005,10 +1179,19 @@ export class WorldModelService {
       domain_intent: params.domain,
       ...params.summary,
     };
-    const portfolioData =
-      params.domain === "financial" && this.isLikelyPortfolioData(params.domainData)
-        ? (params.domainData as CachedPortfolioData)
-        : undefined;
+    let portfolioData: CachedPortfolioData | undefined;
+    if (params.domain === "financial" && this.isLikelyPortfolioData(params.domainData)) {
+      const domainRecord = params.domainData as Record<string, unknown>;
+      if (Array.isArray(domainRecord.holdings)) {
+        portfolioData = params.domainData as CachedPortfolioData;
+      } else if (
+        domainRecord.portfolio &&
+        typeof domainRecord.portfolio === "object" &&
+        !Array.isArray(domainRecord.portfolio)
+      ) {
+        portfolioData = domainRecord.portfolio as CachedPortfolioData;
+      }
+    }
 
     const result = await this.storeDomainData({
       userId: params.userId,
@@ -1018,6 +1201,14 @@ export class WorldModelService {
       portfolioData,
       vaultOwnerToken: params.vaultOwnerToken,
     });
+
+    if (result.success && params.domain === "financial") {
+      void this.maybeSyncTickersFromFinancialBlob({
+        userId: params.userId,
+        fullBlob: merged.fullBlob,
+        vaultOwnerToken: params.vaultOwnerToken,
+      });
+    }
 
     return {
       success: result.success,

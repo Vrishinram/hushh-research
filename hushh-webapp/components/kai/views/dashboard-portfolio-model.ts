@@ -175,12 +175,23 @@ function classifyAssetBucket({
   name,
   sector,
   assetType,
+  instrumentKind,
+  isCashEquivalent,
 }: {
   symbol: string;
   name: string;
   sector: string;
   assetType: string;
+  instrumentKind?: string;
+  isCashEquivalent?: boolean;
 }): DashboardAssetBucket {
+  if (isCashEquivalent) return "cash_equivalent";
+  const normalizedKind = String(instrumentKind || "").trim().toLowerCase();
+  if (normalizedKind === "cash_equivalent") return "cash_equivalent";
+  if (normalizedKind === "fixed_income") return "fixed_income";
+  if (normalizedKind === "real_asset") return "real_asset";
+  if (normalizedKind === "equity") return "equity";
+
   const hint = `${symbol} ${name} ${sector} ${assetType}`.toLowerCase();
   if (
     hint.includes("cash")
@@ -233,8 +244,13 @@ function toPosition(raw: Holding, index: number): DashboardPosition | null {
 
   const aliases = inferAliases(rawSymbol, name);
   const tickerAlias = aliases.find((alias) => TICKER_REGEX.test(alias)) ?? null;
+  const explicitIdentifierType = toText(raw.identifier_type).toLowerCase();
   const identifierType: DashboardPosition["identifierType"] =
-    tickerAlias
+    explicitIdentifierType === "ticker"
+      ? "ticker"
+      : explicitIdentifierType === "cusip"
+        ? "cusip"
+        : tickerAlias
       ? "ticker"
       : CUSIP_REGEX.test(rawSymbol)
         ? "cusip"
@@ -243,19 +259,25 @@ function toPosition(raw: Holding, index: number): DashboardPosition | null {
 
   const sector = toText(raw.sector) || null;
   const assetType = toText(raw.asset_type || raw.asset_class) || null;
+  const explicitCashEquivalent = Boolean(raw.is_cash_equivalent);
+  const explicitInvestableRaw = raw.is_investable;
+  const explicitInvestable =
+    typeof explicitInvestableRaw === "boolean" ? explicitInvestableRaw : null;
   const assetBucket = classifyAssetBucket({
     symbol: rawSymbol,
     name,
     sector: sector || "",
     assetType: assetType || "",
+    instrumentKind: toText(raw.instrument_kind),
+    isCashEquivalent: explicitCashEquivalent,
   });
-  const isCashEquivalent = assetBucket === "cash_equivalent";
+  const isCashEquivalent = explicitCashEquivalent || assetBucket === "cash_equivalent";
   const marketValue = toPositiveNumber(raw.market_value);
 
   const debateEligible =
-    !isCashEquivalent &&
-    Boolean(tickerAlias) &&
-    marketValue > 0;
+    explicitInvestable !== null
+      ? explicitInvestable && marketValue > 0
+      : !isCashEquivalent && Boolean(tickerAlias) && marketValue > 0;
   const optimizeEligible = debateEligible;
 
   return {
@@ -284,7 +306,7 @@ function toPosition(raw: Holding, index: number): DashboardPosition | null {
 }
 
 export function buildDashboardPortfolioModel(portfolioData: PortfolioData): DashboardPortfolioModel {
-  const rawHoldings = (portfolioData.holdings || portfolioData.detailed_holdings || []) as Holding[];
+  const rawHoldings = (portfolioData.holdings || []) as Holding[];
   const positions = rawHoldings
     .map((holding, index) => toPosition(holding, index))
     .filter((row): row is DashboardPosition => Boolean(row))

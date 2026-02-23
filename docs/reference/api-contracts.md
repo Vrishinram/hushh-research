@@ -110,11 +110,11 @@ POST /api/consent/vault-owner-token  (Firebase Bearer)
 | Method | Path | Description |
 | ------ | ---- | ----------- |
 | POST | `/api/kai/portfolio/import` | Import brokerage statement (CSV/PDF) |
-| POST | `/api/kai/portfolio/import/stream` | Streaming import with Gemini progress |
+| POST | `/api/kai/portfolio/import/stream` | Streaming import with deterministic Gemini extraction, thought telemetry, and strict quality-gate aborts |
 | GET | `/api/kai/portfolio/summary/{user_id}` | Portfolio summary from world model |
 | GET | `/api/kai/dashboard/profile-picks/{user_id}` | Real profile-based picks for dashboard cards (`symbols`, `limit`) |
 | POST | `/api/kai/portfolio/analyze-losers` | Analyze losers vs Renaissance |
-| POST | `/api/kai/portfolio/analyze-losers/stream` | Streaming losers analysis (SSE) |
+| POST | `/api/kai/portfolio/analyze-losers/stream` | Streaming losers analysis (SSE, deterministic config, cash-excluded investable universe) |
 
 #### Kai Analysis
 
@@ -259,6 +259,35 @@ Terminal `decision` events from `/api/kai/analyze/stream` include:
 - `analysis_mode`
 
 These fields are additive to the canonical decision payload and mirrored in `raw_card` where applicable.
+
+### Portfolio Import Stream Terminal Diagnostics (V2)
+
+Terminal payload from `POST /api/kai/portfolio/import/stream` now includes:
+
+- `portfolio_data_v2` (canonical app-consumed portfolio payload)
+- `raw_extract_v2` (raw single-pass LLM extraction snapshot)
+- `analytics_v2` (materialized dashboard/debate/optimize metrics)
+- `quality_report_v2` (deterministic quality report and gate output)
+- `timings_ms` (phase timings, includes `total_ms`)
+- `token_counts` (phase -> `{chunks, thoughts}`)
+- `coverage_metrics` (positions coverage and reconciliation checks)
+- `quality_gate`:
+  - `passed`
+  - `holdings_count`
+  - `placeholder_symbol_count`
+  - `account_header_row_count`
+  - `expected_total_value`
+  - `holdings_market_value_sum`
+  - `reconciliation_gap`
+  - `reconciled_within_cent`
+
+If strict validation fails, stream emits terminal `aborted` with:
+
+- `code=IMPORT_QUALITY_GATE_FAILED`
+- `quality_gate`
+- `quality_report_v2`
+
+No silent success is emitted when quality gate fails.
 
 ---
 

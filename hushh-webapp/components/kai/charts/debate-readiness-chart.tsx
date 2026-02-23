@@ -21,16 +21,16 @@ interface DebateReadinessChartProps {
 }
 
 const READINESS_BAR_COLORS = [
-  "hsl(var(--chart-1))",
-  "hsl(var(--chart-2))",
-  "hsl(var(--chart-3))",
-  "hsl(var(--chart-4))",
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
 ];
 
 const CHART_CONFIG = {
   coverage: {
     label: "Coverage",
-    color: "hsl(var(--chart-1))",
+    color: "var(--chart-1)",
   },
 } satisfies ChartConfig;
 
@@ -82,7 +82,7 @@ export function DebateReadinessChart({ data, className }: DebateReadinessChartPr
           {data.map((entry, index) => (
             <Cell
               key={entry.key}
-              fill={READINESS_BAR_COLORS[index % READINESS_BAR_COLORS.length] ?? "hsl(var(--chart-1))"}
+              fill={READINESS_BAR_COLORS[index % READINESS_BAR_COLORS.length] ?? "var(--chart-1)"}
             />
           ))}
         </Bar>
@@ -90,4 +90,3 @@ export function DebateReadinessChart({ data, className }: DebateReadinessChartPr
     </ChartContainer>
   );
 }
-

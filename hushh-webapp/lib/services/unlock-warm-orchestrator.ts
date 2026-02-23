@@ -12,6 +12,7 @@ export type UnlockWarmResult = {
   metadataWarmed: boolean;
   financialWarmed: boolean;
   kaiMarketWarmed: boolean;
+  dashboardPicksWarmed: boolean;
   consentsWarmed: boolean;
   vaultStatusWarmed: boolean;
 };
@@ -59,9 +60,15 @@ function resolveWarmPriority(routePath?: string | null): WarmPriority {
 }
 
 function deriveTrackedSymbols(portfolio: Record<string, unknown>): string[] {
+  const nestedPortfolio =
+    portfolio.portfolio &&
+    typeof portfolio.portfolio === "object" &&
+    !Array.isArray(portfolio.portfolio)
+      ? (portfolio.portfolio as Record<string, unknown>)
+      : null;
   const holdings = (
     (Array.isArray(portfolio.holdings) && portfolio.holdings) ||
-    (Array.isArray(portfolio.detailed_holdings) && portfolio.detailed_holdings) ||
+    (Array.isArray(nestedPortfolio?.holdings) && nestedPortfolio.holdings) ||
     []
   ) as Array<Record<string, unknown>>;
 
@@ -170,8 +177,9 @@ export class UnlockWarmOrchestrator {
       warmPriority === "default";
     const shouldWarmMarket =
       warmPriority === "market" ||
+      warmPriority === "default";
+    const shouldWarmDashboardPicks =
       warmPriority === "dashboard" ||
-      warmPriority === "analysis" ||
       warmPriority === "default";
     const shouldWarmMetadata =
       warmPriority === "profile" ||
@@ -188,6 +196,7 @@ export class UnlockWarmOrchestrator {
       metadataWarmed: false,
       financialWarmed: false,
       kaiMarketWarmed: false,
+      dashboardPicksWarmed: false,
       consentsWarmed: false,
       vaultStatusWarmed: false,
     };
@@ -382,6 +391,32 @@ export class UnlockWarmOrchestrator {
           !Array.isArray(profileCandidate)
         ) {
           cache.set(CACHE_KEYS.KAI_PROFILE(params.userId), profileCandidate, WARM_CACHE_TTL_MS);
+        }
+      }
+    }
+
+    if (shouldWarmDashboardPicks) {
+      const picksSymbolsKey = toSymbolsKey(symbols);
+      const picksCacheKey = CACHE_KEYS.KAI_DASHBOARD_PROFILE_PICKS(
+        params.userId,
+        picksSymbolsKey,
+        3
+      );
+      const cachedPicks = cache.get(picksCacheKey);
+      if (cachedPicks) {
+        result.dashboardPicksWarmed = true;
+      } else {
+        try {
+          const picks = await ApiService.getDashboardProfilePicks({
+            userId: params.userId,
+            vaultOwnerToken: params.vaultOwnerToken,
+            symbols: symbols.length > 0 ? symbols : undefined,
+            limit: 3,
+          });
+          cache.set(picksCacheKey, picks, WARM_CACHE_TTL_MS);
+          result.dashboardPicksWarmed = true;
+        } catch (error) {
+          console.warn("[UnlockWarmOrchestrator] Dashboard picks warm-up failed:", error);
         }
       }
     }

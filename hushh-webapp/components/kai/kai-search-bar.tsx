@@ -14,12 +14,20 @@ interface KaiSearchBarProps {
   onCommand: (command: KaiCommandAction, params?: Record<string, unknown>) => void;
   disabled?: boolean;
   hasPortfolioData?: boolean;
+  portfolioTickers?: Array<{
+    symbol: string;
+    name?: string;
+    asset_type?: string;
+    is_investable?: boolean;
+    analyze_eligible?: boolean;
+  }>;
 }
 
 export function KaiSearchBar({
   onCommand,
   disabled = false,
   hasPortfolioData = true,
+  portfolioTickers = [],
 }: KaiSearchBarProps) {
   const [open, setOpen] = useState(false);
   const { hidden: hideBottomChrome } = useKaiBottomChromeVisibility(true);
@@ -82,6 +90,7 @@ export function KaiSearchBar({
         onOpenChange={setOpen}
         onCommand={onCommand}
         hasPortfolioData={hasPortfolioData}
+        portfolioTickers={portfolioTickers}
       />
     </>
   );

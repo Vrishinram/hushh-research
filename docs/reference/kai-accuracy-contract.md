@@ -50,7 +50,7 @@ This document defines production behavior for Kai analysis/import surfaces.
 - `analysis_mode`
 
 ## Dashboard Rendering Contract
-- Render only validated holdings from `portfolio_data.holdings`.
+- Render only validated holdings from `portfolio_data_v2.holdings`.
 - Surface parser confidence and statement provenance in UI.
 - Never display static/mock financial claims in production mode.
 

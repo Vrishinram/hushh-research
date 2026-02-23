@@ -7,6 +7,7 @@ import { Button } from "@/lib/morphy-ux/button";
 import { Card, CardContent } from "@/lib/morphy-ux/card";
 import { Icon } from "@/lib/morphy-ux/ui";
 import { ApiService, type KaiDashboardProfilePick } from "@/lib/services/api-service";
+import { CacheService, CACHE_KEYS, CACHE_TTL } from "@/lib/services/cache-service";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
@@ -16,6 +17,11 @@ interface ProfileBasedPicksListProps {
   symbols: string[];
   onAdd: (symbol: string) => void;
   limit?: number;
+}
+
+function toSymbolsKey(symbols: string[]): string {
+  if (!Array.isArray(symbols) || symbols.length === 0) return "default";
+  return [...symbols].sort((a, b) => a.localeCompare(b)).join("-");
 }
 
 function formatPrice(value: number | null | undefined): string {
@@ -74,6 +80,20 @@ export function ProfileBasedPicksList({
   useEffect(() => {
     const controller = new AbortController();
     let isMounted = true;
+    const cache = CacheService.getInstance();
+    const symbolsKey = toSymbolsKey(normalizedSymbols);
+    const cacheKey = CACHE_KEYS.KAI_DASHBOARD_PROFILE_PICKS(userId, symbolsKey, limit);
+
+    const cached = cache.get<{
+      picks?: KaiDashboardProfilePick[];
+      risk_profile?: string;
+    }>(cacheKey);
+    if (cached && isMounted) {
+      setRiskProfile(cached.risk_profile || "balanced");
+      setPicks((cached.picks || []).filter((pick) => Boolean(pick?.symbol)));
+      setLoading(false);
+      setError(null);
+    }
 
     async function load() {
       if (!userId || !vaultOwnerToken) {
@@ -83,7 +103,9 @@ export function ProfileBasedPicksList({
         }
         return;
       }
-      setLoading(true);
+      if (!cached) {
+        setLoading(true);
+      }
       setError(null);
       try {
         const response = await ApiService.getDashboardProfilePicks({
@@ -96,10 +118,13 @@ export function ProfileBasedPicksList({
         if (!isMounted) return;
         setRiskProfile(response.risk_profile || "balanced");
         setPicks((response.picks || []).filter((pick) => Boolean(pick?.symbol)));
+        cache.set(cacheKey, response, CACHE_TTL.MEDIUM);
       } catch (loadError) {
         if (!isMounted) return;
-        setPicks([]);
-        setError(loadError instanceof Error ? loadError.message : "Unable to load picks");
+        if (!cached) {
+          setPicks([]);
+          setError(loadError instanceof Error ? loadError.message : "Unable to load picks");
+        }
       } finally {
         if (isMounted) {
           setLoading(false);

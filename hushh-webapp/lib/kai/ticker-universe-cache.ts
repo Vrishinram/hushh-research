@@ -11,6 +11,8 @@ export type TickerUniverseRow = {
   sic_description?: string | null;
   sector_primary?: string | null;
   industry_primary?: string | null;
+  sector?: string | null;
+  industry?: string | null;
   sector_tags?: string[] | null;
   metadata_confidence?: number | null;
   tradable?: boolean | null;
@@ -38,8 +40,10 @@ function normalizeRow(row: TickerUniverseRow): TickerUniverseRow {
     exchange: row.exchange ?? null,
     sic_code: row.sic_code ?? null,
     sic_description: row.sic_description ?? null,
-    sector_primary: row.sector_primary ?? null,
-    industry_primary: row.industry_primary ?? null,
+    sector_primary: row.sector_primary ?? row.sector ?? null,
+    industry_primary: row.industry_primary ?? row.industry ?? null,
+    sector: row.sector ?? row.sector_primary ?? null,
+    industry: row.industry ?? row.industry_primary ?? null,
     sector_tags: Array.isArray(row.sector_tags)
       ? row.sector_tags
           .map((item) => String(item || "").trim())
@@ -95,8 +99,9 @@ function isFresh(payload: CachePayload, ttlMs: number): boolean {
   return Date.now() - payload.fetchedAt < ttlMs;
 }
 
-async function fetchUniverse(): Promise<TickerUniverseRow[]> {
-  const resp = await ApiService.apiFetch("/api/tickers/all", { method: "GET" });
+async function fetchUniverse(forceRefresh = false): Promise<TickerUniverseRow[]> {
+  const endpoint = forceRefresh ? "/api/tickers/all?refresh=1" : "/api/tickers/all";
+  const resp = await ApiService.apiFetch(endpoint, { method: "GET" });
   if (!resp.ok) throw new Error("Failed to fetch ticker universe");
   const json = (await resp.json()) as unknown;
   if (!Array.isArray(json)) return [];
@@ -130,7 +135,7 @@ export async function preloadTickerUniverse(options?: {
 
   if (!inFlight) {
     inFlight = (async () => {
-      const rows = await fetchUniverse();
+      const rows = await fetchUniverse(forceRefresh);
       const payload: CachePayload = {
         v: CACHE_VERSION,
         fetchedAt: Date.now(),

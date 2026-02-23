@@ -72,8 +72,8 @@ export function GainLossDistributionChart({
             <CartesianGrid
               vertical={false}
               strokeDasharray="3 3"
-              stroke="hsl(var(--border))"
-              strokeOpacity={0.9}
+              stroke="hsl(var(--foreground) / 0.22)"
+              strokeOpacity={1}
             />
             <XAxis
               dataKey="band"
@@ -82,22 +82,31 @@ export function GainLossDistributionChart({
               tickLine={false}
               tickMargin={8}
               interval={0}
-              tick={{ fontSize: 10 }}
+              tick={{ fontSize: 10, fill: "hsl(var(--foreground) / 0.72)" }}
             />
-            <YAxis allowDecimals={false} axisLine={false} tickLine={false} tick={{ fontSize: 10 }} />
+            <YAxis
+              allowDecimals={false}
+              axisLine={false}
+              tickLine={false}
+              tick={{ fontSize: 10, fill: "hsl(var(--foreground) / 0.72)" }}
+            />
             <ChartTooltip
               cursor={false}
               content={
                 <ChartTooltipContent
                   hideIndicator
-                  labelFormatter={(_label, payload) => {
-                    const first = payload?.[0]?.payload as GainLossBandDatum | undefined;
-                    return first?.band || "Range";
-                  }}
-                  formatter={(value) => {
+                  hideLabel
+                  formatter={(value, _name, item) => {
                     const count = typeof value === "number" ? value : Number(value || 0);
+                    const payload = item?.payload as GainLossBandDatum | undefined;
                     const suffix = count === 1 ? "" : "s";
-                    return <span className="text-sm text-muted-foreground">{count} holding{suffix}</span>;
+                    const label = payload?.band ? `${payload.band}: ` : "";
+                    return (
+                      <span className="text-sm text-muted-foreground">
+                        {label}
+                        {count} holding{suffix}
+                      </span>
+                    );
                   }}
                 />
               }

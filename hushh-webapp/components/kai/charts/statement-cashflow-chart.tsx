@@ -40,9 +40,9 @@ function formatAxisValue(value: number): string {
 }
 
 function barColorForTone(tone: StatementCashflowDatum["tone"]): string {
-  if (tone === "positive") return "hsl(var(--chart-2))";
-  if (tone === "negative") return "hsl(var(--destructive))";
-  return "hsl(var(--chart-1))";
+  if (tone === "positive") return "var(--chart-2)";
+  if (tone === "negative") return "var(--destructive)";
+  return "var(--chart-1)";
 }
 
 export function StatementCashflowChart({
@@ -61,7 +61,7 @@ export function StatementCashflowChart({
   const chartConfig: ChartConfig = {
     value: {
       label: "Amount",
-      color: "hsl(var(--chart-1))",
+      color: "var(--chart-1)",
     },
   };
 
@@ -120,4 +120,3 @@ export function StatementCashflowChart({
     </Card>
   );
 }
-

@@ -46,6 +46,7 @@ import { WorldModelService } from "@/lib/services/world-model-service";
 import { cn } from "@/lib/utils";
 import { useVault } from "@/lib/vault/vault-context";
 import { mapPortfolioToDashboardViewModel } from "@/components/kai/views/dashboard-data-mapper";
+import { getTickerUniverseSnapshot, preloadTickerUniverse } from "@/lib/kai/ticker-universe-cache";
 
 interface DashboardMasterViewProps {
   userId: string;
@@ -81,6 +82,21 @@ const ALLOCATION_COLOR_PALETTE = [
   "#8b5cf6",
   "#ec4899",
 ];
+
+const GENERIC_SECTOR_LABELS = new Set([
+  "equity",
+  "equities",
+  "stock",
+  "stocks",
+  "fixed income",
+  "bond",
+  "bonds",
+  "cash",
+  "cash & cash equivalents",
+  "other",
+  "unknown",
+  "unclassified",
+]);
 
 const FINANCIAL_INTENT_MAP = [
   "portfolio",
@@ -133,6 +149,124 @@ function deriveRiskBucket(holdings: ManagedHolding[]): string {
   if (largestWeight >= 30) return "aggressive";
   if (largestWeight >= 15) return "moderate";
   return "conservative";
+}
+
+function isHoldingAnalyzeEligible(holding: Partial<PortfolioHolding>): boolean {
+  if (typeof holding.analyze_eligible === "boolean") {
+    return holding.analyze_eligible;
+  }
+  if (holding.is_investable !== true) return false;
+  if (holding.is_cash_equivalent === true) return false;
+  const listing = String(holding.security_listing_status || "")
+    .trim()
+    .toLowerCase();
+  const symbolKind = String(holding.symbol_kind || "")
+    .trim()
+    .toLowerCase();
+  const secCommon =
+    holding.is_sec_common_equity_ticker === true ||
+    listing === "sec_common_equity" ||
+    symbolKind === "us_common_equity_ticker";
+  if (!secCommon) return false;
+  if (
+    listing === "non_sec_common_equity" ||
+    listing === "fixed_income" ||
+    listing === "cash_or_sweep"
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function isSpecificSectorLabel(value: string | null | undefined): boolean {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  return !GENERIC_SECTOR_LABELS.has(text.toLowerCase());
+}
+
+function inferEquityTypeFromName(name: string | null | undefined): string | null {
+  const hint = String(name || "").trim().toLowerCase();
+  if (!hint) return null;
+  if (hint.includes("emerging")) return "Emerging Markets Equity";
+  if (hint.includes("eafe") || hint.includes("developed")) return "Developed Markets Equity";
+  if (hint.includes("small cp")) return "Small Cap U.S. Equity";
+  if (hint.includes("small cap")) return "Small Cap U.S. Equity";
+  if (hint.includes("mid cp")) return "Mid Cap U.S. Equity";
+  if (hint.includes("mid cap")) return "Mid Cap U.S. Equity";
+  if (hint.includes("large cp")) return "Large Cap U.S. Equity";
+  if (hint.includes("russell 1000") || hint.includes("large cap")) return "Large Cap U.S. Equity";
+  if (hint.includes("growth")) return "Growth Equity";
+  if (hint.includes("value")) return "Value Equity";
+  return null;
+}
+
+function resolveEquitySectorLabel({
+  holdingSector,
+  tickerSector,
+  assetType,
+  name,
+}: {
+  holdingSector?: string | null;
+  tickerSector?: string | null;
+  assetType?: string | null;
+  name?: string | null;
+}): string {
+  if (isSpecificSectorLabel(holdingSector)) return String(holdingSector).trim();
+  if (isSpecificSectorLabel(tickerSector)) return String(tickerSector).trim();
+  if (isSpecificSectorLabel(assetType)) return String(assetType).trim();
+  const inferred = inferEquityTypeFromName(name);
+  if (inferred) return inferred;
+  return "Other Equity";
+}
+
+function classifyNonEquityBucket({
+  isCashEquivalent,
+  assetBucket,
+  holdingSector,
+  tickerSector,
+  assetType,
+  name,
+  symbol,
+}: {
+  isCashEquivalent?: boolean;
+  assetBucket?: string | null;
+  holdingSector?: string | null;
+  tickerSector?: string | null;
+  assetType?: string | null;
+  name?: string | null;
+  symbol?: string | null;
+}): string {
+  if (isCashEquivalent || String(assetBucket || "").trim().toLowerCase() === "cash_equivalent") {
+    return "Cash & Cash Equivalents";
+  }
+  const bucket = String(assetBucket || "").trim().toLowerCase();
+  const hint = `${holdingSector || ""} ${tickerSector || ""} ${assetType || ""} ${name || ""} ${symbol || ""}`
+    .toLowerCase();
+  if (bucket === "fixed_income") {
+    if (
+      hint.includes("tax free")
+      || hint.includes("municipal")
+      || hint.includes("muni")
+      || hint.includes("non-taxable")
+      || hint.includes("tax-exempt")
+    ) {
+      return "Fixed Income Tax-Exempt";
+    }
+    return "Fixed Income Taxable";
+  }
+  if (bucket === "real_asset") {
+    if (hint.includes("gold") || hint.includes("commodity")) {
+      return "Commodities";
+    }
+    return "Real Assets";
+  }
+  if (hint.includes("gold") || hint.includes("commodity")) {
+    return "Commodities";
+  }
+  if (hint.includes("real estate") || hint.includes("reit")) {
+    return "Real Assets";
+  }
+  return "Other";
 }
 
 function toComparableHolding(holding: Partial<PortfolioHolding>): ComparableHolding {
@@ -197,17 +331,60 @@ export function DashboardMasterView({
   const baselineBySourceRef = useRef<Map<string, ComparableHolding>>(new Map());
 
   const [holdingsDraft, setHoldingsDraft] = useState<ManagedHolding[]>([]);
+  const [tickerSectorLookup, setTickerSectorLookup] = useState<
+    Map<string, { sector?: string; industry?: string }>
+  >(() => {
+    const rows = getTickerUniverseSnapshot() || [];
+    const map = new Map<string, { sector?: string; industry?: string }>();
+    for (const row of rows) {
+      const ticker = String(row.ticker || "").trim().toUpperCase();
+      if (!ticker) continue;
+      const sector = String(row.sector || row.sector_primary || "").trim() || undefined;
+      const industry = String(row.industry || row.industry_primary || "").trim() || undefined;
+      if (!sector && !industry) continue;
+      map.set(ticker, { sector, industry });
+    }
+    return map;
+  });
   const [isSavingHoldings, setIsSavingHoldings] = useState(false);
   const [editingHolding, setEditingHolding] = useState<ManagedHolding | null>(null);
   const [editingHoldingId, setEditingHoldingId] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [mobileHoldingsTab, setMobileHoldingsTab] = useState<
+    "all" | "analyze" | "non-analyze" | "cash"
+  >("all");
 
   useEffect(() => {
-    const sourceHoldings = (portfolioData.holdings || portfolioData.detailed_holdings || []) as PortfolioHolding[];
+    const sourceHoldings = (portfolioData.holdings || []) as PortfolioHolding[];
     const { managed, baselineBySource } = buildManagedHoldingsFromSource(sourceHoldings);
     baselineBySourceRef.current = baselineBySource;
     setHoldingsDraft(managed);
   }, [portfolioData]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const rows = await preloadTickerUniverse({ forceRefresh: true });
+        if (cancelled) return;
+        const map = new Map<string, { sector?: string; industry?: string }>();
+        for (const row of rows) {
+          const ticker = String(row.ticker || "").trim().toUpperCase();
+          if (!ticker) continue;
+          const sector = String(row.sector || row.sector_primary || "").trim() || undefined;
+          const industry = String(row.industry || row.industry_primary || "").trim() || undefined;
+          if (!sector && !industry) continue;
+          map.set(ticker, { sector, industry });
+        }
+        setTickerSectorLookup(map);
+      } catch {
+        // Keep statement payload values when ticker metadata is unavailable.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const activeHoldings = useMemo(
     () =>
@@ -229,7 +406,6 @@ export function DashboardMasterView({
     () => ({
       ...portfolioData,
       holdings: activeHoldings,
-      detailed_holdings: activeHoldings,
     }),
     [activeHoldings, portfolioData]
   );
@@ -289,6 +465,41 @@ export function DashboardMasterView({
   }, [holdingsDraft]);
 
   const hasHoldingsChanges = holdingsChangeSummary.total > 0;
+  const desktopHoldingTables = useMemo(
+    () => ({
+      all: holdingsDraft,
+      analyzeEligible: holdingsDraft.filter((holding) => isHoldingAnalyzeEligible(holding)),
+      nonAnalyzable: holdingsDraft.filter(
+        (holding) => !holding.is_cash_equivalent && !isHoldingAnalyzeEligible(holding)
+      ),
+      cashSweep: holdingsDraft.filter((holding) => holding.is_cash_equivalent === true),
+    }),
+    [holdingsDraft]
+  );
+  const mobileHoldingsData = useMemo(() => {
+    if (mobileHoldingsTab === "analyze") return desktopHoldingTables.analyzeEligible;
+    if (mobileHoldingsTab === "non-analyze") return desktopHoldingTables.nonAnalyzable;
+    if (mobileHoldingsTab === "cash") return desktopHoldingTables.cashSweep;
+    return desktopHoldingTables.all;
+  }, [desktopHoldingTables, mobileHoldingsTab]);
+  const holdingsBifurcation = useMemo(() => {
+    let cashSweep = 0;
+    let analyzeEligible = 0;
+    let nonAnalyzable = 0;
+    for (const holding of holdingsDraft) {
+      if (holding.pending_delete) continue;
+      if (holding.is_cash_equivalent === true) {
+        cashSweep += 1;
+        continue;
+      }
+      if (isHoldingAnalyzeEligible(holding)) {
+        analyzeEligible += 1;
+      } else {
+        nonAnalyzable += 1;
+      }
+    }
+    return { cashSweep, analyzeEligible, nonAnalyzable };
+  }, [holdingsDraft]);
 
   const investorSnapshot = useMemo(() => {
     const totalValue = model.hero.totalValue || 0;
@@ -351,6 +562,87 @@ export function DashboardMasterView({
       readinessScore,
     };
   }, [model]);
+
+  const equitySectorChartHoldings = useMemo(
+    () =>
+      model.canonicalModel.positions
+        .filter((position) => !position.isCashEquivalent && position.assetBucket === "equity")
+        .map((position) => {
+          const enriched = tickerSectorLookup.get(
+            String(position.displaySymbol || "").trim().toUpperCase()
+          );
+          return {
+            symbol: position.displaySymbol,
+            name: position.name,
+            market_value: position.marketValue,
+            sector: resolveEquitySectorLabel({
+              holdingSector: position.sector,
+              tickerSector: enriched?.sector,
+              assetType: position.assetType,
+              name: position.name,
+            }),
+            asset_type: position.assetType || undefined,
+          };
+        }),
+    [model.canonicalModel.positions, tickerSectorLookup]
+  );
+
+  const nonEquityAllocationChartHoldings = useMemo(
+    () =>
+      model.canonicalModel.positions
+        .filter((position) => position.isCashEquivalent || position.assetBucket !== "equity")
+        .map((position) => {
+          const enriched = tickerSectorLookup.get(
+            String(position.displaySymbol || "").trim().toUpperCase()
+          );
+          return {
+            symbol: position.displaySymbol,
+            name: position.name,
+            market_value: position.marketValue,
+            sector: classifyNonEquityBucket({
+              isCashEquivalent: position.isCashEquivalent,
+              assetBucket: position.assetBucket,
+              holdingSector: position.sector,
+              tickerSector: enriched?.sector,
+              assetType: position.assetType,
+              name: position.name,
+              symbol: position.displaySymbol,
+            }),
+            asset_type: position.assetType || undefined,
+          };
+        }),
+    [model.canonicalModel.positions, tickerSectorLookup]
+  );
+
+  const equitySectorCoveragePct = useMemo(() => {
+    const equityPositions = model.canonicalModel.positions.filter(
+      (position) => !position.isCashEquivalent && position.assetBucket === "equity"
+    );
+    if (equityPositions.length === 0) return 1;
+    const covered = equityPositions.filter((position) => {
+      const enriched = tickerSectorLookup.get(
+        String(position.displaySymbol || "").trim().toUpperCase()
+      );
+      return (
+        isSpecificSectorLabel(position.sector)
+        || isSpecificSectorLabel(enriched?.sector)
+        || isSpecificSectorLabel(position.assetType)
+        || Boolean(inferEquityTypeFromName(position.name))
+      );
+    }).length;
+    return covered / equityPositions.length;
+  }, [model.canonicalModel.positions, tickerSectorLookup]);
+
+  const nonEquityCoveragePct = useMemo(() => {
+    const nonEquityPositions = model.canonicalModel.positions.filter(
+      (position) => position.isCashEquivalent || position.assetBucket !== "equity"
+    );
+    if (nonEquityPositions.length === 0) return 1;
+    return 1;
+  }, [model.canonicalModel.positions]);
+
+  const hasEquitySectorAllocation = equitySectorChartHoldings.length > 0;
+  const hasNonEquityAllocation = nonEquityAllocationChartHoldings.length > 0;
 
   const statementSnapshotRows = useMemo(() => {
     const metrics = model.summaryMetrics;
@@ -417,8 +709,8 @@ export function DashboardMasterView({
       {
         key: "sector",
         label: "Sector",
-        value: Math.max(0, Math.min(100, model.quality.sectorCoveragePct * 100)),
-        detail: "Positions with mapped sector labels",
+        value: Math.max(0, Math.min(100, equitySectorCoveragePct * 100)),
+        detail: "Equity positions with mapped sector labels",
       },
       {
         key: "gain-loss",
@@ -444,7 +736,7 @@ export function DashboardMasterView({
         detail: "Positions eligible for debate/optimize flows",
       },
     ],
-    [model.canonicalModel.counts, model.canonicalModel.quality.tickerCoveragePct, model.quality]
+    [equitySectorCoveragePct, model.canonicalModel.counts, model.canonicalModel.quality.tickerCoveragePct, model.quality.gainLossCoveragePct]
   );
 
   const debateReadinessScore = useMemo(() => {
@@ -502,7 +794,6 @@ export function DashboardMasterView({
       const updatedPortfolioData: PortfolioData = {
         ...portfolioData,
         holdings: holdingsForSave,
-        detailed_holdings: holdingsForSave,
         account_summary: {
           ...portfolioData.account_summary,
           ending_value: endingValue,
@@ -530,12 +821,11 @@ export function DashboardMasterView({
 
       const nextFinancialDomain = {
         ...existingFinancial,
-        ...updatedPortfolioData,
         schema_version: 3,
         domain_intent: {
           primary: "financial",
           source: "domain_registry_prepopulate",
-          contract_version: 1,
+          contract_version: 2,
           updated_at: nowIso,
         },
         portfolio: {
@@ -561,10 +851,10 @@ export function DashboardMasterView({
           intent_source: "kai_dashboard_holdings",
           has_portfolio: true,
           holdings_count: holdingsForSave.length,
-          total_value: endingValue,
+          last_statement_total_value: endingValue,
           portfolio_risk_bucket: riskBucket,
           risk_bucket: riskBucket,
-          domain_contract_version: 1,
+          domain_contract_version: 2,
           intent_map: [...FINANCIAL_INTENT_MAP],
           last_updated: nowIso,
         },
@@ -654,14 +944,27 @@ export function DashboardMasterView({
         cell: ({ row }) => {
           const holding = row.original;
           const deleted = Boolean(holding.pending_delete);
+          const canAnalyze = isHoldingAnalyzeEligible(holding);
+          const isCash = holding.is_cash_equivalent === true;
+          const categoryLabel = isCash
+            ? "Cash / Sweep"
+            : canAnalyze
+              ? "Analyze Eligible"
+              : "Non-Analyzable";
           return (
-            <div className={cn("min-w-0", deleted && "opacity-60")}>
+            <div className={cn("min-w-0 max-w-[280px] lg:max-w-[340px]", deleted && "opacity-60")}>
               <p className={cn("font-semibold", deleted && "line-through")}>
                 {holding.symbol || "—"}
               </p>
-              <p className={cn("truncate text-xs text-muted-foreground", deleted && "line-through")}>
+              <p
+                title={holding.name || "Unnamed security"}
+                className={cn("truncate text-xs text-muted-foreground", deleted && "line-through")}
+              >
                 {holding.name || "Unnamed security"}
               </p>
+              <span className="mt-1 inline-flex rounded-full bg-background px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                {categoryLabel}
+              </span>
             </div>
           );
         },
@@ -719,6 +1022,7 @@ export function DashboardMasterView({
         cell: ({ row }) => {
           const holding = row.original;
           const isDeleted = Boolean(holding.pending_delete);
+          const canAnalyze = isHoldingAnalyzeEligible(holding);
           return (
             <div className="flex flex-wrap items-center justify-end gap-1">
               <MorphyButton
@@ -749,10 +1053,13 @@ export function DashboardMasterView({
                 variant="none"
                 effect="fade"
                 size="sm"
-                disabled={isDeleted}
-                onClick={() => onAnalyzeStock?.(holding.symbol)}
+                disabled={isDeleted || !canAnalyze}
+                onClick={() => {
+                  if (!canAnalyze) return;
+                  onAnalyzeStock?.(holding.symbol);
+                }}
               >
-                Analyze
+                {canAnalyze ? "Analyze" : "N/A"}
               </MorphyButton>
             </div>
           );
@@ -818,24 +1125,32 @@ export function DashboardMasterView({
         </CardContent>
       </Card>
 
-      <section className="space-y-3">
-        {model.quality.sectorReady ? (
+      <section className="space-y-4">
+        {hasEquitySectorAllocation ? (
           <SectorAllocationChart
             className="min-w-0 overflow-hidden rounded-[22px]"
-            holdings={model.canonicalModel.positions
-              .filter((position) => !position.isCashEquivalent)
-              .map((position) => ({
-                symbol: position.displaySymbol,
-                name: position.name,
-                market_value: position.marketValue,
-                sector: position.sector || undefined,
-                asset_type: position.assetType || undefined,
-            }))}
+            holdings={equitySectorChartHoldings}
+            title="Equity Sector Allocation"
+            subtitle={`${(equitySectorCoveragePct * 100).toFixed(0)}% of equity holdings have mapped sector labels. Denominator: ${formatCurrency(model.hero.totalValue)} total portfolio value.`}
           />
         ) : (
           <DataQualityFallback
-            title="Sector Allocation"
-            detail={`Only ${(model.quality.sectorCoveragePct * 100).toFixed(0)}% of holdings include sector labels.`}
+            title="Equity Sector Allocation"
+            detail="No equity holdings are currently available for sector-level allocation."
+          />
+        )}
+
+        {hasNonEquityAllocation ? (
+          <SectorAllocationChart
+            className="min-w-0 overflow-hidden rounded-[22px]"
+            holdings={nonEquityAllocationChartHoldings}
+            title="Non-Equity Allocation"
+            subtitle={`${(nonEquityCoveragePct * 100).toFixed(0)}% of non-equity holdings are mapped to canonical allocation buckets. Denominator: ${formatCurrency(model.hero.totalValue)} total portfolio value.`}
+          />
+        ) : (
+          <DataQualityFallback
+            title="Non-Equity Allocation"
+            detail="No non-equity holdings are present in the current portfolio."
           />
         )}
       </section>
@@ -1179,6 +1494,18 @@ export function DashboardMasterView({
               <span className="rounded-full bg-background px-2 py-0.5">Edited: {holdingsChangeSummary.edited}</span>
               <span className="rounded-full bg-background px-2 py-0.5">Deleted: {holdingsChangeSummary.deleted}</span>
             </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="font-semibold text-foreground">Bifurcation</span>
+              <span className="rounded-full bg-background px-2 py-0.5">
+                Analyze Eligible: {holdingsBifurcation.analyzeEligible}
+              </span>
+              <span className="rounded-full bg-background px-2 py-0.5">
+                Non-Analyzable: {holdingsBifurcation.nonAnalyzable}
+              </span>
+              <span className="rounded-full bg-background px-2 py-0.5">
+                Cash / Sweep: {holdingsBifurcation.cashSweep}
+              </span>
+            </div>
           </div>
 
           <div className="sm:hidden space-y-3">
@@ -1190,6 +1517,13 @@ export function DashboardMasterView({
               holdingsDraft.map((holding) => {
                 const isDeleted = Boolean(holding.pending_delete);
                 const gainValue = Number(holding.unrealized_gain_loss || 0);
+                const canAnalyze = isHoldingAnalyzeEligible(holding);
+                const isCash = holding.is_cash_equivalent === true;
+                const categoryLabel = isCash
+                  ? "Cash / Sweep"
+                  : canAnalyze
+                    ? "Analyze Eligible"
+                    : "Non-Analyzable";
                 return (
                   <div
                     key={holding.client_id}
@@ -1229,10 +1563,13 @@ export function DashboardMasterView({
                         variant="none"
                         effect="fade"
                         size="sm"
-                        disabled={isDeleted}
-                        onClick={() => onAnalyzeStock?.(holding.symbol)}
+                        disabled={isDeleted || !canAnalyze}
+                        onClick={() => {
+                          if (!canAnalyze) return;
+                          onAnalyzeStock?.(holding.symbol);
+                        }}
                       >
-                        Analyze
+                        {canAnalyze ? "Analyze" : "N/A"}
                       </MorphyButton>
                     </div>
 
@@ -1243,6 +1580,9 @@ export function DashboardMasterView({
                       <p className={cn("truncate text-xs text-muted-foreground", isDeleted && "line-through")}>
                         {holding.name || "Unnamed security"}
                       </p>
+                      <span className="mt-1 inline-flex rounded-full bg-background px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                        {categoryLabel}
+                      </span>
                       {isDeleted ? (
                         <span className="mt-1 inline-flex rounded-full bg-background px-2 py-0.5 text-[10px] uppercase tracking-wide">
                           Marked for removal
@@ -1287,18 +1627,78 @@ export function DashboardMasterView({
           </div>
 
           <div className="hidden sm:block">
-            <DataTable
-              columns={holdingsTableColumns}
-              data={holdingsDraft}
-              searchPlaceholder="Search holdings by symbol or name..."
-              initialPageSize={5}
-              pageSizeOptions={[5, 10, 20]}
-              rowClassName={(holding) =>
-                holding.pending_delete
-                  ? "bg-muted/45 text-muted-foreground"
-                  : "bg-transparent"
-              }
-            />
+            <Tabs defaultValue="all" className="space-y-3">
+              <TabsList className="grid h-9 w-full grid-cols-4 bg-background/80">
+                <TabsTrigger value="all">All ({desktopHoldingTables.all.length})</TabsTrigger>
+                <TabsTrigger value="analyze">
+                  Analyze Eligible ({desktopHoldingTables.analyzeEligible.length})
+                </TabsTrigger>
+                <TabsTrigger value="non-analyze">
+                  Non-Analyzable ({desktopHoldingTables.nonAnalyzable.length})
+                </TabsTrigger>
+                <TabsTrigger value="cash">Cash / Sweep ({desktopHoldingTables.cashSweep.length})</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="all">
+                <DataTable
+                  columns={holdingsTableColumns}
+                  data={desktopHoldingTables.all}
+                  searchPlaceholder="Search holdings by symbol or name..."
+                  initialPageSize={5}
+                  pageSizeOptions={[5, 10, 20]}
+                  rowClassName={(holding) =>
+                    holding.pending_delete
+                      ? "bg-muted/45 text-muted-foreground"
+                      : "bg-transparent"
+                  }
+                />
+              </TabsContent>
+
+              <TabsContent value="analyze">
+                <DataTable
+                  columns={holdingsTableColumns}
+                  data={desktopHoldingTables.analyzeEligible}
+                  searchPlaceholder="Search analyzable holdings..."
+                  initialPageSize={5}
+                  pageSizeOptions={[5, 10, 20]}
+                  rowClassName={(holding) =>
+                    holding.pending_delete
+                      ? "bg-muted/45 text-muted-foreground"
+                      : "bg-transparent"
+                  }
+                />
+              </TabsContent>
+
+              <TabsContent value="non-analyze">
+                <DataTable
+                  columns={holdingsTableColumns}
+                  data={desktopHoldingTables.nonAnalyzable}
+                  searchPlaceholder="Search non-analyzable holdings..."
+                  initialPageSize={5}
+                  pageSizeOptions={[5, 10, 20]}
+                  rowClassName={(holding) =>
+                    holding.pending_delete
+                      ? "bg-muted/45 text-muted-foreground"
+                      : "bg-transparent"
+                  }
+                />
+              </TabsContent>
+
+              <TabsContent value="cash">
+                <DataTable
+                  columns={holdingsTableColumns}
+                  data={desktopHoldingTables.cashSweep}
+                  searchPlaceholder="Search cash / sweep holdings..."
+                  initialPageSize={5}
+                  pageSizeOptions={[5, 10, 20]}
+                  rowClassName={(holding) =>
+                    holding.pending_delete
+                      ? "bg-muted/45 text-muted-foreground"
+                      : "bg-transparent"
+                  }
+                />
+              </TabsContent>
+            </Tabs>
           </div>
 
           {hasHoldingsChanges ? (

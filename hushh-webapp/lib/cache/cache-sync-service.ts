@@ -29,11 +29,7 @@ function deriveAttributeCount(
     }
   }
 
-  const holdings = (
-    (Array.isArray(portfolioData?.holdings) && portfolioData?.holdings) ||
-    (Array.isArray(portfolioData?.detailed_holdings) && portfolioData?.detailed_holdings) ||
-    []
-  ) as Array<unknown>;
+  const holdings = (Array.isArray(portfolioData?.holdings) && portfolioData?.holdings) || [];
   return holdings.length;
 }
 

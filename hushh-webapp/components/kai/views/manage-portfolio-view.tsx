@@ -92,8 +92,7 @@ function hasValidFinancialShape(value: unknown): value is PortfolioData {
   }
   const record = value as Record<string, unknown>;
   const holdings = record.holdings;
-  const detailedHoldings = record.detailed_holdings;
-  return Array.isArray(holdings) || Array.isArray(detailedHoldings);
+  return Array.isArray(holdings);
 }
 
 // =============================================================================

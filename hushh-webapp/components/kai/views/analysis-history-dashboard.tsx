@@ -88,17 +88,29 @@ function decisionStyles(decision: string): {
  */
 function processHistory(map: AnalysisHistoryMap): HistoryEntryWithVersion[] {
   const latestPerTicker: HistoryEntryWithVersion[] = [];
+  const epochOf = (value: string): number => {
+    const ms = Date.parse(value);
+    return Number.isFinite(ms) ? ms : 0;
+  };
 
-  Object.entries(map).forEach(([, entries]) => {
+  Object.entries(map).forEach(([tickerKey, entries]) => {
     if (!entries?.length) return;
+    const canonicalTicker = String(tickerKey || "").trim().toUpperCase();
+    if (!canonicalTicker || canonicalTicker === "UNDEFINED" || canonicalTicker === "NULL") {
+      return;
+    }
 
     // Sort entries for this ticker by date ASC to assign version numbers
     const sortedByDateAsc = [...entries].sort(
-      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+      (a, b) => epochOf(a.timestamp) - epochOf(b.timestamp)
     );
 
     const withVersions: HistoryEntryWithVersion[] = sortedByDateAsc.map((entry, index) => ({
       ...entry,
+      ticker:
+        typeof entry.ticker === "string" && entry.ticker.trim().length > 0
+          ? entry.ticker
+          : canonicalTicker,
       version: index + 1,
     }));
 
@@ -109,7 +121,7 @@ function processHistory(map: AnalysisHistoryMap): HistoryEntryWithVersion[] {
 
   // Sort tickers by latest analysis date DESC
   return latestPerTicker.sort(
-    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    (a, b) => epochOf(b.timestamp) - epochOf(a.timestamp)
   );
 }
 
@@ -194,18 +206,23 @@ export function AnalysisHistoryDashboard({
   }, [userId, vaultKey, vaultOwnerToken, fetchHistory]);
 
   const handleDeleteTicker = useCallback(async (ticker: string) => {
+    const canonicalTicker = String(ticker || "").trim().toUpperCase();
+    if (!canonicalTicker || canonicalTicker === "UNDEFINED" || canonicalTicker === "NULL") {
+      toast.error("Failed to delete history: invalid ticker");
+      return;
+    }
     const success = await KaiHistoryService.deleteTickerHistory({
       userId,
       vaultKey,
       vaultOwnerToken,
-      ticker,
+      ticker: canonicalTicker,
     });
 
     if (success) {
-      toast.success(`All history for ${ticker} deleted`);
+      toast.success(`All history for ${canonicalTicker} deleted`);
       fetchHistory();
     } else {
-      toast.error(`Failed to delete history for ${ticker}`);
+      toast.error(`Failed to delete history for ${canonicalTicker}`);
     }
   }, [userId, vaultKey, vaultOwnerToken, fetchHistory]);
 

@@ -14,9 +14,11 @@ No legacy stream payload shape is supported.
 
 ## Runtime Guardrails
 
-- User-facing stream timeout is capped at `120s`.
+- `portfolio_import` timeout is `360s`.
+- `portfolio_optimize` timeout is `240s`.
+- `stock_analyze` timeout is `300s`.
 - Producers emit heartbeat-safe `stage` updates roughly every `3-5s` while waiting for model chunks.
-- Terminal behavior is mandatory: every stream ends with one terminal `complete` or `error`.
+- Terminal behavior is mandatory: every stream ends with one terminal `complete`, `aborted`, or `error`.
 
 ## Transport Format
 
@@ -63,14 +65,26 @@ Rules:
 - `stage`
 - `thinking`
 - `chunk`
+- `aborted` (terminal)
 - `complete` (terminal)
 - `error` (terminal)
+
+Import phase values now include:
+- `uploading`
+- `indexing`
+- `scanning`
+- `thinking`
+- `extracting`
+- `normalizing`
+- `validating`
+- `complete`
 
 ### Optimize Portfolio (`stream_kind=portfolio_optimize`)
 
 - `stage`
 - `thinking`
 - `chunk`
+- `aborted` (terminal, optional)
 - `complete` (terminal)
 - `error` (terminal)
 
@@ -134,6 +148,16 @@ Thought summaries are best-effort telemetry.
 
 - UI must never depend on thought events for control-flow progression.
 - Missing thought events is valid and must not block completion.
+- Import/optimize `thinking` payloads normalize to:
+  - `phase`
+  - `message`
+  - `thought`
+  - `count`
+  - `token_source`
+  - `timestamp` (envelope-normalized)
+  - `progress_pct` (envelope-normalized)
+- Import uses phase-aware thought streaming for the single deterministic extraction pass.
+- Analyze stream continues to use `kai_thinking` plus `agent_token`; `agent_token` includes `token_source`.
 
 ## Parser Requirements
 

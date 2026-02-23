@@ -1,6 +1,7 @@
 import type { Holding, PortfolioData } from "@/components/kai/types/portfolio";
 import {
   type DashboardPortfolioModel,
+  type DashboardPosition,
   buildDashboardPortfolioModel,
 } from "@/components/kai/views/dashboard-portfolio-model";
 
@@ -64,10 +65,33 @@ export interface DashboardSummaryMetrics {
   netDepositsYtd: number | null;
 }
 
+export interface DashboardEquitySectorAllocationDatum {
+  sector: string;
+  value: number;
+  pct: number;
+  count: number;
+}
+
+export interface DashboardNonEquityAllocationDatum {
+  bucket: string;
+  value: number;
+  pct: number;
+  count: number;
+}
+
+export interface DashboardAllocationQuality {
+  equityCoveragePct: number;
+  nonEquityCoveragePct: number;
+}
+
 export interface DashboardViewModel {
   hero: DashboardHeroData;
   holdings: Holding[];
   allocation: AllocationDatum[];
+  equity_sector_allocation: DashboardEquitySectorAllocationDatum[];
+  non_equity_allocation: DashboardNonEquityAllocationDatum[];
+  allocation_denominator_total_value: number;
+  allocation_quality: DashboardAllocationQuality;
   history: HistoryDatum[];
   concentration: ConcentrationDatum[];
   gainLossDistribution: GainLossBandDatum[];
@@ -86,6 +110,21 @@ const ALLOCATION_COLORS: Record<string, string> = {
   Other: "#8b5cf6",
 };
 
+const GENERIC_SECTOR_LABELS = new Set([
+  "equity",
+  "equities",
+  "stock",
+  "stocks",
+  "fixed income",
+  "bond",
+  "bonds",
+  "cash",
+  "cash & cash equivalents",
+  "other",
+  "unknown",
+  "unclassified",
+]);
+
 function toNumber(value: unknown): number | undefined {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value;
@@ -97,6 +136,111 @@ function toNumber(value: unknown): number | undefined {
     if (Number.isFinite(parsed)) return parsed;
   }
   return undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isSpecificSectorLabel(value: string | null | undefined): boolean {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  return !GENERIC_SECTOR_LABELS.has(text.toLowerCase());
+}
+
+function classifyNonEquityBucket(position: DashboardPosition): string {
+  if (position.isCashEquivalent || position.assetBucket === "cash_equivalent") {
+    return "Cash & Cash Equivalents";
+  }
+  const hint = `${position.name} ${position.assetType || ""} ${position.sector || ""}`.toLowerCase();
+  if (position.assetBucket === "fixed_income") {
+    if (
+      hint.includes("tax free")
+      || hint.includes("municipal")
+      || hint.includes("muni")
+      || hint.includes("non-taxable")
+      || hint.includes("tax-exempt")
+    ) {
+      return "Fixed Income Tax-Exempt";
+    }
+    return "Fixed Income Taxable";
+  }
+  if (position.assetBucket === "real_asset") {
+    if (hint.includes("gold") || hint.includes("commodity")) {
+      return "Commodities";
+    }
+    return "Real Assets";
+  }
+  return "Other";
+}
+
+function computeDetailedAllocation(model: DashboardPortfolioModel): {
+  equitySectorAllocation: DashboardEquitySectorAllocationDatum[];
+  nonEquityAllocation: DashboardNonEquityAllocationDatum[];
+  denominator: number;
+  quality: DashboardAllocationQuality;
+} {
+  const denominator = model.totals.marketValue > 0 ? model.totals.marketValue : 0;
+  const equityPositions = model.positions.filter(
+    (position) => !position.isCashEquivalent && position.assetBucket === "equity"
+  );
+  const nonEquityPositions = model.positions.filter(
+    (position) => position.isCashEquivalent || position.assetBucket !== "equity"
+  );
+
+  const equityMap = new Map<string, { value: number; count: number }>();
+  for (const position of equityPositions) {
+    const sector =
+      (isSpecificSectorLabel(position.sector) ? String(position.sector).trim() : "")
+      || "Other Equity";
+    const existing = equityMap.get(sector) || { value: 0, count: 0 };
+    equityMap.set(sector, {
+      value: existing.value + position.marketValue,
+      count: existing.count + 1,
+    });
+  }
+
+  const nonEquityMap = new Map<string, { value: number; count: number }>();
+  for (const position of nonEquityPositions) {
+    const bucket = classifyNonEquityBucket(position);
+    const existing = nonEquityMap.get(bucket) || { value: 0, count: 0 };
+    nonEquityMap.set(bucket, {
+      value: existing.value + position.marketValue,
+      count: existing.count + 1,
+    });
+  }
+
+  const equitySectorAllocation = Array.from(equityMap.entries())
+    .map(([sector, value]) => ({
+      sector,
+      value: value.value,
+      count: value.count,
+      pct: denominator > 0 ? (value.value / denominator) * 100 : 0,
+    }))
+    .sort((a, b) => b.value - a.value);
+
+  const nonEquityAllocation = Array.from(nonEquityMap.entries())
+    .map(([bucket, value]) => ({
+      bucket,
+      value: value.value,
+      count: value.count,
+      pct: denominator > 0 ? (value.value / denominator) * 100 : 0,
+    }))
+    .sort((a, b) => b.value - a.value);
+
+  return {
+    equitySectorAllocation,
+    nonEquityAllocation,
+    denominator,
+    quality: {
+      equityCoveragePct:
+        equityPositions.length > 0
+          ? equityPositions.filter((position) => isSpecificSectorLabel(position.sector)).length
+            / equityPositions.length
+          : 1,
+      nonEquityCoveragePct: nonEquityPositions.length > 0 ? 1 : 1,
+    },
+  };
 }
 
 function derivePortfolioConcentrationLabel(concentration: ConcentrationDatum[]): string {
@@ -192,6 +336,10 @@ function computeRecommendations(model: DashboardPortfolioModel): DashboardRecomm
 
 export function mapPortfolioToDashboardViewModel(portfolioData: PortfolioData): DashboardViewModel {
   const canonicalModel = buildDashboardPortfolioModel(portfolioData);
+  const analytics = isRecord(portfolioData.analytics_v2)
+    ? (portfolioData.analytics_v2 as Record<string, unknown>)
+    : undefined;
+  const detailedAllocation = computeDetailedAllocation(canonicalModel);
 
   const holdings = canonicalModel.positions.map((position) => ({
     symbol: position.displaySymbol,
@@ -208,11 +356,38 @@ export function mapPortfolioToDashboardViewModel(portfolioData: PortfolioData): 
     asset_type: position.assetType || position.assetBucket,
   })) as Holding[];
 
-  const allocation = canonicalModel.allocation.map((bucket) => ({
-    name: bucket.label,
-    value: bucket.value,
-    color: ALLOCATION_COLORS[bucket.label] || "#2563eb",
-  }));
+  const allocationMix = Array.isArray(analytics?.allocation_mix)
+    ? (analytics?.allocation_mix as Array<Record<string, unknown>>)
+    : [];
+  const allocation =
+    allocationMix.length > 0
+      ? allocationMix
+          .map((row) => {
+            const bucket = String(row.bucket || "").trim();
+            const value = toNumber(row.value) ?? 0;
+            if (!bucket || value <= 0) return null;
+            const label =
+              bucket === "cash_equivalent"
+                ? "Cash"
+                : bucket === "fixed_income"
+                  ? "Fixed Income"
+                  : bucket === "real_asset"
+                    ? "Real Assets"
+                    : bucket === "equity"
+                      ? "Equities"
+                      : "Other";
+            return {
+              name: label,
+              value,
+              color: ALLOCATION_COLORS[label] || "#2563eb",
+            };
+          })
+          .filter((row): row is AllocationDatum => Boolean(row))
+      : canonicalModel.allocation.map((bucket) => ({
+          name: bucket.label,
+          value: bucket.value,
+          color: ALLOCATION_COLORS[bucket.label] || "#2563eb",
+        }));
 
   const history = computeHistory(
     portfolioData,
@@ -220,23 +395,46 @@ export function mapPortfolioToDashboardViewModel(portfolioData: PortfolioData): 
     canonicalModel.endingValue
   );
 
-  const concentration = canonicalModel.positions
-    .filter((position) => position.marketValue > 0)
-    .slice(0, 8)
-    .map((position) => ({
-      symbol: position.displaySymbol,
-      name: position.name,
-      marketValue: position.marketValue,
-      weightPct:
-        canonicalModel.totals.marketValue > 0
-          ? (position.marketValue / canonicalModel.totals.marketValue) * 100
-          : 0,
-    }));
+  const concentrationRaw = Array.isArray(analytics?.concentration)
+    ? (analytics?.concentration as Array<Record<string, unknown>>)
+    : [];
+  const concentration =
+    concentrationRaw.length > 0
+      ? concentrationRaw
+          .map((row) => ({
+            symbol: String(row.symbol || "").trim(),
+            name: String(row.name || row.symbol || "").trim(),
+            marketValue: toNumber(row.market_value) ?? 0,
+            weightPct: toNumber(row.weight_pct) ?? 0,
+          }))
+          .filter((row) => row.symbol && row.marketValue > 0)
+          .slice(0, 8)
+      : canonicalModel.positions
+          .filter((position) => position.marketValue > 0)
+          .slice(0, 8)
+          .map((position) => ({
+            symbol: position.displaySymbol,
+            name: position.name,
+            marketValue: position.marketValue,
+            weightPct:
+              canonicalModel.totals.marketValue > 0
+                ? (position.marketValue / canonicalModel.totals.marketValue) * 100
+                : 0,
+          }));
 
-  const gainLossDistribution = canonicalModel.gainLossBands.map((band) => ({
-    band: band.label,
-    count: band.count,
-  }));
+  const gainLossRaw = Array.isArray(analytics?.gain_loss_distribution)
+    ? (analytics?.gain_loss_distribution as Array<Record<string, unknown>>)
+    : [];
+  const gainLossDistribution =
+    gainLossRaw.length > 0
+      ? gainLossRaw.map((row) => ({
+          band: String(row.band || "").trim() || "Unknown",
+          count: Number(toNumber(row.count) ?? 0),
+        }))
+      : canonicalModel.gainLossBands.map((band) => ({
+          band: band.label,
+          count: band.count,
+        }));
 
   const quality: DashboardQualityFlags = {
     allocationReady: allocation.length >= 2,
@@ -265,6 +463,10 @@ export function mapPortfolioToDashboardViewModel(portfolioData: PortfolioData): 
     },
     holdings,
     allocation,
+    equity_sector_allocation: detailedAllocation.equitySectorAllocation,
+    non_equity_allocation: detailedAllocation.nonEquityAllocation,
+    allocation_denominator_total_value: detailedAllocation.denominator,
+    allocation_quality: detailedAllocation.quality,
     history,
     concentration,
     gainLossDistribution,

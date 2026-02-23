@@ -141,11 +141,26 @@ function toThemeIcon(title: string): LucideIcon {
   return matched?.icon || LineChart;
 }
 
+function isDummyTheme(
+  theme: NonNullable<KaiHomeInsightsV2["themes"]>[number]
+): boolean {
+  const sourceTags = Array.isArray(theme.source_tags)
+    ? theme.source_tags.map((tag) => String(tag || "").toLowerCase())
+    : [];
+  const hasFallbackTag = sourceTags.some((tag) =>
+    tag.includes("fallback") || tag.includes("dummy")
+  );
+  const subtitle = String(theme.subtitle || "").trim().toLowerCase();
+  const hasHeadline = Boolean(String(theme.headline || "").trim());
+  return Boolean(theme.degraded) && (hasFallbackTag || (!hasHeadline && subtitle.includes("sector rotation")));
+}
+
 function toThemeItems(payload: KaiHomeInsightsV2 | null): ThemeFocusItem[] {
   const themes = payload?.themes || [];
   if (!Array.isArray(themes)) return [];
   return themes
     .filter((theme): theme is NonNullable<KaiHomeInsightsV2["themes"]>[number] => Boolean(theme))
+    .filter((theme) => !isDummyTheme(theme))
     .map((theme, idx) => ({
       id: `${String(theme.title || "theme")}-${idx}`,
       title: String(theme.title || "Theme"),
@@ -174,9 +189,15 @@ function readCachedPortfolioHoldings(
   userId: string
 ): Array<Record<string, unknown>> {
   const cachedPortfolio = cache.get<Record<string, unknown>>(CACHE_KEYS.PORTFOLIO_DATA(userId));
+  const nestedPortfolio =
+    cachedPortfolio?.portfolio &&
+    typeof cachedPortfolio.portfolio === "object" &&
+    !Array.isArray(cachedPortfolio.portfolio)
+      ? (cachedPortfolio.portfolio as Record<string, unknown>)
+      : null;
   return (
     (Array.isArray(cachedPortfolio?.holdings) && cachedPortfolio.holdings) ||
-    (Array.isArray(cachedPortfolio?.detailed_holdings) && cachedPortfolio.detailed_holdings) ||
+    (Array.isArray(nestedPortfolio?.holdings) && nestedPortfolio.holdings) ||
     []
   ) as Array<Record<string, unknown>>;
 }
@@ -345,29 +366,76 @@ export function KaiMarketPreviewView() {
 
         try {
           let token = await resolveToken(forceTokenRefresh);
-          let nextPayload: KaiHomeInsightsV2;
-
-          try {
-            nextPayload = await ApiService.getKaiMarketInsights({
-              userId: user.uid,
-              vaultOwnerToken: token,
-              symbols: trackedSymbols.length > 0 ? trackedSymbols : undefined,
-              daysBack: 7,
-              signal: controller.signal,
-            });
-          } catch (firstError) {
-            if (controller.signal.aborted) return;
-            token = await resolveToken(true);
-            nextPayload = await ApiService.getKaiMarketInsights({
-              userId: user.uid,
-              vaultOwnerToken: token,
-              symbols: trackedSymbols.length > 0 ? trackedSymbols : undefined,
-              daysBack: 7,
-              signal: controller.signal,
-            });
-            if (firstError instanceof Error) {
-              console.warn("[KaiMarketPreviewView] Retried insights fetch after token refresh", firstError.message);
+          const fetchInsightsWithRetry = async (
+            symbolsOverride?: string[]
+          ): Promise<KaiHomeInsightsV2> => {
+            try {
+              return await ApiService.getKaiMarketInsights({
+                userId: user.uid,
+                vaultOwnerToken: token,
+                symbols: symbolsOverride && symbolsOverride.length > 0 ? symbolsOverride : undefined,
+                daysBack: 7,
+                signal: controller.signal,
+              });
+            } catch (firstError) {
+              if (controller.signal.aborted) throw firstError;
+              token = await resolveToken(true);
+              const retried = await ApiService.getKaiMarketInsights({
+                userId: user.uid,
+                vaultOwnerToken: token,
+                symbols: symbolsOverride && symbolsOverride.length > 0 ? symbolsOverride : undefined,
+                daysBack: 7,
+                signal: controller.signal,
+              });
+              if (firstError instanceof Error) {
+                console.warn(
+                  "[KaiMarketPreviewView] Retried insights fetch after token refresh",
+                  firstError.message
+                );
+              }
+              return retried;
             }
+          };
+
+          let fallbackPayload: KaiHomeInsightsV2 | null = null;
+          const hasTrackedSymbols = trackedSymbols.length > 0;
+          if (!hasPayloadRef.current && !manual && hasTrackedSymbols) {
+            try {
+              fallbackPayload = await fetchInsightsWithRetry(undefined);
+              if (!controller.signal.aborted && fallbackPayload) {
+                setPayload(fallbackPayload);
+                hasPayloadRef.current = true;
+                cache.set(
+                  CACHE_KEYS.KAI_MARKET_HOME(user.uid, "default", 7),
+                  fallbackPayload,
+                  MARKET_HOME_CACHE_TTL_MS
+                );
+                if (sessionCacheKey && typeof window !== "undefined") {
+                  window.sessionStorage.setItem(
+                    sessionCacheKey,
+                    JSON.stringify({ payload: fallbackPayload, savedAt: Date.now() })
+                  );
+                }
+                setLoadingInitial(false);
+              }
+            } catch (defaultFetchError) {
+              if (defaultFetchError instanceof Error) {
+                console.warn(
+                  "[KaiMarketPreviewView] Default market cache-priority fetch failed:",
+                  defaultFetchError.message
+                );
+              }
+            }
+          }
+
+          let nextPayload: KaiHomeInsightsV2;
+          try {
+            nextPayload = await fetchInsightsWithRetry(hasTrackedSymbols ? trackedSymbols : undefined);
+          } catch (targetedFetchError) {
+            if (!fallbackPayload) {
+              throw targetedFetchError;
+            }
+            nextPayload = fallbackPayload;
           }
 
           if (controller.signal.aborted) return;
@@ -513,6 +581,11 @@ export function KaiMarketPreviewView() {
       </section>
 
       <section className="mt-10">
+        <SectionLabel>News</SectionLabel>
+        <NewsTape rows={payload?.news_tape || []} />
+      </section>
+
+      <section className="mt-10">
         <SectionLabel>Scenario Simulation</SectionLabel>
         {scenarioSignal ? (
           <Card variant="muted" effect="fill" className="rounded-xl p-0">
@@ -537,15 +610,12 @@ export function KaiMarketPreviewView() {
         )}
       </section>
 
-      <section className="mt-10">
-        <SectionLabel>Themes In Focus</SectionLabel>
-        <ThemeFocusList themes={themeItems} />
-      </section>
-
-      <section className="mt-10">
-        <SectionLabel>News</SectionLabel>
-        <NewsTape rows={payload?.news_tape || []} />
-      </section>
+      {themeItems.length > 0 ? (
+        <section className="mt-10">
+          <SectionLabel>Themes In Focus</SectionLabel>
+          <ThemeFocusList themes={themeItems} />
+        </section>
+      ) : null}
 
       {showConnectPortfolio ? (
         <section className="mt-10">

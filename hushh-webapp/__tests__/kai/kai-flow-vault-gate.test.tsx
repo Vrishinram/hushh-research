@@ -158,9 +158,14 @@ describe("KaiFlow vault-gated upload", () => {
       onEvent({
         event: "complete",
         payload: {
-          portfolio_data: {
+          portfolio_data_v2: {
             holdings: [],
             account_summary: { ending_value: 0 },
+          },
+          quality_report_v2: {
+            raw_count: 0,
+            validated_count: 0,
+            aggregated_count: 0,
           },
           progress_pct: 100,
           message: "done",

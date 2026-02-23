@@ -43,6 +43,8 @@ interface SectorAllocationChartProps {
   holdings: Holding[];
   className?: string;
   responsive?: boolean;
+  title?: string;
+  subtitle?: string;
 }
 
 // Distinct palette so neighboring sectors are easy to scan.
@@ -80,6 +82,8 @@ export function SectorAllocationChart({
   holdings,
   className,
   responsive = true,
+  title = "Sector Allocation",
+  subtitle,
 }: SectorAllocationChartProps) {
   const [windowWidth, setWindowWidth] = useState<number>(
     typeof window !== "undefined" ? window.innerWidth : 1024
@@ -100,8 +104,7 @@ export function SectorAllocationChart({
     const sectorMap = new Map<string, { value: number; count: number }>();
     
     holdings.forEach((holding) => {
-      const sector = holding.sector || holding.asset_type || "Unknown";
-      const normalizedSector = sector.charAt(0).toUpperCase() + sector.slice(1).toLowerCase();
+      const normalizedSector = String(holding.sector || "").trim() || "Unclassified";
       
       const existing = sectorMap.get(normalizedSector) || { value: 0, count: 0 };
       sectorMap.set(normalizedSector, {
@@ -168,8 +171,11 @@ export function SectorAllocationChart({
       <CardHeader className="pb-2 pt-4 px-4">
         <CardTitle className="text-sm flex items-center gap-2">
           <PieChartIcon className="w-5 h-5 text-primary" />
-          Sector Allocation
+          {title}
         </CardTitle>
+        {subtitle ? (
+          <p className="text-xs text-muted-foreground pt-1">{subtitle}</p>
+        ) : null}
       </CardHeader>
       <CardContent className="px-4 pb-4 min-w-0 overflow-hidden">
         <ChartContainer config={chartConfig} className="w-full min-w-0" style={{ height: `${chartHeight}px` }}>
@@ -183,13 +189,13 @@ export function SectorAllocationChart({
               tickFormatter={(value) => formatCurrency(value)}
               axisLine={false}
               tickLine={false}
-              tick={{ fontSize: 10 }}
+              tick={{ fontSize: 10, fill: "hsl(var(--foreground) / 0.72)" }}
             />
             <CartesianGrid
               horizontal={false}
               strokeDasharray="3 3"
-              stroke="hsl(var(--border))"
-              strokeOpacity={0.9}
+              stroke="hsl(var(--foreground) / 0.22)"
+              strokeOpacity={1}
             />
             <YAxis
               type="category"
@@ -198,7 +204,7 @@ export function SectorAllocationChart({
               axisLine={false}
               tickLine={false}
               width={68}
-              tick={{ fontSize: 10 }}
+              tick={{ fontSize: 10, fill: "hsl(var(--foreground) / 0.72)" }}
             />
             <ChartTooltip
               content={

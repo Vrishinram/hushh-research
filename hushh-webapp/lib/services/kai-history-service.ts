@@ -56,6 +56,77 @@ export interface AnalysisHistoryEntry {
 
 export type AnalysisHistoryMap = Record<string, AnalysisHistoryEntry[]>;
 
+function sanitizeTicker(value: unknown): string {
+  const ticker = String(value ?? "")
+    .trim()
+    .toUpperCase();
+  if (!ticker || ticker === "UNDEFINED" || ticker === "NULL") return "";
+  return ticker;
+}
+
+function sanitizeHistoryMap(rawMap: Record<string, unknown>): AnalysisHistoryMap {
+  const sanitized: AnalysisHistoryMap = {};
+
+  for (const [rawKey, maybeEntries] of Object.entries(rawMap)) {
+    if (!Array.isArray(maybeEntries)) continue;
+
+    const keyTicker = sanitizeTicker(rawKey);
+    const entries = maybeEntries
+      .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object" && !Array.isArray(entry))
+      .map((entry) => {
+        const ticker = sanitizeTicker(entry.ticker) || keyTicker;
+        if (!ticker) return null;
+
+        const rawTimestamp = typeof entry.timestamp === "string" ? entry.timestamp.trim() : "";
+        const timestamp = rawTimestamp.length > 0 ? rawTimestamp : new Date(0).toISOString();
+        const decision =
+          typeof entry.decision === "string" && entry.decision.trim().length > 0
+            ? entry.decision.trim()
+            : "hold";
+        const confidenceRaw =
+          typeof entry.confidence === "number" ? entry.confidence : Number(entry.confidence);
+        const confidence = Number.isFinite(confidenceRaw) ? confidenceRaw : 0;
+
+        const normalized: AnalysisHistoryEntry = {
+          ticker,
+          timestamp,
+          decision,
+          confidence,
+          consensus_reached: Boolean(entry.consensus_reached),
+          agent_votes:
+            entry.agent_votes && typeof entry.agent_votes === "object" && !Array.isArray(entry.agent_votes)
+              ? (entry.agent_votes as Record<string, string>)
+              : {},
+          final_statement:
+            typeof entry.final_statement === "string" ? entry.final_statement : "",
+          raw_card:
+            entry.raw_card && typeof entry.raw_card === "object" && !Array.isArray(entry.raw_card)
+              ? (entry.raw_card as Record<string, unknown>)
+              : {},
+        };
+
+        if (
+          entry.debate_transcript &&
+          typeof entry.debate_transcript === "object" &&
+          !Array.isArray(entry.debate_transcript)
+        ) {
+          normalized.debate_transcript = entry.debate_transcript as AnalysisHistoryEntry["debate_transcript"];
+        }
+
+        return normalized;
+      })
+      .filter((entry): entry is AnalysisHistoryEntry => entry !== null);
+
+    for (const entry of entries) {
+      const bucket = sanitized[entry.ticker] || [];
+      bucket.push(entry);
+      sanitized[entry.ticker] = bucket;
+    }
+  }
+
+  return sanitized;
+}
+
 function normalizeTickerKey(
   historyMap: AnalysisHistoryMap,
   ticker: string
@@ -153,7 +224,7 @@ function extractHistoryMap(fullBlob: Record<string, unknown>): AnalysisHistoryMa
       typeof canonicalHistory === "object" &&
       !Array.isArray(canonicalHistory)
     ) {
-      return canonicalHistory as AnalysisHistoryMap;
+      return sanitizeHistoryMap(canonicalHistory as Record<string, unknown>);
     }
   }
 

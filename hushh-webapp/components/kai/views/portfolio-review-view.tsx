@@ -79,6 +79,8 @@ import { scrollAppToTop } from "@/lib/navigation/use-scroll-reset";
 
 export interface Holding {
   symbol: string;
+  symbol_cusip?: string;
+  identifier_type?: "ticker" | "cusip" | "derived";
   name: string;
   quantity: number;
   price: number;
@@ -87,6 +89,16 @@ export interface Holding {
   unrealized_gain_loss?: number;
   unrealized_gain_loss_pct?: number;
   asset_type?: string;
+  instrument_kind?: string;
+  is_cash_equivalent?: boolean;
+  is_investable?: boolean;
+  analyze_eligible?: boolean;
+  debate_eligible?: boolean;
+  optimize_eligible?: boolean;
+  symbol_source?: string;
+  symbol_kind?: string;
+  security_listing_status?: string;
+  is_sec_common_equity_ticker?: boolean;
   pending_delete?: boolean;
 }
 
@@ -122,6 +134,10 @@ export interface AssetAllocation {
   equities_value?: number;
   bonds_pct?: number;
   bonds_value?: number;
+  real_assets_pct?: number;
+  real_assets_value?: number;
+  other_pct?: number;
+  other_value?: number;
 }
 
 export interface IncomeSummary {
@@ -137,16 +153,18 @@ export interface RealizedGainLoss {
 }
 
 export interface QualityReport {
-  raw?: number;
-  validated?: number;
-  aggregated?: number;
-  dropped?: number;
-  reconciled?: number;
-  mismatch_detected?: number;
-  parse_repair_applied?: boolean;
-  parse_repair_actions?: string[];
-  parse_fallback?: boolean;
-  average_confidence?: number;
+  raw_count?: number;
+  validated_count?: number;
+  aggregated_count?: number;
+  holdings_count?: number;
+  investable_positions_count?: number;
+  cash_positions_count?: number;
+  allocation_coverage_pct?: number;
+  symbol_trust_coverage_pct?: number;
+  parser_quality_score?: number;
+  quality_gate?: Record<string, unknown>;
+  dropped_reasons?: Record<string, number>;
+  diagnostics?: Record<string, unknown>;
 }
 
 export interface PortfolioData {
@@ -162,7 +180,9 @@ export interface PortfolioData {
   cash_management?: Record<string, unknown>;
   projections_and_mrd?: Record<string, unknown>;
   legal_and_disclosures?: string[];
-  quality_report?: QualityReport;
+  quality_report_v2?: QualityReport;
+  raw_extract_v2?: Record<string, unknown>;
+  analytics_v2?: Record<string, unknown>;
   domain_intent?: {
     primary: string;
     source: string;
@@ -234,6 +254,94 @@ function deriveRiskBucket(holdings: Holding[]): string {
   return "conservative";
 }
 
+function isCashEquivalentHolding(holding: Holding): boolean {
+  const symbol = String(holding.symbol || "").trim().toUpperCase();
+  if (["CASH", "MMF", "SWEEP", "QACDS"].includes(symbol)) return true;
+  const assetType = String(holding.asset_type || "").trim().toLowerCase();
+  const name = String(holding.name || "").trim().toLowerCase();
+  return (
+    assetType.includes("cash") ||
+    assetType.includes("money market") ||
+    assetType.includes("sweep") ||
+    name.includes("cash") ||
+    name.includes("money market") ||
+    name.includes("sweep")
+  );
+}
+
+function inferHoldingIdentifierType(holding: Holding): "ticker" | "cusip" | "derived" {
+  if (holding.identifier_type === "ticker" || holding.identifier_type === "cusip") {
+    return holding.identifier_type;
+  }
+  const symbol = String(holding.symbol || "").trim().toUpperCase();
+  if (/^[A-Z][A-Z0-9.\-]{0,5}$/.test(symbol)) return "ticker";
+  const symbolCusip = String(holding.symbol_cusip || "").trim().toUpperCase();
+  if (/^[0-9A-Z]{8,12}$/.test(symbolCusip) || /^[0-9A-Z]{8,12}$/.test(symbol)) return "cusip";
+  return "derived";
+}
+
+function inferInstrumentKind(holding: Holding, isCashEquivalent: boolean): string {
+  if (holding.instrument_kind) return holding.instrument_kind;
+  if (isCashEquivalent) return "cash_equivalent";
+  const hint = `${holding.asset_type || ""} ${holding.name || ""}`.toLowerCase();
+  if (hint.includes("bond") || hint.includes("fixed income") || hint.includes("treasury")) {
+    return "fixed_income";
+  }
+  if (
+    hint.includes("real estate") ||
+    hint.includes("reit") ||
+    hint.includes("real asset") ||
+    hint.includes("gold")
+  ) {
+    return "real_asset";
+  }
+  if (hint.includes("equity") || hint.includes("stock") || hint.includes("etf") || hint.includes("fund")) {
+    return "equity";
+  }
+  return "other";
+}
+
+function inferAnalyzeEligibility(
+  holding: Holding,
+  isInvestable: boolean,
+): boolean {
+  if (!isInvestable) return false;
+
+  const listingStatus = String(holding.security_listing_status || "")
+    .trim()
+    .toLowerCase();
+  const symbolKind = String(holding.symbol_kind || "")
+    .trim()
+    .toLowerCase();
+
+  if (listingStatus === "non_sec_common_equity") return false;
+  if (listingStatus === "fixed_income") return false;
+  if (listingStatus === "cash_or_sweep") return false;
+
+  if (holding.is_sec_common_equity_ticker === true) return true;
+  if (listingStatus === "sec_common_equity") return true;
+  if (symbolKind === "us_common_equity_ticker") return true;
+
+  return false;
+}
+
+function normalizeHoldingForStorage(holding: Holding): Holding {
+  const isCashEquivalent = isCashEquivalentHolding(holding);
+  const identifierType = inferHoldingIdentifierType(holding);
+  const isInvestable = !isCashEquivalent && identifierType === "ticker";
+  const analyzeEligible = inferAnalyzeEligibility(holding, isInvestable);
+  return {
+    ...holding,
+    identifier_type: identifierType,
+    instrument_kind: inferInstrumentKind(holding, isCashEquivalent),
+    is_cash_equivalent: isCashEquivalent,
+    is_investable: isInvestable,
+    analyze_eligible: analyzeEligible,
+    debate_eligible: isInvestable,
+    optimize_eligible: isInvestable,
+  };
+}
+
 function toFiniteNumber(value: unknown): number | undefined {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string") {
@@ -290,6 +398,88 @@ function sanitizeAccountSummary(value: unknown): AccountSummary {
 }
 
 function sanitizeAssetAllocation(value: unknown): AssetAllocation {
+  if (Array.isArray(value)) {
+    const bucketTotals: Record<"cash" | "equities" | "bonds" | "real_assets" | "other", number> = {
+      cash: 0,
+      equities: 0,
+      bonds: 0,
+      real_assets: 0,
+      other: 0,
+    };
+    const bucketPct: Record<"cash" | "equities" | "bonds" | "real_assets" | "other", number> = {
+      cash: 0,
+      equities: 0,
+      bonds: 0,
+      real_assets: 0,
+      other: 0,
+    };
+    let totalMarketValue = 0;
+
+    for (const row of value) {
+      const record = toRecord(row);
+      if (!record) continue;
+      const category = String(
+        record.category || record.asset_class || record.asset_type || ""
+      ).trim().toLowerCase();
+      const marketValue = toFiniteNumber(
+        record.market_value ?? record.value ?? record.amount
+      );
+      const percentage = toFiniteNumber(
+        record.percentage ?? record.pct ?? record.weight
+      );
+
+      let bucket: keyof typeof bucketTotals = "other";
+      if (category.includes("cash")) bucket = "cash";
+      else if (
+        category.includes("fixed income") ||
+        category.includes("bond") ||
+        category.includes("taxable") ||
+        category.includes("non-taxable")
+      ) {
+        bucket = "bonds";
+      } else if (
+        category.includes("real asset") ||
+        category.includes("real estate") ||
+        category.includes("commod")
+      ) {
+        bucket = "real_assets";
+      } else if (
+        category.includes("equit") ||
+        category.includes("stock") ||
+        category.includes("fund")
+      ) {
+        bucket = "equities";
+      }
+
+      if (marketValue !== undefined) {
+        bucketTotals[bucket] += marketValue;
+        totalMarketValue += marketValue;
+      }
+      if (percentage !== undefined) {
+        bucketPct[bucket] += percentage;
+      }
+    }
+
+    const fromValue = (bucket: keyof typeof bucketTotals): number | undefined => {
+      if (bucketPct[bucket] > 0) return bucketPct[bucket];
+      if (totalMarketValue <= 0 || bucketTotals[bucket] <= 0) return undefined;
+      return Number(((bucketTotals[bucket] / totalMarketValue) * 100).toFixed(2));
+    };
+
+    return compactRecord({
+      cash_pct: fromValue("cash"),
+      cash_value: bucketTotals.cash || undefined,
+      equities_pct: fromValue("equities"),
+      equities_value: bucketTotals.equities || undefined,
+      bonds_pct: fromValue("bonds"),
+      bonds_value: bucketTotals.bonds || undefined,
+      real_assets_pct: fromValue("real_assets"),
+      real_assets_value: bucketTotals.real_assets || undefined,
+      other_pct: fromValue("other"),
+      other_value: bucketTotals.other || undefined,
+    } satisfies AssetAllocation) as AssetAllocation;
+  }
+
   const record = toRecord(value);
   if (!record) return {};
   return compactRecord({
@@ -299,6 +489,10 @@ function sanitizeAssetAllocation(value: unknown): AssetAllocation {
     equities_value: toFiniteNumber(record.equities_value),
     bonds_pct: toFiniteNumber(record.bonds_pct),
     bonds_value: toFiniteNumber(record.bonds_value),
+    real_assets_pct: toFiniteNumber(record.real_assets_pct),
+    real_assets_value: toFiniteNumber(record.real_assets_value),
+    other_pct: toFiniteNumber(record.other_pct),
+    other_value: toFiniteNumber(record.other_value),
   } satisfies AssetAllocation) as AssetAllocation;
 }
 
@@ -327,7 +521,11 @@ function hasAllocationValues(allocation: AssetAllocation): boolean {
     allocation.equities_pct !== undefined ||
     allocation.equities_value !== undefined ||
     allocation.bonds_pct !== undefined ||
-    allocation.bonds_value !== undefined
+    allocation.bonds_value !== undefined ||
+    allocation.real_assets_pct !== undefined ||
+    allocation.real_assets_value !== undefined ||
+    allocation.other_pct !== undefined ||
+    allocation.other_value !== undefined
   );
 }
 
@@ -358,6 +556,10 @@ function _mergeAssetAllocation(primary: AssetAllocation, fallback: AssetAllocati
     equities_value: primary.equities_value ?? fallback.equities_value,
     bonds_pct: primary.bonds_pct ?? fallback.bonds_pct,
     bonds_value: primary.bonds_value ?? fallback.bonds_value,
+    real_assets_pct: primary.real_assets_pct ?? fallback.real_assets_pct,
+    real_assets_value: primary.real_assets_value ?? fallback.real_assets_value,
+    other_pct: primary.other_pct ?? fallback.other_pct,
+    other_value: primary.other_value ?? fallback.other_value,
   } satisfies AssetAllocation) as AssetAllocation;
 }
 
@@ -391,8 +593,8 @@ function statementCompletenessScore(statement: Record<string, unknown>): number 
   const summary = sanitizeAccountSummary(statement.account_summary);
   const allocation = sanitizeAssetAllocation(statement.asset_allocation);
   const holdings = Array.isArray(statement.holdings) ? statement.holdings.length : 0;
-  const quality = toRecord(statement.quality_report);
-  const validated = toFiniteNumber(quality?.validated);
+  const quality = toRecord(statement.quality_report_v2);
+  const validated = toFiniteNumber(quality?.validated_count);
 
   const summaryCount = Object.keys(summary).length;
   const allocationCount = Object.keys(allocation).length;
@@ -581,13 +783,25 @@ export function PortfolioReviewView({
 
   const totalValue = useMemo(() => {
     const holdingsTotal = activeHoldings.reduce((sum, h) => sum + (h.market_value || 0), 0);
-    const cashBalance = initialData.cash_balance || accountSummary.cash_balance || 0;
-    const derivedTotal = holdingsTotal + cashBalance;
-    if (holdingsTotal > 0) {
-      return derivedTotal;
-    }
-    return accountSummary.ending_value || derivedTotal || holdingsTotal;
-  }, [activeHoldings, accountSummary.cash_balance, accountSummary.ending_value, initialData.cash_balance]);
+    const holdingsCash = deriveCashFromHoldings(activeHoldings);
+    const resolvedCashBalance =
+      toFiniteNumber(initialData.cash_balance) ??
+      toFiniteNumber(accountSummary.cash_balance) ??
+      0;
+    // When cash-equivalent positions are already in holdings, do not add cash again.
+    const derivedTotal = holdingsTotal + (holdingsCash !== undefined ? 0 : resolvedCashBalance);
+    return (
+      toFiniteNumber(initialData.total_value) ??
+      toFiniteNumber(accountSummary.ending_value) ??
+      derivedTotal
+    );
+  }, [
+    activeHoldings,
+    accountSummary.cash_balance,
+    accountSummary.ending_value,
+    initialData.cash_balance,
+    initialData.total_value,
+  ]);
 
   const totalUnrealizedGainLoss = useMemo(() => {
     return activeHoldings.reduce(
@@ -640,10 +854,17 @@ export function PortfolioReviewView({
   const handleAddHolding = useCallback(() => {
     const newHolding: Holding = {
       symbol: "",
+      identifier_type: "ticker",
       name: "New Holding",
       quantity: 0,
       price: 0,
       market_value: 0,
+      instrument_kind: "equity",
+      is_cash_equivalent: false,
+      is_investable: false,
+      analyze_eligible: false,
+      debate_eligible: false,
+      optimize_eligible: false,
       pending_delete: false,
     };
     setHoldings((prev) => [...prev, newHolding]);
@@ -698,8 +919,15 @@ export function PortfolioReviewView({
         "legal_and_disclosures",
       ] as const;
 
-      const holdingsSummary = activeHoldings.map((h) => ({
+      const normalizedActiveHoldings = activeHoldings.map((holding) =>
+        normalizeHoldingForStorage(holding)
+      );
+      const holdingsSummary = normalizedActiveHoldings.map((h) => ({
         symbol: h.symbol,
+        identifier_type: h.identifier_type,
+        instrument_kind: h.instrument_kind,
+        is_cash_equivalent: h.is_cash_equivalent,
+        is_investable: h.is_investable,
         name: h.name,
         quantity: h.quantity,
         current_price: h.price,
@@ -725,11 +953,12 @@ export function PortfolioReviewView({
       const parsedAssetAllocation = sanitizeAssetAllocation(assetAllocation);
       const parsedCashBalance =
         toFiniteNumber(initialData.cash_balance) ?? parsedAccountSummary.cash_balance;
-      const holdingsTotal = activeHoldings.reduce(
+      const holdingsTotal = normalizedActiveHoldings.reduce(
         (sum, holding) => sum + (toFiniteNumber(holding.market_value) ?? 0),
         0
       );
-      const derivedCashBalance = deriveCashFromHoldings(activeHoldings);
+      const derivedCashBalance = deriveCashFromHoldings(normalizedActiveHoldings);
+      const holdingsIncludeCash = derivedCashBalance !== undefined;
 
       // 3. Append structured statement snapshot (no raw PDF bytes).
       const existingDocsValue = existingFinancial.documents;
@@ -783,12 +1012,15 @@ export function PortfolioReviewView({
         toFiniteNumber(initialData.total_value) ??
         parsedAccountSummary.ending_value ??
         (holdingsTotal > 0
-          ? holdingsTotal + (parsedCashBalance ?? derivedCashBalance ?? 0)
+          ? holdingsTotal +
+            (holdingsIncludeCash ? 0 : parsedCashBalance ?? derivedCashBalance ?? 0)
           : undefined);
       const resolvedCashBalance = parsedCashBalance ?? derivedCashBalance ?? fallbackCashBalance;
       const resolvedTotalValue =
         statementTotalValue ??
-        (holdingsTotal > 0 ? holdingsTotal + (resolvedCashBalance ?? 0) : undefined) ??
+        (holdingsTotal > 0
+          ? holdingsTotal + (holdingsIncludeCash ? 0 : resolvedCashBalance ?? 0)
+          : undefined) ??
         fallbackTotalValue ??
         0;
 
@@ -808,9 +1040,7 @@ export function PortfolioReviewView({
         sparseSections.push("account_info");
       }
 
-      const parseFallback =
-        initialData.parse_fallback === true ||
-        initialData.quality_report?.parse_fallback === true;
+      const parseFallback = initialData.parse_fallback === true;
 
       const normalizedAccountInfo = compactRecord({
         holder_name: accountInfo.holder_name,
@@ -841,7 +1071,7 @@ export function PortfolioReviewView({
         asset_allocation: hasAllocationValues(resolvedAssetAllocation)
           ? resolvedAssetAllocation
           : undefined,
-        holdings: activeHoldings,
+        holdings: normalizedActiveHoldings,
         income_summary: hasRecordValues(normalizedIncomeSummary as Record<string, unknown>)
           ? normalizedIncomeSummary
           : undefined,
@@ -871,6 +1101,7 @@ export function PortfolioReviewView({
       const snapshot = {
         id: snapshotId,
         imported_at: nowIso,
+        schema_version: 2,
         domain_intent: {
           primary: "financial",
           secondary: "documents",
@@ -901,7 +1132,10 @@ export function PortfolioReviewView({
         cash_management: initialData.cash_management || null,
         projections_and_mrd: initialData.projections_and_mrd || null,
         legal_and_disclosures: initialData.legal_and_disclosures || [],
-        quality_report: initialData.quality_report || null,
+        quality_report_v2: initialData.quality_report_v2 || null,
+        raw_extract_v2: initialData.raw_extract_v2 || null,
+        canonical_v2: portfolioToSave,
+        analytics_v2: initialData.analytics_v2 || null,
         parse_context: {
           parse_fallback: parseFallback,
           sparse_sections: sparseSections,
@@ -922,12 +1156,20 @@ export function PortfolioReviewView({
         },
       };
 
-      const lastQuality = initialData.quality_report;
+      const lastQuality = initialData.quality_report_v2;
+      const lastQualityRawCount =
+        typeof (lastQuality as Record<string, unknown> | undefined)?.raw_count === "number"
+          ? ((lastQuality as Record<string, unknown>).raw_count as number)
+          : undefined;
+      const lastQualityValidatedCount =
+        typeof (lastQuality as Record<string, unknown> | undefined)?.validated_count === "number"
+          ? ((lastQuality as Record<string, unknown>).validated_count as number)
+          : undefined;
       const lastQualityScore =
-        typeof lastQuality?.validated === "number" &&
-        typeof lastQuality?.raw === "number" &&
-        lastQuality.raw > 0
-          ? Number((lastQuality.validated / lastQuality.raw).toFixed(4))
+        typeof lastQualityValidatedCount === "number" &&
+        typeof lastQualityRawCount === "number" &&
+        lastQualityRawCount > 0
+          ? Number((lastQualityValidatedCount / lastQualityRawCount).toFixed(4))
           : undefined;
       const bestSnapshotSource = toRecord(bestStatementSnapshot?.source);
       const bestSnapshotStatementEnd =
@@ -977,8 +1219,6 @@ export function PortfolioReviewView({
 
       const nextFinancialDomain = {
         ...existingFinancial,
-        // Keep compatibility fields while transitioning all readers to `financial.portfolio`.
-        ...portfolioToSave,
         schema_version: 3,
         domain_intent: {
           primary: "financial",
@@ -987,13 +1227,24 @@ export function PortfolioReviewView({
           updated_at: nowIso,
         },
         portfolio: canonicalPortfolio,
+        analytics: initialData.analytics_v2 || existingFinancial.analytics || null,
         documents: nextDocsDomain,
         updated_at: nowIso,
       };
 
       const financialSummary = {
         intent_source: "kai_import_llm",
-        holdings_count: activeHoldings.length,
+        holdings_count: normalizedActiveHoldings.length,
+        investable_positions_count: normalizedActiveHoldings.filter(
+          (holding) => holding.is_investable
+        ).length,
+        cash_positions_count: normalizedActiveHoldings.filter(
+          (holding) => holding.is_cash_equivalent
+        ).length,
+        allocation_coverage_pct: hasAllocationValues(resolvedAssetAllocation) ? 1 : 0,
+        parser_quality_score:
+          typeof lastQualityScore === "number" ? lastQualityScore : null,
+        last_statement_total_value: resolvedTotalValue,
         holdings: holdingsSummary,
         portfolio_risk_bucket: riskBucket,
         risk_bucket: riskBucket,
@@ -1001,9 +1252,10 @@ export function PortfolioReviewView({
         has_realized_gains: !!realizedGainLoss.net_realized,
         parse_fallback_last_import: parseFallback,
         sparse_sections_last_import: sparseSections,
-        domain_contract_version: 1,
+        domain_contract_version: 2,
         intent_map: [
           "portfolio",
+          "analytics",
           "profile",
           "documents",
           "analysis_history",
@@ -1264,7 +1516,7 @@ export function PortfolioReviewView({
         </AccordionItem>
 
         {/* Asset Allocation */}
-        {(assetAllocation.cash_pct || assetAllocation.equities_pct) && (
+        {hasAllocationValues(assetAllocation) && (
         <AccordionItem value="allocation" className="border-b-0 bg-card rounded-2xl border px-5">
             <AccordionTrigger className="text-base font-bold py-5 hover:no-underline">
 
@@ -1312,6 +1564,34 @@ export function PortfolioReviewView({
                         </span>
                         <span className="text-muted-foreground text-sm ml-2">
                           {formatCurrency(assetAllocation.bonds_value)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                {assetAllocation.real_assets_pct !== undefined &&
+                  assetAllocation.real_assets_pct > 0 && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm">Real Assets</span>
+                      <div className="text-right">
+                        <span className="font-medium">
+                          {assetAllocation.real_assets_pct?.toFixed(1)}%
+                        </span>
+                        <span className="text-muted-foreground text-sm ml-2">
+                          {formatCurrency(assetAllocation.real_assets_value)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                {assetAllocation.other_pct !== undefined &&
+                  assetAllocation.other_pct > 0 && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm">Other</span>
+                      <div className="text-right">
+                        <span className="font-medium">
+                          {assetAllocation.other_pct?.toFixed(1)}%
+                        </span>
+                        <span className="text-muted-foreground text-sm ml-2">
+                          {formatCurrency(assetAllocation.other_value)}
                         </span>
                       </div>
                     </div>
