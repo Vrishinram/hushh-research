@@ -12,6 +12,12 @@ from datetime import datetime
 from typing import Optional
 
 from db.db_client import get_db
+from hushh_mcp.services.domain_contracts import (
+    CANONICAL_DOMAIN_REGISTRY,
+    FINANCIAL_SUBINTENT_REGISTRY,
+    RETIRED_DOMAIN_REGISTRY_KEYS,
+    canonical_domain_metadata_map,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -32,63 +38,8 @@ class DomainInfo:
     last_updated_at: Optional[datetime] = None
 
 
-# Default domain metadata for common domains
-DEFAULT_DOMAIN_METADATA = {
-    "financial": {
-        "display_name": "Financial",
-        "icon_name": "wallet",
-        "color_hex": "#D4AF37",
-        "description": "Investment portfolio, risk profile, and financial preferences",
-    },
-    "subscriptions": {
-        "display_name": "Subscriptions",
-        "icon_name": "credit-card",
-        "color_hex": "#6366F1",
-        "description": "Streaming services, memberships, and recurring payments",
-    },
-    "health": {
-        "display_name": "Health & Wellness",
-        "icon_name": "heart",
-        "color_hex": "#EF4444",
-        "description": "Fitness data, health metrics, and wellness preferences",
-    },
-    "travel": {
-        "display_name": "Travel",
-        "icon_name": "plane",
-        "color_hex": "#0EA5E9",
-        "description": "Travel preferences, loyalty programs, and trip history",
-    },
-    "food": {
-        "display_name": "Food & Dining",
-        "icon_name": "utensils",
-        "color_hex": "#F97316",
-        "description": "Dietary preferences, favorite cuisines, and restaurant history",
-    },
-    "professional": {
-        "display_name": "Professional",
-        "icon_name": "briefcase",
-        "color_hex": "#8B5CF6",
-        "description": "Career information, skills, and work preferences",
-    },
-    "entertainment": {
-        "display_name": "Entertainment",
-        "icon_name": "tv",
-        "color_hex": "#EC4899",
-        "description": "Movies, music, games, and media preferences",
-    },
-    "shopping": {
-        "display_name": "Shopping",
-        "icon_name": "shopping-bag",
-        "color_hex": "#14B8A6",
-        "description": "Purchase history, brand preferences, and wishlists",
-    },
-    "general": {
-        "display_name": "General",
-        "icon_name": "folder",
-        "color_hex": "#6B7280",
-        "description": "Miscellaneous preferences and attributes",
-    },
-}
+# Default domain metadata for canonical top-level domains.
+DEFAULT_DOMAIN_METADATA = canonical_domain_metadata_map()
 
 
 class DomainRegistryService:
@@ -104,6 +55,7 @@ class DomainRegistryService:
         self._cache: dict[str, DomainInfo] = {}
         self._cache_ttl = 300  # 5 minutes
         self._cache_time: Optional[datetime] = None
+        self._canonical_seeded = False
 
     @property
     def supabase(self):
@@ -123,6 +75,175 @@ class DomainRegistryService:
         self._cache.clear()
         self._cache_time = None
 
+    @staticmethod
+    def _normalize_domain_key(value: str | None) -> str:
+        return str(value or "").strip().lower()
+
+    @classmethod
+    def _infer_parent_domain(cls, domain_key: str) -> Optional[str]:
+        normalized = cls._normalize_domain_key(domain_key)
+        if "." not in normalized:
+            return None
+        parent_domain = normalized.split(".", 1)[0].strip()
+        return parent_domain or None
+
+    async def _repair_parent_domain_links(self) -> None:
+        """Ensure dotted domains consistently link to their top-level parent."""
+        try:
+            rows = (
+                self.supabase.table("domain_registry")
+                .select("domain_key,parent_domain")
+                .execute()
+                .data
+                or []
+            )
+        except Exception as read_error:
+            logger.warning("Failed to read domain_registry for parent repair: %s", read_error)
+            return
+
+        for row in rows:
+            domain_key = self._normalize_domain_key(row.get("domain_key"))
+            if not domain_key:
+                continue
+            expected_parent = self._infer_parent_domain(domain_key)
+            current_parent = self._normalize_domain_key(row.get("parent_domain")) or None
+            if not expected_parent:
+                continue
+            if current_parent == expected_parent:
+                continue
+            try:
+                self.supabase.table("domain_registry").update(
+                    {"parent_domain": expected_parent}
+                ).eq("domain_key", domain_key).execute()
+            except Exception as update_error:
+                logger.warning(
+                    "Failed to update parent_domain for %s -> %s: %s",
+                    domain_key,
+                    expected_parent,
+                    update_error,
+                )
+
+    async def _collect_index_referenced_domains(self) -> set[str]:
+        """Collect domain keys currently referenced by any user index."""
+        referenced: set[str] = set()
+        try:
+            rows = (
+                self.supabase.table("world_model_index_v2")
+                .select("available_domains,domain_summaries")
+                .execute()
+                .data
+                or []
+            )
+        except Exception as read_error:
+            logger.warning(
+                "Failed to scan world_model_index_v2 for domain references: %s", read_error
+            )
+            return referenced
+
+        for row in rows:
+            for domain_key in row.get("available_domains") or []:
+                normalized = self._normalize_domain_key(domain_key)
+                if normalized:
+                    referenced.add(normalized)
+            summaries = row.get("domain_summaries")
+            if not isinstance(summaries, dict):
+                continue
+            for key in summaries.keys():
+                normalized = self._normalize_domain_key(str(key))
+                if normalized:
+                    referenced.add(normalized)
+        return referenced
+
+    async def _prune_retired_registry_keys(self) -> None:
+        """Delete retired registry rows when they are no longer referenced."""
+        referenced = await self._collect_index_referenced_domains()
+        for retired_key in RETIRED_DOMAIN_REGISTRY_KEYS:
+            normalized_retired = self._normalize_domain_key(retired_key)
+            if normalized_retired in referenced:
+                logger.warning(
+                    "Skipping retired registry key cleanup for %s (still referenced in index).",
+                    normalized_retired,
+                )
+                continue
+            try:
+                self.supabase.table("domain_registry").delete().eq(
+                    "domain_key", normalized_retired
+                ).execute()
+            except Exception as delete_error:
+                logger.warning(
+                    "Failed to prune retired registry key %s: %s",
+                    normalized_retired,
+                    delete_error,
+                )
+
+    async def ensure_canonical_domains(self) -> None:
+        """Best-effort seed of canonical top-level domains into domain_registry."""
+        if self._canonical_seeded:
+            return
+        for entry in CANONICAL_DOMAIN_REGISTRY:
+            try:
+                await self.register_domain(
+                    domain_key=entry.domain_key,
+                    display_name=entry.display_name,
+                    description=entry.description,
+                    icon_name=entry.icon_name,
+                    color_hex=entry.color_hex,
+                )
+            except Exception as seed_error:
+                logger.warning(
+                    "Failed to seed canonical domain '%s': %s",
+                    entry.domain_key,
+                    seed_error,
+                )
+        for subintent in FINANCIAL_SUBINTENT_REGISTRY:
+            try:
+                await self.register_domain(
+                    domain_key=subintent.domain_key,
+                    display_name=subintent.display_name,
+                    description=subintent.description,
+                    icon_name=subintent.icon_name,
+                    color_hex=subintent.color_hex,
+                    parent_domain=subintent.parent_domain,
+                )
+            except Exception as seed_error:
+                logger.warning(
+                    "Failed to seed domain subintent '%s': %s",
+                    subintent.domain_key,
+                    seed_error,
+                )
+        await self._repair_parent_domain_links()
+        await self._prune_retired_registry_keys()
+        self._canonical_seeded = True
+        self._invalidate_cache()
+
+    @staticmethod
+    def _summary_count(summary: dict | None) -> int:
+        if not isinstance(summary, dict):
+            return 0
+        candidates = (
+            summary.get("attribute_count"),
+            summary.get("holdings_count"),
+            summary.get("item_count"),
+        )
+        for value in candidates:
+            if isinstance(value, bool) or value is None:
+                continue
+            if isinstance(value, int):
+                return max(0, value)
+            if isinstance(value, float):
+                if value != value:
+                    continue
+                return max(0, int(value))
+            if isinstance(value, str):
+                text = value.strip()
+                if not text:
+                    continue
+                try:
+                    return max(0, int(float(text)))
+                except Exception:
+                    continue
+        return 0
+
     async def register_domain(
         self,
         domain_key: str,
@@ -140,6 +261,13 @@ class DomainRegistryService:
         """
         # Normalize domain key
         domain_key = domain_key.lower().strip().replace(" ", "_")
+        final_parent_domain = self._normalize_domain_key(
+            parent_domain
+        ) or self._infer_parent_domain(domain_key)
+
+        if final_parent_domain and final_parent_domain != domain_key:
+            # Ensure parent exists before inserting the subintent row.
+            await self.register_domain(domain_key=final_parent_domain)
 
         # Check cache first
         if domain_key in self._cache and self._is_cache_valid():
@@ -157,8 +285,8 @@ class DomainRegistryService:
         final_description = description or defaults.get("description")
 
         try:
-            # Use RPC function for atomic upsert
-            result = self.supabase.rpc(
+            # Use RPC function for atomic upsert when supported by the client.
+            rpc_call = self.supabase.rpc(
                 "auto_register_domain",
                 {
                     "p_domain_key": domain_key,
@@ -166,17 +294,51 @@ class DomainRegistryService:
                     "p_icon_name": final_icon,
                     "p_color_hex": final_color,
                 },
-            ).execute()
+            )
+            rpc_payload: dict | None = None
+            if hasattr(rpc_call, "execute"):
+                result = rpc_call.execute()
+                raw_payload = result.data
+                if isinstance(raw_payload, dict):
+                    rpc_payload = raw_payload
+                elif isinstance(raw_payload, list) and raw_payload:
+                    first_row = raw_payload[0]
+                    if isinstance(first_row, dict):
+                        nested = first_row.get("auto_register_domain")
+                        if isinstance(nested, dict):
+                            rpc_payload = nested
+                        else:
+                            rpc_payload = first_row
 
-            if result.data:
+            if rpc_payload:
+                if final_parent_domain is not None or final_description is not None:
+                    try:
+                        patch_data: dict[str, object] = {}
+                        if final_parent_domain is not None:
+                            patch_data["parent_domain"] = final_parent_domain
+                        if final_description is not None:
+                            patch_data["description"] = final_description
+                        if patch_data:
+                            self.supabase.table("domain_registry").update(patch_data).eq(
+                                "domain_key", domain_key
+                            ).execute()
+                    except Exception as patch_error:
+                        logger.warning(
+                            "Failed to patch domain metadata for %s after RPC upsert: %s",
+                            domain_key,
+                            patch_error,
+                        )
                 domain_info = DomainInfo(
-                    domain_key=result.data.get("domain_key", domain_key),
-                    display_name=result.data.get("display_name", final_display_name),
-                    icon_name=result.data.get("icon_name", final_icon),
-                    color_hex=result.data.get("color_hex", final_color),
-                    description=final_description,
-                    attribute_count=result.data.get("attribute_count", 0),
-                    user_count=result.data.get("user_count", 0),
+                    domain_key=rpc_payload.get("domain_key", domain_key),
+                    display_name=rpc_payload.get("display_name", final_display_name),
+                    icon_name=rpc_payload.get("icon_name", final_icon),
+                    color_hex=rpc_payload.get("color_hex", final_color),
+                    description=final_description
+                    if final_description is not None
+                    else rpc_payload.get("description"),
+                    parent_domain=final_parent_domain,
+                    attribute_count=rpc_payload.get("attribute_count", 0),
+                    user_count=rpc_payload.get("user_count", 0),
                 )
                 self._cache[domain_key] = domain_info
                 self._cache_time = datetime.utcnow()
@@ -192,7 +354,7 @@ class DomainRegistryService:
                 "icon_name": final_icon,
                 "color_hex": final_color,
                 "description": final_description,
-                "parent_domain": parent_domain,
+                "parent_domain": final_parent_domain,
             }
 
             self.supabase.table("domain_registry").upsert(data, on_conflict="domain_key").execute()
@@ -290,18 +452,22 @@ class DomainRegistryService:
             row = result.data[0]
             available_domains = row.get("available_domains") or []
             domain_summaries = row.get("domain_summaries") or {}
+            summary_domains = (
+                list(domain_summaries.keys()) if isinstance(domain_summaries, dict) else []
+            )
+            normalized_domains = sorted(
+                {
+                    str(key).strip().lower()
+                    for key in [*available_domains, *summary_domains]
+                    if str(key).strip()
+                }
+            )
             domains = []
-            for key in available_domains:
+            for key in normalized_domains:
                 domain_info = await self.get_domain(key)
                 if domain_info:
                     summary = domain_summaries.get(key) or {}
-                    raw = (
-                        summary.get("holdings_count")
-                        or summary.get("attribute_count")
-                        or summary.get("item_count")
-                        or 0
-                    )
-                    domain_info.attribute_count = int(raw) if raw is not None else 0
+                    domain_info.attribute_count = self._summary_count(summary)
                     domains.append(domain_info)
             return sorted(domains, key=lambda d: d.display_name)
         except Exception as e:

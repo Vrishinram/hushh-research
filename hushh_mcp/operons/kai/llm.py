@@ -1,8 +1,8 @@
 # hushh_mcp/operons/kai/llm.py
 
 """
-Kai LLM Operons - Powered by Gemini 3 Flash
-Processes financial data through Gemini 3 Flash for fast, intelligent analysis.
+Kai LLM Operons - Powered by Gemini
+Processes financial data through the configured Gemini model for analysis.
 """
 
 import asyncio
@@ -26,7 +26,16 @@ except ImportError:
     logging.warning("⚠️ google-genai SDK not found. Kai LLM operons are unavailable.")
 
 from hushh_mcp.consent.token import validate_token
-from hushh_mcp.constants import GEMINI_MODEL, ConsentScope
+from hushh_mcp.constants import (
+    GEMINI_MODEL,
+    KAI_LLM_MAX_OUTPUT_TOKENS_DEFAULT,
+    KAI_LLM_STREAM_INCLUDE_THOUGHTS,
+    KAI_LLM_TEMPERATURE,
+    KAI_LLM_THINKING_ENABLED,
+    KAI_LLM_THINKING_LEVEL,
+    KAI_SYNTHESIS_MAX_OUTPUT_TOKENS,
+    ConsentScope,
+)
 from hushh_mcp.types import UserID
 
 logger = logging.getLogger(__name__)
@@ -40,6 +49,23 @@ _gemini_use_vertex = True
 _gemini_project = ""
 _gemini_project_source: Optional[str] = None
 _gemini_location = "global"
+
+
+def _stream_concurrency_limit() -> int:
+    raw = (os.getenv("KAI_GEMINI_STREAM_CONCURRENCY") or "2").strip()
+    try:
+        return max(1, int(raw))
+    except Exception:
+        return 2
+
+
+_gemini_stream_semaphore = asyncio.Semaphore(_stream_concurrency_limit())
+
+
+def _is_retryable_stream_error(error: Exception | str) -> bool:
+    message = str(error).lower()
+    markers = ("429", "too many requests", "resource_exhausted", "quota", "rate limit")
+    return any(marker in message for marker in markers)
 
 
 def _is_truthy(raw_value: str) -> bool:
@@ -224,7 +250,6 @@ async def _generate_content_text(
     *,
     prompt: str,
     timeout_seconds: float,
-    temperature: float,
     max_output_tokens: int,
     response_mime_type: Optional[str] = None,
 ) -> str:
@@ -232,9 +257,17 @@ async def _generate_content_text(
         raise RuntimeError(_gemini_unavailable_reason or "Gemini client unavailable")
 
     config_kwargs: Dict[str, Any] = {
-        "temperature": temperature,
+        "temperature": KAI_LLM_TEMPERATURE,
         "max_output_tokens": max_output_tokens,
     }
+    if KAI_LLM_THINKING_ENABLED:
+        thinking_level = getattr(types.ThinkingLevel, str(KAI_LLM_THINKING_LEVEL).upper(), None)
+        if thinking_level is None:
+            thinking_level = types.ThinkingLevel.HIGH
+        config_kwargs["thinking_config"] = types.ThinkingConfig(
+            include_thoughts=False,
+            thinking_level=thinking_level,
+        )
     if response_mime_type:
         config_kwargs["response_mime_type"] = response_mime_type
 
@@ -441,8 +474,7 @@ Your mission is to perform a high-conviction, data-driven "Earnings Quality & Mo
         response_text = await _generate_content_text(
             prompt=f"{system_instruction}\n\nCONTEXT DATA:\n{context}",
             timeout_seconds=40.0,
-            temperature=0.2,
-            max_output_tokens=4096,
+            max_output_tokens=KAI_LLM_MAX_OUTPUT_TOKENS_DEFAULT,
             response_mime_type="application/json",
         )
 
@@ -540,8 +572,7 @@ Analyze the provided news articles and assess market sentiment for this stock.
         text = await _generate_content_text(
             prompt=f"{system_instruction}\n\nCONTEXT:\n{context}",
             timeout_seconds=30.0,
-            temperature=0.2,
-            max_output_tokens=4096,
+            max_output_tokens=KAI_LLM_MAX_OUTPUT_TOKENS_DEFAULT,
             response_mime_type="application/json",
         )
         if text.startswith("```json"):
@@ -648,8 +679,7 @@ Perform a comprehensive valuation analysis with focus on relative and intrinsic 
         text = await _generate_content_text(
             prompt=f"{system_instruction}\n\nCONTEXT:\n{context}",
             timeout_seconds=30.0,
-            temperature=0.2,
-            max_output_tokens=4096,
+            max_output_tokens=KAI_LLM_MAX_OUTPUT_TOKENS_DEFAULT,
             response_mime_type="application/json",
         )
         if text.startswith("```json"):
@@ -725,8 +755,7 @@ highlights={json.dumps(highlights[:24], default=str)[:4000]}
         text = await _generate_content_text(
             prompt=synthesis_prompt,
             timeout_seconds=25.0,
-            temperature=0.2,
-            max_output_tokens=2500,
+            max_output_tokens=KAI_SYNTHESIS_MAX_OUTPUT_TOKENS,
             response_mime_type="application/json",
         )
         parsed = _extract_json(text)
@@ -772,68 +801,119 @@ async def stream_gemini_response(
 
     logger.info(f"[Gemini Streaming] Starting stream for {agent_name}")
 
-    try:
-        # Use ASYNC streaming to prevent blocking the event loop
-        if types is None:
-            yield {
-                "type": "error",
-                "message": "Gemini streaming unavailable (google.genai.types missing)",
-            }
-            return
-
-        config = types.GenerateContentConfig(
-            temperature=0.7,
-            max_output_tokens=4096,
-        )
-
-        # Call the ASYNC streaming method
-        # Note: google.genai V1 SDK uses client.aio for async calls
-        stream = await _gemini_client.aio.models.generate_content_stream(
-            model=_gemini_model_name,
-            contents=prompt,
-            config=config,
-        )
-
-        full_text = ""
-        token_count = 0
-
-        # Async iteration
-        async for chunk in stream:
-            try:
-                chunk_text = chunk.text if hasattr(chunk, "text") else ""
-            except Exception as e:
-                logger.warning(f"[Gemini Streaming] Skipped chunk for {agent_name}: {e}")
-                continue
-
-            if chunk_text:
-                token_count += 1
-                full_text += chunk_text
-                # Log only every 10th token to reduce noise
-                if token_count % 10 == 0:
-                    logger.info(f"[Gemini Streaming] Token #{token_count} for {agent_name}")
-
-                yield {
-                    "type": "token",
-                    "text": chunk_text,
-                    "agent": agent_name,
-                }
-
-        # Yield complete event with full text
-        yield {
-            "type": "complete",
-            "text": full_text,
-            "agent": agent_name,
-        }
-
-        logger.info(f"[Gemini Streaming] Complete for {agent_name}, {token_count} tokens")
-
-    except Exception as e:
-        logger.error(f"[Gemini Streaming] Error for {agent_name}: {e}", exc_info=True)
+    # Use ASYNC streaming to prevent blocking the event loop.
+    if types is None:
         yield {
             "type": "error",
-            "message": str(e),
-            "agent": agent_name,
+            "message": "Gemini streaming unavailable (google.genai.types missing)",
         }
+        return
+
+    config_kwargs: Dict[str, Any] = {
+        "temperature": KAI_LLM_TEMPERATURE,
+        "max_output_tokens": KAI_LLM_MAX_OUTPUT_TOKENS_DEFAULT,
+    }
+    if KAI_LLM_THINKING_ENABLED:
+        thinking_level = getattr(types.ThinkingLevel, str(KAI_LLM_THINKING_LEVEL).upper(), None)
+        if thinking_level is None:
+            thinking_level = types.ThinkingLevel.HIGH
+        config_kwargs["thinking_config"] = types.ThinkingConfig(
+            include_thoughts=bool(KAI_LLM_STREAM_INCLUDE_THOUGHTS),
+            thinking_level=thinking_level,
+        )
+    config = types.GenerateContentConfig(**config_kwargs)
+
+    max_attempts = 3
+    for attempt in range(1, max_attempts + 1):
+        try:
+            async with _gemini_stream_semaphore:
+                stream = await _gemini_client.aio.models.generate_content_stream(
+                    model=_gemini_model_name,
+                    contents=prompt,
+                    config=config,
+                )
+
+                full_text = ""
+                token_count = 0
+
+                async for chunk in stream:
+                    try:
+                        emitted = False
+                        if hasattr(chunk, "candidates") and chunk.candidates:
+                            for candidate in chunk.candidates:
+                                content = getattr(candidate, "content", None)
+                                parts = getattr(content, "parts", None) or []
+                                for part in parts:
+                                    text_value = getattr(part, "text", None)
+                                    if not text_value:
+                                        continue
+                                    is_thought = bool(getattr(part, "thought", False))
+                                    token_count += 1
+                                    full_text += str(text_value)
+                                    emitted = True
+                                    if token_count % 10 == 0:
+                                        logger.info(
+                                            "[Gemini Streaming] Token #%s for %s",
+                                            token_count,
+                                            agent_name,
+                                        )
+                                    yield {
+                                        "type": "token",
+                                        "text": str(text_value),
+                                        "agent": agent_name,
+                                        "token_source": "thought" if is_thought else "response",
+                                    }
+
+                        if not emitted:
+                            chunk_text = chunk.text if hasattr(chunk, "text") else ""
+                            if chunk_text:
+                                token_count += 1
+                                full_text += str(chunk_text)
+                                if token_count % 10 == 0:
+                                    logger.info(
+                                        "[Gemini Streaming] Token #%s for %s",
+                                        token_count,
+                                        agent_name,
+                                    )
+                                yield {
+                                    "type": "token",
+                                    "text": str(chunk_text),
+                                    "agent": agent_name,
+                                    "token_source": "response",
+                                }
+                    except Exception as e:
+                        logger.warning(f"[Gemini Streaming] Skipped chunk for {agent_name}: {e}")
+                        continue
+
+            yield {
+                "type": "complete",
+                "text": full_text,
+                "agent": agent_name,
+            }
+            logger.info(f"[Gemini Streaming] Complete for {agent_name}, {token_count} tokens")
+            return
+        except Exception as e:
+            retryable = _is_retryable_stream_error(e)
+            if retryable and attempt < max_attempts:
+                delay_seconds = min(6.0, 2.0**attempt)
+                logger.warning(
+                    "[Gemini Streaming] Retryable error for %s (attempt %s/%s): %s. Retrying in %.1fs",
+                    agent_name,
+                    attempt,
+                    max_attempts,
+                    e,
+                    delay_seconds,
+                )
+                await asyncio.sleep(delay_seconds)
+                continue
+
+            logger.error(f"[Gemini Streaming] Error for {agent_name}: {e}", exc_info=True)
+            yield {
+                "type": "error",
+                "message": str(e),
+                "agent": agent_name,
+            }
+            return
 
 
 async def analyze_fundamental_streaming(

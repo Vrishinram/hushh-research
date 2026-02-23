@@ -47,6 +47,50 @@ from .valuation_agent import ValuationInsight
 logger = logging.getLogger(__name__)
 
 
+def _safe_float(value: Any) -> Optional[float]:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        parsed = float(value)
+        if parsed != parsed:  # NaN guard
+            return None
+        return parsed
+    try:
+        text = str(value).strip().replace(",", "")
+        if not text:
+            return None
+        parsed = float(text)
+        if parsed != parsed:
+            return None
+        return parsed
+    except Exception:
+        return None
+
+
+def _format_currency(value: Any) -> str:
+    parsed = _safe_float(value)
+    if parsed is None:
+        return "n/a"
+    sign = "-" if parsed < 0 else ""
+    amount = abs(parsed)
+    if amount >= 1_000_000_000:
+        return f"{sign}${amount / 1_000_000_000:.2f}B"
+    if amount >= 1_000_000:
+        return f"{sign}${amount / 1_000_000:.2f}M"
+    if amount >= 1_000:
+        return f"{sign}${amount / 1_000:.0f}K"
+    return f"{sign}${amount:.0f}"
+
+
+def _format_percent(value: Any) -> str:
+    parsed = _safe_float(value)
+    if parsed is None:
+        return "n/a"
+    # Frontend sends coverage in [0,1]. Keep support for [0,100] for safety.
+    pct = parsed * 100.0 if parsed <= 1.0 else parsed
+    return f"{pct:.0f}%"
+
+
 @dataclass
 class DebateRound:
     """Single round of debate."""
@@ -150,76 +194,22 @@ class DebateEngine:
             },
         }
 
-        round1_statements = {}
-
-        # Agent 1: Fundamental
+        # Round-1 is already produced by the route-level agent analysis pass.
+        # Reuse those outputs directly to avoid duplicate LLM calls and 429 bursts.
+        round1_statements = {
+            "fundamental": self._build_deterministic_statement("fundamental", fundamental_insight),
+            "sentiment": self._build_deterministic_statement("sentiment", sentiment_insight),
+            "valuation": self._build_deterministic_statement("valuation", valuation_insight),
+        }
+        self.current_statements.update(round1_statements)
         yield {
             "event": "kai_thinking",
             "data": {
                 "phase": "round1",
-                "message": "Inviting Fundamental Agent to open the debate...",
-                "tokens": ["Analyzing", "SEC", "filings", "and", "growth", "metrics."],
+                "message": "Using completed specialist analyses as Round 1 baseline.",
+                "tokens": ["Round", "1", "locked", "from", "agent", "analysis", "outputs."],
             },
         }
-        async for event in self._stream_agent_turn(
-            1, "fundamental", "initial_analysis", round1_statements
-        ):
-            yield event
-        round1_statements["fundamental"] = self.current_statements.get(
-            "fundamental",
-            self._build_deterministic_statement("fundamental", fundamental_insight),
-        )
-
-        if self._disconnection_event and self._disconnection_event.is_set():
-            return
-        yield {
-            "event": "kai_thinking",
-            "data": {
-                "phase": "round1",
-                "message": "Checking Sentiment Agent for market pulse...",
-                "tokens": ["Scanning", "news", "flow", "and", "market", "momentum."],
-            },
-        }
-        async for event in self._stream_agent_turn(
-            1, "sentiment", "initial_analysis", round1_statements
-        ):
-            yield event
-        round1_statements["sentiment"] = self.current_statements.get(
-            "sentiment",
-            self._build_deterministic_statement("sentiment", sentiment_insight),
-        )
-
-        if self._disconnection_event and self._disconnection_event.is_set():
-            return
-
-        # Agent 3: Valuation (Moved to 3rd position)
-        yield {
-            "event": "kai_thinking",
-            "data": {
-                "phase": "round1",
-                "message": "Calling Valuation Agent for price analysis...",
-                "tokens": [
-                    "Evaluating",
-                    "multiples",
-                    "vs",
-                    "peers",
-                    "and",
-                    "historical",
-                    "averages.",
-                ],
-            },
-        }
-        async for event in self._stream_agent_turn(
-            1, "valuation", "initial_analysis", round1_statements
-        ):
-            yield event
-        round1_statements["valuation"] = self.current_statements.get(
-            "valuation",
-            self._build_deterministic_statement("valuation", valuation_insight),
-        )
-
-        if self._disconnection_event and self._disconnection_event.is_set():
-            return
 
         # Record Round 1
         self.rounds.append(DebateRound(1, round1_statements, datetime.utcnow()))
@@ -781,17 +771,91 @@ class DebateEngine:
             holdings = self.user_context.get("holdings_summary", [])
             port_alloc = self.user_context.get("portfolio_allocation", {})
             preferences = self.user_context.get("preferences", {})
+            debate_context = self.user_context.get("debate_context", {})
             investment_horizon = preferences.get("investment_horizon", "unknown")
             investment_style = preferences.get("investment_style", "unknown")
-            holdings_count = len(holdings) if isinstance(holdings, list) else 0
+            if isinstance(debate_context, dict):
+                portfolio_snapshot = debate_context.get("portfolio_snapshot", {})
+                coverage = debate_context.get("coverage", {})
+                statement_signals = debate_context.get("statement_signals", {})
+                eligible_symbols = debate_context.get("eligible_symbols", [])
+                top_positions = debate_context.get("top_positions", [])
+            else:
+                portfolio_snapshot = {}
+                coverage = {}
+                statement_signals = {}
+                eligible_symbols = []
+                top_positions = []
+
+            holdings_count = int(self.user_context.get("holdings_count") or 0)
+            if holdings_count <= 0 and isinstance(holdings, list):
+                holdings_count = len(holdings)
+
+            investable_count = (
+                int(_safe_float(portfolio_snapshot.get("investable_holdings_count")) or 0)
+                if isinstance(portfolio_snapshot, dict)
+                else 0
+            )
+            cash_positions_count = (
+                int(_safe_float(portfolio_snapshot.get("cash_positions_count")) or 0)
+                if isinstance(portfolio_snapshot, dict)
+                else 0
+            )
+            total_value = (
+                portfolio_snapshot.get("total_value")
+                if isinstance(portfolio_snapshot, dict)
+                else self.user_context.get("total_value")
+            )
+            cash_balance = (
+                portfolio_snapshot.get("cash_balance")
+                if isinstance(portfolio_snapshot, dict)
+                else self.user_context.get("cash_balance")
+            )
+
+            top_position_lines: list[str] = []
+            if isinstance(top_positions, list):
+                for item in top_positions[:5]:
+                    if not isinstance(item, dict):
+                        continue
+                    symbol = str(item.get("symbol") or "").strip().upper()
+                    if not symbol:
+                        continue
+                    mv = _format_currency(item.get("market_value"))
+                    top_position_lines.append(f"{symbol} ({mv})")
+            if not top_position_lines and isinstance(holdings, list):
+                for item in holdings[:5]:
+                    if not isinstance(item, dict):
+                        continue
+                    symbol = str(item.get("symbol") or "").strip().upper()
+                    if not symbol:
+                        continue
+                    mv = _format_currency(item.get("market_value"))
+                    top_position_lines.append(f"{symbol} ({mv})")
+
+            eligible_preview: list[str] = []
+            if isinstance(eligible_symbols, list):
+                eligible_preview = [
+                    str(symbol).strip().upper()
+                    for symbol in eligible_symbols[:8]
+                    if str(symbol).strip()
+                ]
+
             user_context_str = f"""
         USER CONTEXT (THE PERSON):
         - Risk Profile: {risk}
         - Investment Horizon: {investment_horizon}
         - Investment Style: {investment_style}
-        - Portfolio Alloc: {port_alloc}
         - Holdings Count: {holdings_count}
-        - Current Holdings: {holdings}
+        - Investable Symbols: {investable_count or len(eligible_preview)}
+        - Cash Positions: {cash_positions_count}
+        - Portfolio Value: {_format_currency(total_value)} | Cash: {_format_currency(cash_balance)}
+        - Coverage (Ticker / Sector / Gain-Loss): {_format_percent(coverage.get("ticker_coverage_pct") if isinstance(coverage, dict) else None)} / {_format_percent(coverage.get("sector_coverage_pct") if isinstance(coverage, dict) else None)} / {_format_percent(coverage.get("gain_loss_coverage_pct") if isinstance(coverage, dict) else None)}
+        - Statement Signals: Investment Results {_format_currency(statement_signals.get("investment_gain_loss") if isinstance(statement_signals, dict) else None)}, Income {_format_currency(statement_signals.get("total_income_period") if isinstance(statement_signals, dict) else None)}, Fees {_format_currency(statement_signals.get("total_fees") if isinstance(statement_signals, dict) else None)}
+        - Eligible Symbol Sample: {", ".join(eligible_preview) if eligible_preview else "n/a"}
+        - Top Positions: {", ".join(top_position_lines) if top_position_lines else "n/a"}
+
+        Allocation Reference:
+        {port_alloc}
         
         MANDATE: You MUST personalize your argument.
         Example: "Since you own [Holding], adding [Ticker] increases/decreases risk..."

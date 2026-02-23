@@ -3,7 +3,10 @@
 # For the standalone backend repository.
 # Run `make help` to see all available targets.
 
-.PHONY: help dev lint format format-check fix typecheck test security ci-local clean
+.PHONY: help dev lint format format-check fix typecheck test security accuracy ci-local clean
+
+# Prefer project venv python, then python3, then python.
+PYTHON_BIN := $(shell if [ -x .venv/bin/python ]; then echo .venv/bin/python; elif command -v python3 >/dev/null 2>&1; then echo python3; else echo python; fi)
 
 help: ## Show this help
 	@grep -h -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -12,7 +15,7 @@ help: ## Show this help
 # === Development ===
 
 dev: ## Start the backend server (port 8000)
-	python -m uvicorn server:app --reload --port 8000
+	$(PYTHON_BIN) -m uvicorn server:app --reload --port 8000
 
 # === Quality Checks ===
 
@@ -42,9 +45,12 @@ test: ## Run tests (pytest)
 security: ## Run security scan (bandit, Medium+ severity)
 	bandit -r hushh_mcp/ api/ -c pyproject.toml -ll
 
+accuracy: ## Run Kai accuracy/compliance suite (benchmark + compliance + contract tests)
+	$(PYTHON_BIN) scripts/run_kai_accuracy_suite.py
+
 # === Combined Checks ===
 
-ci-local: lint format-check typecheck test security ## Run all CI checks locally
+ci-local: lint format-check typecheck test security accuracy ## Run all CI checks locally
 	@echo ""
 	@echo "All CI checks passed!"
 

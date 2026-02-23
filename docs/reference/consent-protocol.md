@@ -144,7 +144,7 @@ GET  /api/consent/pending               # Dashboard: View pending
 POST /api/consent/pending/approve      # Dashboard: Approve request
 
 # Kai personalization storage
-# Optional intro data is stored in encrypted world-model domain `kai_profile`.
+# Optional intro data is stored in encrypted world-model path `financial.profile`.
 # No `/api/kai/preferences/*` endpoints exist.
 
 # MCP Server Data Access
@@ -335,6 +335,7 @@ fun chat(call: PluginCall) {
 ```
 attr.{domain}.{attribute_key}   # Specific attribute
 attr.{domain}.*                  # All attributes in domain
+attr.{domain}.{subintent}.*      # All attributes under a subintent subtree
 ```
 
 Examples:
@@ -342,6 +343,10 @@ Examples:
 - `attr.financial.holdings`
 - `attr.food.dietary_restrictions`
 - `attr.professional.*`
+- `attr.financial.profile.*`
+
+Dynamic scopes are discovered at runtime from world model metadata and `domain_registry`.
+Use `GET /api/world-model/scopes/{user_id}` (or MCP `discover_user_domains`) instead of hardcoding domains.
 
 ### Scope Hierarchy
 
@@ -521,7 +526,7 @@ CREATE INDEX idx_consent_audit_pending ON consent_audit(user_id) WHERE action = 
 ### Native
 
 - `hushh-webapp/ios/App/App/Plugins/KaiPlugin.swift` - iOS plugin
-- `hushh-webapp/android/.../plugins/Kai/KaiPlugin.kt` - Android plugin
+- `hushh-webapp/android/app/src/main/java/com/hushh/app/plugins/Kai/KaiPlugin.kt` - Android plugin
 
 ---
 

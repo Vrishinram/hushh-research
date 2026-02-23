@@ -18,18 +18,9 @@ from typing import Any, Literal, cast
 StreamKind = Literal["portfolio_import", "portfolio_optimize", "stock_analyze"]
 SCHEMA_VERSION = "1.0"
 DEFAULT_STREAM_TIMEOUT_SECONDS = 120
-PORTFOLIO_IMPORT_TIMEOUT_SECONDS = 180
+PORTFOLIO_IMPORT_TIMEOUT_SECONDS = 360
 STOCK_ANALYZE_TIMEOUT_SECONDS = 300
 HEARTBEAT_INTERVAL_SECONDS = 4.0
-
-_DEFAULT_STAGE_PROGRESS_PCT: dict[str, float] = {
-    "uploading": 5.0,
-    "analyzing": 20.0,
-    "thinking": 45.0,
-    "extracting": 70.0,
-    "parsing": 90.0,
-    "complete": 100.0,
-}
 
 
 def _json_default(value: Any) -> Any:
@@ -97,14 +88,6 @@ class CanonicalSSEStream:
         explicit = self._sanitize_progress(payload.get("progress_pct"))
         if explicit is not None:
             return explicit
-
-        if event == "stage":
-            stage = payload.get("stage")
-            if isinstance(stage, str):
-                return _DEFAULT_STAGE_PROGRESS_PCT.get(stage, self._last_progress_pct)
-
-        if event == "chunk":
-            return max(self._last_progress_pct, 60.0)
 
         if event == "complete":
             return 100.0

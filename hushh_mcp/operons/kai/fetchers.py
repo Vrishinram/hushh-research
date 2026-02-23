@@ -6,24 +6,117 @@ Kai Fetcher Operons
 External data retrieval with per-source consent validation.
 Each fetcher requires specific TrustLink for the data source.
 
-Free API Options:
-- SEC EDGAR: Public, no API key required
-- NewsAPI: Free tier (100 req/day) OR Google News RSS (unlimited)
-- Market Data: yfinance (unlimited) OR Alpha Vantage free tier (500 req/day)
+Runtime provider priority (for realtime market/news flows):
+1) Finnhub
+2) PMP (Financial Modeling Prep)
+3) Existing free/public fallbacks (NewsAPI/Google RSS, yfinance/Yahoo)
 """
 
 import asyncio
 import logging
+import os
+import threading
+import time
+import urllib.parse
+from collections import Counter
 from datetime import datetime, timedelta
 from typing import Any, Dict, List
 
 import httpx
+from defusedxml import ElementTree as DefusedET
 
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import ConsentScope
 from hushh_mcp.types import UserID
 
 logger = logging.getLogger(__name__)
+_PROVIDER_COOLDOWNS: dict[str, float] = {}
+_PROVIDER_COOLDOWN_BY_STATUS: dict[int, int] = {
+    401: 15 * 60,
+    402: 15 * 60,
+    403: 10 * 60,
+    404: 20 * 60,
+    429: 5 * 60,
+}
+_MARKET_DATA_CACHE: dict[str, tuple[float, Dict[str, Any]]] = {}
+_MARKET_DATA_LOCKS: dict[str, asyncio.Lock] = {}
+_MARKET_DATA_CACHE_LOCK = threading.RLock()
+_MARKET_DATA_CACHE_TTL_SECONDS = max(
+    60,
+    int(os.getenv("KAI_MARKET_DATA_CACHE_TTL_SECONDS", "600") or "600"),
+)
+
+
+def _provider_in_cooldown(key: str) -> bool:
+    now = time.time()
+    until = _PROVIDER_COOLDOWNS.get(key)
+    if until is None:
+        return False
+    if until <= now:
+        _PROVIDER_COOLDOWNS.pop(key, None)
+        return False
+    return True
+
+
+def _mark_provider_cooldown(key: str, status_code: int | None) -> None:
+    if status_code is None:
+        return
+    duration = _PROVIDER_COOLDOWN_BY_STATUS.get(int(status_code))
+    if not duration:
+        return
+    _PROVIDER_COOLDOWNS[key] = time.time() + duration
+
+
+def _market_data_cache_key(symbol: str, *, finnhub_enabled: bool, pmp_enabled: bool) -> str:
+    return f"{symbol}|fh:{int(finnhub_enabled)}|pmp:{int(pmp_enabled)}"
+
+
+def _get_market_data_lock(cache_key: str) -> asyncio.Lock:
+    with _MARKET_DATA_CACHE_LOCK:
+        lock = _MARKET_DATA_LOCKS.get(cache_key)
+        if lock is None:
+            lock = asyncio.Lock()
+            _MARKET_DATA_LOCKS[cache_key] = lock
+        return lock
+
+
+def _get_cached_market_data(cache_key: str) -> Dict[str, Any] | None:
+    now = time.time()
+    with _MARKET_DATA_CACHE_LOCK:
+        cached = _MARKET_DATA_CACHE.get(cache_key)
+        if not cached:
+            return None
+        expires_at, payload = cached
+        if expires_at <= now:
+            _MARKET_DATA_CACHE.pop(cache_key, None)
+            return None
+        return dict(payload)
+
+
+def _set_cached_market_data(cache_key: str, payload: Dict[str, Any], ttl_seconds: int) -> None:
+    ttl = max(60, int(ttl_seconds))
+    with _MARKET_DATA_CACHE_LOCK:
+        _MARKET_DATA_CACHE[cache_key] = (time.time() + ttl, dict(payload))
+
+
+class RealtimeDataUnavailable(RuntimeError):
+    """Raised when a required realtime external signal is unavailable."""
+
+    code = "REALTIME_DATA_UNAVAILABLE"
+
+    def __init__(self, source: str, detail: str, *, retryable: bool = True):
+        super().__init__(detail)
+        self.source = source
+        self.detail = detail
+        self.retryable = retryable
+
+    def to_payload(self) -> Dict[str, Any]:
+        return {
+            "code": self.code,
+            "source": self.source,
+            "detail": self.detail,
+            "retryable": self.retryable,
+        }
 
 
 async def _fetch_yahoo_quote_fast(ticker: str) -> Dict[str, Any]:
@@ -66,7 +159,466 @@ async def _fetch_yahoo_quote_fast(ticker: str) -> Dict[str, Any]:
             "industry": q.get("industry") or "Unknown",
             "source": "Yahoo Quote (Fast)",
             "fetched_at": datetime.utcnow().isoformat(),
+            "ttl_seconds": 60,
+            "is_stale": False,
         }
+
+
+def _parse_google_news_rss(xml_text: str, ticker: str) -> List[Dict[str, Any]]:
+    """Parse Google News RSS payload into normalized article dictionaries."""
+    if not xml_text.strip():
+        return []
+
+    try:
+        root = DefusedET.fromstring(xml_text)
+    except DefusedET.ParseError:
+        logger.warning("Skipping malformed Google News RSS payload for %s", ticker)
+        return []
+    items: list[Dict[str, Any]] = []
+    for item in root.findall(".//item"):
+        title = (item.findtext("title") or "").strip()
+        link = (item.findtext("link") or "").strip()
+        published_at = (item.findtext("pubDate") or "").strip()
+        source_name = "Google News"
+        source_node = item.find("source")
+        if source_node is not None and (source_node.text or "").strip():
+            source_name = (source_node.text or "").strip()
+
+        if not title or not link:
+            continue
+
+        items.append(
+            {
+                "title": title,
+                "description": f"Realtime market coverage for {ticker}",
+                "url": link,
+                "publishedAt": published_at or datetime.utcnow().isoformat(),
+                "source": {"name": source_name},
+                "provider": "google_news_rss",
+            }
+        )
+    return items
+
+
+def _newsapi_key() -> str:
+    return (os.getenv("NEWSAPI_KEY") or "").strip()
+
+
+def _finnhub_api_key() -> str:
+    return (os.getenv("FINNHUB_API_KEY") or "").strip()
+
+
+def _pmp_api_key() -> str:
+    # Support both explicit aliases.
+    return (os.getenv("PMP_API_KEY") or os.getenv("FMP_API_KEY") or "").strip()
+
+
+async def _fetch_newsapi_articles(ticker: str, days_back: int) -> List[Dict[str, Any]]:
+    api_key = _newsapi_key()
+    if not api_key:
+        return []
+
+    since = (datetime.utcnow() - timedelta(days=max(1, days_back))).date().isoformat()
+    params = {
+        "q": f"{ticker} stock",
+        "sortBy": "publishedAt",
+        "language": "en",
+        "pageSize": "25",
+        "from": since,
+        "apiKey": api_key,
+    }
+    timeout = httpx.Timeout(connect=4.0, read=8.0, write=8.0, pool=4.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        res = await client.get("https://newsapi.org/v2/everything", params=params)
+        res.raise_for_status()
+        payload = res.json() or {}
+        rows = payload.get("articles") or []
+        articles: list[Dict[str, Any]] = []
+        for row in rows:
+            title = str(row.get("title") or "").strip()
+            url = str(row.get("url") or "").strip()
+            if not title or not url:
+                continue
+            articles.append(
+                {
+                    "title": title,
+                    "description": str(row.get("description") or "").strip(),
+                    "url": url,
+                    "publishedAt": str(row.get("publishedAt") or datetime.utcnow().isoformat()),
+                    "source": {"name": str((row.get("source") or {}).get("name") or "NewsAPI")},
+                    "provider": "newsapi",
+                }
+            )
+        return articles
+
+
+async def _fetch_google_news_rss(ticker: str, days_back: int) -> List[Dict[str, Any]]:
+    query = urllib.parse.quote_plus(f"{ticker} stock when:{max(1, days_back)}d")
+    url = f"https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
+    timeout = httpx.Timeout(connect=4.0, read=8.0, write=8.0, pool=4.0)
+    headers = {"User-Agent": "Hushh-Research/1.0 (eng@hush1one.com)"}
+    async with httpx.AsyncClient(timeout=timeout, headers=headers) as client:
+        res = await client.get(url)
+        res.raise_for_status()
+        return _parse_google_news_rss(res.text or "", ticker)
+
+
+def _provider_error(provider: str, exc: Exception) -> str:
+    if isinstance(exc, httpx.HTTPStatusError):
+        status_code = exc.response.status_code if exc.response is not None else "unknown"
+        detail = ""
+        if exc.response is not None:
+            try:
+                detail = str(exc.response.text or "").strip()
+            except Exception:
+                detail = ""
+        if detail:
+            detail = detail.replace("\n", " ")[:180]
+            return f"{provider}:{status_code}:{detail}"
+        return f"{provider}:{status_code}:{exc}"
+    return f"{provider}:{exc}"
+
+
+def _emit_realtime_telemetry(event: str, **fields: Any) -> None:
+    """
+    Emit structured telemetry for realtime provider reliability.
+
+    This intentionally logs compact JSON-like dictionaries so downstream log sinks
+    can aggregate p50/p95 latencies, source failures, and staleness rates.
+    """
+    payload = {"event": event, **fields}
+    logger.info("[RealtimeTelemetry] %s", payload)
+
+
+async def _fetch_finnhub_quote(ticker: str) -> Dict[str, Any]:
+    api_key = _finnhub_api_key()
+    if not api_key:
+        raise RuntimeError("FINNHUB_API_KEY not configured")
+
+    symbol = ticker.upper().strip()
+    timeout = httpx.Timeout(connect=4.0, read=8.0, write=8.0, pool=4.0)
+    headers = {"User-Agent": "Hushh-Research/1.0 (eng@hush1one.com)"}
+    async with httpx.AsyncClient(timeout=timeout, headers=headers) as client:
+        quote_res = await client.get(
+            "https://finnhub.io/api/v1/quote", params={"symbol": symbol, "token": api_key}
+        )
+        quote_res.raise_for_status()
+        quote = (quote_res.json() if quote_res.content else {}) or {}
+
+        price = float(quote.get("c") or 0)
+        if price <= 0:
+            raise ValueError(f"invalid Finnhub quote payload for {symbol}")
+
+        profile = {}
+        profile_res = await client.get(
+            "https://finnhub.io/api/v1/stock/profile2",
+            params={"symbol": symbol, "token": api_key},
+        )
+        profile_res.raise_for_status()
+        profile = (profile_res.json() if profile_res.content else {}) or {}
+
+        market_cap_millions = float(profile.get("marketCapitalization") or 0)
+        market_cap = market_cap_millions * 1_000_000 if market_cap_millions > 0 else 0
+
+        return {
+            "ticker": symbol,
+            "price": price,
+            "change_percent": float(quote.get("dp") or 0),
+            "volume": 0,
+            "market_cap": market_cap,
+            "pe_ratio": 0,
+            "pb_ratio": 0,
+            "dividend_yield": 0,
+            "company_name": str(profile.get("name") or symbol),
+            "sector": str(profile.get("finnhubIndustry") or "Unknown"),
+            "industry": str(profile.get("finnhubIndustry") or "Unknown"),
+            "source": "Finnhub",
+            "fetched_at": datetime.utcnow().isoformat(),
+            "ttl_seconds": 60,
+            "is_stale": False,
+        }
+
+
+async def _fetch_pmp_quote(ticker: str) -> Dict[str, Any]:
+    api_key = _pmp_api_key()
+    if not api_key:
+        raise RuntimeError("PMP_API_KEY/FMP_API_KEY not configured")
+    if _provider_in_cooldown("pmp:global"):
+        raise RuntimeError("pmp_provider_cooldown")
+
+    symbol = ticker.upper().strip()
+    timeout = httpx.Timeout(connect=4.0, read=8.0, write=8.0, pool=4.0)
+    headers = {"User-Agent": "Hushh-Research/1.0 (eng@hush1one.com)"}
+    async with httpx.AsyncClient(timeout=timeout, headers=headers) as client:
+        quote_res = await client.get(
+            "https://financialmodelingprep.com/stable/quote",
+            params={"symbol": symbol, "apikey": api_key},
+        )
+        if not quote_res.is_success:
+            _mark_provider_cooldown("pmp:global", quote_res.status_code)
+        quote_res.raise_for_status()
+        quote_payload = (quote_res.json() if quote_res.content else []) or []
+        row = quote_payload[0] if isinstance(quote_payload, list) and quote_payload else {}
+        price = float(row.get("price") or 0)
+        if price <= 0:
+            raise ValueError(f"invalid PMP/FMP quote payload for {symbol}")
+
+        details_res = await client.get(
+            "https://financialmodelingprep.com/stable/profile",
+            params={"symbol": symbol, "apikey": api_key},
+        )
+        if not details_res.is_success:
+            _mark_provider_cooldown("pmp:global", details_res.status_code)
+        details_res.raise_for_status()
+        details_payload = (details_res.json() if details_res.content else []) or []
+        details = (
+            details_payload[0] if isinstance(details_payload, list) and details_payload else {}
+        )
+
+        return {
+            "ticker": symbol,
+            "price": price,
+            "change_percent": float(row.get("changePercentage") or 0),
+            "volume": int(row.get("volume") or 0),
+            "market_cap": float(row.get("marketCap") or details.get("marketCap") or 0),
+            "pe_ratio": 0,
+            "pb_ratio": 0,
+            "dividend_yield": 0,
+            "company_name": str(details.get("companyName") or row.get("name") or symbol),
+            "sector": str(details.get("sector") or "Unknown"),
+            "industry": str(details.get("industry") or "Unknown"),
+            "source": "PMP/FMP",
+            "fetched_at": datetime.utcnow().isoformat(),
+            "ttl_seconds": 60,
+            "is_stale": False,
+        }
+
+
+async def _fetch_finnhub_company_news(ticker: str, days_back: int) -> List[Dict[str, Any]]:
+    api_key = _finnhub_api_key()
+    if not api_key:
+        return []
+
+    end_date = datetime.utcnow().date().isoformat()
+    start_date = (datetime.utcnow() - timedelta(days=max(1, days_back))).date().isoformat()
+    timeout = httpx.Timeout(connect=4.0, read=8.0, write=8.0, pool=4.0)
+    headers = {"User-Agent": "Hushh-Research/1.0 (eng@hush1one.com)"}
+    async with httpx.AsyncClient(timeout=timeout, headers=headers) as client:
+        res = await client.get(
+            "https://finnhub.io/api/v1/company-news",
+            params={
+                "symbol": ticker.upper(),
+                "from": start_date,
+                "to": end_date,
+                "token": api_key,
+            },
+        )
+        res.raise_for_status()
+        rows = res.json() or []
+        articles: list[Dict[str, Any]] = []
+        for row in rows:
+            title = str((row or {}).get("headline") or "").strip()
+            url = str((row or {}).get("url") or "").strip()
+            if not title or not url:
+                continue
+            ts = int((row or {}).get("datetime") or 0)
+            published_at = (
+                datetime.utcfromtimestamp(ts).isoformat() + "Z"
+                if ts > 0
+                else datetime.utcnow().isoformat()
+            )
+            articles.append(
+                {
+                    "title": title,
+                    "description": str((row or {}).get("summary") or "").strip(),
+                    "url": url,
+                    "publishedAt": published_at,
+                    "source": {"name": str((row or {}).get("source") or "Finnhub")},
+                    "provider": "finnhub",
+                }
+            )
+        return articles
+
+
+async def _fetch_pmp_news(ticker: str) -> List[Dict[str, Any]]:
+    api_key = _pmp_api_key()
+    if not api_key:
+        return []
+    if _provider_in_cooldown("pmp:global"):
+        return []
+
+    timeout = httpx.Timeout(connect=4.0, read=8.0, write=8.0, pool=4.0)
+    headers = {"User-Agent": "Hushh-Research/1.0 (eng@hush1one.com)"}
+    async with httpx.AsyncClient(timeout=timeout, headers=headers) as client:
+        res = await client.get(
+            "https://financialmodelingprep.com/stable/news/stock",
+            params={
+                "symbols": ticker.upper(),
+                "limit": "25",
+                "apikey": api_key,
+            },
+        )
+        if not res.is_success:
+            _mark_provider_cooldown("pmp:global", res.status_code)
+        res.raise_for_status()
+        rows = (res.json() if res.content else []) or []
+        articles: list[Dict[str, Any]] = []
+        for row in rows:
+            title = str((row or {}).get("title") or "").strip()
+            url = str((row or {}).get("url") or "").strip()
+            if not title or not url:
+                continue
+            articles.append(
+                {
+                    "title": title,
+                    "description": str((row or {}).get("description") or "").strip(),
+                    "url": url,
+                    "publishedAt": str(
+                        (row or {}).get("publishedDate") or datetime.utcnow().isoformat()
+                    ),
+                    "source": {"name": "PMP/FMP"},
+                    "provider": "pmp_fmp",
+                }
+            )
+        return articles
+
+
+async def _fetch_finnhub_peers(ticker: str) -> List[str]:
+    api_key = _finnhub_api_key()
+    if not api_key:
+        return []
+
+    timeout = httpx.Timeout(connect=4.0, read=6.0, write=6.0, pool=4.0)
+    headers = {"User-Agent": "Hushh-Research/1.0 (eng@hush1one.com)"}
+    async with httpx.AsyncClient(timeout=timeout, headers=headers) as client:
+        res = await client.get(
+            "https://finnhub.io/api/v1/stock/peers",
+            params={"symbol": ticker.upper(), "token": api_key},
+        )
+        res.raise_for_status()
+        rows = res.json() or []
+        peers: list[str] = []
+        for row in rows:
+            symbol = str(row or "").upper().strip()
+            if symbol and symbol != ticker.upper() and symbol not in peers:
+                peers.append(symbol)
+        return peers
+
+
+async def _fetch_yfinance_quote(ticker: str) -> Dict[str, Any]:
+    try:
+        import yfinance as yf
+    except ImportError as exc:
+        raise RuntimeError("yfinance_not_installed") from exc
+
+    async def _get_info() -> Dict[str, Any]:
+        def _blocking_fetch() -> Dict[str, Any]:
+            stock = yf.Ticker(ticker)
+            return stock.info or {}
+
+        return await asyncio.to_thread(_blocking_fetch)
+
+    try:
+        info = await asyncio.wait_for(_get_info(), timeout=8.0)
+    except asyncio.TimeoutError as exc:
+        raise RuntimeError("yfinance_timeout") from exc
+
+    if not info:
+        raise RuntimeError("yfinance_empty_payload")
+
+    payload = {
+        "ticker": ticker.upper(),
+        "price": info.get("currentPrice") or info.get("regularMarketPrice", 0),
+        "change_percent": info.get("regularMarketChangePercent", 0),
+        "volume": info.get("volume", 0),
+        "market_cap": info.get("marketCap", 0),
+        "pe_ratio": info.get("trailingPE", 0),
+        "pb_ratio": info.get("priceToBook", 0),
+        "dividend_yield": info.get("dividendYield", 0) or 0,
+        "company_name": info.get("longName", ticker.upper()),
+        "sector": info.get("sector", "Unknown"),
+        "industry": info.get("industry", "Unknown"),
+        "source": "yfinance (Real-time)",
+        "fetched_at": datetime.utcnow().isoformat(),
+        "ttl_seconds": 60,
+        "is_stale": False,
+    }
+    if not payload["price"] or payload["price"] <= 0:
+        raise RuntimeError("yfinance_invalid_quote")
+    return payload
+
+
+async def _fetch_yahoo_recommendation_peers(ticker: str) -> List[str]:
+    url = f"https://query1.finance.yahoo.com/v6/finance/recommendationsbysymbol/{ticker.upper()}"
+    timeout = httpx.Timeout(connect=4.0, read=6.0, write=6.0, pool=4.0)
+    headers = {"User-Agent": "Hushh-Research/1.0 (eng@hush1one.com)"}
+    async with httpx.AsyncClient(timeout=timeout, headers=headers) as client:
+        res = await client.get(url)
+        res.raise_for_status()
+        payload = res.json() or {}
+        result = payload.get("finance", {}).get("result") or []
+        if not result:
+            return []
+        symbols = result[0].get("recommendedSymbols") or []
+        cleaned: list[str] = []
+        for row in symbols:
+            symbol = str((row or {}).get("symbol") or "").upper().strip()
+            if symbol and symbol != ticker.upper() and symbol not in cleaned:
+                cleaned.append(symbol)
+        return cleaned
+
+
+async def _fetch_yahoo_search_peers(ticker: str) -> List[str]:
+    url = "https://query1.finance.yahoo.com/v1/finance/search"
+    timeout = httpx.Timeout(connect=4.0, read=6.0, write=6.0, pool=4.0)
+    headers = {"User-Agent": "Hushh-Research/1.0 (eng@hush1one.com)"}
+    params = {"q": ticker.upper(), "quotesCount": 8, "newsCount": 0}
+    async with httpx.AsyncClient(timeout=timeout, headers=headers) as client:
+        res = await client.get(url, params=params)
+        res.raise_for_status()
+        payload = res.json() or {}
+        quotes = payload.get("quotes") or []
+        peers: list[str] = []
+        for row in quotes:
+            symbol = str((row or {}).get("symbol") or "").upper().strip()
+            if symbol and symbol != ticker.upper() and symbol not in peers:
+                peers.append(symbol)
+        return peers
+
+
+async def _fetch_yahoo_quotes(symbols: List[str]) -> List[Dict[str, Any]]:
+    if not symbols:
+        return []
+
+    url = "https://query1.finance.yahoo.com/v7/finance/quote"
+    params = {"symbols": ",".join(symbols)}
+    timeout = httpx.Timeout(connect=4.0, read=8.0, write=8.0, pool=4.0)
+    headers = {"User-Agent": "Hushh-Research/1.0 (eng@hush1one.com)"}
+    async with httpx.AsyncClient(timeout=timeout, headers=headers) as client:
+        res = await client.get(url, params=params)
+        res.raise_for_status()
+        payload = res.json() or {}
+        rows = payload.get("quoteResponse", {}).get("result") or []
+        parsed: list[Dict[str, Any]] = []
+        for row in rows:
+            symbol = str(row.get("symbol") or "").upper().strip()
+            if not symbol:
+                continue
+            parsed.append(
+                {
+                    "ticker": symbol,
+                    "price": row.get("regularMarketPrice") or 0,
+                    "change_percent": row.get("regularMarketChangePercent") or 0,
+                    "market_cap": row.get("marketCap") or 0,
+                    "pe_ratio": row.get("trailingPE") or 0,
+                    "pb_ratio": row.get("priceToBook") or 0,
+                    "source": "Yahoo Quote (Peers)",
+                    "fetched_at": datetime.utcnow().isoformat(),
+                    "ttl_seconds": 60,
+                    "is_stale": False,
+                }
+            )
+        return parsed
 
 
 # ============================================================================
@@ -323,9 +875,11 @@ async def fetch_sec_filings(
 
         except Exception as facts_error:
             logger.warning(f"[SEC Fetcher] Could not fetch company facts: {facts_error}")
-            revenue = net_income = total_assets = total_liabilities = 0
-            ocf = fcf = long_term_debt = equity = op_income = rnd = 0
-            revenue_trend = net_income_trend = ocf_trend = rnd_trend = []
+            raise RealtimeDataUnavailable(
+                "sec_filings",
+                f"SEC companyfacts unavailable for {ticker}: {facts_error}",
+                retryable=True,
+            ) from facts_error
 
         # Return structured filing data with EXPANDED financial metrics
         return {
@@ -376,9 +930,11 @@ async def fetch_market_news(
 
     TrustLink Required: external.news.api
 
-    Uses free sources:
-    - NewsAPI free tier (100 req/day) if API key available
-    - Google News RSS (unlimited) as fallback
+    Provider priority:
+    - Finnhub (if FINNHUB_API_KEY is configured)
+    - PMP/FMP (if PMP_API_KEY or FMP_API_KEY is configured)
+    - NewsAPI (if NEWSAPI_KEY is configured)
+    - Google News RSS fallback
 
     Args:
         ticker: Stock ticker symbol
@@ -412,25 +968,85 @@ async def fetch_market_news(
 
     logger.info(f"[News Fetcher] Fetching news for {ticker} - user {user_id}")
 
-    # Mock implementation
-    # Real implementation would use NewsAPI or Google News RSS
+    errors: list[str] = []
+    articles: list[Dict[str, Any]] = []
 
-    return [
-        {
-            "title": f"{ticker} reports strong Q4 earnings",
-            "description": "Company beats analyst expectations with 15% revenue growth",
-            "url": "https://example.com/article1",
-            "publishedAt": (datetime.utcnow() - timedelta(days=1)).isoformat(),
-            "source": {"name": "Financial Times"},
-        },
-        {
-            "title": f"Analysts upgrade {ticker} to buy rating",
-            "description": "Multiple firms raise price targets citing strong fundamentals",
-            "url": "https://example.com/article2",
-            "publishedAt": (datetime.utcnow() - timedelta(days=2)).isoformat(),
-            "source": {"name": "Bloomberg"},
-        },
-    ]
+    # Provider priority: 1) Finnhub, 2) PMP (FMP), then existing fallbacks.
+    if _finnhub_api_key():
+        try:
+            articles.extend(await _fetch_finnhub_company_news(ticker, days_back))
+            _emit_realtime_telemetry(
+                "news_provider_success",
+                ticker=ticker.upper(),
+                provider="finnhub",
+                rows=len(articles),
+            )
+        except Exception as exc:
+            errors.append(_provider_error("finnhub_news", exc))
+            _emit_realtime_telemetry(
+                "news_provider_failure",
+                ticker=ticker.upper(),
+                provider="finnhub",
+                error=str(exc)[:200],
+            )
+
+    if _pmp_api_key():
+        try:
+            articles.extend(await _fetch_pmp_news(ticker))
+            _emit_realtime_telemetry(
+                "news_provider_success",
+                ticker=ticker.upper(),
+                provider="pmp_fmp",
+                rows=len(articles),
+            )
+        except Exception as exc:
+            errors.append(_provider_error("pmp_news", exc))
+            _emit_realtime_telemetry(
+                "news_provider_failure",
+                ticker=ticker.upper(),
+                provider="pmp_fmp",
+                error=str(exc)[:200],
+            )
+
+    try:
+        articles.extend(await _fetch_newsapi_articles(ticker, days_back))
+    except Exception as exc:
+        errors.append(_provider_error("newsapi", exc))
+
+    try:
+        articles.extend(await _fetch_google_news_rss(ticker, days_back))
+    except Exception as exc:
+        errors.append(_provider_error("google_news_rss", exc))
+
+    deduped: list[Dict[str, Any]] = []
+    seen: set[str] = set()
+    for row in articles:
+        key = f"{str(row.get('title') or '').strip().lower()}::{str(row.get('url') or '').strip()}"
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        deduped.append(row)
+
+    if not deduped:
+        _emit_realtime_telemetry(
+            "news_all_providers_failed",
+            ticker=ticker.upper(),
+            errors=errors,
+        )
+        raise RealtimeDataUnavailable(
+            "news",
+            f"No realtime news data available for {ticker}. providers={'; '.join(errors) or 'none'}",
+            retryable=True,
+        )
+
+    provider_counts = Counter(str(row.get("provider") or "unknown") for row in deduped)
+    _emit_realtime_telemetry(
+        "news_fetch_success",
+        ticker=ticker.upper(),
+        providers=dict(provider_counts),
+        returned_rows=len(deduped[:25]),
+    )
+    return deduped[:25]
 
 
 # ============================================================================
@@ -448,9 +1064,11 @@ async def fetch_market_data(
 
     TrustLink Required: external.market.data
 
-    Uses free sources:
-    - yfinance (unlimited) as primary
-    - Alpha Vantage free tier (500 req/day) as fallback
+    Provider priority:
+    - Finnhub (if FINNHUB_API_KEY is configured)
+    - PMP/FMP (if PMP_API_KEY or FMP_API_KEY is configured)
+    - yfinance
+    - Yahoo quote fast fallback
 
     Args:
         ticker: Stock ticker symbol
@@ -483,100 +1101,102 @@ async def fetch_market_data(
     if token.user_id != user_id:
         raise PermissionError("Token user mismatch")
 
-    logger.info(f"[Market Data Fetcher] Fetching market data for {ticker} - user {user_id}")
+    symbol = ticker.upper().strip()
+    finnhub_enabled = bool(_finnhub_api_key())
+    pmp_enabled = bool(_pmp_api_key())
+    cache_key = _market_data_cache_key(
+        symbol, finnhub_enabled=finnhub_enabled, pmp_enabled=pmp_enabled
+    )
 
-    # Use yfinance for real market data (free, unlimited)
-    try:
-        import yfinance as yf
+    cached_payload = _get_cached_market_data(cache_key)
+    if cached_payload and float(cached_payload.get("price") or 0) > 0:
+        _emit_realtime_telemetry(
+            "market_data_cache_hit",
+            ticker=symbol,
+            source=cached_payload.get("source"),
+            ttl_seconds=cached_payload.get("ttl_seconds"),
+        )
+        return cached_payload
 
-        # yfinance is synchronous and can hang indefinitely in some environments (notably Cloud Run).
-        # Run it in a thread and enforce a hard timeout so Kai can still return results.
-        async def _get_info() -> Dict[str, Any]:
-            def _blocking_fetch() -> Dict[str, Any]:
-                stock = yf.Ticker(ticker)
-                return stock.info or {}
-
-            return await asyncio.to_thread(_blocking_fetch)
-
-        try:
-            info = await asyncio.wait_for(_get_info(), timeout=8.0)
-        except asyncio.TimeoutError:
-            logger.warning(
-                "[Market Data Fetcher] yfinance timed out; returning minimal market data"
+    lock = _get_market_data_lock(cache_key)
+    async with lock:
+        cached_payload = _get_cached_market_data(cache_key)
+        if cached_payload and float(cached_payload.get("price") or 0) > 0:
+            _emit_realtime_telemetry(
+                "market_data_cache_hit_after_wait",
+                ticker=symbol,
+                source=cached_payload.get("source"),
+                ttl_seconds=cached_payload.get("ttl_seconds"),
             )
-            info = {}
+            return cached_payload
 
-        # If yfinance returned empty (or timed out), try a fast Yahoo quote fallback.
-        if not info:
+        logger.info(
+            "[Market Data Fetcher] Fetching market data for %s - user %s (priority: Finnhub -> PMP -> yfinance -> Yahoo)",
+            symbol,
+            user_id,
+        )
+
+        errors: list[str] = []
+        providers: list[tuple[str, Any]] = []
+
+        if finnhub_enabled:
+            providers.append(("finnhub", _fetch_finnhub_quote))
+        if pmp_enabled:
+            providers.append(("pmp", _fetch_pmp_quote))
+        providers.append(("yfinance", _fetch_yfinance_quote))
+        providers.append(("yahoo_quote_fast", _fetch_yahoo_quote_fast))
+
+        for provider_name, provider_fetch in providers:
+            started_at = time.perf_counter()
             try:
-                yahoo = await _fetch_yahoo_quote_fast(ticker)
-                if yahoo:
-                    return yahoo
-            except Exception as e:
-                logger.warning(f"[Market Data Fetcher] Yahoo fast quote fallback failed: {e}")
+                payload = await provider_fetch(symbol)
+                if payload and float(payload.get("price") or 0) > 0:
+                    fetched_at = payload.get("fetched_at")
+                    ttl_seconds = int(payload.get("ttl_seconds") or 0)
+                    cache_ttl_seconds = max(ttl_seconds, _MARKET_DATA_CACHE_TTL_SECONDS)
+                    is_stale = bool(payload.get("is_stale", False))
+                    normalized_payload = dict(payload)
+                    normalized_payload["ticker"] = symbol
+                    normalized_payload["ttl_seconds"] = cache_ttl_seconds
+                    _set_cached_market_data(cache_key, normalized_payload, cache_ttl_seconds)
+                    _emit_realtime_telemetry(
+                        "market_data_provider_success",
+                        ticker=symbol,
+                        provider=provider_name,
+                        source=normalized_payload.get("source"),
+                        fetched_at=fetched_at,
+                        ttl_seconds=cache_ttl_seconds,
+                        is_stale=is_stale,
+                        duration_ms=int((time.perf_counter() - started_at) * 1000),
+                    )
+                    return normalized_payload
+                errors.append(f"{provider_name}:invalid_price")
+                _emit_realtime_telemetry(
+                    "market_data_provider_invalid",
+                    ticker=symbol,
+                    provider=provider_name,
+                    duration_ms=int((time.perf_counter() - started_at) * 1000),
+                )
+            except Exception as exc:
+                errors.append(_provider_error(provider_name, exc))
+                _emit_realtime_telemetry(
+                    "market_data_provider_failure",
+                    ticker=symbol,
+                    provider=provider_name,
+                    error=str(exc)[:200],
+                    duration_ms=int((time.perf_counter() - started_at) * 1000),
+                )
 
-        # Extract key market metrics
-        return {
-            "ticker": ticker,
-            "price": info.get("currentPrice") or info.get("regularMarketPrice", 0),
-            "change_percent": info.get("regularMarketChangePercent", 0),
-            "volume": info.get("volume", 0),
-            "market_cap": info.get("marketCap", 0),
-            "pe_ratio": info.get("trailingPE", 0),
-            "pb_ratio": info.get("priceToBook", 0),
-            "dividend_yield": info.get("dividendYield", 0) or 0,
-            "company_name": info.get("longName", ticker),
-            "sector": info.get("sector", "Unknown"),
-            "industry": info.get("industry", "Unknown"),
-            "source": "yfinance (Real-time)",
-            "fetched_at": datetime.utcnow().isoformat(),
-        }
-        # raise ImportError("Temporarily disabled yfinance")
-
-    except ImportError:
-        logger.warning("[Market Data Fetcher] yfinance not installed, using minimal data")
-        # Fallback to minimal data if library not available
-        return {
-            "ticker": ticker,
-            "price": 0,
-            "change_percent": 0,
-            "volume": 0,
-            "market_cap": 0,
-            "pe_ratio": 0,
-            "pb_ratio": 0,
-            "dividend_yield": 0,
-            "company_name": ticker,
-            "sector": "Unknown",
-            "industry": "Unknown",
-            "source": "Unavailable (yfinance not installed)",
-            "fetched_at": datetime.utcnow().isoformat(),
-        }
-    except Exception as e:
-        logger.warning(f"[Market Data Fetcher] yfinance error (likely rate-limited): {e}")
-        # Best-effort: try fast Yahoo quote before returning minimal zeros.
-        try:
-            yahoo = await _fetch_yahoo_quote_fast(ticker)
-            if yahoo:
-                return yahoo
-        except Exception as e2:
-            logger.warning(f"[Market Data Fetcher] Yahoo fast quote fallback failed: {e2}")
-        # Return minimal data structure instead of failing
-        # This allows analysis to proceed with SEC data only
-        return {
-            "ticker": ticker,
-            "price": 0,
-            "change_percent": 0,
-            "volume": 0,
-            "market_cap": 0,
-            "pe_ratio": 0,
-            "pb_ratio": 0,
-            "dividend_yield": 0,
-            "company_name": ticker,
-            "sector": "Unknown",
-            "industry": "Unknown",
-            "source": "Unavailable (API error or rate limit)",
-            "fetched_at": datetime.utcnow().isoformat(),
-        }
+        _emit_realtime_telemetry(
+            "market_data_all_providers_failed",
+            ticker=symbol,
+            errors=errors,
+        )
+        raise RealtimeDataUnavailable(
+            "market_data",
+            f"Realtime quote unavailable for {symbol}. providers={'; '.join(errors) or 'none'}",
+            retryable=True,
+        )
 
 
 # ============================================================================
@@ -621,11 +1241,71 @@ async def fetch_peer_data(
 
     logger.info(f"[Peer Data Fetcher] Fetching peers for {ticker} - user {user_id}")
 
-    # Mock peers
-    # Real implementation would fetch from sector/industry database
+    peers: list[str] = []
+    errors: list[str] = []
 
-    return [
-        {"ticker": "MSFT", "pe_ratio": 32.1, "market_cap": 2_800_000_000_000},
-        {"ticker": "GOOGL", "pe_ratio": 24.8, "market_cap": 1_750_000_000_000},
-        {"ticker": "AMZN", "pe_ratio": 45.3, "market_cap": 1_600_000_000_000},
-    ]
+    if _finnhub_api_key():
+        try:
+            peers.extend(await _fetch_finnhub_peers(ticker))
+        except Exception as exc:
+            errors.append(_provider_error("finnhub_peers", exc))
+
+    if not peers:
+        try:
+            peers.extend(await _fetch_yahoo_recommendation_peers(ticker))
+        except Exception as exc:
+            errors.append(_provider_error("yahoo_recommendations", exc))
+
+    if not peers:
+        try:
+            peers.extend(await _fetch_yahoo_search_peers(ticker))
+        except Exception as exc:
+            errors.append(_provider_error("yahoo_search", exc))
+
+    deduped_peers: list[str] = []
+    for peer in peers:
+        cleaned = peer.upper().strip()
+        if cleaned and cleaned != ticker.upper() and cleaned not in deduped_peers:
+            deduped_peers.append(cleaned)
+
+    if not deduped_peers:
+        _emit_realtime_telemetry(
+            "peer_data_all_providers_failed",
+            ticker=ticker.upper(),
+            errors=errors,
+        )
+        raise RealtimeDataUnavailable(
+            "peer_data",
+            f"No realtime peers available for {ticker}. providers={'; '.join(errors) or 'none'}",
+            retryable=True,
+        )
+
+    peer_universe = deduped_peers[:8]
+    quotes: list[Dict[str, Any]] = []
+    for peer_symbol in peer_universe:
+        try:
+            quote = await fetch_market_data(peer_symbol, user_id, consent_token)
+            if quote:
+                quotes.append(quote)
+        except Exception as exc:
+            errors.append(_provider_error(f"peer_quote:{peer_symbol}", exc))
+
+    if not quotes:
+        _emit_realtime_telemetry(
+            "peer_quote_fetch_failed",
+            ticker=ticker.upper(),
+            peers=peer_universe,
+            errors=errors,
+        )
+        raise RealtimeDataUnavailable(
+            "peer_data",
+            f"Peer quotes unavailable for {ticker}. peers={','.join(peer_universe)}",
+            retryable=True,
+        )
+    _emit_realtime_telemetry(
+        "peer_data_fetch_success",
+        ticker=ticker.upper(),
+        peer_count=len(quotes),
+        requested_peers=len(peer_universe),
+    )
+    return quotes

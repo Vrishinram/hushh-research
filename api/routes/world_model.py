@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from api.middleware import require_vault_owner_token
+from hushh_mcp.services.domain_contracts import canonical_top_level_domain, domain_registry_payload
 from hushh_mcp.services.world_model_service import get_world_model_service
 
 logger = logging.getLogger(__name__)
@@ -49,12 +50,36 @@ class StockContextResponse(BaseModel):
     portfolio_allocation: dict[str, int]
 
 
+def _summary_attribute_count(summary: dict | None) -> int:
+    if not isinstance(summary, dict):
+        return 0
+    for key in ("attribute_count", "holdings_count", "item_count"):
+        value = summary.get(key)
+        if isinstance(value, bool) or value is None:
+            continue
+        if isinstance(value, int):
+            return max(0, value)
+        if isinstance(value, float):
+            if value != value:
+                continue
+            return max(0, int(value))
+        if isinstance(value, str):
+            text = value.strip()
+            if not text:
+                continue
+            try:
+                return max(0, int(float(text)))
+            except Exception:
+                continue
+    return 0
+
+
 async def get_risk_profile_from_index(user_id: str) -> tuple[str, list[dict], dict[str, int]]:
     """
     Get user's context from world_model_index_v2 domain_summaries.
 
-    Returns cached data stored when portfolio is uploaded:
-    - risk_bucket: User's risk profile
+    Returns cached data stored in the financial summary contract:
+    - risk_profile: user preference risk from onboarding/profile settings
     - holdings: List of portfolio holdings
     - portfolio_allocation: Allocation percentages
 
@@ -69,12 +94,15 @@ async def get_risk_profile_from_index(user_id: str) -> tuple[str, list[dict], di
         if index and "financial" in (index.domain_summaries or {}):
             financial_summary = index.domain_summaries["financial"]
 
-            risk_profile = financial_summary.get("risk_bucket", "balanced")
+            risk_profile = (
+                financial_summary.get("risk_profile")
+                or financial_summary.get("profile_risk_profile")
+                or "balanced"
+            )
 
-            # NOTE: holdings detail is stripped from domain_summaries by
-            # update_domain_summary() sanitization (MCP scope safety).
-            # Holdings data lives in the encrypted blob, decrypted client-side.
-            cached_holdings = financial_summary.get("holdings", [])
+            # Holdings are intentionally stripped from domain_summaries.
+            # Canonical summary counters must be used for server-side context.
+            cached_holdings: list[dict] = []
 
             # Build allocation from cached data
             portfolio_allocation = {
@@ -95,7 +123,7 @@ async def fetch_decisions(user_id: str, limit: int = 50) -> list[DecisionRecord]
     """
     Fetch recent decisions for a user from domain_summaries.
 
-    Reads from world_model_index_v2.domain_summaries.kai_decisions.
+    Canonical source: world_model_index_v2.domain_summaries.financial.
     Returns a list of DecisionRecord objects sorted by creation date (newest first).
     """
     try:
@@ -103,29 +131,76 @@ async def fetch_decisions(user_id: str, limit: int = 50) -> list[DecisionRecord]
         index = await world_model.get_index_v2(user_id)
 
         records: list[DecisionRecord] = []
-        if index and "kai_decisions" in (index.domain_summaries or {}):
-            raw = index.domain_summaries["kai_decisions"]
-            items: list[dict] = []
-            if isinstance(raw, list):
-                items = raw
-            elif isinstance(raw, dict):
-                items = raw.get("decisions", [])
+        domain_summaries = index.domain_summaries if index and index.domain_summaries else {}
 
-            for d in items[:limit]:
-                records.append(
-                    DecisionRecord(
-                        id=d.get("id", 0),
-                        ticker=(d.get("ticker") or "").upper(),
-                        decision_type=d.get("decision_type") or d.get("decisionType") or "HOLD",
-                        confidence=float(d.get("confidence", 0) or 0),
-                        created_at=d.get("created_at") or d.get("createdAt") or "",
-                        metadata=d.get("metadata"),
-                    )
+        candidate_payloads: list[object] = []
+        financial_summary = (
+            domain_summaries.get("financial")
+            if isinstance(domain_summaries.get("financial"), dict)
+            else {}
+        )
+        if isinstance(financial_summary, dict):
+            for key in (
+                "recent_decisions",
+                "analysis_recent_decisions",
+                "analysis_decisions",
+                "decisions",
+            ):
+                candidate_payloads.append(financial_summary.get(key))
+
+        items: list[dict] = []
+        for payload in candidate_payloads:
+            if isinstance(payload, list):
+                items.extend([row for row in payload if isinstance(row, dict)])
+            elif isinstance(payload, dict):
+                maybe_rows = payload.get("decisions")
+                if isinstance(maybe_rows, list):
+                    items.extend([row for row in maybe_rows if isinstance(row, dict)])
+
+        # Compatibility parser for summary maps like {AAPL_decision, AAPL_confidence, AAPL_analyzed_at}
+        if isinstance(financial_summary, dict):
+            for summary_key, summary_value in financial_summary.items():
+                if not isinstance(summary_key, str) or not summary_key.endswith("_decision"):
+                    continue
+                ticker = summary_key[: -len("_decision")].upper()
+                if not ticker:
+                    continue
+                confidence_raw = financial_summary.get(f"{ticker}_confidence")
+                analyzed_at = financial_summary.get(f"{ticker}_analyzed_at")
+                try:
+                    confidence_value = float(confidence_raw or 0.0)
+                except Exception:
+                    confidence_value = 0.0
+                items.append(
+                    {
+                        "id": 0,
+                        "ticker": ticker,
+                        "decision_type": str(summary_value or "HOLD"),
+                        "confidence": confidence_value,
+                        "created_at": str(analyzed_at or ""),
+                        "metadata": {"source": "summary_map"},
+                    }
                 )
+
+        for d in items:
+            try:
+                confidence_value = float(d.get("confidence", 0) or 0)
+            except Exception:
+                confidence_value = 0.0
+            records.append(
+                DecisionRecord(
+                    id=d.get("id", 0),
+                    ticker=(d.get("ticker") or "").upper(),
+                    decision_type=d.get("decision_type") or d.get("decisionType") or "HOLD",
+                    confidence=confidence_value,
+                    created_at=d.get("created_at") or d.get("createdAt") or "",
+                    metadata=d.get("metadata"),
+                )
+            )
 
         # Sort by created_at, newest first
         records.sort(key=lambda x: x.created_at if x.created_at else "", reverse=True)
-        return records
+        return records[:limit]
     except Exception as e:
         logger.warning(f"[World Model Context] Failed to fetch decisions: {e}")
         return []
@@ -180,9 +255,10 @@ async def store_domain(
     world_model = get_world_model_service()
 
     # Store encrypted blob + metadata
+    canonical_domain = canonical_top_level_domain(request.domain)
     success = await world_model.store_domain_data(
         user_id=request.user_id,
-        domain=request.domain,
+        domain=canonical_domain,
         encrypted_blob={
             "ciphertext": request.encrypted_blob.ciphertext,
             "iv": request.encrypted_blob.iv,
@@ -198,7 +274,7 @@ async def store_domain(
         )
 
     return StoreDomainResponse(
-        success=True, message=f"Successfully stored {request.domain} domain data"
+        success=True, message=f"Successfully stored {canonical_domain} domain data"
     )
 
 
@@ -264,6 +340,13 @@ class DeleteDomainResponse(BaseModel):
     message: Optional[str] = None
 
 
+class ReconcileWorldModelResponse(BaseModel):
+    """Response from index/registry reconciliation."""
+
+    success: bool
+    message: Optional[str] = None
+
+
 @router.delete("/domain-data/{user_id}/{domain}", response_model=DeleteDomainResponse)
 async def delete_domain_data(
     user_id: str,
@@ -295,6 +378,36 @@ async def delete_domain_data(
         )
 
     return DeleteDomainResponse(success=True, message=f"Successfully deleted {domain} domain data")
+
+
+@router.post("/reconcile/{user_id}", response_model=ReconcileWorldModelResponse)
+async def reconcile_world_model_index(
+    user_id: str,
+    token_data: dict = Depends(require_vault_owner_token),
+):
+    """
+    Reconcile index/domain registry coherence for a user.
+
+    Runtime helper:
+    - Normalizes domain summary counters
+    - Aligns available_domains with summary keys
+    - Recomputes total_attributes
+    - Ensures missing domains are present in domain_registry
+    """
+    if token_data.get("user_id") != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Token user_id does not match request user_id",
+        )
+
+    world_model = get_world_model_service()
+    success = await world_model.reconcile_user_index_domains(user_id)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to reconcile world model index",
+        )
+    return ReconcileWorldModelResponse(success=True, message="World model index reconciled")
 
 
 # ==================== LEGACY ATTRIBUTE ROUTES (410 GONE) ====================
@@ -412,12 +525,7 @@ async def get_metadata(
 
             # Calculate attribute count from summary
             # Different domains store counts differently
-            attr_count = (
-                summary.get("holdings_count")
-                or summary.get("attribute_count")
-                or summary.get("item_count")
-                or 0
-            )
+            attr_count = _summary_attribute_count(summary)
 
             domains.append(
                 DomainMetadata(
@@ -475,6 +583,53 @@ class UserScopesResponse(BaseModel):
     )
 
 
+class DomainRegistryEntryResponse(BaseModel):
+    domain_key: str
+    display_name: str
+    icon_name: str
+    color_hex: str
+    description: str
+    status: str
+    is_legacy_alias: bool = False
+    canonical_target: Optional[str] = None
+    parent_domain: Optional[str] = None
+
+
+class DomainRegistryResponse(BaseModel):
+    domains: List[DomainRegistryEntryResponse]
+    canonical_domain_count: int
+    legacy_alias_count: int
+
+
+@router.get("/domain-registry", response_model=DomainRegistryResponse)
+async def get_domain_registry(
+    token_data: dict = Depends(require_vault_owner_token),
+):
+    """
+    Return canonical top-level domain registry + legacy alias map.
+
+    This endpoint is additive and intended for runtime contract introspection.
+    """
+    # Ensure auth middleware ran.
+    if not token_data.get("user_id"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+        )
+
+    world_model = get_world_model_service()
+    await world_model.domain_registry.ensure_canonical_domains()
+
+    entries = [DomainRegistryEntryResponse(**row) for row in domain_registry_payload()]
+    canonical_count = sum(1 for row in entries if not row.is_legacy_alias)
+    legacy_count = len(entries) - canonical_count
+    return DomainRegistryResponse(
+        domains=entries,
+        canonical_domain_count=canonical_count,
+        legacy_alias_count=legacy_count,
+    )
+
+
 @router.get("/scopes/{user_id}", response_model=UserScopesResponse)
 async def get_user_scopes(
     user_id: str,
@@ -483,7 +638,7 @@ async def get_user_scopes(
     """
     Get available scope strings for a user (lightweight agent discovery).
 
-    Returns only scope strings derived from world_model_index_v2.available_domains.
+    Returns dynamic scope strings derived from user metadata and registry hints.
 
     **Authentication**: Requires valid VAULT_OWNER token.
     Scope strings reveal which data domains a user has populated,
@@ -500,7 +655,7 @@ async def get_user_scopes(
     index = await world_model.get_index_v2(user_id)
     if index is None:
         return UserScopesResponse(user_id=user_id, scopes=[])
-    scopes = [f"attr.{d}.*" for d in index.available_domains]
+    scopes = await world_model.scope_generator.get_available_scopes(user_id)
     return UserScopesResponse(user_id=user_id, scopes=sorted(scopes))
 
 

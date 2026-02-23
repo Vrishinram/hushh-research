@@ -149,6 +149,9 @@ else:
 # This imports the combined router from the kai package which includes:
 # - health, consent, analyze, stream, decisions, preferences
 from api.routes.kai import router as kai_router  # noqa: E402
+from api.routes.kai.market_insights import (  # noqa: E402
+    start_market_insights_background_refresh,
+)
 
 app.include_router(kai_router)
 
@@ -177,18 +180,11 @@ from api.routes import world_model  # noqa: E402
 
 app.include_router(world_model.router)
 
-# Onboarding Tour (User onboarding completion tracking)
-from api.routes import onboarding  # noqa: E402
-
-app.include_router(onboarding.router)
-
 # Account deletion and management
 app.include_router(account.router)
 
 # Data synchronization
 app.include_router(sync.router)
-
-# Force reload check - onboarding registered
 
 logger.info(
     "🚀 Hushh Consent Protocol server initialized with modular routes - KAI V2 + PHASE 2 + WORLD MODEL ENABLED"
@@ -236,6 +232,12 @@ async def startup_regulated_runtime_guards():
 
     if _env_truthy("DEVELOPER_API_ENABLED", "false"):
         logger.warning("security.developer_api_enabled_in_production")
+
+
+@app.on_event("startup")
+async def startup_market_insights_refresh():
+    """Start background market cache refresh loop for public modules."""
+    start_market_insights_background_refresh()
 
 
 # ============================================================================

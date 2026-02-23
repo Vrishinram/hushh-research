@@ -35,6 +35,13 @@ from enum import Enum
 from typing import Optional
 
 from db.db_client import get_db
+from hushh_mcp.services.domain_contracts import (
+    FINANCIAL_DOMAIN_CONTRACT_VERSION,
+    FINANCIAL_INTENT_MAP,
+    RETIRED_DOMAIN_REGISTRY_KEYS,
+    canonical_top_level_domain,
+    is_allowed_top_level_domain,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -129,11 +136,196 @@ class WorldModelService:
         self._domain_inferrer = None
         self._scope_generator = None
 
+    _SUMMARY_BLOCKLIST = {"holdings", "total_value", "vault_key", "password"}
+    _RETIRED_DOMAIN_KEYS = {str(key).strip().lower() for key in RETIRED_DOMAIN_REGISTRY_KEYS}
+
     @property
     def supabase(self):
         if self._supabase is None:
             self._supabase = get_db()
         return self._supabase
+
+    @staticmethod
+    def _clean_text(value: Optional[str], *, default: str = "") -> str:
+        if not isinstance(value, str):
+            return default
+        cleaned = value.strip()
+        if cleaned.lower() in {"", "null", "undefined", "none"}:
+            return default
+        return cleaned
+
+    @staticmethod
+    def _clean_base64ish(value: Optional[str], *, default: str = "") -> str:
+        cleaned = WorldModelService._clean_text(value, default=default)
+        if not cleaned:
+            return default
+        return "".join(cleaned.split())
+
+    def _canonicalize_domain_key(self, domain: str) -> str:
+        raw_domain = self._clean_text(domain).lower()
+        if not raw_domain:
+            return ""
+        canonical_domain = canonical_top_level_domain(raw_domain)
+        if canonical_domain != raw_domain:
+            logger.info(
+                "Canonicalized legacy domain key '%s' -> '%s'",
+                raw_domain,
+                canonical_domain,
+            )
+        return canonical_domain
+
+    def _run_rpc(self, function_name: str, params: Optional[dict] = None):
+        call = self.supabase.rpc(function_name, params or {})
+        return call.execute() if hasattr(call, "execute") else call
+
+    @staticmethod
+    def _to_non_negative_int(value: object) -> Optional[int]:
+        if isinstance(value, bool) or value is None:
+            return None
+        if isinstance(value, int):
+            return max(0, value)
+        if isinstance(value, float):
+            if value != value:  # NaN guard
+                return None
+            return max(0, int(value))
+        if isinstance(value, str):
+            text = value.strip()
+            if not text:
+                return None
+            try:
+                parsed = int(float(text))
+                return max(0, parsed)
+            except Exception:
+                return None
+        return None
+
+    def _normalized_summary_count(self, summary: dict | None) -> int:
+        if not isinstance(summary, dict):
+            return 0
+        candidates = (
+            summary.get("attribute_count"),
+            summary.get("holdings_count"),
+            summary.get("item_count"),
+        )
+        for candidate in candidates:
+            parsed = self._to_non_negative_int(candidate)
+            if parsed is not None:
+                return parsed
+        return 0
+
+    def _normalize_domain_summary(self, domain: str, summary: dict | None) -> dict:
+        """Normalize/sanitize summary payload to a canonical counter contract."""
+        source = summary if isinstance(summary, dict) else {}
+        sanitized: dict[str, object] = {}
+
+        for key, value in source.items():
+            normalized_key = str(key).lower()
+            if normalized_key == "total_value":
+                # Preserve non-sensitive aggregate for dashboard hero without leaking full holdings.
+                # Keep under a dedicated summary key; legacy `total_value` stays stripped.
+                parsed_total = None
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    parsed_total = float(value)
+                elif isinstance(value, str):
+                    text = value.strip().replace(",", "")
+                    if text:
+                        try:
+                            parsed_total = float(text)
+                        except Exception:
+                            parsed_total = None
+                if parsed_total is not None:
+                    sanitized["portfolio_total_value"] = parsed_total
+                continue
+            if normalized_key in self._SUMMARY_BLOCKLIST:
+                continue
+            sanitized[key] = value
+
+        canonical_count = self._normalized_summary_count(sanitized)
+        # Canonical counter contract:
+        # - attribute_count is authoritative for all domains.
+        # - item_count mirrors the same count for compatibility.
+        # - holdings_count mirrors for financial/portfolio-like summaries.
+        sanitized["attribute_count"] = canonical_count
+        sanitized["item_count"] = canonical_count
+        if domain == "financial" or "holdings_count" in source:
+            sanitized["holdings_count"] = canonical_count
+        if domain == "financial":
+            # Finance-root contract metadata for Kai.
+            sanitized["domain_contract_version"] = FINANCIAL_DOMAIN_CONTRACT_VERSION
+            sanitized["intent_map"] = list(FINANCIAL_INTENT_MAP)
+
+        return sanitized
+
+    @staticmethod
+    def _merge_financial_summary_from_retired_contracts(
+        financial_summary: dict,
+        retired_summaries: dict[str, dict],
+    ) -> dict:
+        merged = dict(financial_summary or {})
+
+        profile_summary = retired_summaries.get("kai_profile") or {}
+        if isinstance(profile_summary, dict):
+            if merged.get("risk_profile") in (None, ""):
+                merged["risk_profile"] = profile_summary.get("risk_profile")
+            if merged.get("risk_score") in (None, ""):
+                merged["risk_score"] = profile_summary.get("risk_score")
+            if merged.get("profile_completed") in (None, ""):
+                merged["profile_completed"] = profile_summary.get("onboarding_completed")
+            for key in (
+                "has_investment_horizon",
+                "has_drawdown_response",
+                "has_volatility_preference",
+                "nav_tour_completed",
+            ):
+                if merged.get(key) in (None, ""):
+                    merged[key] = profile_summary.get(key)
+
+        documents_summary = retired_summaries.get("financial_documents") or {}
+        if isinstance(documents_summary, dict):
+            for key in (
+                "documents_count",
+                "last_statement_end",
+                "last_quality_score",
+                "last_brokerage",
+            ):
+                if merged.get(key) in (None, ""):
+                    merged[key] = documents_summary.get(key)
+
+        history_summary = retired_summaries.get("kai_analysis_history") or {}
+        if isinstance(history_summary, dict):
+            if merged.get("analysis_total_analyses") in (None, ""):
+                merged["analysis_total_analyses"] = history_summary.get(
+                    "analysis_total_analyses",
+                    history_summary.get("total_analyses"),
+                )
+            if merged.get("analysis_tickers_analyzed") in (None, ""):
+                merged["analysis_tickers_analyzed"] = history_summary.get(
+                    "analysis_tickers_analyzed",
+                    history_summary.get("tickers_analyzed"),
+                )
+            if merged.get("analysis_last_updated") in (None, ""):
+                merged["analysis_last_updated"] = history_summary.get(
+                    "analysis_last_updated",
+                    history_summary.get("last_updated"),
+                )
+            for key in (
+                "total_analyses",
+                "tickers_analyzed",
+                "last_analysis_date",
+                "last_analysis_ticker",
+            ):
+                if merged.get(key) in (None, ""):
+                    merged[key] = history_summary.get(key)
+
+        return merged
+
+    def _recalculate_total_attributes(self, summaries: dict | None) -> int:
+        if not isinstance(summaries, dict):
+            return 0
+        total = 0
+        for summary in summaries.values():
+            total += self._normalized_summary_count(summary if isinstance(summary, dict) else {})
+        return total
 
     @property
     def domain_registry(self):
@@ -198,13 +390,25 @@ class WorldModelService:
             sanitized_summaries = {}
             for domain, summary in (index.domain_summaries or {}).items():
                 if isinstance(summary, dict):
-                    sanitized_summaries[domain] = {
-                        k: v
-                        for k, v in summary.items()
-                        if k not in ("holdings", "total_value", "vault_key", "password")
-                    }
+                    sanitized_summaries[domain] = self._normalize_domain_summary(domain, summary)
                 else:
                     sanitized_summaries[domain] = summary
+
+            available_domains = sorted(
+                {
+                    *(
+                        str(domain).strip()
+                        for domain in (index.available_domains or [])
+                        if str(domain).strip()
+                    ),
+                    *(
+                        str(domain).strip()
+                        for domain in sanitized_summaries.keys()
+                        if str(domain).strip()
+                    ),
+                }
+            )
+            total_attributes = self._recalculate_total_attributes(sanitized_summaries)
 
             # Serialize dict fields to JSON strings for psycopg2 compatibility
             data = {
@@ -212,13 +416,13 @@ class WorldModelService:
                 "domain_summaries": json.dumps(sanitized_summaries)
                 if sanitized_summaries
                 else "{}",
-                "available_domains": index.available_domains,
+                "available_domains": available_domains,
                 "computed_tags": index.computed_tags,
                 "activity_score": index.activity_score,
                 "last_active_at": index.last_active_at.isoformat()
                 if index.last_active_at
                 else None,
-                "total_attributes": index.total_attributes,
+                "total_attributes": total_attributes,
                 "model_version": index.model_version,
                 "updated_at": datetime.utcnow().isoformat(),
             }
@@ -243,47 +447,84 @@ class WorldModelService:
         a single domain's summary without overwriting other domains' data.
         Analogous to MongoDB's $set on nested paths.
         """
-        try:
-            # Sanitize: strip any sensitive fields before writing to index
-            sanitized = {
-                k: v
-                for k, v in summary.items()
-                if k not in ("holdings", "total_value", "vault_key", "password")
-            }
+        domain = self._canonicalize_domain_key(domain)
+        if not domain:
+            logger.error("update_domain_summary called with empty domain for user %s", user_id)
+            return False
 
-            # NOTE: get_db() returns a sync Supabase client; do not await.
-            # Also ensure p_summary is JSON-serializable for psycopg2.
-            result = self.supabase.rpc(
+        sanitized = self._normalize_domain_summary(
+            domain, summary if isinstance(summary, dict) else {}
+        )
+        try:
+            # Guarantee domain_registry alignment on write paths.
+            try:
+                await self.domain_registry.ensure_canonical_domains()
+                await self.domain_registry.register_domain(domain)
+            except Exception as registry_error:
+                logger.warning(
+                    "Domain registry auto-register failed for %s/%s: %s",
+                    user_id,
+                    domain,
+                    registry_error,
+                )
+            if not is_allowed_top_level_domain(domain):
+                logger.warning(
+                    "Non-canonical top-level domain summary write for %s/%s",
+                    user_id,
+                    domain,
+                )
+
+            # NOTE: get_db() may return a SQLAlchemy-backed client where rpc()
+            # does not expose .execute() semantics. In that case we fall back to
+            # read-modify-write to preserve correctness.
+            rpc_call = self.supabase.rpc(
                 "merge_domain_summary",
                 {
                     "p_user_id": user_id,
                     "p_domain": domain,
                     "p_summary": json.dumps(sanitized),
                 },
-            ).execute()
+            )
+            if hasattr(rpc_call, "execute"):
+                result = rpc_call.execute()
+                if hasattr(result, "error") and result.error:
+                    logger.error(f"JSONB merge RPC error: {result.error}")
+                    return False
 
-            if hasattr(result, "error") and result.error:
-                logger.error(f"JSONB merge RPC error: {result.error}")
-                return False
-
-            return True
+                # Lightweight reconciliation keeps available_domains/domain_summaries coherent.
+                await self.reconcile_user_index_domains(user_id, register_missing_registry=False)
+                return True
         except Exception as e:
             logger.error(f"Error updating domain summary via RPC: {e}")
-            # Fallback to read-modify-write if RPC not yet deployed
-            try:
-                index = await self.get_index_v2(user_id)
-                if index is None:
-                    index = WorldModelIndexV2(user_id=user_id)
 
-                index.domain_summaries[domain] = sanitized
+        # Fallback to read-modify-write if RPC is unavailable/not deployed.
+        try:
+            index = await self.get_index_v2(user_id)
+            if index is None:
+                index = WorldModelIndexV2(user_id=user_id)
 
-                if domain not in index.available_domains:
-                    index.available_domains.append(domain)
+            existing_summary = (
+                index.domain_summaries.get(domain)
+                if isinstance(index.domain_summaries.get(domain), dict)
+                else {}
+            )
+            index.domain_summaries[domain] = self._normalize_domain_summary(
+                domain,
+                {
+                    **existing_summary,
+                    **sanitized,
+                },
+            )
 
-                return await self.upsert_index_v2(index)
-            except Exception as fallback_err:
-                logger.error(f"Fallback update_domain_summary also failed: {fallback_err}")
-                return False
+            if domain not in index.available_domains:
+                index.available_domains.append(domain)
+
+            index.total_attributes = self._recalculate_total_attributes(index.domain_summaries)
+
+            return await self.upsert_index_v2(index)
+        except Exception as fallback_err:
+            logger.error(f"Fallback update_domain_summary also failed: {fallback_err}")
+            return False
 
     # ==================== ATTRIBUTE OPERATIONS (DEPRECATED) ====================
     # These methods wrote to the now-removed world_model_attributes table.
@@ -357,9 +598,7 @@ class WorldModelService:
         try:
             # Try RPC function first (more efficient)
             try:
-                result = self.supabase.rpc(
-                    "get_user_world_model_metadata", {"p_user_id": user_id}
-                ).execute()
+                result = self._run_rpc("get_user_world_model_metadata", {"p_user_id": user_id})
 
                 if result.data:
                     data = result.data
@@ -491,7 +730,7 @@ class WorldModelService:
     ) -> list[dict]:
         """Find users with similar profiles using vector similarity."""
         try:
-            result = self.supabase.rpc(
+            result = self._run_rpc(
                 "match_user_profiles",
                 {
                     "query_embedding": query_embedding,
@@ -499,7 +738,7 @@ class WorldModelService:
                     "match_threshold": threshold,
                     "match_count": limit,
                 },
-            ).execute()
+            )
 
             return result.data or []
         except Exception as e:
@@ -540,7 +779,31 @@ class WorldModelService:
         Returns:
             bool: Success status
         """
+        domain = self._canonicalize_domain_key(domain)
+        if not domain:
+            logger.error("store_domain_data called with empty domain for user %s", user_id)
+            return False
+
         try:
+            try:
+                await self.domain_registry.ensure_canonical_domains()
+                await self.domain_registry.register_domain(domain)
+            except Exception as registry_error:
+                logger.warning(
+                    "Domain registry auto-register failed for %s/%s: %s",
+                    user_id,
+                    domain,
+                    registry_error,
+                )
+            if not is_allowed_top_level_domain(domain):
+                logger.warning(
+                    "Non-canonical top-level domain write for %s/%s",
+                    user_id,
+                    domain,
+                )
+
+            normalized_summary = self._normalize_domain_summary(domain, summary)
+
             # 1. Get current encrypted data
             current_data = await self.get_encrypted_data(user_id)
 
@@ -552,10 +815,13 @@ class WorldModelService:
 
             data = {
                 "user_id": user_id,
-                "encrypted_data_ciphertext": encrypted_blob["ciphertext"],
-                "encrypted_data_iv": encrypted_blob["iv"],
-                "encrypted_data_tag": encrypted_blob["tag"],
-                "algorithm": encrypted_blob.get("algorithm", "aes-256-gcm"),
+                "encrypted_data_ciphertext": self._clean_base64ish(encrypted_blob["ciphertext"]),
+                "encrypted_data_iv": self._clean_base64ish(encrypted_blob["iv"]),
+                "encrypted_data_tag": self._clean_base64ish(encrypted_blob["tag"]),
+                "algorithm": self._clean_text(
+                    encrypted_blob.get("algorithm", "aes-256-gcm"),
+                    default="aes-256-gcm",
+                ).lower(),
                 "data_version": current_version + 1,
                 "updated_at": datetime.utcnow().isoformat(),
             }
@@ -566,7 +832,11 @@ class WorldModelService:
             self.supabase.table("world_model_data").upsert(data, on_conflict="user_id").execute()
 
             # 3. Update world_model_index_v2
-            await self.update_domain_summary(user_id, domain, summary)
+            summary_ok = await self.update_domain_summary(user_id, domain, normalized_summary)
+            if not summary_ok:
+                return False
+
+            await self.reconcile_user_index_domains(user_id, register_missing_registry=False)
 
             return True
         except Exception as e:
@@ -622,6 +892,9 @@ class WorldModelService:
             or None if no data exists for this domain
         """
         try:
+            domain = self._canonicalize_domain_key(domain)
+            if not domain:
+                return None
             # First check if the domain exists in the index
             index = await self.get_index_v2(user_id)
             if index is None or domain not in index.available_domains:
@@ -672,6 +945,10 @@ class WorldModelService:
             bool: Success status
         """
         try:
+            domain = self._canonicalize_domain_key(domain)
+            if not domain:
+                logger.warning("Empty domain requested for delete_domain_data user=%s", user_id)
+                return True
             # Get current index
             index = await self.get_index_v2(user_id)
             if index is None:
@@ -714,6 +991,89 @@ class WorldModelService:
 
         except Exception as e:
             logger.error(f"Error deleting domain {domain} for user {user_id}: {e}")
+            return False
+
+    async def reconcile_user_index_domains(
+        self,
+        user_id: str,
+        *,
+        register_missing_registry: bool = True,
+    ) -> bool:
+        """
+        Runtime-repair helper for index/domain registry coherence.
+
+        - Normalizes domain summaries to canonical counter contract
+        - Ensures available_domains includes every summary key
+        - Recomputes total_attributes from canonical counters
+        - Optionally auto-registers missing domains in domain_registry
+        """
+        try:
+            index = await self.get_index_v2(user_id)
+            if index is None:
+                return True
+
+            normalized_summaries: dict[str, dict] = {}
+            available_domains: set[str] = set()
+            for existing_domain in index.available_domains or []:
+                normalized_domain = self._canonicalize_domain_key(existing_domain)
+                if normalized_domain and normalized_domain not in self._RETIRED_DOMAIN_KEYS:
+                    available_domains.add(normalized_domain)
+
+            retired_summaries: dict[str, dict] = {}
+            for raw_domain, raw_summary in (index.domain_summaries or {}).items():
+                domain = self._canonicalize_domain_key(str(raw_domain))
+                if not domain:
+                    continue
+                if domain in self._RETIRED_DOMAIN_KEYS:
+                    if isinstance(raw_summary, dict):
+                        retired_summaries[domain] = dict(raw_summary)
+                    continue
+                normalized_summary = self._normalize_domain_summary(
+                    domain,
+                    raw_summary if isinstance(raw_summary, dict) else {},
+                )
+                existing_summary = normalized_summaries.get(domain)
+                if isinstance(existing_summary, dict):
+                    normalized_summaries[domain] = self._normalize_domain_summary(
+                        domain,
+                        {**existing_summary, **normalized_summary},
+                    )
+                else:
+                    normalized_summaries[domain] = normalized_summary
+                available_domains.add(domain)
+
+            financial_summary = (
+                normalized_summaries.get("financial")
+                if isinstance(normalized_summaries.get("financial"), dict)
+                else {}
+            )
+            normalized_summaries["financial"] = self._normalize_domain_summary(
+                "financial",
+                self._merge_financial_summary_from_retired_contracts(
+                    financial_summary or {},
+                    retired_summaries,
+                ),
+            )
+            available_domains.add("financial")
+
+            if register_missing_registry:
+                for domain in sorted(available_domains):
+                    try:
+                        await self.domain_registry.register_domain(domain)
+                    except Exception as registry_error:
+                        logger.warning(
+                            "Domain registry reconcile failed for %s/%s: %s",
+                            user_id,
+                            domain,
+                            registry_error,
+                        )
+
+            index.domain_summaries = normalized_summaries
+            index.available_domains = sorted(available_domains)
+            index.total_attributes = self._recalculate_total_attributes(normalized_summaries)
+            return await self.upsert_index_v2(index)
+        except Exception as e:
+            logger.error("Error reconciling world model index for %s: %s", user_id, e)
             return False
 
     # ==================== LEGACY COMPATIBILITY ====================

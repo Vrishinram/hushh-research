@@ -2064,6 +2064,31 @@ Statement text (first 12000 chars):
                 portfolio = asyncio.run(self._parse_with_gemini_comprehensive(pdf_bytes, filename))
 
             if portfolio and portfolio.holdings:
+                account_info = portfolio.account_info
+                account_summary = portfolio.account_summary
+                needs_backfill = (
+                    account_info is None
+                    or not str(account_info.account_number or "").strip()
+                    or not str(account_info.statement_period_start or "").strip()
+                    or not str(account_info.statement_period_end or "").strip()
+                    or account_summary is None
+                    or (
+                        (account_summary.beginning_value or 0.0) == 0.0
+                        and (account_summary.ending_value or 0.0) == 0.0
+                    )
+                )
+                if needs_backfill:
+                    try:
+                        fallback_enhanced = self.parse(pdf_bytes, filename)
+                        if fallback_enhanced and fallback_enhanced.holdings:
+                            self._merge_comprehensive_with_enhanced_fallback(
+                                portfolio, fallback_enhanced
+                            )
+                    except Exception as fallback_error:
+                        logger.warning(
+                            "Gemini metadata backfill via regex parser failed: %s", fallback_error
+                        )
+
                 logger.info(f"Gemini Vision extracted {len(portfolio.holdings)} holdings")
                 logger.info(f"Total value: ${portfolio.total_value:,.2f}")
                 portfolio.extraction_method = "gemini_vision"
@@ -2466,26 +2491,40 @@ Extract data into the following nested objects:
             for h in holdings_data:
                 if not isinstance(h, dict):
                     continue
-                if not h.get("symbol"):
-                    symbol_cusip = str(h.get("symbol_cusip", "")).strip().upper()
-                else:
-                    symbol_cusip = str(h.get("symbol", "")).strip().upper()
+                raw_symbol = str(h.get("symbol") or h.get("symbol_cusip", "")).strip().upper()
+                raw_name = str(h.get("name", h.get("description", raw_symbol))).strip()
+                raw_asset_type = str(h.get("asset_type", h.get("asset_class", ""))).strip()
+                symbol_cusip = self._normalize_statement_symbol(
+                    raw_symbol, raw_name, raw_asset_type
+                )
 
                 if not symbol_cusip:
                     continue
 
+                normalized_asset_type = (
+                    raw_asset_type
+                    if raw_asset_type
+                    else self._infer_asset_type(symbol_cusip, raw_name, raw_name)
+                )
+                sector = h.get("sector") or SECTOR_MAP.get(symbol_cusip)
+                derived_cusip = h.get("cusip")
+                if not derived_cusip and self._is_probable_cusip(raw_symbol):
+                    derived_cusip = raw_symbol
+
                 holding = EnhancedHolding(
                     symbol=symbol_cusip,
-                    name=h.get("name", h.get("description", symbol_cusip)),
+                    name=raw_name or ("Cash Sweep" if symbol_cusip == "CASH" else symbol_cusip),
                     quantity=self._to_float(h.get("quantity")),
-                    price_per_unit=self._to_float(h.get("price")),
+                    price_per_unit=self._to_float(
+                        h.get("price", h.get("price_per_unit", h.get("current_price")))
+                    ),
                     market_value=self._to_float(h.get("market_value")),
                     cost_basis=self._to_float(h.get("cost_basis")),
                     unrealized_gain_loss=self._to_float(h.get("unrealized_gain_loss")),
                     unrealized_gain_loss_pct=self._to_float(h.get("unrealized_gain_loss_pct")),
                     acquisition_date=h.get("acquisition_date"),
-                    sector=SECTOR_MAP.get(symbol_cusip),
-                    asset_type=h.get("asset_type", h.get("asset_class", "stock")),
+                    sector=sector,
+                    asset_type=normalized_asset_type or "stock",
                     est_annual_income=self._to_float(
                         h.get("est_annual_income", h.get("estimated_annual_income"))
                     )
@@ -2495,14 +2534,16 @@ Extract data into the following nested objects:
                     est_yield=self._to_float(h.get("est_yield")) / 100
                     if h.get("est_yield") is not None
                     else None,
-                    cusip=h.get("cusip"),
+                    cusip=derived_cusip,
                 )
 
-                # Calculate gain/loss percentage if not provided
-                if holding.unrealized_gain_loss_pct == 0 and holding.cost_basis > 0:
-                    holding.unrealized_gain_loss_pct = (
-                        holding.unrealized_gain_loss / holding.cost_basis
-                    ) * 100
+                # Normalize gain/loss percentage deterministically from parsed amounts.
+                # LLM-provided percentages can drift from value/cost math on complex statements.
+                if holding.cost_basis > 0:
+                    computed_pct = (holding.unrealized_gain_loss / holding.cost_basis) * 100
+                    provided_pct = holding.unrealized_gain_loss_pct
+                    if provided_pct == 0 or abs(provided_pct - computed_pct) > 0.5:
+                        holding.unrealized_gain_loss_pct = computed_pct
 
                 portfolio.holdings.append(holding)
 
@@ -2587,6 +2628,19 @@ Extract data into the following nested objects:
         # Calculate unrealized gain/loss total
         portfolio.unrealized_gain_loss = sum(h.unrealized_gain_loss for h in portfolio.holdings)
 
+        # Deterministic reconciliation pass to improve statement fidelity when LLM fields are partial.
+        self._reconcile_income_summary(portfolio)
+        self._reconcile_asset_allocation(portfolio)
+
+        if portfolio.total_value <= 0 and portfolio.account_summary:
+            portfolio.total_value = portfolio.account_summary.ending_value
+        if (
+            portfolio.cash_balance <= 0
+            and portfolio.asset_allocation
+            and portfolio.asset_allocation.cash_value > 0
+        ):
+            portfolio.cash_balance = portfolio.asset_allocation.cash_value
+
         logger.info(f"Parsed {len(portfolio.holdings)} holdings from Gemini response")
         logger.info(
             f"Account: {portfolio.account_info.holder_name if portfolio.account_info else 'Unknown'}"
@@ -2626,6 +2680,9 @@ Extract data into the following nested objects:
                 equities_pct=enhanced.asset_allocation.get("stocks", 0) * 100
                 + enhanced.asset_allocation.get("domestic_stock", 0) * 100,
                 bonds_pct=enhanced.asset_allocation.get("bonds", 0) * 100,
+                mutual_funds_pct=enhanced.asset_allocation.get("mutual_funds", 0) * 100,
+                etf_pct=enhanced.asset_allocation.get("etf", 0) * 100,
+                other_pct=enhanced.asset_allocation.get("other", 0) * 100,
             )
 
         # Income
@@ -2684,6 +2741,65 @@ Extract data into the following nested objects:
             return "cash"
         else:
             return "stock"
+
+    def _is_probable_cusip(self, token: str) -> bool:
+        """Return True when token looks like a 9-char CUSIP style identifier."""
+        normalized = str(token or "").strip().upper()
+        if len(normalized) != 9:
+            return False
+        return bool(re.fullmatch(r"[A-Z0-9]{9}", normalized))
+
+    def _normalize_statement_symbol(self, raw_symbol: str, name: str, asset_type: str) -> str:
+        """Normalize parser output symbol tokens for UI/storage reliability."""
+        symbol = str(raw_symbol or "").strip().upper()
+        if not symbol:
+            return symbol
+
+        combined = f"{name or ''} {asset_type or ''}".lower()
+        if (
+            "cash" in combined
+            or "sweep" in combined
+            or "money market" in combined
+            or "cash equivalent" in combined
+        ):
+            return "CASH"
+
+        # Statements often emit internal cash identifiers (CUSIP-like) for sweep balances.
+        if self._is_probable_cusip(symbol) and (
+            "cash" in combined or "sweep" in combined or "money market" in combined
+        ):
+            return "CASH"
+
+        return symbol
+
+    def _merge_comprehensive_with_enhanced_fallback(
+        self,
+        comprehensive: ComprehensivePortfolio,
+        fallback: EnhancedPortfolio,
+    ) -> None:
+        """
+        Fill missing comprehensive metadata deterministically from enhanced parser output.
+        """
+        if not comprehensive.account_info:
+            comprehensive.account_info = AccountInfo()
+        ai = comprehensive.account_info
+        ai.account_number = ai.account_number or (fallback.account_number or "")
+        ai.account_type = ai.account_type or (fallback.account_type or "")
+        ai.statement_period_start = ai.statement_period_start or (
+            fallback.statement_period_start or ""
+        )
+        ai.statement_period_end = ai.statement_period_end or (fallback.statement_period_end or "")
+
+        if not comprehensive.account_summary:
+            comprehensive.account_summary = AccountSummary()
+        acs = comprehensive.account_summary
+        if not acs.beginning_value:
+            acs.beginning_value = fallback.beginning_value
+        if not acs.ending_value:
+            acs.ending_value = fallback.ending_value or comprehensive.total_value
+
+        if not comprehensive.total_value:
+            comprehensive.total_value = fallback.ending_value
 
     def _parse_number(self, value) -> float:
         """Parse a number from string."""
@@ -2775,6 +2891,147 @@ Extract data into the following nested objects:
             return allocation
 
         return None
+
+    def _classify_allocation_bucket(self, holding: EnhancedHolding) -> str:
+        """Map a holding into coarse allocation buckets used by downstream UI surfaces."""
+        asset_hint = (
+            f"{holding.asset_type or ''} {holding.name or ''} {holding.symbol or ''}".lower()
+        )
+        if (
+            "cash" in asset_hint
+            or "money market" in asset_hint
+            or "sweep" in asset_hint
+            or "mmf" in asset_hint
+        ):
+            return "cash"
+        if (
+            "fixed income" in asset_hint
+            or "bond" in asset_hint
+            or "treasury" in asset_hint
+            or "income fund" in asset_hint
+            or "investment grade" in asset_hint
+            or "high yield" in asset_hint
+        ):
+            return "bonds"
+        if "real asset" in asset_hint or "real estate" in asset_hint or "commodit" in asset_hint:
+            return "other"
+        if "equity" in asset_hint or "stock" in asset_hint or "etf" in asset_hint:
+            return "equities"
+        return "other"
+
+    def _infer_asset_allocation_from_holdings(
+        self,
+        holdings: list[EnhancedHolding],
+        total_value: float,
+    ) -> AssetAllocation:
+        """Infer allocation values/pcts directly from parsed holdings."""
+        allocation = AssetAllocation()
+        if total_value <= 0:
+            total_value = sum(max(0.0, h.market_value) for h in holdings)
+        if total_value <= 0:
+            return allocation
+
+        for holding in holdings:
+            market_value = max(0.0, float(holding.market_value or 0.0))
+            if market_value <= 0:
+                continue
+            bucket = self._classify_allocation_bucket(holding)
+            if bucket == "cash":
+                allocation.cash_value += market_value
+            elif bucket == "equities":
+                allocation.equities_value += market_value
+            elif bucket == "bonds":
+                allocation.bonds_value += market_value
+            else:
+                allocation.other_value += market_value
+
+        allocation.cash_pct = (allocation.cash_value / total_value) * 100
+        allocation.equities_pct = (allocation.equities_value / total_value) * 100
+        allocation.bonds_pct = (allocation.bonds_value / total_value) * 100
+        allocation.other_pct = (allocation.other_value / total_value) * 100
+        return allocation
+
+    def _reconcile_asset_allocation(self, portfolio: ComprehensivePortfolio) -> None:
+        """Reconcile partial LLM allocation with deterministic holdings-derived allocation."""
+        total_value = portfolio.total_value
+        if total_value <= 0 and portfolio.account_summary:
+            total_value = portfolio.account_summary.ending_value
+        if total_value <= 0:
+            total_value = sum(max(0.0, h.market_value) for h in portfolio.holdings)
+        if total_value <= 0:
+            return
+
+        inferred = self._infer_asset_allocation_from_holdings(portfolio.holdings, total_value)
+        parsed = portfolio.asset_allocation or AssetAllocation()
+
+        # Prefer non-zero parser values, but uplift obvious undercoverage from deterministic buckets.
+        parsed.cash_value = max(parsed.cash_value, inferred.cash_value)
+        parsed.equities_value = max(parsed.equities_value, inferred.equities_value)
+        parsed.bonds_value = max(parsed.bonds_value, inferred.bonds_value)
+        parsed.other_value = max(parsed.other_value, inferred.other_value)
+
+        value_total = (
+            parsed.cash_value
+            + parsed.equities_value
+            + parsed.bonds_value
+            + parsed.mutual_funds_value
+            + parsed.etf_value
+            + parsed.other_value
+        )
+        if value_total <= 0:
+            portfolio.asset_allocation = inferred
+            return
+
+        # Keep values coherent with statement total while preserving composition.
+        if abs(value_total - total_value) / total_value > 0.02:
+            scale = total_value / value_total
+            parsed.cash_value *= scale
+            parsed.equities_value *= scale
+            parsed.bonds_value *= scale
+            parsed.mutual_funds_value *= scale
+            parsed.etf_value *= scale
+            parsed.other_value *= scale
+
+        parsed.cash_pct = (parsed.cash_value / total_value) * 100
+        parsed.equities_pct = (parsed.equities_value / total_value) * 100
+        parsed.bonds_pct = (parsed.bonds_value / total_value) * 100
+        parsed.mutual_funds_pct = (parsed.mutual_funds_value / total_value) * 100
+        parsed.etf_pct = (parsed.etf_value / total_value) * 100
+        parsed.other_pct = (parsed.other_value / total_value) * 100
+        portfolio.asset_allocation = parsed
+
+    def _reconcile_income_summary(self, portfolio: ComprehensivePortfolio) -> None:
+        """Fill missing income rollups from available components and account summary totals."""
+        if not portfolio.income_summary:
+            return
+
+        inc = portfolio.income_summary
+        component_sum = (
+            inc.dividends_taxable
+            + inc.dividends_nontaxable
+            + inc.dividends_qualified
+            + inc.interest_income
+            + inc.capital_gains_dist
+            + inc.other_income
+        )
+        if inc.total_income <= 0 and component_sum > 0:
+            inc.total_income = component_sum
+
+        # If total_income is provided but one component is omitted, backfill residual non-taxable income.
+        residual = inc.total_income - component_sum
+        if inc.total_income > 0 and inc.dividends_nontaxable <= 0 and residual > 0:
+            inc.dividends_nontaxable += residual
+
+        if portfolio.account_summary:
+            if portfolio.account_summary.total_income_period <= 0 and inc.total_income > 0:
+                portfolio.account_summary.total_income_period = inc.total_income
+            if (
+                portfolio.account_summary.total_income_ytd <= 0
+                and portfolio.account_summary.total_income_period > 0
+            ):
+                portfolio.account_summary.total_income_ytd = (
+                    portfolio.account_summary.total_income_period
+                )
 
 
 class PortfolioImportService:
@@ -3227,6 +3484,8 @@ Content sample:
                         "mutual_funds_value": aa.mutual_funds_value,
                         "etf_pct": aa.etf_pct,
                         "etf_value": aa.etf_value,
+                        "other_pct": aa.other_pct,
+                        "other_value": aa.other_value,
                     }
 
                 if comprehensive_portfolio.income_summary:
@@ -3271,6 +3530,60 @@ Content sample:
                     ]
 
                 cash_balance = comprehensive_portfolio.cash_balance
+
+            # Deterministic fallback: keep account metadata usable even when LLM omits sections.
+            if account_info_dict is None:
+                account_info_dict = {
+                    "holder_name": None,
+                    "account_number": enhanced_portfolio.account_number,
+                    "account_type": enhanced_portfolio.account_type,
+                    "brokerage": None,
+                    "statement_period_start": enhanced_portfolio.statement_period_start,
+                    "statement_period_end": enhanced_portfolio.statement_period_end,
+                    "tax_lot_method": "FIFO",
+                }
+            else:
+                account_info_dict["account_number"] = (
+                    account_info_dict.get("account_number") or enhanced_portfolio.account_number
+                )
+                account_info_dict["account_type"] = (
+                    account_info_dict.get("account_type") or enhanced_portfolio.account_type
+                )
+                account_info_dict["statement_period_start"] = (
+                    account_info_dict.get("statement_period_start")
+                    or enhanced_portfolio.statement_period_start
+                )
+                account_info_dict["statement_period_end"] = (
+                    account_info_dict.get("statement_period_end")
+                    or enhanced_portfolio.statement_period_end
+                )
+
+            if account_summary_dict is None:
+                account_summary_dict = {
+                    "beginning_value": enhanced_portfolio.beginning_value,
+                    "ending_value": enhanced_portfolio.ending_value,
+                    "net_deposits_period": 0.0,
+                    "net_deposits_ytd": 0.0,
+                    "total_income_period": enhanced_portfolio.taxable_dividends
+                    + enhanced_portfolio.tax_exempt_dividends
+                    + enhanced_portfolio.interest_income,
+                    "total_income_ytd": enhanced_portfolio.taxable_dividends
+                    + enhanced_portfolio.tax_exempt_dividends
+                    + enhanced_portfolio.interest_income,
+                    "total_fees": 0.0,
+                    "change_in_value": (
+                        enhanced_portfolio.ending_value - enhanced_portfolio.beginning_value
+                    ),
+                }
+            else:
+                if account_summary_dict.get("beginning_value") in (None, 0, 0.0):
+                    account_summary_dict["beginning_value"] = enhanced_portfolio.beginning_value
+                if account_summary_dict.get("ending_value") in (None, 0, 0.0):
+                    account_summary_dict["ending_value"] = enhanced_portfolio.ending_value
+                if account_summary_dict.get("change_in_value") in (None,):
+                    account_summary_dict["change_in_value"] = (
+                        enhanced_portfolio.ending_value - enhanced_portfolio.beginning_value
+                    )
 
             # 7. Return everything - NO storage in backend
             return ImportResult(
@@ -3445,6 +3758,7 @@ Content sample:
                 "bonds": aa.bonds_pct / 100 if aa.bonds_pct else 0,
                 "mutual_funds": aa.mutual_funds_pct / 100 if aa.mutual_funds_pct else 0,
                 "etf": aa.etf_pct / 100 if aa.etf_pct else 0,
+                "other": aa.other_pct / 100 if aa.other_pct else 0,
             }
 
         # Income

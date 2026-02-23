@@ -42,24 +42,44 @@ except EnvironmentError as e:
 
 
 async def create_vault_keys(pool: asyncpg.Pool):
-    """Create vault_keys table (user authentication keys)."""
+    """Create vault_keys table (vault header + recovery wrapper)."""
     print("📦 Creating vault_keys table...")
     await pool.execute("""
         CREATE TABLE IF NOT EXISTS vault_keys (
             user_id TEXT PRIMARY KEY,
-            auth_method TEXT NOT NULL DEFAULT 'passphrase',
-            encrypted_vault_key TEXT NOT NULL,
-            salt TEXT NOT NULL,
-            iv TEXT NOT NULL,
+            vault_key_hash TEXT NOT NULL,
+            primary_method TEXT NOT NULL DEFAULT 'passphrase',
             recovery_encrypted_vault_key TEXT NOT NULL,
             recovery_salt TEXT NOT NULL,
             recovery_iv TEXT NOT NULL,
-            onboarding_completed BOOLEAN DEFAULT FALSE,
             created_at BIGINT NOT NULL,
-            updated_at BIGINT
+            updated_at BIGINT NOT NULL
         )
     """)
     print("✅ vault_keys ready!")
+
+
+async def create_vault_key_wrappers(pool: asyncpg.Pool):
+    """Create vault_key_wrappers table (one wrapper per method per user)."""
+    print("🔐 Creating vault_key_wrappers table...")
+    await pool.execute("""
+        CREATE TABLE IF NOT EXISTS vault_key_wrappers (
+            id BIGSERIAL PRIMARY KEY,
+            user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
+            method TEXT NOT NULL,
+            encrypted_vault_key TEXT NOT NULL,
+            salt TEXT NOT NULL,
+            iv TEXT NOT NULL,
+            passkey_credential_id TEXT,
+            passkey_prf_salt TEXT,
+            created_at BIGINT NOT NULL,
+            updated_at BIGINT NOT NULL,
+            UNIQUE(user_id, method)
+        )
+    """)
+    await pool.execute("CREATE INDEX IF NOT EXISTS idx_vkw_user_id ON vault_key_wrappers(user_id)")
+    await pool.execute("CREATE INDEX IF NOT EXISTS idx_vkw_method ON vault_key_wrappers(method)")
+    print("✅ vault_key_wrappers ready!")
 
 
 async def create_consent_audit(pool: asyncpg.Pool):
@@ -282,10 +302,31 @@ async def create_tickers(pool: asyncpg.Pool):
             title TEXT,
             cik TEXT,
             exchange TEXT,
+            sic_code TEXT,
+            sic_description TEXT,
+            sector_primary TEXT,
+            industry_primary TEXT,
+            sector_tags TEXT[] DEFAULT '{}',
+            metadata_confidence FLOAT DEFAULT 0.0,
+            tradable BOOLEAN DEFAULT TRUE,
+            last_enriched_at TIMESTAMPTZ,
             created_at TIMESTAMPTZ DEFAULT NOW(),
             updated_at TIMESTAMPTZ DEFAULT NOW()
         )
     """)
+    # Backward-compatible additive columns for already-provisioned environments.
+    await pool.execute("ALTER TABLE tickers ADD COLUMN IF NOT EXISTS sic_code TEXT")
+    await pool.execute("ALTER TABLE tickers ADD COLUMN IF NOT EXISTS sic_description TEXT")
+    await pool.execute("ALTER TABLE tickers ADD COLUMN IF NOT EXISTS sector_primary TEXT")
+    await pool.execute("ALTER TABLE tickers ADD COLUMN IF NOT EXISTS industry_primary TEXT")
+    await pool.execute(
+        "ALTER TABLE tickers ADD COLUMN IF NOT EXISTS sector_tags TEXT[] DEFAULT '{}'"
+    )
+    await pool.execute(
+        "ALTER TABLE tickers ADD COLUMN IF NOT EXISTS metadata_confidence FLOAT DEFAULT 0.0"
+    )
+    await pool.execute("ALTER TABLE tickers ADD COLUMN IF NOT EXISTS tradable BOOLEAN DEFAULT TRUE")
+    await pool.execute("ALTER TABLE tickers ADD COLUMN IF NOT EXISTS last_enriched_at TIMESTAMPTZ")
     await pool.execute(
         "CREATE INDEX IF NOT EXISTS idx_tickers_ticker_lower ON tickers (LOWER(ticker))"
     )
@@ -296,15 +337,42 @@ async def create_tickers(pool: asyncpg.Pool):
     print("✅ tickers ready!")
 
 
+async def create_kai_market_cache_entries(pool: asyncpg.Pool):
+    """Create L2 cache table for generalized Kai market modules."""
+    print("🧠 Creating kai_market_cache_entries table...")
+    await pool.execute("""
+        CREATE TABLE IF NOT EXISTS kai_market_cache_entries (
+            cache_key TEXT PRIMARY KEY,
+            payload_json JSONB NOT NULL,
+            fresh_until TIMESTAMPTZ NOT NULL,
+            stale_until TIMESTAMPTZ NOT NULL,
+            provider_status_json JSONB DEFAULT '{}'::jsonb,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    """)
+    await pool.execute(
+        "CREATE INDEX IF NOT EXISTS idx_kai_market_cache_fresh_until ON kai_market_cache_entries(fresh_until)"
+    )
+    await pool.execute(
+        "CREATE INDEX IF NOT EXISTS idx_kai_market_cache_stale_until ON kai_market_cache_entries(stale_until)"
+    )
+    await pool.execute(
+        "CREATE INDEX IF NOT EXISTS idx_kai_market_cache_updated_at ON kai_market_cache_entries(updated_at DESC)"
+    )
+    print("✅ kai_market_cache_entries ready!")
+
+
 # Table registry for modular access
 TABLE_CREATORS = {
     "vault_keys": create_vault_keys,
+    "vault_key_wrappers": create_vault_key_wrappers,
     "consent_audit": create_consent_audit,
     "world_model_data": create_world_model_data,
     "world_model_index_v2": create_world_model_index_v2,
     "domain_registry": create_domain_registry,
     "tickers": create_tickers,
     "consent_exports": create_consent_exports,
+    "kai_market_cache_entries": create_kai_market_cache_entries,
 }
 
 
@@ -320,33 +388,40 @@ async def run_full_migration(pool: asyncpg.Pool):
 
     # Drop current tables
     for table in [
+        "vault_key_wrappers",
         "vault_keys",
         "consent_audit",
         "world_model_data",
         "world_model_index_v2",
         "domain_registry",
         "consent_exports",
+        "kai_market_cache_entries",
     ]:
         await pool.execute(f"DROP TABLE IF EXISTS {table} CASCADE")
 
     # Create in dependency order
-    print("\n[1/6] Creating vault_keys (user authentication)...")
+    print("\n[1/8] Creating vault_keys (vault headers + recovery wrapper)...")
     await create_vault_keys(pool)
 
-    print("[2/6] Creating consent_audit (consent tracking)...")
+    print("[2/8] Creating vault_key_wrappers (enrolled unlock methods)...")
+    await create_vault_key_wrappers(pool)
+
+    print("[3/8] Creating consent_audit (consent tracking)...")
     await create_consent_audit(pool)
 
-    print("[3/6] Creating world_model_data (encrypted user data blob)...")
+    print("[4/8] Creating world_model_data (encrypted user data blob)...")
     await create_world_model_data(pool)
 
-    print("[4/6] Creating world_model_index_v2 (queryable metadata index)...")
+    print("[5/8] Creating world_model_index_v2 (queryable metadata index)...")
     await create_world_model_index_v2(pool)
 
-    print("[5/6] Creating domain_registry (dynamic domain registry)...")
+    print("[6/8] Creating domain_registry (dynamic domain registry)...")
     await create_domain_registry(pool)
 
-    print("[6/6] Creating consent_exports (MCP zero-knowledge export)...")
+    print("[7/8] Creating consent_exports (MCP zero-knowledge export)...")
     await create_consent_exports(pool)
+    print("[8/8] Creating kai_market_cache_entries (Kai market L2 cache)...")
+    await create_kai_market_cache_entries(pool)
 
     print("\n✅ Full migration complete!")
 
@@ -367,23 +442,28 @@ async def run_init_migration(pool: asyncpg.Pool):
     print("Initializing database tables (non-destructive)...")
 
     # Create in dependency order
-    print("\n[1/6] Creating vault_keys (user authentication)...")
+    print("\n[1/8] Creating vault_keys (vault headers + recovery wrapper)...")
     await create_vault_keys(pool)
 
-    print("[2/6] Creating consent_audit (consent tracking)...")
+    print("[2/8] Creating vault_key_wrappers (enrolled unlock methods)...")
+    await create_vault_key_wrappers(pool)
+
+    print("[3/8] Creating consent_audit (consent tracking)...")
     await create_consent_audit(pool)
 
-    print("[3/6] Creating world_model_data (encrypted user data blob)...")
+    print("[4/8] Creating world_model_data (encrypted user data blob)...")
     await create_world_model_data(pool)
 
-    print("[4/6] Creating world_model_index_v2 (queryable metadata index)...")
+    print("[5/8] Creating world_model_index_v2 (queryable metadata index)...")
     await create_world_model_index_v2(pool)
 
-    print("[5/6] Creating domain_registry (dynamic domain registry)...")
+    print("[6/8] Creating domain_registry (dynamic domain registry)...")
     await create_domain_registry(pool)
 
-    print("[6/6] Creating consent_exports (MCP zero-knowledge export)...")
+    print("[7/8] Creating consent_exports (MCP zero-knowledge export)...")
     await create_consent_exports(pool)
+    print("[8/8] Creating kai_market_cache_entries (Kai market L2 cache)...")
+    await create_kai_market_cache_entries(pool)
 
     print("\nAll tables initialized successfully!")
 
@@ -410,11 +490,13 @@ async def show_status(pool: asyncpg.Pool):
 
     for table in [
         "vault_keys",
+        "vault_key_wrappers",
         "consent_audit",
         "world_model_data",
         "world_model_index_v2",
         "domain_registry",
         "consent_exports",
+        "kai_market_cache_entries",
     ]:
         if table in all_tables:
             try:
@@ -452,7 +534,7 @@ Examples:
     parser.add_argument(
         "--table",
         choices=list(TABLE_CREATORS.keys()),
-        help="Create a specific table (vault_keys, consent_audit, world_model_data, world_model_index_v2, domain_registry)",
+        help="Create a specific table (vault_keys, vault_key_wrappers, consent_audit, world_model_data, world_model_index_v2, domain_registry)",
     )
     parser.add_argument("--consent", action="store_true", help="Create all consent-related tables")
     parser.add_argument(

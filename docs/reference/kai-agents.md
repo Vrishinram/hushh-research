@@ -8,9 +8,9 @@
 
 Kai implements the AlphaAgents framework -- three specialist agents debate across multiple rounds to reach consensus on a stock recommendation. Each agent brings a distinct analytical lens, and disagreements are preserved as dissenting opinions rather than suppressed.
 
-**Output**: A `DecisionCard` with a recommendation (Buy / Hold / Reduce), confidence score, supporting evidence, and sourced reasoning from all three agents.
+**Output**: A `DecisionCard` with a recommendation (Buy / Hold / Reduce), short recommendation summary, confidence score, supporting evidence, and sourced reasoning from all three agents.
 
-Kai intro personalization is optional and managed in encrypted world-model domain `kai_profile`. Legacy `/api/kai/preferences/*` routes are removed.
+Kai intro personalization is optional and managed in encrypted world-model path `financial.profile`. Legacy `/api/kai/preferences/*` routes are removed.
 
 ---
 
@@ -20,7 +20,7 @@ Kai intro personalization is optional and managed in encrypted world-model domai
 | -------------- | ------------------------- | ------------------------------------- | ------------------------------------------ |
 | **Fundamental**| Business health and moat  | SEC 10-K/10-Q filings, EDGAR         | `analyze_fundamentals`, `calculate_financial_ratios`, `assess_fundamental_health` |
 | **Sentiment**  | Market mood and momentum  | Financial news, analyst ratings       | `analyze_sentiment`, `calculate_sentiment_score`, `extract_catalysts_from_news` |
-| **Valuation**  | Fair value and multiples  | Market data (yfinance), peer comps    | `analyze_valuation`, `calculate_financial_ratios` |
+| **Valuation**  | Fair value and multiples  | Market data (Finnhub -> PMP/FMP -> yfinance), peer comps | `analyze_valuation`, `calculate_financial_ratios` |
 
 Each agent is implemented as a sub-module under `hushh_mcp/agents/kai/`:
 
@@ -158,6 +158,7 @@ The final output is a structured `DecisionCard` displayed in the frontend:
 | -------------------- | -------- | ---------------------------------------- |
 | `ticker`             | string   | Stock symbol                             |
 | `decision`           | enum     | `buy` / `hold` / `reduce`               |
+| `short_recommendation` | string | Concise final recommendation summary |
 | `confidence`         | float    | Weighted consensus confidence (0-1)      |
 | `consensus_reached`  | boolean  | Whether agents agreed                    |
 | `fundamental_summary`| string   | Fundamental agent's final position       |
@@ -167,6 +168,9 @@ The final output is a structured `DecisionCard` displayed in the frontend:
 | `key_metrics`        | object   | P/E, ROE, debt ratio, sentiment score    |
 | `sources`            | string[] | URLs to SEC filings, news articles       |
 | `timestamp`          | string   | Analysis timestamp                       |
+| `analysis_degraded`  | boolean  | Indicates partial provider/agent degradation |
+| `degraded_agents`    | string[] | Agents that degraded during stream |
+| `stream_diagnostics` | object   | `stream_id`, call counts, retries, mode |
 
 ---
 
@@ -209,10 +213,10 @@ The LLM client is initialized in `hushh_mcp/operons/kai/llm.py` with graceful fa
 
 ## Analysis History
 
-Analysis results are stored in the world model under the `kai_decisions` domain.
+Analysis results are stored in the world model under `financial.analysis.decisions` (finance-root contract).
 
 - **FIFO**: Maximum 3 versions per ticker. Fourth analysis deletes the oldest.
-- **Storage**: Encrypted in `world_model_data`, summarized in `world_model_index_v2.domain_summaries.kai_decisions`
+- **Storage**: Encrypted in `world_model_data.financial.analysis.decisions`, summarized in `world_model_index_v2.domain_summaries.financial`
 - **Access**: `GET /api/kai/decisions/{user_id}` returns the decision summary list
 
 ---
@@ -222,13 +226,13 @@ Analysis results are stored in the world model under the `kai_decisions` domain.
 | Error                   | Handling                                           |
 | ----------------------- | -------------------------------------------------- |
 | LLM rate limit (429)    | Exponential backoff: 1s, 2s, 4s, max 3 retries    |
-| LLM timeout             | Graceful degradation -- return partial results     |
-| Agent failure           | Skip agent, weight remaining agents higher         |
+| LLM timeout             | Graceful degradation; continue with degraded metadata |
+| Agent failure           | Continue stream in degraded mode; preserve final decision |
 | Invalid consent token   | 401 response, abort analysis                       |
-| External API failure    | Fallback to cached/static data where available     |
-| All agents fail         | Return error event with `recoverable: false`       |
+| External API failure    | Provider fallback/cooldown + degraded metadata     |
+| Unrecoverable stream failure | Return terminal `error` event with stable code |
 
-The SSE stream always terminates cleanly with either a terminal `decision` event or terminal `error` event.
+The SSE stream always terminates cleanly with either a terminal `decision` event (including degraded mode where applicable) or terminal `error` event.
 
 ---
 
