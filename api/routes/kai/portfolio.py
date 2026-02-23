@@ -325,6 +325,53 @@ def _build_holdings_preview(
     return preview
 
 
+def _extract_live_holdings_preview_from_text(
+    streamed_text: str,
+    *,
+    max_items: int = 12,
+) -> list[dict[str, Any]]:
+    """
+    Parse streamed JSON text and return relatable holdings preview rows.
+
+    Used by tests and live stream fallback UI when partial payloads are available.
+    """
+    raw = str(streamed_text or "").strip()
+    if not raw:
+        return []
+
+    parsed_payload: dict[str, Any] | None = None
+    try:
+        candidate = json.loads(raw)
+        if isinstance(candidate, dict):
+            parsed_payload = candidate
+    except Exception:
+        start = raw.find("{")
+        end = raw.rfind("}")
+        if start >= 0 and end > start:
+            try:
+                candidate = json.loads(raw[start : end + 1])
+                if isinstance(candidate, dict):
+                    parsed_payload = candidate
+            except Exception:
+                parsed_payload = None
+
+    if not parsed_payload:
+        return []
+
+    holdings_rows, _source = _extract_holdings_list(parsed_payload)
+    if not holdings_rows:
+        return []
+
+    normalized_rows = [
+        _normalize_raw_holding_row(row, idx=index)
+        for index, row in enumerate(holdings_rows)
+        if isinstance(row, dict)
+    ]
+    valid_rows = [row for row in normalized_rows if _validate_holding_row(row)[0]]
+    preview_source = valid_rows or normalized_rows
+    return _build_holdings_preview(preview_source, max_items=max_items)
+
+
 def _phase_progress_bounds(phase: str) -> tuple[float, float]:
     ranges: dict[str, tuple[float, float]] = {
         "extract_full": (20.0, 82.0),
@@ -1609,7 +1656,7 @@ def _validate_holding_row(row: dict[str, Any]) -> tuple[bool, str | None]:
     if _is_non_holding_row(row):
         return False, "account_header_row"
 
-    if symbol.startswith("HOLDING_") or not symbol:
+    if symbol.startswith("HOLDING") or not symbol:
         if symbol_quality == "synthetic":
             return False, "placeholder_symbol"
         if not symbol:
@@ -1624,7 +1671,7 @@ def _validate_holding_row(row: dict[str, Any]) -> tuple[bool, str | None]:
     if _is_unknown_name(name) and symbol_quality != "provided":
         return False, "unknown_name"
 
-    if _is_unknown_name(name) and (symbol.startswith("HOLDING_") or not symbol):
+    if _is_unknown_name(name) and (symbol.startswith("HOLDING") or not symbol):
         return False, "unknown_name"
 
     if quantity is None and price is None and market_value is None:
