@@ -176,6 +176,10 @@ function classifyAssetBucket({
   sector,
   assetType,
   instrumentKind,
+  securityListingStatus,
+  symbolKind,
+  isSecCommonEquityTicker,
+  hasTickerAlias,
   isCashEquivalent,
 }: {
   symbol: string;
@@ -183,14 +187,27 @@ function classifyAssetBucket({
   sector: string;
   assetType: string;
   instrumentKind?: string;
+  securityListingStatus?: string;
+  symbolKind?: string;
+  isSecCommonEquityTicker?: boolean;
+  hasTickerAlias?: boolean;
   isCashEquivalent?: boolean;
 }): DashboardAssetBucket {
   if (isCashEquivalent) return "cash_equivalent";
   const normalizedKind = String(instrumentKind || "").trim().toLowerCase();
+  const normalizedListingStatus = String(securityListingStatus || "")
+    .trim()
+    .toLowerCase();
+  const normalizedSymbolKind = String(symbolKind || "").trim().toLowerCase();
   if (normalizedKind === "cash_equivalent") return "cash_equivalent";
   if (normalizedKind === "fixed_income") return "fixed_income";
   if (normalizedKind === "real_asset") return "real_asset";
   if (normalizedKind === "equity") return "equity";
+  if (normalizedListingStatus === "cash_or_sweep") return "cash_equivalent";
+  if (normalizedListingStatus === "fixed_income") return "fixed_income";
+  if (normalizedListingStatus === "sec_common_equity") return "equity";
+  if (normalizedSymbolKind === "us_common_equity_ticker") return "equity";
+  if (isSecCommonEquityTicker) return "equity";
 
   const hint = `${symbol} ${name} ${sector} ${assetType}`.toLowerCase();
   if (
@@ -234,6 +251,8 @@ function classifyAssetBucket({
   ) {
     return "equity";
   }
+  // Default ticker-like instruments to equity when no non-equity hints were found.
+  if (hasTickerAlias) return "equity";
   return "other";
 }
 
@@ -269,6 +288,10 @@ function toPosition(raw: Holding, index: number): DashboardPosition | null {
     sector: sector || "",
     assetType: assetType || "",
     instrumentKind: toText(raw.instrument_kind),
+    securityListingStatus: toText(raw.security_listing_status),
+    symbolKind: toText(raw.symbol_kind),
+    isSecCommonEquityTicker: Boolean(raw.is_sec_common_equity_ticker),
+    hasTickerAlias: Boolean(tickerAlias),
     isCashEquivalent: explicitCashEquivalent,
   });
   const isCashEquivalent = explicitCashEquivalent || assetBucket === "cash_equivalent";

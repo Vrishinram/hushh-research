@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { Bar, BarChart, CartesianGrid, Cell, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, Cell, LabelList, XAxis, YAxis } from "recharts";
 
 import {
   ChartContainer,
@@ -82,7 +82,6 @@ export function StatementCashflowChart({
             margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
           >
             <CartesianGrid
-              vertical={false}
               strokeDasharray="3 3"
               stroke="hsl(var(--border))"
               strokeOpacity={0.95}
@@ -110,6 +109,13 @@ export function StatementCashflowChart({
               }
             />
             <Bar dataKey="value" radius={[8, 8, 0, 0]}>
+              <LabelList
+                dataKey="value"
+                position="top"
+                className="fill-foreground"
+                fontSize={10}
+                formatter={(value: number) => formatAxisValue(Number(value))}
+              />
               {rows.map((row) => (
                 <Cell key={row.key} fill={barColorForTone(row.tone)} />
               ))}

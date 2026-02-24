@@ -21,6 +21,7 @@ import {
   YAxis,
   CartesianGrid,
   Cell,
+  LabelList,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/lib/morphy-ux/card";
 import { PieChart as PieChartIcon } from "lucide-react";
@@ -150,6 +151,15 @@ export function SectorAllocationChart({
     return 64;
   }, [responsive, windowWidth]);
 
+  const rightMargin = useMemo(() => {
+    if (!responsive) return 56;
+    // Reserve right space for inline value labels (especially mobile)
+    if (windowWidth < 640) return 66;
+    return 56;
+  }, [responsive, windowWidth]);
+
+  const showInlineValueLabels = windowWidth < 768;
+
   // Chart config for shadcn ChartContainer
   const chartConfig = useMemo<ChartConfig>(() => {
     const config: ChartConfig = {};
@@ -182,7 +192,7 @@ export function SectorAllocationChart({
           <BarChart
             data={sectorData.data}
             layout="vertical"
-            margin={{ top: 5, right: 10, left: leftMargin, bottom: 5 }}
+            margin={{ top: 5, right: rightMargin, left: leftMargin, bottom: 5 }}
           >
             <XAxis
               type="number"
@@ -192,10 +202,9 @@ export function SectorAllocationChart({
               tick={{ fontSize: 10, fill: "hsl(var(--foreground) / 0.72)" }}
             />
             <CartesianGrid
-              horizontal={false}
               strokeDasharray="3 3"
               stroke="hsl(var(--foreground) / 0.22)"
-              strokeOpacity={1}
+              strokeOpacity={0.55}
             />
             <YAxis
               type="category"
@@ -207,8 +216,10 @@ export function SectorAllocationChart({
               tick={{ fontSize: 10, fill: "hsl(var(--foreground) / 0.72)" }}
             />
             <ChartTooltip
+              cursor={false}
               content={
                 <ChartTooltipContent
+                  hideLabel
                   formatter={(value, name, item) => {
                     const payload = item.payload as {
                       value: number;
@@ -231,6 +242,15 @@ export function SectorAllocationChart({
               radius={[0, 4, 4, 0]}
               animationDuration={800}
             >
+              {showInlineValueLabels ? (
+                <LabelList
+                  dataKey="value"
+                  position="right"
+                  className="fill-foreground"
+                  fontSize={10}
+                  formatter={(value: number) => formatCurrency(Number(value))}
+                />
+              ) : null}
               {sectorData.data.map((entry, index) => (
                 <Cell
                   key={`cell-${index}`}
@@ -245,7 +265,7 @@ export function SectorAllocationChart({
         {/* Summary - simplified legend */}
         <div className="mt-3 pt-3 border-t border-border/50">
           <div className="flex flex-wrap gap-3">
-            {sectorData.data.slice(0, 4).map((sector, index) => (
+            {sectorData.data.map((sector, index) => (
               <div
                 key={index}
                 className="flex items-center gap-2 text-sm"
@@ -255,6 +275,9 @@ export function SectorAllocationChart({
                   style={{ backgroundColor: sector.color }}
                 />
                 <span className="text-foreground">{sector.name}</span>
+                <span className="text-foreground/80 text-xs font-medium">
+                  {formatCurrency(sector.value)} ({sector.percent.toFixed(1)}%)
+                </span>
               </div>
             ))}
           </div>

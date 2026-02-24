@@ -16,7 +16,6 @@ import { toast } from "sonner";
 
 import { DataTable } from "@/components/app-ui/data-table";
 import { AssetAllocationDonut } from "@/components/kai/charts/asset-allocation-donut";
-import { DebateReadinessChart } from "@/components/kai/charts/debate-readiness-chart";
 import { GainLossDistributionChart } from "@/components/kai/charts/gain-loss-distribution-chart";
 import { HoldingsConcentrationChart } from "@/components/kai/charts/holdings-concentration-chart";
 import { PortfolioHistoryChart } from "@/components/kai/charts/portfolio-history-chart";
@@ -32,15 +31,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/lib/morphy-ux/card";
 import { Icon } from "@/lib/morphy-ux/ui";
 import { KAI_EXPERIENCE_CONTRACT } from "@/lib/kai/experience-contract";
 import { ROUTES } from "@/lib/navigation/routes";
-import { Badge } from "@/components/ui/badge";
-import {
-  Card as UiCard,
-  CardContent as UiCardContent,
-  CardDescription as UiCardDescription,
-  CardHeader as UiCardHeader,
-  CardTitle as UiCardTitle,
-} from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WorldModelService } from "@/lib/services/world-model-service";
 import { cn } from "@/lib/utils";
@@ -117,10 +107,6 @@ function formatCurrency(value: number): string {
 
 function formatPercent(value: number): string {
   return `${value.toFixed(1)}%`;
-}
-
-function formatSignedCurrency(value: number): string {
-  return `${value >= 0 ? "+" : ""}${formatCurrency(value)}`;
 }
 
 function DataQualityFallback({ title, detail }: { title: string; detail: string }) {
@@ -698,64 +684,6 @@ export function DashboardMasterView({
     [statementSnapshotRows]
   );
 
-  const debateCoverageRows = useMemo(
-    () => [
-      {
-        key: "ticker",
-        label: "Ticker",
-        value: Math.max(0, Math.min(100, model.canonicalModel.quality.tickerCoveragePct * 100)),
-        detail: "Holdings mapped to tradable symbols",
-      },
-      {
-        key: "sector",
-        label: "Sector",
-        value: Math.max(0, Math.min(100, equitySectorCoveragePct * 100)),
-        detail: "Equity positions with mapped sector labels",
-      },
-      {
-        key: "gain-loss",
-        label: "P/L",
-        value: Math.max(0, Math.min(100, model.quality.gainLossCoveragePct * 100)),
-        detail: "Positions with gain-loss percentages",
-      },
-      {
-        key: "investable",
-        label: "Investable",
-        value:
-          model.canonicalModel.counts.totalPositions > 0
-            ? Math.max(
-                0,
-                Math.min(
-                  100,
-                  (model.canonicalModel.counts.investablePositions /
-                    model.canonicalModel.counts.totalPositions) *
-                    100
-                )
-              )
-            : 0,
-        detail: "Positions eligible for debate/optimize flows",
-      },
-    ],
-    [equitySectorCoveragePct, model.canonicalModel.counts, model.canonicalModel.quality.tickerCoveragePct, model.quality.gainLossCoveragePct]
-  );
-
-  const debateReadinessScore = useMemo(() => {
-    if (debateCoverageRows.length === 0) return 0;
-    const total = debateCoverageRows.reduce((sum, row) => sum + row.value, 0);
-    return total / debateCoverageRows.length;
-  }, [debateCoverageRows]);
-
-  const debateExclusionSummary = useMemo(() => {
-    const reasonMap = new Map<string, number>();
-    for (const row of model.canonicalModel.debateContext.excludedPositions) {
-      const reason = row.reason || "unknown";
-      reasonMap.set(reason, (reasonMap.get(reason) || 0) + 1);
-    }
-    return Array.from(reasonMap.entries())
-      .map(([reason, count]) => ({ reason, count }))
-      .sort((a, b) => b.count - a.count);
-  }, [model.canonicalModel.debateContext.excludedPositions]);
-
   const closeHoldingModal = useCallback(() => {
     setIsModalOpen(false);
     setEditingHolding(null);
@@ -1156,48 +1084,7 @@ export function DashboardMasterView({
       </section>
 
       {statementSnapshotRows.length > 0 ? (
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Card
-            variant="none"
-            effect="glass"
-            className="rounded-[24px] p-0"
-          >
-            <CardHeader className="pb-2 px-6 pt-6 sm:px-7">
-              <CardTitle className="text-xs uppercase tracking-widest text-muted-foreground">
-                Statement Snapshot
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-3 px-6 pb-6 pt-0 sm:grid-cols-2 sm:px-7 sm:pb-7">
-              {statementSnapshotRows.map((row) => {
-                const value = Number(row.value || 0);
-                const isSigned = row.key === "investment-results";
-                return (
-                  <div
-                    key={row.key}
-                    className="rounded-xl border border-border/60 bg-background/75 p-3"
-                  >
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      {row.label}
-                    </p>
-                    <p
-                      className={cn(
-                        "mt-1 text-xl font-black",
-                        isSigned
-                          ? value >= 0
-                            ? "text-emerald-600 dark:text-emerald-400"
-                            : "text-rose-600 dark:text-rose-400"
-                          : undefined
-                      )}
-                    >
-                      {isSigned ? formatSignedCurrency(value) : formatCurrency(value)}
-                    </p>
-                  </div>
-                );
-              })}
-            </CardContent>
-          </Card>
-          <StatementCashflowChart data={statementChartData} />
-        </div>
+        <StatementCashflowChart data={statementChartData} />
       ) : null}
 
       <Card
@@ -1265,204 +1152,6 @@ export function DashboardMasterView({
           </div>
         </CardContent>
       </Card>
-
-      <UiCard className="rounded-[24px] border border-border/60 bg-card/70 shadow-[0_12px_36px_rgba(15,23,42,0.05)] backdrop-blur">
-        <UiCardHeader>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <UiCardTitle>Debate Inputs</UiCardTitle>
-            <Badge variant="secondary" className="text-[11px] font-semibold">
-              {model.canonicalModel.debateContext.eligibleSymbols.length} eligible symbols
-            </Badge>
-          </div>
-          <UiCardDescription>
-            Real world-model coverage used by Alpha debate and optimization runs.
-          </UiCardDescription>
-        </UiCardHeader>
-        <UiCardContent className="space-y-4">
-          <div className="rounded-xl border border-border/60 bg-background/80 p-3">
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>Overall readiness</span>
-              <span className="font-semibold text-foreground">
-                {Math.round(debateReadinessScore)} / 100
-              </span>
-            </div>
-            <Progress value={debateReadinessScore} className="mt-2 h-2" />
-          </div>
-
-          <Tabs defaultValue="coverage" className="w-full">
-            <TabsList className="grid h-10 w-full grid-cols-3">
-              <TabsTrigger value="coverage">Coverage</TabsTrigger>
-              <TabsTrigger value="signals">Signals</TabsTrigger>
-              <TabsTrigger value="universe">Universe</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="coverage" className="space-y-4">
-              <DebateReadinessChart
-                data={debateCoverageRows.map((row) => ({
-                  key: row.key,
-                  label: row.label,
-                  value: row.value,
-                }))}
-                className="h-[220px] w-full"
-              />
-              <div className="grid gap-3 sm:grid-cols-2">
-                {debateCoverageRows.map((row) => (
-                  <div key={row.key} className="rounded-xl border border-border/60 bg-background/80 p-3">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="font-semibold">{row.label}</span>
-                      <span className="text-muted-foreground">{Math.round(row.value)}%</span>
-                    </div>
-                    <Progress value={row.value} className="mt-2 h-1.5" />
-                    <p className="mt-2 text-xs text-muted-foreground">{row.detail}</p>
-                  </div>
-                ))}
-              </div>
-            </TabsContent>
-
-            <TabsContent value="signals" className="space-y-3">
-              {statementSnapshotRows.length > 0 ? (
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {statementSnapshotRows.map((row) => {
-                    const value = Number(row.value || 0);
-                    const isSigned = row.key === "investment-results";
-                    return (
-                      <div
-                        key={row.key}
-                        className="rounded-xl border border-border/60 bg-background/80 p-3"
-                      >
-                        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                          {row.label}
-                        </p>
-                        <p
-                          className={cn(
-                            "mt-1 text-base font-bold",
-                            isSigned
-                              ? value >= 0
-                                ? "text-emerald-600 dark:text-emerald-400"
-                                : "text-rose-600 dark:text-rose-400"
-                              : undefined
-                          )}
-                        >
-                          {isSigned ? formatSignedCurrency(value) : formatCurrency(value)}
-                        </p>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="rounded-xl border border-dashed border-border/60 bg-background/80 p-3 text-sm text-muted-foreground">
-                  No statement-level income/fee/deposit signals were parsed in this import yet.
-                </div>
-              )}
-            </TabsContent>
-
-            <TabsContent value="universe" className="space-y-3">
-              <div className="rounded-xl border border-border/60 bg-background/80 p-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Eligible Symbols
-                </p>
-                {model.canonicalModel.debateContext.eligibleSymbols.length > 0 ? (
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {model.canonicalModel.debateContext.eligibleSymbols.slice(0, 20).map((symbol) => (
-                      <Badge key={symbol} variant="outline" className="font-medium">
-                        {symbol}
-                      </Badge>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    No eligible symbols detected. Add ticker-mapped holdings to run debate analysis.
-                  </p>
-                )}
-              </div>
-
-              <div className="rounded-xl border border-border/60 bg-background/80 p-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Exclusion Reasons
-                </p>
-                {debateExclusionSummary.length > 0 ? (
-                  <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                    {debateExclusionSummary.map((row) => (
-                      <span
-                        key={row.reason}
-                        className="rounded-full border border-border/60 bg-muted/40 px-2.5 py-1"
-                      >
-                        {row.reason.replace(/_/g, " ")}: {row.count}
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    All current positions are debate-eligible.
-                  </p>
-                )}
-              </div>
-            </TabsContent>
-          </Tabs>
-        </UiCardContent>
-      </UiCard>
-
-      <section className="space-y-3">
-        <h2 className="app-section-heading px-1 uppercase tracking-[0.12em] text-muted-foreground">
-          Portfolio Insights
-        </h2>
-        <div className="grid gap-4 lg:grid-cols-2">
-          {model.quality.allocationReady ? (
-            <Card variant="none" effect="glass" className="min-w-0 overflow-hidden rounded-[22px]">
-              <CardHeader className="pb-2 px-5 pt-5">
-                <CardTitle className="text-sm">Allocation Mix</CardTitle>
-              </CardHeader>
-              <CardContent className="px-5 pb-5 pt-0">
-                <AssetAllocationDonut data={allocationData} height={240} />
-              </CardContent>
-            </Card>
-          ) : (
-            <DataQualityFallback
-              title="Allocation Mix"
-              detail="Insufficient statement allocation fields to build a reliable mix chart."
-            />
-          )}
-
-          {model.quality.historyReady ? (
-            <PortfolioHistoryChart
-              data={model.history}
-              beginningValue={model.hero.beginningValue}
-              endingValue={model.hero.endingValue}
-              statementPeriod={model.hero.statementPeriod}
-              className="h-full min-w-0 overflow-hidden rounded-[22px]"
-            />
-          ) : (
-            <DataQualityFallback
-              title="Portfolio History"
-              detail="Insufficient statement period values to plot a defensible history trend."
-            />
-          )}
-
-          {model.quality.gainLossReady ? (
-            <GainLossDistributionChart
-              className="min-w-0 overflow-hidden rounded-[22px]"
-              data={model.gainLossDistribution}
-            />
-          ) : (
-            <DataQualityFallback
-              title="Gain/Loss Distribution"
-              detail="Statement lacks enough gain/loss percentages to build a reliable distribution."
-            />
-          )}
-
-          {model.quality.concentrationReady ? (
-            <HoldingsConcentrationChart
-              className="min-w-0 overflow-hidden rounded-[22px]"
-              data={model.concentration}
-            />
-          ) : (
-            <DataQualityFallback
-              title="Holdings Concentration"
-              detail="Need at least three measurable holdings to compute concentration safely."
-            />
-          )}
-        </div>
-      </section>
 
       <Card
         variant="muted"
@@ -1718,6 +1407,68 @@ export function DashboardMasterView({
           ) : null}
         </CardContent>
       </Card>
+
+      <section className="space-y-3">
+        <h2 className="app-section-heading px-1 uppercase tracking-[0.12em] text-muted-foreground">
+          Portfolio Insights
+        </h2>
+        <div className="grid gap-4 lg:grid-cols-2">
+          {model.quality.allocationReady ? (
+            <Card variant="none" effect="glass" className="min-w-0 overflow-hidden rounded-[22px]">
+              <CardHeader className="pb-2 px-5 pt-5">
+                <CardTitle className="text-sm">Allocation Mix</CardTitle>
+              </CardHeader>
+              <CardContent className="px-5 pb-5 pt-0">
+                <AssetAllocationDonut data={allocationData} height={240} />
+              </CardContent>
+            </Card>
+          ) : (
+            <DataQualityFallback
+              title="Allocation Mix"
+              detail="Insufficient statement allocation fields to build a reliable mix chart."
+            />
+          )}
+
+          {model.quality.historyReady ? (
+            <PortfolioHistoryChart
+              data={model.history}
+              beginningValue={model.hero.beginningValue}
+              endingValue={model.hero.endingValue}
+              statementPeriod={model.hero.statementPeriod}
+              className="h-full min-w-0 overflow-hidden rounded-[22px]"
+            />
+          ) : (
+            <DataQualityFallback
+              title="Portfolio History"
+              detail="Insufficient statement period values to plot a defensible history trend."
+            />
+          )}
+
+          {model.quality.gainLossReady ? (
+            <GainLossDistributionChart
+              className="min-w-0 overflow-hidden rounded-[22px]"
+              data={model.gainLossDistribution}
+            />
+          ) : (
+            <DataQualityFallback
+              title="Gain/Loss Distribution"
+              detail="Statement lacks enough gain/loss percentages to build a reliable distribution."
+            />
+          )}
+
+          {model.quality.concentrationReady ? (
+            <HoldingsConcentrationChart
+              className="min-w-0 overflow-hidden rounded-[22px]"
+              data={model.concentration}
+            />
+          ) : (
+            <DataQualityFallback
+              title="Holdings Concentration"
+              detail="Need at least three measurable holdings to compute concentration safely."
+            />
+          )}
+        </div>
+      </section>
 
       <Card variant="none" effect="glass" className="min-w-0 overflow-hidden rounded-[24px]">
         <CardContent className="p-5 sm:p-6">

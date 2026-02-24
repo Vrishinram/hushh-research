@@ -132,15 +132,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         )}
         {...props}
       >
-        {shouldShowRipple ? (
-          <MaterialRipple
-            variant={variant}
-            effect={effect}
-            disabled={isDisabled}
-            className="z-0"
-          />
-        ) : null}
-        <span className="relative z-10 inline-flex items-center justify-center text-inherit">
+        <span className="relative z-0 inline-flex items-center justify-center text-inherit">
           {IconComponent ? (
             <span className={cn("mr-2.5 flex items-center justify-center rounded-lg border", getIconBoxSize(), iconBoxClass)}>
               <IconComponent
@@ -151,6 +143,14 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
           ) : null}
           {children}
         </span>
+        {shouldShowRipple ? (
+          <MaterialRipple
+            variant={variant}
+            effect={effect}
+            disabled={isDisabled}
+            className="z-10"
+          />
+        ) : null}
       </StockButton>
     );
   }

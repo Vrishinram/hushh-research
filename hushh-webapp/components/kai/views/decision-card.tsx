@@ -267,7 +267,7 @@ function AgentVoteBar({ result }: { result: DecisionResult }) {
       </p>
       <ChartContainer config={voteChartConfig} className="h-[140px] w-full">
         <BarChart accessibilityLayer data={data}>
-          <CartesianGrid vertical={false} />
+          <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.45} />
           <XAxis dataKey="agent" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} tickMargin={10} />
           <YAxis domain={[-1, 1]} hide />
           <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
@@ -379,7 +379,7 @@ function QuantMetricsBarChart({ metrics }: { metrics: Record<string, any> }) {
       </p>
       <ChartContainer config={barChartConfig} className="w-full h-[160px]">
         <BarChart accessibilityLayer data={data} layout="vertical" margin={{ left: 0, right: 30, top: 0, bottom: 0 }}>
-          <CartesianGrid horizontal={false} />
+          <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.45} />
           <XAxis type="number" hide />
           <YAxis 
             type="category" 
@@ -426,7 +426,7 @@ function PriceTargetsChart({ targets }: { targets: Record<string, number> }) {
       </p>
       <ChartContainer config={barChartConfig} className="w-full h-[160px]">
         <BarChart accessibilityLayer data={data}>
-          <CartesianGrid vertical={false} />
+          <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.45} />
           <XAxis dataKey="scenario" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
           <YAxis hide />
           <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />

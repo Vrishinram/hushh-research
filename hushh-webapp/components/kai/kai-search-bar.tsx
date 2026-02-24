@@ -17,6 +17,7 @@ interface KaiSearchBarProps {
   portfolioTickers?: Array<{
     symbol: string;
     name?: string;
+    sector?: string;
     asset_type?: string;
     is_investable?: boolean;
     analyze_eligible?: boolean;

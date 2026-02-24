@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { BarChart3 } from "lucide-react";
-import { Bar, BarChart, CartesianGrid, Cell, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, Cell, LabelList, XAxis, YAxis } from "recharts";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/lib/morphy-ux/card";
 import {
@@ -61,9 +61,8 @@ export function HoldingsConcentrationChart({
       </CardHeader>
       <CardContent className="pt-0 min-w-0 overflow-hidden">
         <ChartContainer config={chartConfig} className="h-[220px] w-full min-w-0 sm:h-[230px]">
-          <BarChart data={chartData} layout="vertical" margin={{ top: 10, right: 8, left: 0, bottom: 0 }}>
+          <BarChart data={chartData} layout="vertical" margin={{ top: 10, right: 44, left: 0, bottom: 0 }}>
             <CartesianGrid
-              horizontal={false}
               strokeDasharray="3 3"
               stroke="hsl(var(--border))"
               strokeOpacity={0.9}
@@ -87,6 +86,7 @@ export function HoldingsConcentrationChart({
               cursor={false}
               content={
                 <ChartTooltipContent
+                  hideLabel
                   formatter={(_value, _name, item) => {
                     const payload = item.payload as ConcentrationDatum;
                     return (
@@ -103,6 +103,13 @@ export function HoldingsConcentrationChart({
               }
             />
             <Bar dataKey="weightPct" radius={[0, 6, 6, 0]}>
+              <LabelList
+                dataKey="weightPct"
+                position="right"
+                className="fill-foreground"
+                fontSize={10}
+                formatter={(value: number) => `${Number(value).toFixed(1)}%`}
+              />
               {chartData.map((entry, index) => (
                 <Cell
                   key={`${entry.symbol}-${index}`}

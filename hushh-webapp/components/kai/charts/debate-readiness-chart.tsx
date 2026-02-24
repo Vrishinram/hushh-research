@@ -1,6 +1,6 @@
 "use client";
 
-import { Bar, BarChart, CartesianGrid, Cell, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, Cell, LabelList, XAxis, YAxis } from "recharts";
 
 import {
   ChartContainer,
@@ -50,7 +50,6 @@ export function DebateReadinessChart({ data, className }: DebateReadinessChartPr
         margin={{ top: 10, right: 8, left: -6, bottom: 0 }}
       >
         <CartesianGrid
-          vertical={false}
           strokeDasharray="3 3"
           stroke="hsl(var(--border))"
           strokeOpacity={0.95}
@@ -79,6 +78,13 @@ export function DebateReadinessChart({ data, className }: DebateReadinessChartPr
           }
         />
         <Bar dataKey="value" radius={[8, 8, 0, 0]}>
+          <LabelList
+            dataKey="value"
+            position="top"
+            className="fill-foreground"
+            fontSize={10}
+            formatter={(value: number) => `${clampCoverage(Number(value)).toFixed(0)}%`}
+          />
           {data.map((entry, index) => (
             <Cell
               key={entry.key}

@@ -64,7 +64,7 @@ export const getVariantStyles = (
 
     case "blue-gradient":
       if (effect === "fill") {
-        return `bg-gradient-to-r ${gradientPresets.primary} text-white shadow-[0_18px_60px_var(--morphy-cta-shadow)] hover:brightness-105 transition-shadow transition-colors duration-200`;
+        return `bg-gradient-to-r ${gradientPresets.primary} text-white dark:text-black shadow-[0_18px_60px_var(--morphy-cta-shadow)] hover:brightness-105 transition-shadow transition-colors duration-200`;
       } else if (effect === "fade") {
         return "bg-gradient-to-r from-[var(--morphy-primary-start)]/12 to-[var(--morphy-primary-end)]/12 border border-[var(--morphy-primary-start)]/24 text-[var(--morphy-primary-start)] hover:from-[var(--morphy-primary-start)] hover:to-[var(--morphy-primary-end)] hover:text-white transition-colors duration-200";
       } else {

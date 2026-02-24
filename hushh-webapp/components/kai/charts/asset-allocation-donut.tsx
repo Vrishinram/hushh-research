@@ -199,7 +199,7 @@ export function AssetAllocationDonut({
         </PieChart>
       </ChartContainer>
 
-      {/* Legend - simplified, no percentages (tooltip shows details) */}
+      {/* Legend - always visible values for mobile/non-hover contexts */}
       {showLegend && (
         <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 sm:flex sm:flex-wrap sm:justify-center sm:gap-4">
           {chartData.map((item, index) => (
@@ -211,7 +211,12 @@ export function AssetAllocationDonut({
                 className="w-3 h-3 rounded-full shrink-0"
                 style={{ backgroundColor: item.color }}
               />
-              <span className="truncate text-foreground">{item.name}</span>
+              <div className="min-w-0">
+                <p className="truncate text-foreground">{item.name}</p>
+                <p className="text-[11px] font-medium text-foreground/80">
+                  {formatCurrency(item.value)} ({formatPercent(item.percent || 0)})
+                </p>
+              </div>
             </div>
           ))}
         </div>
