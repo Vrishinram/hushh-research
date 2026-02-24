@@ -78,7 +78,7 @@ export function ExitDialog({
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
+      <AlertDialogContent className="bg-background/95 backdrop-blur-none border-border/60 shadow-xl">
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
             <Icon icon={ShieldCheck} size="md" className="text-primary" />

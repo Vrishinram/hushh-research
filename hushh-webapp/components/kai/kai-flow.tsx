@@ -36,6 +36,10 @@ import { useKaiSession } from "@/lib/stores/kai-session-store";
 import type { KaiStreamEnvelope } from "@/lib/streaming/kai-stream-types";
 import { consumeCanonicalKaiStream } from "@/lib/streaming/kai-stream-client";
 import { KaiProfileSyncService } from "@/lib/services/kai-profile-sync-service";
+import { setOnboardingFlowActiveCookie } from "@/lib/services/onboarding-route-cookie";
+import { ROUTES } from "@/lib/navigation/routes";
+import { useScrollReset } from "@/lib/navigation/use-scroll-reset";
+import { KAI_PORTFOLIO_IMPORT_IDLE_TIMEOUT_MS } from "@/lib/services/kai-import-stream-config";
 import { useAuth } from "@/hooks/use-auth";
 import { VaultFlow } from "@/components/vault/vault-flow";
 import {
@@ -44,10 +48,6 @@ import {
   DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { setOnboardingFlowActiveCookie } from "@/lib/services/onboarding-route-cookie";
-import { ROUTES } from "@/lib/navigation/routes";
-import { useScrollReset } from "@/lib/navigation/use-scroll-reset";
-import { KAI_PORTFOLIO_IMPORT_IDLE_TIMEOUT_MS } from "@/lib/services/kai-import-stream-config";
 
 // =============================================================================
 // TYPES
@@ -391,19 +391,20 @@ export function KaiFlow({
   const router = useRouter();
   const { user } = useAuth();
   const { vaultKey, vaultOwnerToken: contextVaultOwnerToken } = useVault();
-  const effectiveVaultOwnerToken = contextVaultOwnerToken ?? vaultOwnerToken;
+  const initialVaultOwnerToken = vaultOwnerToken.trim().length > 0 ? vaultOwnerToken : null;
+  const effectiveVaultOwnerToken =
+    contextVaultOwnerToken || initialVaultOwnerToken || undefined;
   const { getPortfolioData, setPortfolioData, invalidateDomain } = useCache();
   const [state, setState] = useState<FlowState>("checking");
   const [flowData, setFlowData] = useState<FlowData>({
     hasFinancialData: false,
   });
   const [error, setError] = useState<string | null>(null);
-  const [vaultDialogOpen, setVaultDialogOpen] = useState(false);
-  const [queuedUploadFile, setQueuedUploadFile] = useState<File | null>(null);
-  const [resumeUploadAfterUnlock, setResumeUploadAfterUnlock] = useState(false);
-  const [vaultResolvedForUpload, setVaultResolvedForUpload] = useState(false);
   const isDashboardMode = mode === "dashboard";
   const stateRef = useRef<FlowState>("checking");
+  const [vaultDialogOpen, setVaultDialogOpen] = useState(false);
+  const [pendingImportFile, setPendingImportFile] = useState<File | null>(null);
+  const [resumeImportAfterVault, setResumeImportAfterVault] = useState(false);
   
   // Streaming state for real-time progress
   const [streaming, setStreaming] = useState<StreamingState>({
@@ -443,8 +444,6 @@ export function KaiFlow({
         if (
           mode === "import" &&
           (vaultDialogOpen ||
-            resumeUploadAfterUnlock ||
-            !!queuedUploadFile ||
             stateRef.current === "importing" ||
             stateRef.current === "import_complete" ||
             stateRef.current === "reviewing")
@@ -641,6 +640,7 @@ export function KaiFlow({
     setPortfolioData,
     invalidateDomain,
     isDashboardMode,
+    vaultDialogOpen,
   ]);
 
   // Notify parent of state changes
@@ -671,14 +671,6 @@ export function KaiFlow({
   // Handle file upload with SSE streaming
   const handleFileUpload = useCallback(
     async (file: File) => {
-      if (!vaultKey || !effectiveVaultOwnerToken) {
-        setQueuedUploadFile(file);
-        setResumeUploadAfterUnlock(true);
-        setVaultDialogOpen(true);
-        toast.info("Create or unlock your vault to import this statement.");
-        return;
-      }
-
       // Validate file size (max 10MB)
       if (file.size > 10 * 1024 * 1024) {
         setError("File too large. Maximum size is 10MB.");
@@ -693,6 +685,17 @@ export function KaiFlow({
         toast.error("Invalid file type. Please upload a PDF or CSV file.");
         return;
       }
+
+      if (!vaultKey || !effectiveVaultOwnerToken) {
+        setPendingImportFile(file);
+        setResumeImportAfterVault(false);
+        setVaultDialogOpen(true);
+        setError(null);
+        toast.info("Create or unlock vault to import portfolio.");
+        return;
+      }
+
+      const tokenForImport = effectiveVaultOwnerToken;
 
       try {
         setState("importing");
@@ -730,7 +733,7 @@ export function KaiFlow({
         try {
           response = await ApiService.importPortfolioStream({
             formData,
-            vaultOwnerToken: effectiveVaultOwnerToken,
+            vaultOwnerToken: tokenForImport,
             signal: abortControllerRef.current.signal,
           });
         } catch (fetchError) {
@@ -1297,30 +1300,35 @@ export function KaiFlow({
         setBusyOperation("portfolio_import_stream", false);
       }
     },
-    [userId, effectiveVaultOwnerToken, vaultKey, setBusyOperation]
+    [userId, vaultKey, effectiveVaultOwnerToken, setBusyOperation]
   );
 
-  // Resume a queued upload once vault unlock/create succeeds.
   useEffect(() => {
-    if (
-      !resumeUploadAfterUnlock ||
-      !queuedUploadFile ||
-      !vaultKey ||
-      !effectiveVaultOwnerToken
-    ) {
-      return;
-    }
-
-    setResumeUploadAfterUnlock(false);
-    const file = queuedUploadFile;
-    setQueuedUploadFile(null);
-    void handleFileUpload(file);
+    if (!resumeImportAfterVault || !pendingImportFile) return;
+    if (!vaultKey || !effectiveVaultOwnerToken) return;
+    const queuedFile = pendingImportFile;
+    setResumeImportAfterVault(false);
+    setPendingImportFile(null);
+    void handleFileUpload(queuedFile);
   }, [
-    resumeUploadAfterUnlock,
-    queuedUploadFile,
+    resumeImportAfterVault,
+    pendingImportFile,
     vaultKey,
     effectiveVaultOwnerToken,
     handleFileUpload,
+  ]);
+
+  useEffect(() => {
+    if (vaultDialogOpen || resumeImportAfterVault) return;
+    if (!pendingImportFile) return;
+    if (vaultKey && effectiveVaultOwnerToken) return;
+    setPendingImportFile(null);
+  }, [
+    vaultDialogOpen,
+    resumeImportAfterVault,
+    pendingImportFile,
+    vaultKey,
+    effectiveVaultOwnerToken,
   ]);
 
   // Handle cancel import
@@ -1637,11 +1645,11 @@ export function KaiFlow({
         />
       )}
 
-      {mode === "import" && state === "reviewing" && flowData.parsedPortfolio && vaultKey && (
+      {mode === "import" && state === "reviewing" && flowData.parsedPortfolio && (
         <PortfolioReviewView
           portfolioData={flowData.parsedPortfolio}
           userId={userId}
-          vaultKey={vaultKey}
+          vaultKey={vaultKey ?? undefined}
           vaultOwnerToken={effectiveVaultOwnerToken}
           onSaveComplete={handleSaveComplete}
           onReimport={handleReimport}
@@ -1652,7 +1660,7 @@ export function KaiFlow({
       {isDashboardMode && state === "dashboard" && flowData.portfolioData && (
         <DashboardMasterView
           userId={userId}
-          vaultOwnerToken={effectiveVaultOwnerToken}
+          vaultOwnerToken={effectiveVaultOwnerToken ?? ""}
           portfolioData={flowData.portfolioData}
           onAnalyzeStock={handleAnalyzeStock}
           onReupload={handleReimport}
@@ -1706,49 +1714,22 @@ export function KaiFlow({
         </div>
       )}
 
-      {user && (
+      {mode === "import" && user && (
         <Dialog
           open={vaultDialogOpen}
-          onOpenChange={(open) => {
-            setVaultDialogOpen(open);
-            if (!open) {
-              if (vaultResolvedForUpload) {
-                setVaultResolvedForUpload(false);
-                return;
-              }
-              setQueuedUploadFile(null);
-              setResumeUploadAfterUnlock(false);
-            }
-          }}
+          onOpenChange={setVaultDialogOpen}
         >
-          <DialogContent className="sm:max-w-md p-0 border-none bg-transparent shadow-none">
-            <DialogTitle className="sr-only">
-              Create or unlock vault to import portfolio
-            </DialogTitle>
+          <DialogContent className="sm:max-w-md p-0 border border-border/60 bg-background shadow-2xl overflow-hidden">
+            <DialogTitle className="sr-only">Create or unlock vault to import portfolio</DialogTitle>
             <DialogDescription className="sr-only">
-              Create or unlock your vault to connect financial data to Kai.
+              You need to create or unlock your vault before parsing and importing your statement.
             </DialogDescription>
             <VaultFlow
               user={user}
               enableGeneratedDefault
               onSuccess={() => {
-                setVaultResolvedForUpload(true);
                 setVaultDialogOpen(false);
-                if (resumeUploadAfterUnlock && queuedUploadFile) {
-                  const fileToResume = queuedUploadFile;
-                  if (vaultKey && effectiveVaultOwnerToken) {
-                    // Restart immediately when unlock context is already available.
-                    setResumeUploadAfterUnlock(false);
-                    setQueuedUploadFile(null);
-                    window.setTimeout(() => {
-                      void handleFileUpload(fileToResume);
-                    }, 120);
-                  } else {
-                    // Keep pending flags so the resume effect can restart once context arrives.
-                    setQueuedUploadFile(fileToResume);
-                    setResumeUploadAfterUnlock(true);
-                  }
-                }
+                setResumeImportAfterVault(true);
               }}
             />
           </DialogContent>

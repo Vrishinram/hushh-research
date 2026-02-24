@@ -135,6 +135,28 @@ export class WorldModelService {
     return false;
   }
 
+  private static resolvePortfolioDataForDomain(params: {
+    domain: string;
+    domainData: Record<string, unknown>;
+  }): CachedPortfolioData | undefined {
+    if (params.domain !== "financial" || !this.isLikelyPortfolioData(params.domainData)) {
+      return undefined;
+    }
+
+    const domainRecord = params.domainData as Record<string, unknown>;
+    if (Array.isArray(domainRecord.holdings)) {
+      return params.domainData as CachedPortfolioData;
+    }
+    if (
+      domainRecord.portfolio &&
+      typeof domainRecord.portfolio === "object" &&
+      !Array.isArray(domainRecord.portfolio)
+    ) {
+      return domainRecord.portfolio as CachedPortfolioData;
+    }
+    return undefined;
+  }
+
   private static normalizeHoldingSymbolCandidate(value: unknown): string {
     const raw = String(value ?? "")
       .trim()
@@ -1157,15 +1179,34 @@ export class WorldModelService {
     encryptedBlob: EncryptedValue;
     fullBlob: Record<string, unknown>;
   }> {
-    const { HushhVault } = await import("@/lib/capacitor");
-
-    const fullBlob = await this.loadFullBlob({
+    const baseFullBlob = await this.loadFullBlob({
       userId: params.userId,
       vaultKey: params.vaultKey,
       vaultOwnerToken: params.vaultOwnerToken,
     }).catch(() => ({} as Record<string, unknown>));
 
-    fullBlob[params.domain] = params.domainData;
+    return this.mergeAndEncryptPreparedBlob({
+      baseFullBlob,
+      vaultKey: params.vaultKey,
+      domain: params.domain,
+      domainData: params.domainData,
+    });
+  }
+
+  private static async mergeAndEncryptPreparedBlob(params: {
+    baseFullBlob: Record<string, unknown>;
+    vaultKey: string;
+    domain: string;
+    domainData: Record<string, unknown>;
+  }): Promise<{
+    encryptedBlob: EncryptedValue;
+    fullBlob: Record<string, unknown>;
+  }> {
+    const { HushhVault } = await import("@/lib/capacitor");
+    const fullBlob = {
+      ...params.baseFullBlob,
+      [params.domain]: params.domainData,
+    };
 
     const encrypted = await HushhVault.encryptData({
       plaintext: JSON.stringify(fullBlob),
@@ -1197,31 +1238,49 @@ export class WorldModelService {
     success: boolean;
     fullBlob: Record<string, unknown>;
   }> {
-    const merged = await this.mergeAndEncryptFullBlob({
+    const baseFullBlob = await this.loadFullBlob({
       userId: params.userId,
+      vaultKey: params.vaultKey,
+      vaultOwnerToken: params.vaultOwnerToken,
+    }).catch(() => ({} as Record<string, unknown>));
+
+    return this.storeMergedDomainWithPreparedBlob({
+      ...params,
+      baseFullBlob,
+    });
+  }
+
+  /**
+   * Merge one domain into a caller-provided decrypted blob and persist.
+   * Use this to avoid an extra load/decrypt cycle when the caller already has the full blob.
+   */
+  static async storeMergedDomainWithPreparedBlob(params: {
+    userId: string;
+    vaultKey: string;
+    domain: string;
+    domainData: Record<string, unknown>;
+    summary: Record<string, unknown>;
+    baseFullBlob: Record<string, unknown>;
+    vaultOwnerToken?: string;
+  }): Promise<{
+    success: boolean;
+    fullBlob: Record<string, unknown>;
+  }> {
+    const merged = await this.mergeAndEncryptPreparedBlob({
+      baseFullBlob: params.baseFullBlob,
       vaultKey: params.vaultKey,
       domain: params.domain,
       domainData: params.domainData,
-      vaultOwnerToken: params.vaultOwnerToken,
     });
 
     const summaryWithIntent = {
       domain_intent: params.domain,
       ...params.summary,
     };
-    let portfolioData: CachedPortfolioData | undefined;
-    if (params.domain === "financial" && this.isLikelyPortfolioData(params.domainData)) {
-      const domainRecord = params.domainData as Record<string, unknown>;
-      if (Array.isArray(domainRecord.holdings)) {
-        portfolioData = params.domainData as CachedPortfolioData;
-      } else if (
-        domainRecord.portfolio &&
-        typeof domainRecord.portfolio === "object" &&
-        !Array.isArray(domainRecord.portfolio)
-      ) {
-        portfolioData = domainRecord.portfolio as CachedPortfolioData;
-      }
-    }
+    const portfolioData = this.resolvePortfolioDataForDomain({
+      domain: params.domain,
+      domainData: params.domainData,
+    });
 
     const result = await this.storeDomainData({
       userId: params.userId,

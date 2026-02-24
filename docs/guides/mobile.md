@@ -599,7 +599,7 @@ For Server-Sent Events (SSE) streaming on native:
 
 Before releasing mobile updates:
 
-- [ ] All required plugins registered on both platforms (see `docs/audits/plugins-parity.md`)
+- [ ] All required plugins registered on both platforms (see `docs/reference/mobile-kai-parity-map.md`)
 - [ ] Firebase authentication works (Google Sign-In)
 - [ ] Apple Sign-In works on iOS
 - [ ] Vault operations work end-to-end

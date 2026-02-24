@@ -2,7 +2,6 @@
 
 import { toast } from "sonner";
 import { type ColorVariant, type FeedbackTone } from "./types";
-import { getVariantStylesNoHover } from "./utils";
 import {
   CheckCircleIcon,
   InfoIcon,
@@ -162,6 +161,11 @@ interface ToastOptions {
   className?: string;
 }
 
+const getToastVariantAccentClassName = (variant?: ColorVariant) => {
+  if (!variant) return undefined;
+  return `morphy-sonner-accent-${variant}`;
+};
+
 const getToastToneClassName = (
   tone: MorphyToastTone,
   variant?: ColorVariant
@@ -170,7 +174,7 @@ const getToastToneClassName = (
     "morphy-sonner-toast",
     `morphy-sonner-tone-${tone}`,
     tone === "danger" ? "morphy-sonner-tone-error" : undefined,
-    variant ? getVariantStylesNoHover(variant, "fill") : undefined
+    getToastVariantAccentClassName(variant)
   );
 
 // ============================================================================
@@ -286,7 +290,11 @@ export const useMorphyToast = () => {
           weight={iconWeight}
         />
       ),
-      className: cn("morphy-sonner-toast", variant ? getVariantStylesNoHover(variant, "fill") : undefined, className),
+      className: cn(
+        "morphy-sonner-toast",
+        getToastVariantAccentClassName(variant),
+        className
+      ),
     });
   };
 
@@ -402,7 +410,7 @@ export const morphyToast = {
       icon,
       className: cn(
         "morphy-sonner-toast",
-        variant ? getVariantStylesNoHover(variant, "fill") : undefined,
+        getToastVariantAccentClassName(variant),
         className
       ),
     });

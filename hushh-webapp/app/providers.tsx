@@ -118,7 +118,7 @@ export function Providers({ children }: ProvidersProps) {
                       </div>
                     </div>
                   </div>
-                  <Toaster />
+                  <Toaster position="top-center" closeButton />
                 </NavigationProvider>
               </ConsentNotificationProvider>
             </VaultProvider>

@@ -2,11 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const loadFullBlobMock = vi.fn();
 const storeMergedDomainMock = vi.fn();
+const storeMergedDomainWithPreparedBlobMock = vi.fn();
 
 vi.mock("@/lib/services/world-model-service", () => ({
   WorldModelService: {
     loadFullBlob: loadFullBlobMock,
     storeMergedDomain: storeMergedDomainMock,
+    storeMergedDomainWithPreparedBlob: storeMergedDomainWithPreparedBlobMock,
   },
 }));
 
@@ -15,6 +17,7 @@ describe("KaiProfileService", () => {
     vi.clearAllMocks();
     loadFullBlobMock.mockResolvedValue({});
     storeMergedDomainMock.mockResolvedValue({ success: true });
+    storeMergedDomainWithPreparedBlobMock.mockResolvedValue({ success: true });
   });
 
   it("returns default v2 profile when no stored domain exists", async () => {
@@ -157,6 +160,46 @@ describe("KaiProfileService", () => {
     expect(next.preferences.investment_horizon_anchor_at).toBe("2026-01-01T00:00:00.000Z");
     expect(next.preferences.risk_profile).toBe("conservative");
     expect(next.preferences.risk_profile_selected_at).toBe(now.toISOString());
+  });
+
+  it("syncs onboarding and nav state with a single prepared-blob write", async () => {
+    const now = new Date("2026-02-21T00:00:00.000Z");
+
+    const { KaiProfileService } = await import("../../lib/services/kai-profile-service");
+    await KaiProfileService.syncOnboardingAndNavState({
+      userId: "user_sync",
+      vaultKey: "vault_sync",
+      vaultOwnerToken: "token_sync",
+      now,
+      onboarding: {
+        completed: true,
+        skippedPreferences: false,
+        completedAt: now.toISOString(),
+        answers: {
+          investment_horizon: "long_term",
+          drawdown_response: "buy_more",
+          volatility_preference: "large",
+        },
+      },
+      navTour: {
+        completedAt: "2026-02-20T00:00:00.000Z",
+        skippedAt: null,
+      },
+    });
+
+    expect(storeMergedDomainWithPreparedBlobMock).toHaveBeenCalledTimes(1);
+    expect(storeMergedDomainMock).not.toHaveBeenCalled();
+    expect(storeMergedDomainWithPreparedBlobMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: "user_sync",
+        vaultKey: "vault_sync",
+        domain: "financial",
+        summary: expect.objectContaining({
+          profile_completed: true,
+          nav_tour_completed: true,
+        }),
+      })
+    );
   });
 });
 
