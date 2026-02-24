@@ -630,4 +630,116 @@ export class KaiProfileService {
 
     return next;
   }
+
+  static async syncOnboardingAndNavState(params: {
+    userId: string;
+    vaultKey: string;
+    vaultOwnerToken?: string;
+    onboarding?: {
+      completed: boolean;
+      skippedPreferences: boolean;
+      completedAt?: string | null;
+      answers?: {
+        investment_horizon: InvestmentHorizon | null;
+        drawdown_response: DrawdownResponse | null;
+        volatility_preference: VolatilityPreference | null;
+      };
+    };
+    navTour?: {
+      completedAt?: string | null;
+      skippedAt?: string | null;
+    };
+    now?: Date;
+  }): Promise<KaiProfileV2> {
+    const iso = nowIso(params.now);
+    const fullBlob: Record<string, unknown> = await getFullBlob(params).catch(() => ({}));
+    const current = selectProfile(fullBlob);
+
+    const next: KaiProfileV2 = {
+      ...current,
+      schema_version: SCHEMA_VERSION,
+      onboarding: {
+        ...current.onboarding,
+        version: 2,
+      },
+      preferences: { ...current.preferences },
+      updated_at: iso,
+    };
+
+    if (params.onboarding) {
+      const onboardingCompletedAt =
+        params.onboarding.completedAt !== undefined
+          ? params.onboarding.completedAt
+          : params.onboarding.completed
+            ? current.onboarding.completed_at ?? iso
+            : null;
+
+      next.onboarding = {
+        ...next.onboarding,
+        completed: params.onboarding.completed,
+        completed_at: onboardingCompletedAt,
+        skipped_preferences: params.onboarding.skippedPreferences,
+        version: 2,
+      };
+
+      const answers = params.onboarding.answers;
+      if (answers) {
+        if (answers.investment_horizon !== next.preferences.investment_horizon) {
+          next.preferences.investment_horizon = answers.investment_horizon;
+          next.preferences.investment_horizon_selected_at = iso;
+          next.preferences.investment_horizon_anchor_at =
+            next.preferences.investment_horizon_anchor_at ?? iso;
+        }
+        if (answers.drawdown_response !== next.preferences.drawdown_response) {
+          next.preferences.drawdown_response = answers.drawdown_response;
+          next.preferences.drawdown_response_selected_at = iso;
+        }
+        if (answers.volatility_preference !== next.preferences.volatility_preference) {
+          next.preferences.volatility_preference = answers.volatility_preference;
+          next.preferences.volatility_preference_selected_at = iso;
+        }
+        next.preferences = recomputeDerived(next.preferences, iso);
+      }
+    }
+
+    if (params.navTour) {
+      next.onboarding = {
+        ...next.onboarding,
+        nav_tour_completed_at:
+          params.navTour.completedAt !== undefined
+            ? params.navTour.completedAt
+            : next.onboarding.nav_tour_completed_at,
+        nav_tour_skipped_at:
+          params.navTour.skippedAt !== undefined
+            ? params.navTour.skippedAt
+            : next.onboarding.nav_tour_skipped_at,
+      };
+    }
+
+    const financialDomain = buildFinancialProfileDomain({
+      fullBlob,
+      profile: next,
+      updatedAtIso: iso,
+    });
+
+    const result = await WorldModelService.storeMergedDomainWithPreparedBlob({
+      userId: params.userId,
+      vaultKey: params.vaultKey,
+      domain: FINANCIAL_DOMAIN,
+      domainData: financialDomain,
+      summary: {
+        ...buildProfileSummary(next),
+        nav_tour_completed: Boolean(next.onboarding.nav_tour_completed_at),
+      },
+      baseFullBlob: fullBlob,
+      vaultOwnerToken: params.vaultOwnerToken,
+    });
+
+    if (!result.success) {
+      throw new Error("Failed to persist combined financial.profile sync state");
+    }
+
+    CacheService.getInstance().set(CACHE_KEYS.KAI_PROFILE(params.userId), next, CACHE_TTL.SESSION);
+    return next;
+  }
 }

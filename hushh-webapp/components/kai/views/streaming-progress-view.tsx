@@ -392,22 +392,11 @@ export function StreamingProgressView({
           text={reasoningText}
           isStreaming={!disableStreaming && isActive} // Disable streaming animation if requested
           isComplete={isComplete}
+          autoCollapseOnComplete={false}
           icon={isComplete ? "brain" : "spinner"}
           className="border-primary/5 bg-primary/5"
           defaultExpanded={compactMode || isActive}
         />
-      )}
-
-      {/* Main Output / Insight - Only show final summary when complete */}
-      {!compactMode && isComplete && streamedText && (
-        <div
-          className={cn(
-            "rounded-md border p-2.5 text-xs leading-relaxed",
-            "bg-emerald-500/5 border-emerald-500/20 text-foreground"
-          )}
-        >
-          {streamedText}
-        </div>
       )}
 
       {/* KPI Section */}

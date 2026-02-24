@@ -10,7 +10,7 @@
 
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, RefreshCw, Clock } from "lucide-react";
 import { Card, CardContent } from "@/lib/morphy-ux/card";
 import { Button } from "@/lib/morphy-ux/button";
@@ -19,7 +19,13 @@ import { DecisionCard, type DecisionResult } from "./decision-card";
 import { RoundTabsCard } from "./round-tabs-card";
 import type { AgentState } from "../debate-stream-view";
 import type { AnalysisHistoryEntry } from "@/lib/services/kai-history-service";
-import { useState } from "react";
+import {
+  fetchLatestMarketSnapshot,
+  getLatestMarketSnapshotFromCache,
+  pickPreferredMarketSnapshot,
+  type TickerMarketSnapshot,
+} from "@/lib/kai/market-snapshot";
+import { cn } from "@/lib/utils";
 
 // ============================================================================
 // PROPS
@@ -27,8 +33,12 @@ import { useState } from "react";
 
 interface HistoryDetailViewProps {
   entry: AnalysisHistoryEntry;
-  onBack: () => void;
-  onReanalyze: (ticker: string) => void;
+  onBack?: () => void;
+  onReanalyze?: (ticker: string) => void;
+  embedded?: boolean;
+  userId?: string;
+  vaultOwnerToken?: string;
+  showHeader?: boolean;
 }
 
 // ============================================================================
@@ -63,6 +73,15 @@ function getDecisionColor(decision: string): string {
   }
 }
 
+function formatCurrency(value: number | null): string {
+  if (value === null) return "Price unavailable";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
 // ============================================================================
 // COMPONENT
 // ============================================================================
@@ -71,6 +90,10 @@ export function HistoryDetailView({
   entry,
   onBack,
   onReanalyze,
+  embedded = false,
+  userId,
+  vaultOwnerToken,
+  showHeader = true,
 }: HistoryDetailViewProps) {
   // State for collapsible transcript rounds
   const [collapsedRounds, setCollapsedRounds] = useState<Record<number, boolean>>({ 1: true, 2: true });
@@ -86,15 +109,94 @@ export function HistoryDetailView({
       consensus_reached: entry.consensus_reached,
       final_statement: entry.final_statement,
       agent_votes: entry.agent_votes,
-      // Spread raw_card for enriched data (fundamental_summary, etc.)
-      ...rawCard,
+      raw_card: rawCard,
+      short_recommendation:
+        typeof rawCard.short_recommendation === "string"
+          ? rawCard.short_recommendation
+          : undefined,
+      analysis_degraded: Boolean(rawCard.analysis_degraded),
+      degraded_agents: Array.isArray(rawCard.degraded_agents)
+        ? rawCard.degraded_agents.map((value) => String(value))
+        : undefined,
     };
   }, [entry]);
+
+  const [marketSnapshot, setMarketSnapshot] = useState<TickerMarketSnapshot | null>(null);
+
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+
+    const cached = getLatestMarketSnapshotFromCache(userId, entry.ticker);
+    if (!cancelled) {
+      setMarketSnapshot((prev) => pickPreferredMarketSnapshot(prev, cached));
+    }
+
+    if (!vaultOwnerToken) return () => {
+      cancelled = true;
+    };
+
+    void (async () => {
+      try {
+        const live = await fetchLatestMarketSnapshot({
+          userId,
+          ticker: entry.ticker,
+          vaultOwnerToken,
+          daysBack: 7,
+        });
+        if (!cancelled) {
+          setMarketSnapshot((prev) => pickPreferredMarketSnapshot(prev, live));
+        }
+      } catch {
+        // keep best-known quote
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [entry.ticker, userId, vaultOwnerToken]);
+
+  const priceLabel = formatCurrency(marketSnapshot?.last_price ?? null);
+  const todayChangePct = marketSnapshot?.change_pct ?? null;
+
+  if (embedded) {
+    return (
+      <div className="px-4 pb-safe max-w-2xl mx-auto w-full space-y-4">
+        {showHeader ? (
+          <Card variant="none" effect="glass" className="rounded-2xl">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <h2 className="text-2xl font-black tracking-tight">{entry.ticker}</h2>
+                <span className="text-sm font-semibold tabular-nums text-muted-foreground">{priceLabel}</span>
+                {todayChangePct !== null ? (
+                  <span
+                    className={cn(
+                      "rounded px-1.5 py-0.5 text-xs font-semibold",
+                      todayChangePct >= 0
+                        ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                        : "bg-rose-500/10 text-rose-600 dark:text-rose-400"
+                    )}
+                  >
+                    Today {todayChangePct >= 0 ? "+" : ""}
+                    {todayChangePct.toFixed(2)}%
+                  </span>
+                ) : (
+                  <span className="text-xs text-muted-foreground">Today's status unavailable</span>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
+        <DecisionCard result={decisionResult} />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full bg-transparent relative">
       {/* Header - Masked gradient + sticky nav */}
-      <div className="flex-none sticky top-0 z-10 overflow-hidden mb-4">
+      <div className="flex-none overflow-hidden mb-4">
         {/* Root layout owns the app gradient; keep header readable with a subtle surface only. */}
         <div className="absolute inset-0 backdrop-blur-md bg-background/40" />
 
@@ -108,6 +210,7 @@ export function HistoryDetailView({
                 onClick={onBack}
                 aria-label="Back to history"
                 className="rounded-full hover:bg-background/20"
+                disabled={!onBack}
               >
                 <Icon icon={ArrowLeft} size="sm" />
             </Button>
@@ -129,6 +232,24 @@ export function HistoryDetailView({
                 <h1 className="text-2xl font-black tracking-tighter text-foreground leading-none">
                   {entry.ticker}
                 </h1>
+                <div className="mt-1 flex items-center gap-2">
+                  <span className="text-sm font-semibold tabular-nums text-muted-foreground">{priceLabel}</span>
+                  {todayChangePct !== null ? (
+                    <span
+                      className={cn(
+                        "rounded px-1.5 py-0.5 text-xs font-semibold",
+                        todayChangePct >= 0
+                          ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                          : "bg-rose-500/10 text-rose-600 dark:text-rose-400"
+                      )}
+                    >
+                      Today {todayChangePct >= 0 ? "+" : ""}
+                      {todayChangePct.toFixed(2)}%
+                    </span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">Today's status unavailable</span>
+                  )}
+                </div>
                 <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground mt-1">
                    <Icon icon={Clock} size={12} className="shrink-0" />
                    <span>{formatTimestamp(entry.timestamp)}</span>
@@ -138,8 +259,9 @@ export function HistoryDetailView({
                <Button
                 variant="gradient"
                 size="sm"
-                onClick={() => onReanalyze(entry.ticker)}
+                onClick={() => onReanalyze?.(entry.ticker)}
                 className="h-8 text-xs"
+                disabled={!onReanalyze}
               >
                 <Icon icon={RefreshCw} size={12} className="mr-1.5" />
                 Re-analyze

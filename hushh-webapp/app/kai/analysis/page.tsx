@@ -2,26 +2,39 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { ArrowLeft, X } from "lucide-react";
 
-import { DebateStreamView } from "@/components/kai/debate-stream-view";
+import { DebateStreamView, type AgentState } from "@/components/kai/debate-stream-view";
 import { HushhLoader } from "@/components/app-ui/hushh-loader";
 import { AnalysisHistoryDashboard } from "@/components/kai/views/analysis-history-dashboard";
 import { AnalysisSummaryView } from "@/components/kai/views/analysis-summary-view";
 import { HistoryDetailView } from "@/components/kai/views/history-detail-view";
 import { Button } from "@/lib/morphy-ux/button";
+import { Icon } from "@/lib/morphy-ux/ui";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { KaiHistoryService, type AnalysisHistoryEntry } from "@/lib/services/kai-history-service";
 import { useKaiSession } from "@/lib/stores/kai-session-store";
 import { useVault } from "@/lib/vault/vault-context";
+import { RoundTabsCard } from "@/components/kai/views/round-tabs-card";
+import {
+  fetchLatestMarketSnapshot,
+  getLatestMarketSnapshotFromCache,
+  pickPreferredMarketSnapshot,
+  type TickerMarketSnapshot,
+} from "@/lib/kai/market-snapshot";
+import { cn } from "@/lib/utils";
 
 const ANALYSIS_INTENT_FRESH_MS = 15_000;
-const ANALYSIS_TABS = ["history", "summary", "debate"] as const;
-type AnalysisTab = (typeof ANALYSIS_TABS)[number];
+type WorkspaceTab = "debate" | "summary" | "detailed";
 
-function normalizeAnalysisTab(raw: string | null, hasDebateId: boolean): AnalysisTab {
-  if (raw === "summary" || raw === "debate" || raw === "history") return raw;
-  if (hasDebateId) return "summary";
-  return "history";
+function formatCurrency(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return "Price unavailable";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 2,
+  }).format(value);
 }
 
 function extractDebateId(entry: AnalysisHistoryEntry | null): string | null {
@@ -35,8 +48,48 @@ function extractDebateId(entry: AnalysisHistoryEntry | null): string | null {
   return null;
 }
 
+function HistoryDebateReplay({ entry }: { entry: AnalysisHistoryEntry }) {
+  const [collapsedRounds, setCollapsedRounds] = useState<Record<number, boolean>>({
+    1: true,
+    2: false,
+  });
+
+  if (!entry.debate_transcript) {
+    return (
+      <div className="mx-auto max-w-2xl rounded-2xl border border-dashed border-border/60 bg-background/80 p-4 text-sm text-muted-foreground">
+        Debate transcript unavailable for this run.
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-2xl space-y-4 px-4 pb-safe">
+      <RoundTabsCard
+        roundNumber={1}
+        title="Initial Deep Analysis"
+        description="Agents analyzed raw data independently."
+        isCollapsed={collapsedRounds[1] ?? true}
+        onToggleCollapse={() => setCollapsedRounds((prev) => ({ ...prev, 1: !prev[1] }))}
+        agentStates={entry.debate_transcript.round1 as Record<string, AgentState>}
+      />
+      {entry.debate_transcript.round2 &&
+      Object.keys(entry.debate_transcript.round2).length > 0 ? (
+        <RoundTabsCard
+          roundNumber={2}
+          title="Strategic Debate"
+          description="Agents challenged and refined positions."
+          isCollapsed={collapsedRounds[2] ?? false}
+          onToggleCollapse={() => setCollapsedRounds((prev) => ({ ...prev, 2: !prev[2] }))}
+          agentStates={entry.debate_transcript.round2 as Record<string, AgentState>}
+        />
+      ) : null}
+    </div>
+  );
+}
+
 export default function KaiAnalysisPage() {
   const pageOpenedAtRef = useRef(Date.now());
+  const workspaceTopRef = useRef<HTMLDivElement | null>(null);
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -50,13 +103,12 @@ export default function KaiAnalysisPage() {
   const setBusyOperation = useKaiSession((s) => s.setBusyOperation);
 
   const debateId = searchParams.get("debate_id");
-  const activeTab = useMemo(
-    () => normalizeAnalysisTab(searchParams.get("tab"), Boolean(debateId)),
-    [debateId, searchParams]
-  );
 
   const [resolvedEntry, setResolvedEntry] = useState<AnalysisHistoryEntry | null>(null);
   const [resolvingEntry, setResolvingEntry] = useState(false);
+  const [liveEntry, setLiveEntry] = useState<AnalysisHistoryEntry | null>(null);
+  const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>("debate");
+  const [headerSnapshot, setHeaderSnapshot] = useState<TickerMarketSnapshot | null>(null);
 
   const hasFreshAnalysisIntent =
     Boolean(analysisParams) &&
@@ -68,27 +120,25 @@ export default function KaiAnalysisPage() {
     Boolean(analysisParams?.userId) &&
     analysisParams?.userId !== "__pending__";
 
-  const setRouteState = useCallback(
-    (tab: AnalysisTab, nextDebateId?: string | null) => {
-      const params = new URLSearchParams(searchParams.toString());
-      params.set("tab", tab);
+  const setDebateIdParam = useCallback(
+    (nextDebateId?: string | null) => {
+      const params = new URLSearchParams();
       if (nextDebateId) {
         params.set("debate_id", nextDebateId);
-      } else {
-        params.delete("debate_id");
       }
-      router.replace(`/kai/analysis?${params.toString()}`);
+      const query = params.toString();
+      router.replace(query ? `/kai/analysis?${query}` : "/kai/analysis");
     },
-    [router, searchParams]
+    [router]
   );
 
   useEffect(() => {
-    const rawTab = searchParams.get("tab");
-    const normalized = normalizeAnalysisTab(rawTab, Boolean(debateId));
-    if (rawTab !== normalized) {
-      setRouteState(normalized, debateId);
-    }
-  }, [debateId, searchParams, setRouteState]);
+    if (!searchParams.has("tab")) return;
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("tab");
+    const query = params.toString();
+    router.replace(query ? `/kai/analysis?${query}` : "/kai/analysis");
+  }, [router, searchParams]);
 
   useEffect(() => {
     if (!analysisParams) return;
@@ -115,6 +165,16 @@ export default function KaiAnalysisPage() {
       setBusyOperation("stock_analysis_active", false);
     };
   }, [liveIntentReady, setBusyOperation]);
+
+  useEffect(() => {
+    if (liveIntentReady) {
+      setWorkspaceTab("debate");
+      return;
+    }
+    if (resolvedEntry) {
+      setWorkspaceTab("summary");
+    }
+  }, [liveIntentReady, resolvedEntry]);
 
   useEffect(() => {
     if (!debateId || !userId || !vaultKey) {
@@ -159,54 +219,114 @@ export default function KaiAnalysisPage() {
     (ticker: string) => {
       if (!userId) return;
       setResolvedEntry(null);
+      setLiveEntry(null);
       setAnalysisParams({
         ticker,
         userId,
         riskProfile: "balanced",
       });
-      setRouteState("debate", null);
+      setWorkspaceTab("debate");
+      setDebateIdParam(null);
     },
-    [setAnalysisParams, setRouteState, userId]
+    [setAnalysisParams, setDebateIdParam, userId]
   );
 
   const handleViewHistory = useCallback(
     (entry: AnalysisHistoryEntry) => {
       setAnalysisParams(null);
+      setLiveEntry(null);
       setResolvedEntry(entry);
-      setRouteState("summary", extractDebateId(entry));
+      setWorkspaceTab("summary");
+      setDebateIdParam(extractDebateId(entry));
     },
-    [setAnalysisParams, setRouteState]
+    [setAnalysisParams, setDebateIdParam]
   );
 
   const handleCloseLiveDebate = useCallback(() => {
     setAnalysisParams(null);
-    setRouteState("history", null);
-  }, [setAnalysisParams, setRouteState]);
+    setLiveEntry(null);
+    setDebateIdParam(null);
+  }, [setAnalysisParams, setDebateIdParam]);
 
   const handleBackToHistory = useCallback(() => {
     setAnalysisParams(null);
+    setLiveEntry(null);
     setResolvedEntry(null);
-    setRouteState("history", null);
-  }, [setAnalysisParams, setRouteState]);
+    setDebateIdParam(null);
+  }, [setAnalysisParams, setDebateIdParam]);
 
   const handleReanalyze = useCallback(
     (ticker: string) => {
       if (!userId) return;
       setResolvedEntry(null);
+      setLiveEntry(null);
       setAnalysisParams({
         ticker,
         userId,
         riskProfile: "balanced",
       });
-      setRouteState("debate", null);
+      setWorkspaceTab("debate");
+      setDebateIdParam(null);
     },
-    [setAnalysisParams, setRouteState, userId]
+    [setAnalysisParams, setDebateIdParam, userId]
   );
 
-  const handleOpenDetailedDebate = useCallback(() => {
-    if (!resolvedEntry) return;
-    setRouteState("debate", extractDebateId(resolvedEntry));
-  }, [resolvedEntry, setRouteState]);
+  const handleWorkspaceTabChange = useCallback((value: string) => {
+    setWorkspaceTab(value as WorkspaceTab);
+    requestAnimationFrame(() => {
+      workspaceTopRef.current?.scrollIntoView({ block: "start", behavior: "auto" });
+    });
+  }, []);
+
+  const activeEntry = liveIntentReady ? liveEntry : resolvedEntry;
+  const showWorkspace = Boolean(liveIntentReady || resolvedEntry);
+  const activeTicker = useMemo(() => {
+    if (liveIntentReady && analysisParams?.ticker) {
+      return String(analysisParams.ticker).trim().toUpperCase();
+    }
+    return activeEntry?.ticker ? String(activeEntry.ticker).trim().toUpperCase() : "";
+  }, [activeEntry?.ticker, analysisParams?.ticker, liveIntentReady]);
+  const headerPriceLabel = formatCurrency(headerSnapshot?.last_price ?? null);
+  const headerChangePct = headerSnapshot?.change_pct ?? null;
+
+  useEffect(() => {
+    if (!showWorkspace || !activeTicker || !userId) {
+      setHeaderSnapshot(null);
+      return;
+    }
+
+    let cancelled = false;
+    const cached = getLatestMarketSnapshotFromCache(userId, activeTicker);
+    if (!cancelled) {
+      setHeaderSnapshot((prev) => pickPreferredMarketSnapshot(prev, cached));
+    }
+
+    if (!vaultOwnerToken) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    void (async () => {
+      try {
+        const live = await fetchLatestMarketSnapshot({
+          userId,
+          ticker: activeTicker,
+          vaultOwnerToken,
+          daysBack: 7,
+        });
+        if (!cancelled) {
+          setHeaderSnapshot((prev) => pickPreferredMarketSnapshot(prev, live));
+        }
+      } catch {
+        // Keep best known cached value.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTicker, showWorkspace, userId, vaultOwnerToken]);
 
   if (!user || !userId || !vaultKey) {
     return (
@@ -218,50 +338,119 @@ export default function KaiAnalysisPage() {
 
   return (
     <div className="pt-4">
-      <div className="mx-auto mb-4 flex w-full max-w-4xl gap-1 px-4 sm:px-6">
-        {ANALYSIS_TABS.map((tab) => (
-          <Button
-            key={tab}
-            variant="none"
-            effect={activeTab === tab ? "fill" : "fade"}
-            size="sm"
-            className="rounded-full capitalize"
-            onClick={() => setRouteState(tab, tab === "history" ? null : debateId)}
-          >
-            {tab}
-          </Button>
-        ))}
-      </div>
-
-      {activeTab === "debate" && liveIntentReady && analysisParams ? (
-        <DebateStreamView
-          ticker={analysisParams.ticker}
-          userId={analysisParams.userId}
-          riskProfile={analysisParams.riskProfile}
-          vaultOwnerToken={vaultOwnerToken || ""}
-          vaultKey={vaultKey}
-          onClose={handleCloseLiveDebate}
-        />
-      ) : null}
-
-      {activeTab === "summary" && resolvedEntry ? (
-        <AnalysisSummaryView
-          entry={resolvedEntry}
-          onBack={handleBackToHistory}
-          onOpenDebate={handleOpenDetailedDebate}
-          onReanalyze={handleReanalyze}
-        />
-      ) : null}
-
-      {activeTab === "debate" && !liveIntentReady && resolvedEntry ? (
-        <HistoryDetailView
-          entry={resolvedEntry}
-          onBack={handleBackToHistory}
-          onReanalyze={handleReanalyze}
-        />
-      ) : null}
-
-      {(activeTab === "history" || (!resolvedEntry && !liveIntentReady && !resolvingEntry)) ? (
+      {showWorkspace ? (
+        <div ref={workspaceTopRef} className="mx-auto w-full max-w-6xl space-y-4 px-4 sm:px-6">
+          <div className="space-y-3">
+            <div className="flex items-center justify-start">
+              <Button variant="none" effect="fade" size="sm" onClick={handleBackToHistory}>
+                <Icon icon={ArrowLeft} size="sm" className="mr-1" />
+                Back to history
+              </Button>
+            </div>
+            <div className="rounded-2xl border border-border/60 bg-background/70 px-4 py-3 shadow-sm backdrop-blur-md">
+              <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+                <div />
+                <h1 className="justify-self-center text-3xl font-black tracking-tighter text-foreground">
+                  {activeTicker}
+                </h1>
+                <div className="justify-self-end flex items-center gap-2">
+                  <span className="text-sm font-semibold tabular-nums text-muted-foreground">
+                    {headerPriceLabel}
+                  </span>
+                  {headerChangePct !== null ? (
+                    <span
+                      className={cn(
+                        "rounded px-1.5 py-0.5 text-xs font-semibold tabular-nums",
+                        headerChangePct >= 0
+                          ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                          : "bg-rose-500/10 text-rose-600 dark:text-rose-400"
+                      )}
+                    >
+                      {headerChangePct >= 0 ? "+" : ""}
+                      {headerChangePct.toFixed(2)}%
+                    </span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">Today N/A</span>
+                  )}
+                </div>
+              </div>
+              {liveIntentReady ? (
+                <div className="mt-3 flex justify-end">
+                  <Button variant="none" effect="fade" size="sm" onClick={handleCloseLiveDebate}>
+                    <Icon icon={X} size="xs" className="mr-1" />
+                    Cancel
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+            <Tabs
+              value={workspaceTab}
+              onValueChange={handleWorkspaceTabChange}
+              className="w-full"
+            >
+              <div className="flex justify-center">
+                <TabsList className="mx-auto grid h-10 w-full max-w-md grid-cols-3">
+                  <TabsTrigger value="debate">Debate</TabsTrigger>
+                  <TabsTrigger value="summary">Summary</TabsTrigger>
+                  <TabsTrigger value="detailed">Detailed View</TabsTrigger>
+                </TabsList>
+              </div>
+              <TabsContent value="debate" className="mt-4 data-[state=inactive]:hidden" forceMount>
+                {liveIntentReady && analysisParams ? (
+                  <DebateStreamView
+                    ticker={analysisParams.ticker}
+                    userId={analysisParams.userId}
+                    riskProfile={analysisParams.riskProfile}
+                    vaultOwnerToken={vaultOwnerToken || ""}
+                    vaultKey={vaultKey}
+                    onClose={handleCloseLiveDebate}
+                    onDecisionSaved={setLiveEntry}
+                    showHeader={false}
+                  />
+                ) : activeEntry ? (
+                  <HistoryDebateReplay entry={activeEntry} />
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-border/60 bg-background/80 p-4 text-sm text-muted-foreground">
+                    Debate stream unavailable for this selection.
+                  </div>
+                )}
+              </TabsContent>
+              <TabsContent value="summary" className="mt-4">
+                {activeEntry ? (
+                  <AnalysisSummaryView
+                    entry={activeEntry}
+                    onReanalyze={handleReanalyze}
+                    embedded
+                    userId={userId}
+                    vaultOwnerToken={vaultOwnerToken || undefined}
+                    showHeader={false}
+                  />
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-border/60 bg-background/80 p-4 text-sm text-muted-foreground">
+                    Summary will appear after the first decision is produced.
+                  </div>
+                )}
+              </TabsContent>
+              <TabsContent value="detailed" className="mt-4">
+                {activeEntry ? (
+                  <HistoryDetailView
+                    entry={activeEntry}
+                    onReanalyze={handleReanalyze}
+                    embedded
+                    userId={userId}
+                    vaultOwnerToken={vaultOwnerToken || undefined}
+                    showHeader={false}
+                  />
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-border/60 bg-background/80 p-4 text-sm text-muted-foreground">
+                    Detailed view will appear after the first decision is produced.
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
+          </div>
+        </div>
+      ) : !resolvingEntry ? (
         <div className="pt-2">
           <AnalysisHistoryDashboard
             userId={userId}

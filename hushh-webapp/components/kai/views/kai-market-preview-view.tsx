@@ -399,39 +399,38 @@ export function KaiMarketPreviewView() {
 
           let fallbackPayload: KaiHomeInsightsV2 | null = null;
           const hasTrackedSymbols = trackedSymbols.length > 0;
-          if (!hasPayloadRef.current && !manual && hasTrackedSymbols) {
-            try {
-              fallbackPayload = await fetchInsightsWithRetry(undefined);
-              if (!controller.signal.aborted && fallbackPayload) {
-                setPayload(fallbackPayload);
-                hasPayloadRef.current = true;
-                cache.set(
-                  CACHE_KEYS.KAI_MARKET_HOME(user.uid, "default", 7),
-                  fallbackPayload,
-                  MARKET_HOME_CACHE_TTL_MS
-                );
-                if (sessionCacheKey && typeof window !== "undefined") {
-                  window.sessionStorage.setItem(
-                    sessionCacheKey,
-                    JSON.stringify({ payload: fallbackPayload, savedAt: Date.now() })
-                  );
-                }
-                setLoadingInitial(false);
-              }
-            } catch (defaultFetchError) {
-              if (defaultFetchError instanceof Error) {
-                console.warn(
-                  "[KaiMarketPreviewView] Default market cache-priority fetch failed:",
-                  defaultFetchError.message
-                );
-              }
-            }
-          }
-
           let nextPayload: KaiHomeInsightsV2;
           try {
             nextPayload = await fetchInsightsWithRetry(hasTrackedSymbols ? trackedSymbols : undefined);
           } catch (targetedFetchError) {
+            if (!hasPayloadRef.current && !manual && hasTrackedSymbols) {
+              try {
+                fallbackPayload = await fetchInsightsWithRetry(undefined);
+                if (!controller.signal.aborted && fallbackPayload) {
+                  setPayload(fallbackPayload);
+                  hasPayloadRef.current = true;
+                  cache.set(
+                    CACHE_KEYS.KAI_MARKET_HOME(user.uid, "default", 7),
+                    fallbackPayload,
+                    MARKET_HOME_CACHE_TTL_MS
+                  );
+                  if (sessionCacheKey && typeof window !== "undefined") {
+                    window.sessionStorage.setItem(
+                      sessionCacheKey,
+                      JSON.stringify({ payload: fallbackPayload, savedAt: Date.now() })
+                    );
+                  }
+                  setLoadingInitial(false);
+                }
+              } catch (defaultFetchError) {
+                if (defaultFetchError instanceof Error) {
+                  console.warn(
+                    "[KaiMarketPreviewView] Fallback default market fetch failed:",
+                    defaultFetchError.message
+                  );
+                }
+              }
+            }
             if (!fallbackPayload) {
               throw targetedFetchError;
             }

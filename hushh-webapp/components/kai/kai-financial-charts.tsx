@@ -113,10 +113,10 @@ export default function KaiFinancialCharts({ quantMetrics, keyMetrics }: KaiFina
                                 <stop offset="95%" stopColor="var(--chart-1)" stopOpacity={0.1} />
                             </linearGradient>
                         </defs>
-                        <CartesianGrid vertical={false} strokeDasharray="3 3" strokeOpacity={0.2} />
+                        <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.4} />
                         <XAxis dataKey="year" tickLine={false} axisLine={false} tickMargin={8} fontSize={10} />
                         <YAxis tickLine={false} axisLine={false} tickFormatter={(value) => `$${value}B`} fontSize={10} />
-                        <ChartTooltip content={<ChartTooltipContent />} />
+                        <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
                         <Area
                             dataKey="value"
                             type="monotone"
@@ -143,9 +143,9 @@ export default function KaiFinancialCharts({ quantMetrics, keyMetrics }: KaiFina
             <CardContent>
                 <ChartContainer config={netIncomeTrendConfig} className="h-[200px] w-full">
                     <BarChart data={quantMetrics.net_income_trend_data}>
-                         <CartesianGrid vertical={false} strokeDasharray="3 3" strokeOpacity={0.2} />
+                         <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.4} />
                          <XAxis dataKey="year" tickLine={false} axisLine={false} tickMargin={8} fontSize={10} />
-                         <ChartTooltip content={<ChartTooltipContent />} />
+                         <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
                          <Bar dataKey="value" fill="var(--chart-2)" radius={[4, 4, 0, 0]} />
                     </BarChart>
                 </ChartContainer>
@@ -168,10 +168,10 @@ export default function KaiFinancialCharts({ quantMetrics, keyMetrics }: KaiFina
                          ocf: d.value,
                          rnd: quantMetrics.rnd_trend_data[i]?.value || 0
                      }))}>
-                        <CartesianGrid vertical={false} strokeDasharray="3 3" strokeOpacity={0.2} />
+                        <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.4} />
                         <XAxis dataKey="year" fontSize={10} />
                         <YAxis fontSize={10} />
-                        <ChartTooltip content={<ChartTooltipContent />} />
+                        <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
                         <Legend />
                         <Bar dataKey="ocf" name="OCF" fill="var(--chart-3)" radius={[4, 4, 0, 0]} />
                         <Line type="monotone" dataKey="rnd" name="R&D" stroke="var(--chart-4)" strokeWidth={2} />

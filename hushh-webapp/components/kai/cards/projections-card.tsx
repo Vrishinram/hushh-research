@@ -273,7 +273,7 @@ export function ProjectionsCard({
                     tickFormatter={formatCurrencyCompact}
                     width={45}
                   />
-                  <Tooltip content={<CustomTooltip />} />
+                  <Tooltip cursor={false} content={<CustomTooltip />} />
                   <Bar dataKey="projected_income" radius={[4, 4, 0, 0]}>
                     {projections!.estimated_cash_flow!.map((entry, index) => (
                       <Cell

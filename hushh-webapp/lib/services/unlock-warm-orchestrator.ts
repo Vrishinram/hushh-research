@@ -202,6 +202,7 @@ export class UnlockWarmOrchestrator {
     };
     let symbols: string[] = [];
     let prewarmedFullBlob: Record<string, unknown> | null = null;
+    let financialHydrated = false;
 
     const syncPromise =
       shouldWarmFinancial || shouldWarmMetadata
@@ -239,24 +240,14 @@ export class UnlockWarmOrchestrator {
           vaultKey: params.vaultKey,
           vaultOwnerToken: params.vaultOwnerToken,
         });
-        const financialRaw = prewarmedFullBlob?.financial;
-        if (financialRaw && typeof financialRaw === "object" && !Array.isArray(financialRaw)) {
-          const financial = financialRaw as Record<string, unknown>;
-          const normalized = normalizeStoredPortfolio(financial);
-          CacheSyncService.onPortfolioUpserted(params.userId, normalized, {
-            invalidateMetadata: false,
-          });
-          result.financialWarmed = true;
-          symbols = deriveTrackedSymbols(normalized as Record<string, unknown>);
-          const profileCandidate = financial.profile;
-          if (
-            profileCandidate &&
-            typeof profileCandidate === "object" &&
-            !Array.isArray(profileCandidate)
-          ) {
-            cache.set(CACHE_KEYS.KAI_PROFILE(params.userId), profileCandidate, WARM_CACHE_TTL_MS);
-          }
-        }
+        const hydrated = this.hydrateFinancialCaches({
+          cache,
+          userId: params.userId,
+          fullBlob: prewarmedFullBlob,
+        });
+        financialHydrated = hydrated.financialWarmed;
+        result.financialWarmed = hydrated.financialWarmed;
+        symbols = hydrated.symbols;
       } catch (error) {
         console.warn("[UnlockWarmOrchestrator] Priority financial warm-up failed:", error);
       }
@@ -265,17 +256,23 @@ export class UnlockWarmOrchestrator {
     if (warmPriority === "market" && shouldWarmMarket && !result.kaiMarketWarmed) {
       try {
         const symbolsKey = toSymbolsKey(symbols);
-        const kaiHome = await ApiService.getKaiMarketInsights({
-          userId: params.userId,
-          vaultOwnerToken: params.vaultOwnerToken,
-          symbols: symbols.length > 0 ? symbols : undefined,
-          daysBack: 7,
-        });
-        cache.set(CACHE_KEYS.KAI_MARKET_HOME(params.userId, symbolsKey, 7), kaiHome, WARM_CACHE_TTL_MS);
-        if (symbols.length === 0) {
-          cache.set(CACHE_KEYS.KAI_MARKET_HOME(params.userId, "default", 7), kaiHome, WARM_CACHE_TTL_MS);
+        const cacheKey = CACHE_KEYS.KAI_MARKET_HOME(params.userId, symbolsKey, 7);
+        const cached = cache.get(cacheKey);
+        if (cached) {
+          result.kaiMarketWarmed = true;
+        } else {
+          const kaiHome = await ApiService.getKaiMarketInsights({
+            userId: params.userId,
+            vaultOwnerToken: params.vaultOwnerToken,
+            symbols: symbols.length > 0 ? symbols : undefined,
+            daysBack: 7,
+          });
+          cache.set(cacheKey, kaiHome, WARM_CACHE_TTL_MS);
+          if (symbols.length === 0) {
+            cache.set(CACHE_KEYS.KAI_MARKET_HOME(params.userId, "default", 7), kaiHome, WARM_CACHE_TTL_MS);
+          }
+          result.kaiMarketWarmed = true;
         }
-        result.kaiMarketWarmed = true;
       } catch (error) {
         console.warn("[UnlockWarmOrchestrator] Priority market warm-up failed:", error);
       }
@@ -373,26 +370,19 @@ export class UnlockWarmOrchestrator {
       result.consentsWarmed = true;
     }
 
-    if (shouldWarmFinancial && fullBlobResult.status === "fulfilled" && fullBlobResult.value) {
-      const fullBlob = fullBlobResult.value;
-      const financialRaw = fullBlob?.financial;
-      if (financialRaw && typeof financialRaw === "object" && !Array.isArray(financialRaw)) {
-        const financial = financialRaw as Record<string, unknown>;
-        const normalized = normalizeStoredPortfolio(financial);
-        CacheSyncService.onPortfolioUpserted(params.userId, normalized, {
-          invalidateMetadata: false,
-        });
-        result.financialWarmed = true;
-        symbols = deriveTrackedSymbols(normalized as Record<string, unknown>);
-        const profileCandidate = financial.profile;
-        if (
-          profileCandidate &&
-          typeof profileCandidate === "object" &&
-          !Array.isArray(profileCandidate)
-        ) {
-          cache.set(CACHE_KEYS.KAI_PROFILE(params.userId), profileCandidate, WARM_CACHE_TTL_MS);
-        }
-      }
+    if (
+      shouldWarmFinancial &&
+      !financialHydrated &&
+      fullBlobResult.status === "fulfilled" &&
+      fullBlobResult.value
+    ) {
+      const hydrated = this.hydrateFinancialCaches({
+        cache,
+        userId: params.userId,
+        fullBlob: fullBlobResult.value,
+      });
+      result.financialWarmed = hydrated.financialWarmed;
+      symbols = hydrated.symbols;
     }
 
     if (shouldWarmDashboardPicks) {
@@ -423,6 +413,12 @@ export class UnlockWarmOrchestrator {
 
     if (shouldWarmMarket && (!result.kaiMarketWarmed || symbols.length > 0)) {
       const symbolsKey = toSymbolsKey(symbols);
+      const cacheKey = CACHE_KEYS.KAI_MARKET_HOME(params.userId, symbolsKey, 7);
+      const cached = cache.get(cacheKey);
+      if (cached) {
+        result.kaiMarketWarmed = true;
+        return result;
+      }
       try {
         const kaiHome = await ApiService.getKaiMarketInsights({
           userId: params.userId,
@@ -430,7 +426,7 @@ export class UnlockWarmOrchestrator {
           symbols: symbols.length > 0 ? symbols : undefined,
           daysBack: 7,
         });
-        cache.set(CACHE_KEYS.KAI_MARKET_HOME(params.userId, symbolsKey, 7), kaiHome, WARM_CACHE_TTL_MS);
+        cache.set(cacheKey, kaiHome, WARM_CACHE_TTL_MS);
         if (symbols.length === 0) {
           cache.set(CACHE_KEYS.KAI_MARKET_HOME(params.userId, "default", 7), kaiHome, WARM_CACHE_TTL_MS);
         }
@@ -441,5 +437,36 @@ export class UnlockWarmOrchestrator {
     }
 
     return result;
+  }
+
+  private static hydrateFinancialCaches(params: {
+    cache: CacheService;
+    userId: string;
+    fullBlob: Record<string, unknown> | null;
+  }): { financialWarmed: boolean; symbols: string[] } {
+    const financialRaw = params.fullBlob?.financial;
+    if (!financialRaw || typeof financialRaw !== "object" || Array.isArray(financialRaw)) {
+      return { financialWarmed: false, symbols: [] };
+    }
+
+    const financial = financialRaw as Record<string, unknown>;
+    const normalized = normalizeStoredPortfolio(financial);
+    CacheSyncService.onPortfolioUpserted(params.userId, normalized, {
+      invalidateMetadata: false,
+    });
+
+    const profileCandidate = financial.profile;
+    if (
+      profileCandidate &&
+      typeof profileCandidate === "object" &&
+      !Array.isArray(profileCandidate)
+    ) {
+      params.cache.set(CACHE_KEYS.KAI_PROFILE(params.userId), profileCandidate, WARM_CACHE_TTL_MS);
+    }
+
+    return {
+      financialWarmed: true,
+      symbols: deriveTrackedSymbols(normalized as Record<string, unknown>),
+    };
   }
 }

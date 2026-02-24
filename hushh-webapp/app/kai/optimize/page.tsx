@@ -883,7 +883,7 @@ export default function PortfolioHealthPage() {
                 <div className="h-64 w-full">
                   <ChartContainer config={chartConfig} className="h-full w-full">
                     <BarChart data={sectorData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} strokeOpacity={0.1} />
+                      <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.4} />
                       <XAxis 
                         dataKey="sector" 
                         axisLine={false} 
@@ -897,6 +897,7 @@ export default function PortfolioHealthPage() {
                         unit="%"
                       />
                       <ChartTooltip
+                        cursor={false}
                         content={
                           <ChartTooltipContent
                             formatter={(value, name, _item, _index, payload) => {

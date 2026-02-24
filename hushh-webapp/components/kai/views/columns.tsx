@@ -93,26 +93,26 @@ export const getColumns = ({
           </DropdownMenuTrigger>
             <DropdownMenuContent align="start">
             <DropdownMenuLabel>Actions</DropdownMenuLabel>
-            <DropdownMenuItem onClick={() => onView(entry)}>
+            <DropdownMenuItem onSelect={() => onView(entry)}>
               <Icon icon={Eye} size="sm" className="mr-2" />
               View Analysis
             </DropdownMenuItem>
             {onViewVersions && (
-              <DropdownMenuItem onClick={() => onViewVersions(entry.ticker)}>
+              <DropdownMenuItem onSelect={() => onViewVersions(entry.ticker)}>
                 <Icon icon={ArrowRight} size="sm" className="mr-2" />
                 View Previous Versions
               </DropdownMenuItem>
             )}
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              onClick={() => onDelete(entry)}
+              onSelect={() => onDelete(entry)}
               className="text-red-600 dark:text-red-400 focus:text-red-600 focus:bg-red-500/10"
             >
               <Icon icon={Trash2} size="sm" className="mr-2" />
               Delete Entry
             </DropdownMenuItem>
             <DropdownMenuItem
-              onClick={() => onDeleteTicker(entry.ticker)}
+              onSelect={() => onDeleteTicker(entry.ticker)}
               className="text-red-600 dark:text-red-400 focus:text-red-600 focus:bg-red-500/10"
             >
               <Icon icon={Trash2} size="sm" className="mr-2" />

@@ -17,6 +17,7 @@ interface KaiSearchBarProps {
   portfolioTickers?: Array<{
     symbol: string;
     name?: string;
+    sector?: string;
     asset_type?: string;
     is_investable?: boolean;
     analyze_eligible?: boolean;
@@ -66,7 +67,7 @@ export function KaiSearchBar({
               onClick={() => setOpen(true)}
             >
               <Icon icon={Search} size="sm" className="mr-2 text-muted-foreground" />
-              Analyze, optimize, manage with Kai
+              Analyze, dashboard, consent with Kai
             </Button>
             <button
               type="button"

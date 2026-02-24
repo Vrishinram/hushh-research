@@ -189,7 +189,7 @@ export function RoundTabsCard({
       {!isCollapsed && (
         <CardContent className="p-3 pt-1">
           <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full">
-            <TabsList className="grid w-full grid-cols-3 mb-4 h-auto">
+            <TabsList className="mb-4 grid h-10 w-full grid-cols-3 gap-1 bg-muted/80 p-1">
               {AGENT_ORDER.map((agent) => {
                 const config = AGENT_CONFIG[agent];
                 const state = agentStates[agent];
@@ -202,21 +202,23 @@ export function RoundTabsCard({
                     key={agent}
                     value={agent}
                     className={cn(
-                      "text-xs sm:text-sm flex items-center gap-1.5 py-2 relative transition-all duration-200",
+                      "relative flex h-8 min-w-0 items-center justify-center gap-1.5 px-2 py-1 text-xs transition-all duration-200 sm:text-sm",
                       isAgentComplete && "data-[state=active]:text-emerald-600"
                     )}
                   >
                     {/* Completion/Active indicator */}
-                    {isAgentComplete ? (
-                      <Icon icon={CheckCircle2} size="xs" className="text-emerald-500 shrink-0" />
-                    ) : isAgentError ? (
-                      <Icon icon={AlertCircle} size="xs" className="text-red-500 shrink-0" />
-                    ) : isAgentActive ? (
-                      <span className="relative flex h-2 w-2 shrink-0">
-                        <span className={cn("animate-ping absolute inline-flex h-full w-full rounded-full opacity-75", config.bgDot)} />
-                        <span className={cn("relative inline-flex rounded-full h-2 w-2", config.bgDot)} />
-                      </span>
-                    ) : null}
+                    <span className="inline-flex h-3 w-3 shrink-0 items-center justify-center">
+                      {isAgentComplete ? (
+                        <Icon icon={CheckCircle2} size="xs" className="text-emerald-500" />
+                      ) : isAgentError ? (
+                        <Icon icon={AlertCircle} size="xs" className="text-red-500" />
+                      ) : isAgentActive ? (
+                        <span className="relative flex h-2 w-2">
+                          <span className={cn("animate-ping absolute inline-flex h-full w-full rounded-full opacity-75", config.bgDot)} />
+                          <span className={cn("relative inline-flex rounded-full h-2 w-2", config.bgDot)} />
+                        </span>
+                      ) : null}
+                    </span>
                     <span className="truncate">{config.label}</span>
                   </TabsTrigger>
                 );

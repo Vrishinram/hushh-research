@@ -11,12 +11,12 @@ import {
   TrendingDown,
   TrendingUp,
   Undo2,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 
 import { DataTable } from "@/components/app-ui/data-table";
 import { AssetAllocationDonut } from "@/components/kai/charts/asset-allocation-donut";
-import { DebateReadinessChart } from "@/components/kai/charts/debate-readiness-chart";
 import { GainLossDistributionChart } from "@/components/kai/charts/gain-loss-distribution-chart";
 import { HoldingsConcentrationChart } from "@/components/kai/charts/holdings-concentration-chart";
 import { PortfolioHistoryChart } from "@/components/kai/charts/portfolio-history-chart";
@@ -32,16 +32,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/lib/morphy-ux/card";
 import { Icon } from "@/lib/morphy-ux/ui";
 import { KAI_EXPERIENCE_CONTRACT } from "@/lib/kai/experience-contract";
 import { ROUTES } from "@/lib/navigation/routes";
-import { Badge } from "@/components/ui/badge";
-import {
-  Card as UiCard,
-  CardContent as UiCardContent,
-  CardDescription as UiCardDescription,
-  CardHeader as UiCardHeader,
-  CardTitle as UiCardTitle,
-} from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { WorldModelService } from "@/lib/services/world-model-service";
 import { cn } from "@/lib/utils";
 import { useVault } from "@/lib/vault/vault-context";
@@ -117,10 +118,6 @@ function formatCurrency(value: number): string {
 
 function formatPercent(value: number): string {
   return `${value.toFixed(1)}%`;
-}
-
-function formatSignedCurrency(value: number): string {
-  return `${value >= 0 ? "+" : ""}${formatCurrency(value)}`;
 }
 
 function DataQualityFallback({ title, detail }: { title: string; detail: string }) {
@@ -347,6 +344,8 @@ export function DashboardMasterView({
     return map;
   });
   const [isSavingHoldings, setIsSavingHoldings] = useState(false);
+  const [isDeletingImportedData, setIsDeletingImportedData] = useState(false);
+  const [deleteImportedDialogOpen, setDeleteImportedDialogOpen] = useState(false);
   const [editingHolding, setEditingHolding] = useState<ManagedHolding | null>(null);
   const [editingHoldingId, setEditingHoldingId] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -698,64 +697,6 @@ export function DashboardMasterView({
     [statementSnapshotRows]
   );
 
-  const debateCoverageRows = useMemo(
-    () => [
-      {
-        key: "ticker",
-        label: "Ticker",
-        value: Math.max(0, Math.min(100, model.canonicalModel.quality.tickerCoveragePct * 100)),
-        detail: "Holdings mapped to tradable symbols",
-      },
-      {
-        key: "sector",
-        label: "Sector",
-        value: Math.max(0, Math.min(100, equitySectorCoveragePct * 100)),
-        detail: "Equity positions with mapped sector labels",
-      },
-      {
-        key: "gain-loss",
-        label: "P/L",
-        value: Math.max(0, Math.min(100, model.quality.gainLossCoveragePct * 100)),
-        detail: "Positions with gain-loss percentages",
-      },
-      {
-        key: "investable",
-        label: "Investable",
-        value:
-          model.canonicalModel.counts.totalPositions > 0
-            ? Math.max(
-                0,
-                Math.min(
-                  100,
-                  (model.canonicalModel.counts.investablePositions /
-                    model.canonicalModel.counts.totalPositions) *
-                    100
-                )
-              )
-            : 0,
-        detail: "Positions eligible for debate/optimize flows",
-      },
-    ],
-    [equitySectorCoveragePct, model.canonicalModel.counts, model.canonicalModel.quality.tickerCoveragePct, model.quality.gainLossCoveragePct]
-  );
-
-  const debateReadinessScore = useMemo(() => {
-    if (debateCoverageRows.length === 0) return 0;
-    const total = debateCoverageRows.reduce((sum, row) => sum + row.value, 0);
-    return total / debateCoverageRows.length;
-  }, [debateCoverageRows]);
-
-  const debateExclusionSummary = useMemo(() => {
-    const reasonMap = new Map<string, number>();
-    for (const row of model.canonicalModel.debateContext.excludedPositions) {
-      const reason = row.reason || "unknown";
-      reasonMap.set(reason, (reasonMap.get(reason) || 0) + 1);
-    }
-    return Array.from(reasonMap.entries())
-      .map(([reason, count]) => ({ reason, count }))
-      .sort((a, b) => b.count - a.count);
-  }, [model.canonicalModel.debateContext.excludedPositions]);
-
   const closeHoldingModal = useCallback(() => {
     setIsModalOpen(false);
     setEditingHolding(null);
@@ -879,6 +820,162 @@ export function DashboardMasterView({
     }
   }, [activeHoldings, portfolioData, setCachePortfolioData, userId, vaultKey, vaultOwnerToken]);
 
+  const handleDeleteImportedData = useCallback(async () => {
+    if (!userId || !vaultKey) {
+      toast.error("Unlock your vault to delete imported data.");
+      return;
+    }
+
+    setIsDeletingImportedData(true);
+    try {
+      const nowIso = new Date().toISOString();
+      const baseFullBlob = await WorldModelService.loadFullBlob({
+        userId,
+        vaultKey,
+        vaultOwnerToken: vaultOwnerToken || undefined,
+      }).catch(() => ({} as Record<string, unknown>));
+
+      const existingFinancialRaw = baseFullBlob.financial;
+      const existingFinancial =
+        existingFinancialRaw &&
+        typeof existingFinancialRaw === "object" &&
+        !Array.isArray(existingFinancialRaw)
+          ? ({ ...(existingFinancialRaw as Record<string, unknown>) } as Record<string, unknown>)
+          : {};
+
+      const existingDocumentsRaw = existingFinancial.documents;
+      const existingDocuments =
+        existingDocumentsRaw &&
+        typeof existingDocumentsRaw === "object" &&
+        !Array.isArray(existingDocumentsRaw)
+          ? ({ ...(existingDocumentsRaw as Record<string, unknown>) } as Record<string, unknown>)
+          : {};
+
+      const clearedPortfolioData: PortfolioData = {
+        account_info: portfolioData.account_info,
+        account_summary: {
+          beginning_value: 0,
+          ending_value: 0,
+          change_in_value: 0,
+          cash_balance: 0,
+          equities_value: 0,
+        },
+        holdings: [],
+        transactions: [],
+        asset_allocation: {
+          cash_percent: 0,
+          equities_percent: 0,
+          bonds_percent: 0,
+          other_percent: 0,
+          cash_value: 0,
+          equities_value: 0,
+          bonds_value: 0,
+          other_value: 0,
+        },
+        income_summary: {
+          dividends_taxable: 0,
+          interest_income: 0,
+          total_income: 0,
+        },
+        realized_gain_loss: {
+          short_term_gain: 0,
+          long_term_gain: 0,
+          net_realized: 0,
+        },
+        cash_balance: 0,
+        total_value: 0,
+      };
+
+      const nextFinancialDomain = {
+        ...existingFinancial,
+        schema_version: 3,
+        domain_intent: {
+          primary: "financial",
+          source: "domain_registry_prepopulate",
+          contract_version: 2,
+          updated_at: nowIso,
+        },
+        portfolio: {
+          ...clearedPortfolioData,
+          domain_intent: {
+            primary: "financial",
+            secondary: "portfolio",
+            source: "kai_dashboard_delete_import",
+            captured_sections: ["account_info", "account_summary", "holdings", "documents"],
+            updated_at: nowIso,
+          },
+        },
+        documents: {
+          ...existingDocuments,
+          schema_version: 1,
+          statements: [],
+          documents_count: 0,
+          last_statement_end: null,
+          last_brokerage: null,
+          parse_fallback_last_import: null,
+          sparse_sections_last_import: [],
+          last_updated: nowIso,
+          domain_intent: {
+            primary: "financial",
+            secondary: "documents",
+            source: "kai_dashboard_delete_import",
+            updated_at: nowIso,
+          },
+        },
+        updated_at: nowIso,
+      };
+
+      const result = await WorldModelService.storeMergedDomainWithPreparedBlob({
+        userId,
+        vaultKey,
+        domain: "financial",
+        domainData: nextFinancialDomain as Record<string, unknown>,
+        summary: {
+          intent_source: "kai_dashboard_delete_import",
+          has_portfolio: false,
+          holdings_count: 0,
+          attribute_count: 0,
+          item_count: 0,
+          investable_positions_count: 0,
+          cash_positions_count: 0,
+          allocation_coverage_pct: 0,
+          parser_quality_score: 0,
+          last_statement_total_value: 0,
+          documents_count: 0,
+          last_statement_end: null,
+          last_brokerage: null,
+          parse_fallback_last_import: null,
+          sparse_sections_last_import: [],
+          domain_contract_version: 2,
+          intent_map: [...FINANCIAL_INTENT_MAP],
+          last_updated: nowIso,
+        },
+        baseFullBlob,
+        vaultOwnerToken: vaultOwnerToken || undefined,
+      });
+
+      if (!result.success) {
+        throw new Error("Failed to delete imported data");
+      }
+
+      setCachePortfolioData(userId, clearedPortfolioData as CachedPortfolioData);
+      CacheSyncService.onPortfolioUpserted(userId, clearedPortfolioData as CachedPortfolioData);
+      baselineBySourceRef.current = new Map();
+      setHoldingsDraft([]);
+      setDeleteImportedDialogOpen(false);
+      toast.success("Imported portfolio data deleted.");
+
+      if (typeof onReupload === "function") {
+        onReupload();
+      }
+    } catch (error) {
+      console.error("[DashboardMasterView] Failed to delete imported data:", error);
+      toast.error("Failed to delete imported data");
+    } finally {
+      setIsDeletingImportedData(false);
+    }
+  }, [onReupload, portfolioData.account_info, setCachePortfolioData, userId, vaultKey, vaultOwnerToken]);
+
   const handleEditHolding = useCallback(
     (holdingId: string) => {
       const row = holdingsDraft.find((holding) => holding.client_id === holdingId);
@@ -952,7 +1049,12 @@ export function DashboardMasterView({
               ? "Analyze Eligible"
               : "Non-Analyzable";
           return (
-            <div className={cn("min-w-0 max-w-[280px] lg:max-w-[340px]", deleted && "opacity-60")}>
+            <div
+              className={cn(
+                "min-w-0 max-w-[130px] sm:max-w-[280px] lg:max-w-[340px]",
+                deleted && "opacity-60"
+              )}
+            >
               <p className={cn("font-semibold", deleted && "line-through")}>
                 {holding.symbol || "—"}
               </p>
@@ -975,7 +1077,12 @@ export function DashboardMasterView({
         cell: ({ row }) => {
           const holding = row.original;
           return (
-            <span className={cn("text-sm", holding.pending_delete && "line-through text-muted-foreground")}>
+            <span
+              className={cn(
+                "text-xs sm:text-sm leading-tight",
+                holding.pending_delete && "line-through text-muted-foreground"
+              )}
+            >
               {Number(holding.quantity || 0).toLocaleString()} @ {formatCurrency(Number(holding.price || 0))}
             </span>
           );
@@ -987,7 +1094,12 @@ export function DashboardMasterView({
         cell: ({ row }) => {
           const holding = row.original;
           return (
-            <span className={cn("font-semibold", holding.pending_delete && "line-through text-muted-foreground")}>
+            <span
+              className={cn(
+                "font-semibold text-xs sm:text-sm leading-tight",
+                holding.pending_delete && "line-through text-muted-foreground"
+              )}
+            >
               {formatCurrency(Number(holding.market_value || 0))}
             </span>
           );
@@ -1042,24 +1154,32 @@ export function DashboardMasterView({
                 aria-label={isDeleted ? `Undo remove ${holding.symbol}` : `Remove ${holding.symbol}`}
                 onClick={() => handleToggleDeleteHolding(holding.client_id)}
                 className={cn(
-                  "min-w-[78px]",
+                  "min-w-[34px] sm:min-w-[78px]",
                   isDeleted ? "text-muted-foreground" : "text-rose-600 hover:text-rose-700"
                 )}
               >
                 <Icon icon={isDeleted ? Undo2 : Trash2} size="sm" className="mr-1" />
-                {isDeleted ? "Restore" : "Remove"}
+                <span className="hidden sm:inline">{isDeleted ? "Restore" : "Remove"}</span>
               </MorphyButton>
               <MorphyButton
                 variant="none"
                 effect="fade"
                 size="sm"
                 disabled={isDeleted || !canAnalyze}
+                className="px-2 sm:px-3"
                 onClick={() => {
                   if (!canAnalyze) return;
                   onAnalyzeStock?.(holding.symbol);
                 }}
               >
-                {canAnalyze ? "Analyze" : "N/A"}
+                {canAnalyze ? (
+                  <>
+                    <span className="sm:hidden">Go</span>
+                    <span className="hidden sm:inline">Analyze</span>
+                  </>
+                ) : (
+                  "N/A"
+                )}
               </MorphyButton>
             </div>
           );
@@ -1156,48 +1276,7 @@ export function DashboardMasterView({
       </section>
 
       {statementSnapshotRows.length > 0 ? (
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Card
-            variant="none"
-            effect="glass"
-            className="rounded-[24px] p-0"
-          >
-            <CardHeader className="pb-2 px-6 pt-6 sm:px-7">
-              <CardTitle className="text-xs uppercase tracking-widest text-muted-foreground">
-                Statement Snapshot
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-3 px-6 pb-6 pt-0 sm:grid-cols-2 sm:px-7 sm:pb-7">
-              {statementSnapshotRows.map((row) => {
-                const value = Number(row.value || 0);
-                const isSigned = row.key === "investment-results";
-                return (
-                  <div
-                    key={row.key}
-                    className="rounded-xl border border-border/60 bg-background/75 p-3"
-                  >
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      {row.label}
-                    </p>
-                    <p
-                      className={cn(
-                        "mt-1 text-xl font-black",
-                        isSigned
-                          ? value >= 0
-                            ? "text-emerald-600 dark:text-emerald-400"
-                            : "text-rose-600 dark:text-rose-400"
-                          : undefined
-                      )}
-                    >
-                      {isSigned ? formatSignedCurrency(value) : formatCurrency(value)}
-                    </p>
-                  </div>
-                );
-              })}
-            </CardContent>
-          </Card>
-          <StatementCashflowChart data={statementChartData} />
-        </div>
+        <StatementCashflowChart data={statementChartData} />
       ) : null}
 
       <Card
@@ -1266,141 +1345,154 @@ export function DashboardMasterView({
         </CardContent>
       </Card>
 
-      <UiCard className="rounded-[24px] border border-border/60 bg-card/70 shadow-[0_12px_36px_rgba(15,23,42,0.05)] backdrop-blur">
-        <UiCardHeader>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <UiCardTitle>Debate Inputs</UiCardTitle>
-            <Badge variant="secondary" className="text-[11px] font-semibold">
-              {model.canonicalModel.debateContext.eligibleSymbols.length} eligible symbols
-            </Badge>
+      <Card
+        variant="muted"
+        effect="fill"
+        className="min-w-0 rounded-[24px] p-0 !border-transparent shadow-[0_12px_36px_rgba(15,23,42,0.05)]"
+      >
+        <CardHeader className="pb-2 px-6 pt-6 sm:px-7">
+          <div className="flex items-center justify-between gap-2">
+            <CardTitle className="text-xs uppercase tracking-widest text-muted-foreground">
+              Current Holdings
+            </CardTitle>
+            <MorphyButton
+              variant="none"
+              effect="fade"
+              size="sm"
+              onClick={openAddHoldingModal}
+            >
+              <Icon icon={Plus} size="sm" className="mr-1" />
+              Add Holding
+            </MorphyButton>
           </div>
-          <UiCardDescription>
-            Real world-model coverage used by Alpha debate and optimization runs.
-          </UiCardDescription>
-        </UiCardHeader>
-        <UiCardContent className="space-y-4">
-          <div className="rounded-xl border border-border/60 bg-background/80 p-3">
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>Overall readiness</span>
-              <span className="font-semibold text-foreground">
-                {Math.round(debateReadinessScore)} / 100
+        </CardHeader>
+
+        <CardContent className="space-y-4 px-6 pb-6 pt-0 sm:px-7 sm:pb-7">
+          <div className="rounded-xl border border-border/60 bg-background/70 px-3 py-2.5 text-xs text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-semibold text-foreground">Change Summary</span>
+              <span className="rounded-full bg-background px-2 py-0.5">Added: {holdingsChangeSummary.added}</span>
+              <span className="rounded-full bg-background px-2 py-0.5">Edited: {holdingsChangeSummary.edited}</span>
+              <span className="rounded-full bg-background px-2 py-0.5">Deleted: {holdingsChangeSummary.deleted}</span>
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="font-semibold text-foreground">Bifurcation</span>
+              <span className="rounded-full bg-background px-2 py-0.5">
+                Analyze Eligible: {holdingsBifurcation.analyzeEligible}
+              </span>
+              <span className="rounded-full bg-background px-2 py-0.5">
+                Non-Analyzable: {holdingsBifurcation.nonAnalyzable}
+              </span>
+              <span className="rounded-full bg-background px-2 py-0.5">
+                Cash / Sweep: {holdingsBifurcation.cashSweep}
               </span>
             </div>
-            <Progress value={debateReadinessScore} className="mt-2 h-2" />
           </div>
 
-          <Tabs defaultValue="coverage" className="w-full">
-            <TabsList className="grid h-10 w-full grid-cols-3">
-              <TabsTrigger value="coverage">Coverage</TabsTrigger>
-              <TabsTrigger value="signals">Signals</TabsTrigger>
-              <TabsTrigger value="universe">Universe</TabsTrigger>
-            </TabsList>
+          <Tabs defaultValue="all" className="space-y-3">
+            <div className="overflow-x-auto pb-1">
+              <TabsList className="inline-flex h-9 w-max min-w-full bg-background/80">
+                <TabsTrigger className="shrink-0" value="all">
+                  All ({desktopHoldingTables.all.length})
+                </TabsTrigger>
+                <TabsTrigger className="shrink-0" value="analyze">
+                  Analyze Eligible ({desktopHoldingTables.analyzeEligible.length})
+                </TabsTrigger>
+                <TabsTrigger className="shrink-0" value="non-analyze">
+                  Non-Analyzable ({desktopHoldingTables.nonAnalyzable.length})
+                </TabsTrigger>
+                <TabsTrigger className="shrink-0" value="cash">
+                  Cash / Sweep ({desktopHoldingTables.cashSweep.length})
+                </TabsTrigger>
+              </TabsList>
+            </div>
 
-            <TabsContent value="coverage" className="space-y-4">
-              <DebateReadinessChart
-                data={debateCoverageRows.map((row) => ({
-                  key: row.key,
-                  label: row.label,
-                  value: row.value,
-                }))}
-                className="h-[220px] w-full"
+            <TabsContent value="all">
+              <DataTable
+                columns={holdingsTableColumns}
+                data={desktopHoldingTables.all}
+                searchPlaceholder="Search holdings by symbol or name..."
+                initialPageSize={5}
+                pageSizeOptions={[5, 10, 20]}
+                rowClassName={(holding) =>
+                  holding.pending_delete
+                    ? "bg-muted/45 text-muted-foreground"
+                    : "bg-transparent"
+                }
+                tableContainerClassName="w-full"
+                tableClassName="w-full table-fixed"
               />
-              <div className="grid gap-3 sm:grid-cols-2">
-                {debateCoverageRows.map((row) => (
-                  <div key={row.key} className="rounded-xl border border-border/60 bg-background/80 p-3">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="font-semibold">{row.label}</span>
-                      <span className="text-muted-foreground">{Math.round(row.value)}%</span>
-                    </div>
-                    <Progress value={row.value} className="mt-2 h-1.5" />
-                    <p className="mt-2 text-xs text-muted-foreground">{row.detail}</p>
-                  </div>
-                ))}
-              </div>
             </TabsContent>
 
-            <TabsContent value="signals" className="space-y-3">
-              {statementSnapshotRows.length > 0 ? (
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {statementSnapshotRows.map((row) => {
-                    const value = Number(row.value || 0);
-                    const isSigned = row.key === "investment-results";
-                    return (
-                      <div
-                        key={row.key}
-                        className="rounded-xl border border-border/60 bg-background/80 p-3"
-                      >
-                        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                          {row.label}
-                        </p>
-                        <p
-                          className={cn(
-                            "mt-1 text-base font-bold",
-                            isSigned
-                              ? value >= 0
-                                ? "text-emerald-600 dark:text-emerald-400"
-                                : "text-rose-600 dark:text-rose-400"
-                              : undefined
-                          )}
-                        >
-                          {isSigned ? formatSignedCurrency(value) : formatCurrency(value)}
-                        </p>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="rounded-xl border border-dashed border-border/60 bg-background/80 p-3 text-sm text-muted-foreground">
-                  No statement-level income/fee/deposit signals were parsed in this import yet.
-                </div>
-              )}
+            <TabsContent value="analyze">
+              <DataTable
+                columns={holdingsTableColumns}
+                data={desktopHoldingTables.analyzeEligible}
+                searchPlaceholder="Search analyzable holdings..."
+                initialPageSize={5}
+                pageSizeOptions={[5, 10, 20]}
+                rowClassName={(holding) =>
+                  holding.pending_delete
+                    ? "bg-muted/45 text-muted-foreground"
+                    : "bg-transparent"
+                }
+                tableContainerClassName="w-full"
+                tableClassName="w-full table-fixed"
+              />
             </TabsContent>
 
-            <TabsContent value="universe" className="space-y-3">
-              <div className="rounded-xl border border-border/60 bg-background/80 p-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Eligible Symbols
-                </p>
-                {model.canonicalModel.debateContext.eligibleSymbols.length > 0 ? (
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {model.canonicalModel.debateContext.eligibleSymbols.slice(0, 20).map((symbol) => (
-                      <Badge key={symbol} variant="outline" className="font-medium">
-                        {symbol}
-                      </Badge>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    No eligible symbols detected. Add ticker-mapped holdings to run debate analysis.
-                  </p>
-                )}
-              </div>
+            <TabsContent value="non-analyze">
+              <DataTable
+                columns={holdingsTableColumns}
+                data={desktopHoldingTables.nonAnalyzable}
+                searchPlaceholder="Search non-analyzable holdings..."
+                initialPageSize={5}
+                pageSizeOptions={[5, 10, 20]}
+                rowClassName={(holding) =>
+                  holding.pending_delete
+                    ? "bg-muted/45 text-muted-foreground"
+                    : "bg-transparent"
+                }
+                tableContainerClassName="w-full"
+                tableClassName="w-full table-fixed"
+              />
+            </TabsContent>
 
-              <div className="rounded-xl border border-border/60 bg-background/80 p-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Exclusion Reasons
-                </p>
-                {debateExclusionSummary.length > 0 ? (
-                  <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                    {debateExclusionSummary.map((row) => (
-                      <span
-                        key={row.reason}
-                        className="rounded-full border border-border/60 bg-muted/40 px-2.5 py-1"
-                      >
-                        {row.reason.replace(/_/g, " ")}: {row.count}
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    All current positions are debate-eligible.
-                  </p>
-                )}
-              </div>
+            <TabsContent value="cash">
+              <DataTable
+                columns={holdingsTableColumns}
+                data={desktopHoldingTables.cashSweep}
+                searchPlaceholder="Search cash / sweep holdings..."
+                initialPageSize={5}
+                pageSizeOptions={[5, 10, 20]}
+                rowClassName={(holding) =>
+                  holding.pending_delete
+                    ? "bg-muted/45 text-muted-foreground"
+                    : "bg-transparent"
+                }
+                tableContainerClassName="w-full"
+                tableClassName="w-full table-fixed"
+              />
             </TabsContent>
           </Tabs>
-        </UiCardContent>
-      </UiCard>
+
+          {hasHoldingsChanges ? (
+            <div className="pt-2">
+              <MorphyButton
+                variant="blue-gradient"
+                effect="fade"
+                fullWidth
+                onClick={() => void persistHoldingsChanges()}
+                disabled={isSavingHoldings}
+                className="bg-black text-white hover:bg-black/90 dark:bg-white dark:text-black dark:hover:bg-white/90"
+              >
+                <Icon icon={Save} size="sm" className="mr-2" />
+                {isSavingHoldings ? "Saving Holdings..." : "Save Holdings Changes"}
+              </MorphyButton>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
 
       <section className="space-y-3">
         <h2 className="app-section-heading px-1 uppercase tracking-[0.12em] text-muted-foreground">
@@ -1464,263 +1556,8 @@ export function DashboardMasterView({
         </div>
       </section>
 
-      <Card
-        variant="muted"
-        effect="fill"
-        className="min-w-0 rounded-[24px] p-0 !border-transparent shadow-[0_12px_36px_rgba(15,23,42,0.05)]"
-      >
-        <CardHeader className="pb-2 px-6 pt-6 sm:px-7">
-          <div className="flex items-center justify-between gap-2">
-            <CardTitle className="text-xs uppercase tracking-widest text-muted-foreground">
-              Current Holdings
-            </CardTitle>
-            <MorphyButton
-              variant="none"
-              effect="fade"
-              size="sm"
-              onClick={openAddHoldingModal}
-            >
-              <Icon icon={Plus} size="sm" className="mr-1" />
-              Add Holding
-            </MorphyButton>
-          </div>
-        </CardHeader>
-
-        <CardContent className="space-y-4 px-6 pb-6 pt-0 sm:px-7 sm:pb-7">
-          <div className="rounded-xl border border-border/60 bg-background/70 px-3 py-2.5 text-xs text-muted-foreground">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-semibold text-foreground">Change Summary</span>
-              <span className="rounded-full bg-background px-2 py-0.5">Added: {holdingsChangeSummary.added}</span>
-              <span className="rounded-full bg-background px-2 py-0.5">Edited: {holdingsChangeSummary.edited}</span>
-              <span className="rounded-full bg-background px-2 py-0.5">Deleted: {holdingsChangeSummary.deleted}</span>
-            </div>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <span className="font-semibold text-foreground">Bifurcation</span>
-              <span className="rounded-full bg-background px-2 py-0.5">
-                Analyze Eligible: {holdingsBifurcation.analyzeEligible}
-              </span>
-              <span className="rounded-full bg-background px-2 py-0.5">
-                Non-Analyzable: {holdingsBifurcation.nonAnalyzable}
-              </span>
-              <span className="rounded-full bg-background px-2 py-0.5">
-                Cash / Sweep: {holdingsBifurcation.cashSweep}
-              </span>
-            </div>
-          </div>
-
-          <div className="sm:hidden space-y-3">
-            {holdingsDraft.length === 0 ? (
-              <div className="rounded-xl border border-border/60 bg-background/70 p-4 text-sm text-muted-foreground">
-                No holdings were found in this statement yet.
-              </div>
-            ) : (
-              holdingsDraft.map((holding) => {
-                const isDeleted = Boolean(holding.pending_delete);
-                const gainValue = Number(holding.unrealized_gain_loss || 0);
-                const canAnalyze = isHoldingAnalyzeEligible(holding);
-                const isCash = holding.is_cash_equivalent === true;
-                const categoryLabel = isCash
-                  ? "Cash / Sweep"
-                  : canAnalyze
-                    ? "Analyze Eligible"
-                    : "Non-Analyzable";
-                return (
-                  <div
-                    key={holding.client_id}
-                    className={cn(
-                      "rounded-xl border border-border/50 bg-background/80 p-3",
-                      isDeleted && "bg-muted/45 text-muted-foreground"
-                    )}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1">
-                        <MorphyButton
-                          variant="none"
-                          effect="fade"
-                          size="icon-sm"
-                          disabled={isDeleted}
-                          aria-label={`Edit ${holding.symbol || "holding"}`}
-                          onClick={() => handleEditHolding(holding.client_id)}
-                        >
-                          <Icon icon={Pencil} size="sm" />
-                        </MorphyButton>
-                        <MorphyButton
-                          variant="none"
-                          effect="fade"
-                          size="icon-sm"
-                          aria-label={isDeleted ? `Restore ${holding.symbol}` : `Delete ${holding.symbol}`}
-                          onClick={() => handleToggleDeleteHolding(holding.client_id)}
-                          className={cn(
-                            isDeleted
-                              ? "text-muted-foreground"
-                              : "text-rose-600 hover:text-rose-700"
-                          )}
-                        >
-                          <Icon icon={isDeleted ? Undo2 : Trash2} size="sm" />
-                        </MorphyButton>
-                      </div>
-                      <MorphyButton
-                        variant="none"
-                        effect="fade"
-                        size="sm"
-                        disabled={isDeleted || !canAnalyze}
-                        onClick={() => {
-                          if (!canAnalyze) return;
-                          onAnalyzeStock?.(holding.symbol);
-                        }}
-                      >
-                        {canAnalyze ? "Analyze" : "N/A"}
-                      </MorphyButton>
-                    </div>
-
-                    <div className="mt-2 min-w-0">
-                      <p className={cn("text-sm font-semibold", isDeleted && "line-through")}>
-                        {holding.symbol || "—"}
-                      </p>
-                      <p className={cn("truncate text-xs text-muted-foreground", isDeleted && "line-through")}>
-                        {holding.name || "Unnamed security"}
-                      </p>
-                      <span className="mt-1 inline-flex rounded-full bg-background px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-                        {categoryLabel}
-                      </span>
-                      {isDeleted ? (
-                        <span className="mt-1 inline-flex rounded-full bg-background px-2 py-0.5 text-[10px] uppercase tracking-wide">
-                          Marked for removal
-                        </span>
-                      ) : null}
-                    </div>
-
-                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                      <div>
-                        <p className="text-muted-foreground">Shares @ Price</p>
-                        <p className={cn("font-medium", isDeleted && "line-through")}>
-                          {Number(holding.quantity || 0).toLocaleString()} @ {formatCurrency(Number(holding.price || 0))}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-muted-foreground">Market Value</p>
-                        <p className={cn("font-semibold", isDeleted && "line-through")}>
-                          {formatCurrency(Number(holding.market_value || 0))}
-                        </p>
-                      </div>
-                      <div className="col-span-2">
-                        <p className="text-muted-foreground">Gain / Loss</p>
-                        <p
-                          className={cn(
-                            "font-medium",
-                            isDeleted
-                              ? "line-through text-muted-foreground"
-                              : gainValue >= 0
-                                ? "text-emerald-600 dark:text-emerald-400"
-                                : "text-rose-600 dark:text-rose-400"
-                          )}
-                        >
-                          {gainValue >= 0 ? "+" : ""}
-                          {formatCurrency(gainValue)}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-
-          <div className="hidden sm:block">
-            <Tabs defaultValue="all" className="space-y-3">
-              <TabsList className="grid h-9 w-full grid-cols-4 bg-background/80">
-                <TabsTrigger value="all">All ({desktopHoldingTables.all.length})</TabsTrigger>
-                <TabsTrigger value="analyze">
-                  Analyze Eligible ({desktopHoldingTables.analyzeEligible.length})
-                </TabsTrigger>
-                <TabsTrigger value="non-analyze">
-                  Non-Analyzable ({desktopHoldingTables.nonAnalyzable.length})
-                </TabsTrigger>
-                <TabsTrigger value="cash">Cash / Sweep ({desktopHoldingTables.cashSweep.length})</TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="all">
-                <DataTable
-                  columns={holdingsTableColumns}
-                  data={desktopHoldingTables.all}
-                  searchPlaceholder="Search holdings by symbol or name..."
-                  initialPageSize={5}
-                  pageSizeOptions={[5, 10, 20]}
-                  rowClassName={(holding) =>
-                    holding.pending_delete
-                      ? "bg-muted/45 text-muted-foreground"
-                      : "bg-transparent"
-                  }
-                />
-              </TabsContent>
-
-              <TabsContent value="analyze">
-                <DataTable
-                  columns={holdingsTableColumns}
-                  data={desktopHoldingTables.analyzeEligible}
-                  searchPlaceholder="Search analyzable holdings..."
-                  initialPageSize={5}
-                  pageSizeOptions={[5, 10, 20]}
-                  rowClassName={(holding) =>
-                    holding.pending_delete
-                      ? "bg-muted/45 text-muted-foreground"
-                      : "bg-transparent"
-                  }
-                />
-              </TabsContent>
-
-              <TabsContent value="non-analyze">
-                <DataTable
-                  columns={holdingsTableColumns}
-                  data={desktopHoldingTables.nonAnalyzable}
-                  searchPlaceholder="Search non-analyzable holdings..."
-                  initialPageSize={5}
-                  pageSizeOptions={[5, 10, 20]}
-                  rowClassName={(holding) =>
-                    holding.pending_delete
-                      ? "bg-muted/45 text-muted-foreground"
-                      : "bg-transparent"
-                  }
-                />
-              </TabsContent>
-
-              <TabsContent value="cash">
-                <DataTable
-                  columns={holdingsTableColumns}
-                  data={desktopHoldingTables.cashSweep}
-                  searchPlaceholder="Search cash / sweep holdings..."
-                  initialPageSize={5}
-                  pageSizeOptions={[5, 10, 20]}
-                  rowClassName={(holding) =>
-                    holding.pending_delete
-                      ? "bg-muted/45 text-muted-foreground"
-                      : "bg-transparent"
-                  }
-                />
-              </TabsContent>
-            </Tabs>
-          </div>
-
-          {hasHoldingsChanges ? (
-            <div className="pt-2">
-              <MorphyButton
-                variant="blue-gradient"
-                effect="fade"
-                fullWidth
-                onClick={() => void persistHoldingsChanges()}
-                disabled={isSavingHoldings}
-                className="bg-black text-white hover:bg-black/90 dark:bg-white dark:text-black dark:hover:bg-white/90"
-              >
-                <Icon icon={Save} size="sm" className="mr-2" />
-                {isSavingHoldings ? "Saving Holdings..." : "Save Holdings Changes"}
-              </MorphyButton>
-            </div>
-          ) : null}
-        </CardContent>
-      </Card>
-
-      <Card variant="none" effect="glass" className="min-w-0 overflow-hidden rounded-[24px]">
-        <CardContent className="p-5 sm:p-6">
+      <Card variant="none" effect="glass" className="min-w-0 overflow-hidden rounded-[22px]">
+        <CardContent className="p-4 sm:p-5">
           <ProfileBasedPicksList
             userId={userId}
             vaultOwnerToken={vaultOwnerToken}
@@ -1760,9 +1597,32 @@ export function DashboardMasterView({
       <Card variant="none" effect="glass" className="rounded-[24px]">
         <CardContent className="flex flex-wrap items-center justify-between gap-3 p-5 text-xs text-muted-foreground sm:p-6">
           <p>Imported statement data is synced across dashboard and holdings views.</p>
-          <MorphyButton variant="none" effect="fade" size="sm" onClick={onReupload}>
-            Import New Statement
-          </MorphyButton>
+          <div className="flex items-center gap-2">
+            <MorphyButton
+              variant="none"
+              effect="fade"
+              size="sm"
+              disabled={isDeletingImportedData}
+              onClick={onReupload}
+            >
+              Import New Statement
+            </MorphyButton>
+            <MorphyButton
+              variant="none"
+              effect="fade"
+              size="sm"
+              className="text-rose-600 hover:text-rose-700 dark:text-rose-400 dark:hover:text-rose-300"
+              disabled={isDeletingImportedData}
+              onClick={() => setDeleteImportedDialogOpen(true)}
+            >
+              {isDeletingImportedData ? (
+                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="mr-1 h-4 w-4" />
+              )}
+              Delete Imported Data
+            </MorphyButton>
+          </div>
         </CardContent>
       </Card>
 
@@ -1772,6 +1632,44 @@ export function DashboardMasterView({
         holding={editingHolding}
         onSave={handleSaveHolding}
       />
+
+      <AlertDialog
+        open={deleteImportedDialogOpen}
+        onOpenChange={(open) => {
+          if (isDeletingImportedData) return;
+          setDeleteImportedDialogOpen(open);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Imported Portfolio Data?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes the imported holdings and statement snapshots from your vault. Profile
+              and consent data are kept.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeletingImportedData}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isDeletingImportedData}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={(event) => {
+                event.preventDefault();
+                void handleDeleteImportedData();
+              }}
+            >
+              {isDeletingImportedData ? (
+                <>
+                  <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

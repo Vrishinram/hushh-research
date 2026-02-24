@@ -199,8 +199,8 @@ export interface PortfolioReviewViewProps {
   portfolioData: PortfolioData;
   /** User ID for saving */
   userId: string;
-  /** Vault key for encryption */
-  vaultKey: string;
+  /** Vault key for encryption (optional; create/unlock flow may run later) */
+  vaultKey?: string;
   /** VAULT_OWNER token for authentication (required on native) */
   vaultOwnerToken?: string;
   /** Callback when save completes successfully */
@@ -875,6 +875,19 @@ export function PortfolioReviewView({
   const handleSave = async () => {
     if (!userId) return;
 
+    const shouldVerifySave = process.env.NEXT_PUBLIC_WORLD_MODEL_VERIFY_SAVE === "true";
+    const enableSaveProfiling = process.env.NEXT_PUBLIC_KAI_SAVE_PROFILING === "true";
+    const nowMs = () =>
+      typeof performance !== "undefined" && typeof performance.now === "function"
+        ? performance.now()
+        : Date.now();
+    const saveStartedAt = nowMs();
+    const logSavePhase = (phase: string, phaseStartedAt: number) => {
+      if (!enableSaveProfiling) return;
+      const durationMs = nowMs() - phaseStartedAt;
+      console.log(`[PortfolioReviewView][save] ${phase}: ${durationMs.toFixed(1)}ms`);
+    };
+
     // If vault existence isn't resolved yet, resolve it on-demand so copy/flow is correct.
     let resolvedHasVault = hasVault;
     if (resolvedHasVault === null) {
@@ -922,23 +935,16 @@ export function PortfolioReviewView({
       const normalizedActiveHoldings = activeHoldings.map((holding) =>
         normalizeHoldingForStorage(holding)
       );
-      const holdingsSummary = normalizedActiveHoldings.map((h) => ({
-        symbol: h.symbol,
-        identifier_type: h.identifier_type,
-        instrument_kind: h.instrument_kind,
-        is_cash_equivalent: h.is_cash_equivalent,
-        is_investable: h.is_investable,
-        name: h.name,
-        quantity: h.quantity,
-        current_price: h.price,
-      }));
 
       const nowIso = new Date().toISOString();
+      const blobLoadStartedAt = nowMs();
       const fullBlob = await WorldModelService.loadFullBlob({
         userId,
         vaultKey: effectiveVaultKey,
         vaultOwnerToken: effectiveVaultOwnerToken,
       }).catch(() => ({} as Record<string, unknown>));
+      logSavePhase("blob load", blobLoadStartedAt);
+      const mergeBuildStartedAt = nowMs();
       const existingFinancialValue = fullBlob.financial;
       const existingFinancial =
         existingFinancialValue &&
@@ -1234,6 +1240,8 @@ export function PortfolioReviewView({
 
       const financialSummary = {
         intent_source: "kai_import_llm",
+        attribute_count: normalizedActiveHoldings.length,
+        item_count: normalizedActiveHoldings.length,
         holdings_count: normalizedActiveHoldings.length,
         investable_positions_count: normalizedActiveHoldings.filter(
           (holding) => holding.is_investable
@@ -1245,7 +1253,6 @@ export function PortfolioReviewView({
         parser_quality_score:
           typeof lastQualityScore === "number" ? lastQualityScore : null,
         last_statement_total_value: resolvedTotalValue,
-        holdings: holdingsSummary,
         portfolio_risk_bucket: riskBucket,
         risk_bucket: riskBucket,
         has_income_data: !!incomeSummary.total_income,
@@ -1265,39 +1272,46 @@ export function PortfolioReviewView({
         ...docsSummary,
         last_updated: nowIso,
       };
+      logSavePhase("merge/build", mergeBuildStartedAt);
 
       // 4. Store canonical financial domain with full-blob merge semantics.
-      const financialResult = await WorldModelService.storeMergedDomain({
+      const encryptStoreStartedAt = nowMs();
+      const financialResult = await WorldModelService.storeMergedDomainWithPreparedBlob({
         userId,
         vaultKey: effectiveVaultKey,
         domain: "financial",
         domainData: nextFinancialDomain as unknown as Record<string, unknown>,
         summary: financialSummary,
+        baseFullBlob: fullBlob,
         vaultOwnerToken: effectiveVaultOwnerToken,
       });
+      logSavePhase("encrypt/store", encryptStoreStartedAt);
 
       if (!financialResult.success) {
         throw new Error("Backend returned failure on store");
       }
 
+      const postSaveSyncStartedAt = nowMs();
       // 5. Prime/invalidate deterministic cache entries for all financial reads.
       CacheSyncService.onPortfolioUpserted(
         userId,
         portfolioToSave as unknown as CachedPortfolioData
       );
 
-      // 6. Verify the save by reading back
-      try {
-        const readBack = await WorldModelService.getDomainData(
-          userId,
-          "financial",
-          effectiveVaultOwnerToken
-        );
-        if (!readBack) {
-          console.warn("[PortfolioReview] Read-back verification failed: no data returned");
+      // 6. Optional read-back verification (disabled by default in production).
+      if (shouldVerifySave) {
+        try {
+          const readBack = await WorldModelService.getDomainData(
+            userId,
+            "financial",
+            effectiveVaultOwnerToken
+          );
+          if (!readBack) {
+            console.warn("[PortfolioReview] Read-back verification failed: no data returned");
+          }
+        } catch (verifyErr) {
+          console.warn("[PortfolioReview] Read-back verification error:", verifyErr);
         }
-      } catch (verifyErr) {
-        console.warn("[PortfolioReview] Read-back verification error:", verifyErr);
       }
 
       if (createdVaultCopyRef.current) {
@@ -1312,6 +1326,8 @@ export function PortfolioReviewView({
       baselineSnapshotRef.current = serializeEditableState(accountInfo, holdings);
       setHasUnsavedChanges(false);
       await Promise.resolve(onSaveComplete(portfolioToSave));
+      logSavePhase("post-save sync", postSaveSyncStartedAt);
+      logSavePhase("total", saveStartedAt);
     } catch (error) {
       console.error("Save error:", error);
       toast.error("Failed to save portfolio");
@@ -1927,7 +1943,7 @@ export function PortfolioReviewView({
             if (!open) setPendingVaultSave(false);
           }}
         >
-          <DialogContent className="sm:max-w-md p-0 border-none bg-transparent shadow-none">
+          <DialogContent className="sm:max-w-md p-0 border border-border/60 bg-background shadow-2xl overflow-hidden">
             <DialogTitle className="sr-only">
               {hasVault === false
                 ? "Create vault to save portfolio"

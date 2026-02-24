@@ -1,15 +1,21 @@
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 const {
   infoToastMock,
   successToastMock,
   errorToastMock,
+  loadFullBlobMock,
+  storeMergedDomainWithPreparedBlobMock,
+  getDomainDataMock,
 } = vi.hoisted(() => ({
   infoToastMock: vi.fn(),
   successToastMock: vi.fn(),
   errorToastMock: vi.fn(),
+  loadFullBlobMock: vi.fn(),
+  storeMergedDomainWithPreparedBlobMock: vi.fn(),
+  getDomainDataMock: vi.fn(),
 }));
 
 vi.mock("@/lib/firebase/config", () => {
@@ -52,8 +58,10 @@ vi.mock("@/lib/services/vault-service", () => {
 vi.mock("@/lib/services/world-model-service", () => {
   return {
     WorldModelService: {
-      storeMergedDomain: vi.fn(),
-      getDomainData: vi.fn(),
+      loadFullBlob: (...args: unknown[]) => loadFullBlobMock(...args),
+      storeMergedDomainWithPreparedBlob: (...args: unknown[]) =>
+        storeMergedDomainWithPreparedBlobMock(...args),
+      getDomainData: (...args: unknown[]) => getDomainDataMock(...args),
     },
   };
 });
@@ -86,6 +94,19 @@ describe("PortfolioReviewView (create vault copy)", () => {
     vi.clearAllMocks();
     // jsdom sometimes lacks scrollTo; this component calls it on mount.
     (window as any).scrollTo = vi.fn();
+    delete process.env.NEXT_PUBLIC_WORLD_MODEL_VERIFY_SAVE;
+    delete process.env.NEXT_PUBLIC_KAI_SAVE_PROFILING;
+    loadFullBlobMock.mockResolvedValue({});
+    storeMergedDomainWithPreparedBlobMock.mockResolvedValue({
+      success: true,
+      fullBlob: {},
+    });
+    getDomainDataMock.mockResolvedValue({
+      ciphertext: "ciphertext-1",
+      iv: "iv-1",
+      tag: "tag-1",
+      algorithm: "aes-256-gcm",
+    });
   });
 
   it("shows 'Create vault' CTA when user has no vault, and opens vault dialog on click", async () => {
@@ -157,5 +178,53 @@ describe("PortfolioReviewView (create vault copy)", () => {
     });
     fireEvent.click(undoButton);
     expect(infoToastMock).toHaveBeenCalledWith("Holding restored");
+  });
+
+  it("skips read-back verification by default and only verifies when flag is enabled", async () => {
+    (VaultService.checkVault as any).mockResolvedValue(true);
+    const onSaveComplete = vi.fn();
+
+    render(
+      <PortfolioReviewView
+        portfolioData={{
+          holdings: [
+            {
+              symbol: "AAPL",
+              name: "Apple",
+              quantity: 2,
+              price: 100,
+              market_value: 200,
+            },
+          ],
+        }}
+        userId="uid-1"
+        vaultKey="vault-key-1"
+        vaultOwnerToken="vault-owner-token-1"
+        onSaveComplete={onSaveComplete}
+        onReimport={vi.fn()}
+      />
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /save to vault/i }));
+
+    await waitFor(() => {
+      expect(onSaveComplete).toHaveBeenCalledTimes(1);
+    });
+    expect(getDomainDataMock).not.toHaveBeenCalled();
+
+    process.env.NEXT_PUBLIC_WORLD_MODEL_VERIFY_SAVE = "true";
+    onSaveComplete.mockClear();
+    getDomainDataMock.mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: /save to vault/i }));
+
+    await waitFor(() => {
+      expect(onSaveComplete).toHaveBeenCalledTimes(1);
+    });
+    expect(getDomainDataMock).toHaveBeenCalledWith(
+      "uid-1",
+      "financial",
+      "vault-owner-token-1"
+    );
   });
 });
