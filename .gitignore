@@ -18,6 +18,8 @@ cloud-sql-proxy.exe
 service-account.json
 firebase-service-account.json
 **/firebase-service-account.json
+GoogleService-Info.plist
+**/GoogleService-Info.plist
 
 # Local env files (never commit real envs)
 .env

@@ -118,7 +118,14 @@ export function Providers({ children }: ProvidersProps) {
                       </div>
                     </div>
                   </div>
-                  <Toaster position="top-center" closeButton />
+                  <Toaster
+                    position="top-center"
+                    closeButton
+                    offset={{ top: "calc(env(safe-area-inset-top, 0px) + 12px)" }}
+                    mobileOffset={{
+                      top: "calc(env(safe-area-inset-top, 0px) + 12px)",
+                    }}
+                  />
                 </NavigationProvider>
               </ConsentNotificationProvider>
             </VaultProvider>
