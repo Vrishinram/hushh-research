@@ -67,9 +67,10 @@ export function GainLossDistributionChart({
         </CardTitle>
       </CardHeader>
       <CardContent className="pt-0 min-w-0 overflow-hidden">
-        <ChartContainer config={chartConfig} className="h-[220px] w-full min-w-0">
-          <BarChart data={chartData} margin={{ top: 10, right: 8, left: 0, bottom: 4 }}>
+        <ChartContainer config={chartConfig} className="h-[192px] w-full min-w-0">
+          <BarChart data={chartData} margin={{ top: 22, right: 6, left: 0, bottom: 0 }}>
             <CartesianGrid
+              vertical={false}
               strokeDasharray="3 3"
               stroke="hsl(var(--foreground) / 0.22)"
               strokeOpacity={0.55}
@@ -110,10 +111,11 @@ export function GainLossDistributionChart({
                 />
               }
             />
-            <Bar dataKey="count" radius={[6, 6, 0, 0]}>
+            <Bar dataKey="count" radius={[6, 6, 0, 0]} maxBarSize={28}>
               <LabelList
                 dataKey="count"
                 position="top"
+                offset={8}
                 className="fill-foreground"
                 fontSize={10}
                 formatter={(value: number) => Number(value).toFixed(0)}

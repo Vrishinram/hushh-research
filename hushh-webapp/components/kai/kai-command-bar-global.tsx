@@ -172,9 +172,7 @@ export function KaiCommandBarGlobal() {
 
         if (
           !hasPortfolioData &&
-          (command === "analyze" ||
-            command === "history" ||
-            command === "manage")
+          (command === "analyze" || command === "history")
         ) {
           toast.info("Import your portfolio to unlock this command.");
           router.push(ROUTES.KAI_IMPORT);
@@ -197,11 +195,6 @@ export function KaiCommandBarGlobal() {
           return;
         }
 
-        if (command === "manage") {
-          router.push(ROUTES.KAI_DASHBOARD);
-          return;
-        }
-
         if (command === "history") {
           router.push(ROUTES.KAI_ANALYSIS);
           return;
@@ -214,6 +207,16 @@ export function KaiCommandBarGlobal() {
 
         if (command === "home") {
           router.push(ROUTES.KAI_HOME);
+          return;
+        }
+
+        if (command === "consent") {
+          router.push(ROUTES.CONSENTS);
+          return;
+        }
+
+        if (command === "profile") {
+          router.push(ROUTES.PROFILE);
         }
       }}
       hasPortfolioData={hasPortfolioData}

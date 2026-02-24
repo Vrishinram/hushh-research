@@ -20,6 +20,7 @@
 
 import { WorldModelService } from "./world-model-service";
 import { CacheSyncService } from "@/lib/cache/cache-sync-service";
+import { CacheService, CACHE_KEYS, CACHE_TTL } from "@/lib/services/cache-service";
 
 
 const MAX_HISTORY_PER_TICKER = 3;
@@ -335,18 +336,19 @@ export class KaiHistoryService {
       });
 
       // 7. Re-encrypt and store merged domain
-      const result = await WorldModelService.storeMergedDomain({
+      const result = await WorldModelService.storeMergedDomainWithPreparedBlob({
         userId,
         vaultKey,
         domain: FINANCIAL_DOMAIN,
         domainData: financialDomain,
         summary,
+        baseFullBlob: fullBlob,
         vaultOwnerToken,
       });
 
       // Invalidate caches after successful save
       if (result.success) {
-        CacheSyncService.onAnalysisHistoryMutated(userId, entry.ticker);
+        CacheSyncService.onAnalysisHistoryStored(userId, historyMap, entry.ticker);
       }
 
       return result.success;
@@ -384,6 +386,13 @@ export class KaiHistoryService {
     vaultOwnerToken?: string;
   }): Promise<AnalysisHistoryMap> {
     const { userId, vaultKey, vaultOwnerToken } = params;
+    const cache = CacheService.getInstance();
+    const cacheKey = CACHE_KEYS.ANALYSIS_HISTORY(userId);
+
+    const cached = cache.get<AnalysisHistoryMap>(cacheKey);
+    if (cached) {
+      return sanitizeHistoryMap(cached as unknown as Record<string, unknown>);
+    }
 
     try {
       const fullBlob = await WorldModelService.loadFullBlob({
@@ -391,7 +400,9 @@ export class KaiHistoryService {
         vaultKey,
         vaultOwnerToken,
       });
-      return extractHistoryMap(fullBlob);
+      const historyMap = extractHistoryMap(fullBlob);
+      cache.set(cacheKey, historyMap, CACHE_TTL.SESSION);
+      return historyMap;
     } catch (error) {
       console.error("[KaiHistory] Failed to get history:", error);
       return {};
@@ -473,7 +484,7 @@ export class KaiHistoryService {
 
       // 3. Encrypt & Save
       const nowIso = new Date().toISOString();
-      const result = await WorldModelService.storeMergedDomain({
+      const result = await WorldModelService.storeMergedDomainWithPreparedBlob({
         userId,
         vaultKey,
         domain: FINANCIAL_DOMAIN,
@@ -483,11 +494,12 @@ export class KaiHistoryService {
           nowIso,
         }),
         summary: buildHistorySummary(historyMap),
+        baseFullBlob: fullBlob,
         vaultOwnerToken,
       });
 
       if (result.success) {
-        CacheSyncService.onAnalysisHistoryMutated(userId, tickerKey);
+        CacheSyncService.onAnalysisHistoryStored(userId, historyMap, tickerKey);
       }
 
       return result.success;
@@ -524,7 +536,7 @@ export class KaiHistoryService {
       delete historyMap[tickerKey];
       // 3. Encrypt & Save
       const nowIso = new Date().toISOString();
-      const result = await WorldModelService.storeMergedDomain({
+      const result = await WorldModelService.storeMergedDomainWithPreparedBlob({
         userId,
         vaultKey,
         domain: FINANCIAL_DOMAIN,
@@ -534,11 +546,12 @@ export class KaiHistoryService {
           nowIso,
         }),
         summary: buildHistorySummary(historyMap),
+        baseFullBlob: fullBlob,
         vaultOwnerToken,
       });
 
       if (result.success) {
-        CacheSyncService.onAnalysisHistoryMutated(userId, tickerKey);
+        CacheSyncService.onAnalysisHistoryStored(userId, historyMap, tickerKey);
       }
 
       return result.success;

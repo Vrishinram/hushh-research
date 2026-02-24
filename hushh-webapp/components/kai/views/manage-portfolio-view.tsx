@@ -193,6 +193,22 @@ export function ManagePortfolioView() {
       }
 
       try {
+        // Fast path: if dashboard already hydrated session cache, skip metadata/blob fetch.
+        const cachedPortfolio = getPortfolioData(user.uid);
+        if (cachedPortfolio && Array.isArray(cachedPortfolio.holdings) && cachedPortfolio.holdings.length > 0) {
+          setPortfolioData(cachedPortfolio);
+          setHoldings(
+            (cachedPortfolio.holdings || []).map((holding) => ({
+              ...holding,
+              pending_delete: Boolean((holding as Holding & { pending_delete?: boolean }).pending_delete),
+            }))
+          );
+          setAccountInfo(cachedPortfolio.account_info || {});
+          setAccountSummary(cachedPortfolio.account_summary || { ending_value: 0 });
+          completeStep();
+          return;
+        }
+
         // Get encrypted data from world model
         const response = await WorldModelService.getMetadata(
           user.uid,
@@ -359,8 +375,8 @@ export function ManagePortfolioView() {
         updated_at: nowIso,
       };
 
-      // 2. Store via WorldModelService with full-blob merge semantics.
-      const result = await WorldModelService.storeMergedDomain({
+      // 2. Store via prepared-blob path to avoid a second load/decrypt cycle.
+      const result = await WorldModelService.storeMergedDomainWithPreparedBlob({
         userId: user.uid,
         vaultKey,
         domain: "financial",
@@ -383,6 +399,7 @@ export function ManagePortfolioView() {
           ],
           last_updated: nowIso,
         },
+        baseFullBlob: fullBlob,
         vaultOwnerToken: vaultOwnerToken || undefined,
       });
 

@@ -141,11 +141,11 @@ export function ProfileBasedPicksList({
   }, [limit, normalizedSymbols, userId, vaultOwnerToken]);
 
   return (
-    <div className="space-y-3">
-      <div className="space-y-1">
+    <div className="space-y-2">
+      <div className="space-y-0.5">
         <h3 className="text-sm font-black">Based on your profile</h3>
-        <p className="text-xs font-medium text-muted-foreground">
-          Real picks aligned to your {riskProfile} strategy and portfolio context.
+        <p className="text-[11px] text-muted-foreground">
+          Source: Kai risk profile ({riskProfile}) + current holdings context.
         </p>
       </div>
 
@@ -153,7 +153,7 @@ export function ProfileBasedPicksList({
 
       {!loading && picks.length === 0 ? (
         <Card variant="muted" effect="fill" className="rounded-2xl p-0">
-          <CardContent className="p-4 text-xs text-muted-foreground">
+          <CardContent className="p-3 text-xs text-muted-foreground">
             {error
               ? "Profile picks are temporarily unavailable."
               : "No profile picks available from current market context."}
@@ -167,9 +167,9 @@ export function ProfileBasedPicksList({
             const change = typeof pick.change_percent === "number" ? pick.change_percent : null;
             return (
               <Card key={pick.symbol} variant="none" effect="glass" className="rounded-2xl p-0" showRipple>
-                <CardContent className="flex items-center justify-between gap-3 p-4">
+                <CardContent className="flex items-center justify-between gap-3 p-3">
                   <div className="flex min-w-0 items-center gap-3">
-                    <div className="grid h-10 w-10 place-items-center rounded-full border border-border/70 bg-muted text-xs font-black">
+                    <div className="grid h-9 w-9 place-items-center rounded-full border border-border/70 bg-muted text-[11px] font-black">
                       {pick.symbol}
                     </div>
                     <div className="min-w-0">

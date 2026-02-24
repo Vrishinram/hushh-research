@@ -152,6 +152,24 @@ export interface DecisionResult {
       retry_counts?: Record<string, number>;
       analysis_mode?: string;
     };
+    market_snapshot?: {
+      last_price?: number | null;
+      observed_at?: string | null;
+      source?: string;
+    };
+    context_integrity?: {
+      world_model_context_present?: boolean;
+      renaissance_context_present?: boolean;
+      missing_requirements?: string[];
+    };
+    renaissance_comparison?: {
+      status?: "investable" | "avoid" | "outside_universe" | "unknown";
+      tier?: string | null;
+      is_investable?: boolean;
+      is_avoid?: boolean;
+      comparison_label?: string;
+      recommendation_bias?: string;
+    };
     // Renaissance Data (New)
     renaissance_tier?: "ACE" | "KING" | "QUEEN" | "JACK";
     renaissance_score?: number;
@@ -215,22 +233,30 @@ function SourceLink({ source }: { source: string }) {
 // Chart Sub-Components
 // ============================================================================
 
+const RESULT_CHART_COLORS = {
+  primary: "var(--chart-1)",
+  positive: "var(--chart-2)",
+  neutral: "var(--chart-4)",
+  accent: "var(--chart-3)",
+  negative: "var(--destructive)",
+} as const;
+
 const voteChartConfig = {
   score: {
     label: "Score",
-    color: "hsl(var(--chart-1))",
+    color: RESULT_CHART_COLORS.primary,
   },
   voteBullish: {
     label: "Bullish",
-    color: "hsl(var(--chart-2))",
+    color: RESULT_CHART_COLORS.positive,
   },
   voteNeutral: {
     label: "Neutral",
-    color: "hsl(var(--chart-3))",
+    color: RESULT_CHART_COLORS.neutral,
   },
   voteBearish: {
     label: "Bearish",
-    color: "hsl(var(--chart-5))",
+    color: RESULT_CHART_COLORS.negative,
   },
 } satisfies ChartConfig;
 
@@ -286,11 +312,11 @@ function AgentVoteBar({ result }: { result: DecisionResult }) {
 const consensusChartConfig = {
   agree: {
     label: "Agree",
-    color: "hsl(var(--chart-2))",
+    color: RESULT_CHART_COLORS.positive,
   },
   dissent: {
     label: "Dissent",
-    color: "hsl(var(--chart-5))",
+    color: RESULT_CHART_COLORS.negative,
   },
 } satisfies ChartConfig;
 
@@ -340,19 +366,25 @@ function ConsensusDonut({ result }: { result: DecisionResult }) {
 const barChartConfig = {
   value: {
     label: "Value",
-    color: "hsl(var(--chart-1))",
+    color: RESULT_CHART_COLORS.primary,
   },
   negative: {
     label: "Negative",
-    color: "hsl(var(--chart-5))",
+    color: RESULT_CHART_COLORS.negative,
   },
   scenario: {
     label: "Scenario",
-    color: "hsl(var(--chart-4))",
+    color: RESULT_CHART_COLORS.neutral,
   },
 } satisfies ChartConfig;
 
 function QuantMetricsBarChart({ metrics }: { metrics: Record<string, any> }) {
+  const compactMetricLabel = (value: string) => {
+    const text = String(value || "");
+    if (text.length <= 20) return text;
+    return `${text.slice(0, 19)}…`;
+  };
+
   const data = useMemo(() => {
     return Object.entries(metrics)
       .filter(([, v]) => typeof v === "number" && v !== 0 && !Number.isNaN(v))
@@ -378,22 +410,47 @@ function QuantMetricsBarChart({ metrics }: { metrics: Record<string, any> }) {
         Valuation & Fundamentals
       </p>
       <ChartContainer config={barChartConfig} className="w-full h-[160px]">
-        <BarChart accessibilityLayer data={data} layout="vertical" margin={{ left: 0, right: 30, top: 0, bottom: 0 }}>
+        <BarChart
+          accessibilityLayer
+          data={data}
+          layout="vertical"
+          margin={{ left: 8, right: 32, top: 0, bottom: 0 }}
+        >
           <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.45} />
           <XAxis type="number" hide />
-          <YAxis 
-            type="category" 
-            dataKey="name" 
-            width={110} 
-            tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} 
-            axisLine={false} 
-            tickLine={false} 
+          <YAxis
+            type="category"
+            dataKey="name"
+            width={132}
+            tickFormatter={(value) => compactMetricLabel(String(value))}
+            tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+            axisLine={false}
+            tickLine={false}
           />
-          <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
-          <Bar 
-            dataKey="value" 
+          <ChartTooltip
+            cursor={false}
+            content={
+              <ChartTooltipContent
+                hideLabel
+                formatter={(value, _name, item) => {
+                  const payload = item?.payload as { name?: string } | undefined;
+                  return (
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        Valuation & Fundamentals
+                      </span>
+                      <span className="text-xs text-muted-foreground">{payload?.name || "Metric"}</span>
+                      <span className="text-sm font-semibold">{Number(value).toLocaleString()}</span>
+                    </div>
+                  );
+                }}
+              />
+            }
+          />
+          <Bar
+            dataKey="value"
             fill="var(--color-value)"
-            radius={[0, 4, 4, 0]} 
+            radius={[0, 4, 4, 0]}
             barSize={12}
           >
             {data.map((entry) => (
@@ -555,7 +612,7 @@ export function DecisionCard({ result }: { result: DecisionResult }) {
       variant="none"
       effect="glass"
       showRipple={false}
-      className="border-primary/20 bg-primary/5 animate-in fade-in zoom-in duration-500 rounded-3xl overflow-hidden"
+      className="animate-in fade-in zoom-in duration-500 overflow-hidden rounded-2xl border border-border/60 bg-background/75 shadow-sm"
     >
       <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
@@ -664,8 +721,8 @@ export function DecisionCard({ result }: { result: DecisionResult }) {
             <div className="p-4 bg-card/40 border border-border/50 rounded-2xl flex flex-col justify-center">
                 <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
-                        <Icon icon={BarChart3} size="xs" style={{ color: "hsl(var(--chart-3))" }} />
-                        <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "hsl(var(--chart-3))" }}>Sentiment</span>
+                        <Icon icon={BarChart3} size="xs" style={{ color: RESULT_CHART_COLORS.accent }} />
+                        <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: RESULT_CHART_COLORS.accent }}>Sentiment</span>
                     </div>
                     <Badge variant="outline" className="text-[10px] font-mono bg-muted/30 border-border/40">
                         {(rawCard.key_metrics.sentiment.sentiment_score * 100).toFixed(0)}%

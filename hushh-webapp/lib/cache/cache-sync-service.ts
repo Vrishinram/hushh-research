@@ -228,12 +228,37 @@ export class CacheSyncService {
     cache.invalidate(CACHE_KEYS.VAULT_STATUS(userId));
   }
 
-  static onAnalysisHistoryMutated(userId: string, ticker?: string): void {
+  /**
+   * Use this for out-of-band changes (e.g. future cross-device sync events).
+   * Local CRUD should prefer onAnalysisHistoryStored() write-through updates.
+   */
+  static onAnalysisHistoryMutated(
+    userId: string,
+    ticker?: string,
+    options?: { preserveHistoryCache?: boolean }
+  ): void {
     const cache = CacheService.getInstance();
+    if (!options?.preserveHistoryCache) {
+      cache.invalidate(CACHE_KEYS.ANALYSIS_HISTORY(userId));
+    }
     cache.invalidate(CACHE_KEYS.WORLD_MODEL_BLOB(userId));
     cache.invalidate(CACHE_KEYS.ENCRYPTED_DOMAIN_BLOB(userId, "financial"));
     cache.invalidate(CACHE_KEYS.DOMAIN_DATA(userId, "financial"));
     cache.invalidate(CACHE_KEYS.WORLD_MODEL_METADATA(userId));
+    if (ticker) {
+      cache.invalidate(CACHE_KEYS.STOCK_CONTEXT(userId, ticker.toUpperCase()));
+    }
+  }
+
+  static onAnalysisHistoryStored(
+    userId: string,
+    historyMap: Record<string, unknown[]>,
+    ticker?: string
+  ): void {
+    const cache = CacheService.getInstance();
+    cache.set(CACHE_KEYS.ANALYSIS_HISTORY(userId), historyMap, CACHE_TTL.SESSION);
+    // Local write-through path:
+    // keep history cache warm and avoid broad invalidation/refetch churn.
     if (ticker) {
       cache.invalidate(CACHE_KEYS.STOCK_CONTEXT(userId, ticker.toUpperCase()));
     }

@@ -880,7 +880,12 @@ export function DashboardMasterView({
               ? "Analyze Eligible"
               : "Non-Analyzable";
           return (
-            <div className={cn("min-w-0 max-w-[280px] lg:max-w-[340px]", deleted && "opacity-60")}>
+            <div
+              className={cn(
+                "min-w-0 max-w-[130px] sm:max-w-[280px] lg:max-w-[340px]",
+                deleted && "opacity-60"
+              )}
+            >
               <p className={cn("font-semibold", deleted && "line-through")}>
                 {holding.symbol || "—"}
               </p>
@@ -903,7 +908,12 @@ export function DashboardMasterView({
         cell: ({ row }) => {
           const holding = row.original;
           return (
-            <span className={cn("text-sm", holding.pending_delete && "line-through text-muted-foreground")}>
+            <span
+              className={cn(
+                "text-xs sm:text-sm leading-tight",
+                holding.pending_delete && "line-through text-muted-foreground"
+              )}
+            >
               {Number(holding.quantity || 0).toLocaleString()} @ {formatCurrency(Number(holding.price || 0))}
             </span>
           );
@@ -915,7 +925,12 @@ export function DashboardMasterView({
         cell: ({ row }) => {
           const holding = row.original;
           return (
-            <span className={cn("font-semibold", holding.pending_delete && "line-through text-muted-foreground")}>
+            <span
+              className={cn(
+                "font-semibold text-xs sm:text-sm leading-tight",
+                holding.pending_delete && "line-through text-muted-foreground"
+              )}
+            >
               {formatCurrency(Number(holding.market_value || 0))}
             </span>
           );
@@ -970,24 +985,32 @@ export function DashboardMasterView({
                 aria-label={isDeleted ? `Undo remove ${holding.symbol}` : `Remove ${holding.symbol}`}
                 onClick={() => handleToggleDeleteHolding(holding.client_id)}
                 className={cn(
-                  "min-w-[78px]",
+                  "min-w-[34px] sm:min-w-[78px]",
                   isDeleted ? "text-muted-foreground" : "text-rose-600 hover:text-rose-700"
                 )}
               >
                 <Icon icon={isDeleted ? Undo2 : Trash2} size="sm" className="mr-1" />
-                {isDeleted ? "Restore" : "Remove"}
+                <span className="hidden sm:inline">{isDeleted ? "Restore" : "Remove"}</span>
               </MorphyButton>
               <MorphyButton
                 variant="none"
                 effect="fade"
                 size="sm"
                 disabled={isDeleted || !canAnalyze}
+                className="px-2 sm:px-3"
                 onClick={() => {
                   if (!canAnalyze) return;
                   onAnalyzeStock?.(holding.symbol);
                 }}
               >
-                {canAnalyze ? "Analyze" : "N/A"}
+                {canAnalyze ? (
+                  <>
+                    <span className="sm:hidden">Go</span>
+                    <span className="hidden sm:inline">Analyze</span>
+                  </>
+                ) : (
+                  "N/A"
+                )}
               </MorphyButton>
             </div>
           );
@@ -1197,198 +1220,92 @@ export function DashboardMasterView({
             </div>
           </div>
 
-          <div className="sm:hidden space-y-3">
-            {holdingsDraft.length === 0 ? (
-              <div className="rounded-xl border border-border/60 bg-background/70 p-4 text-sm text-muted-foreground">
-                No holdings were found in this statement yet.
-              </div>
-            ) : (
-              holdingsDraft.map((holding) => {
-                const isDeleted = Boolean(holding.pending_delete);
-                const gainValue = Number(holding.unrealized_gain_loss || 0);
-                const canAnalyze = isHoldingAnalyzeEligible(holding);
-                const isCash = holding.is_cash_equivalent === true;
-                const categoryLabel = isCash
-                  ? "Cash / Sweep"
-                  : canAnalyze
-                    ? "Analyze Eligible"
-                    : "Non-Analyzable";
-                return (
-                  <div
-                    key={holding.client_id}
-                    className={cn(
-                      "rounded-xl border border-border/50 bg-background/80 p-3",
-                      isDeleted && "bg-muted/45 text-muted-foreground"
-                    )}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1">
-                        <MorphyButton
-                          variant="none"
-                          effect="fade"
-                          size="icon-sm"
-                          disabled={isDeleted}
-                          aria-label={`Edit ${holding.symbol || "holding"}`}
-                          onClick={() => handleEditHolding(holding.client_id)}
-                        >
-                          <Icon icon={Pencil} size="sm" />
-                        </MorphyButton>
-                        <MorphyButton
-                          variant="none"
-                          effect="fade"
-                          size="icon-sm"
-                          aria-label={isDeleted ? `Restore ${holding.symbol}` : `Delete ${holding.symbol}`}
-                          onClick={() => handleToggleDeleteHolding(holding.client_id)}
-                          className={cn(
-                            isDeleted
-                              ? "text-muted-foreground"
-                              : "text-rose-600 hover:text-rose-700"
-                          )}
-                        >
-                          <Icon icon={isDeleted ? Undo2 : Trash2} size="sm" />
-                        </MorphyButton>
-                      </div>
-                      <MorphyButton
-                        variant="none"
-                        effect="fade"
-                        size="sm"
-                        disabled={isDeleted || !canAnalyze}
-                        onClick={() => {
-                          if (!canAnalyze) return;
-                          onAnalyzeStock?.(holding.symbol);
-                        }}
-                      >
-                        {canAnalyze ? "Analyze" : "N/A"}
-                      </MorphyButton>
-                    </div>
-
-                    <div className="mt-2 min-w-0">
-                      <p className={cn("text-sm font-semibold", isDeleted && "line-through")}>
-                        {holding.symbol || "—"}
-                      </p>
-                      <p className={cn("truncate text-xs text-muted-foreground", isDeleted && "line-through")}>
-                        {holding.name || "Unnamed security"}
-                      </p>
-                      <span className="mt-1 inline-flex rounded-full bg-background px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-                        {categoryLabel}
-                      </span>
-                      {isDeleted ? (
-                        <span className="mt-1 inline-flex rounded-full bg-background px-2 py-0.5 text-[10px] uppercase tracking-wide">
-                          Marked for removal
-                        </span>
-                      ) : null}
-                    </div>
-
-                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                      <div>
-                        <p className="text-muted-foreground">Shares @ Price</p>
-                        <p className={cn("font-medium", isDeleted && "line-through")}>
-                          {Number(holding.quantity || 0).toLocaleString()} @ {formatCurrency(Number(holding.price || 0))}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-muted-foreground">Market Value</p>
-                        <p className={cn("font-semibold", isDeleted && "line-through")}>
-                          {formatCurrency(Number(holding.market_value || 0))}
-                        </p>
-                      </div>
-                      <div className="col-span-2">
-                        <p className="text-muted-foreground">Gain / Loss</p>
-                        <p
-                          className={cn(
-                            "font-medium",
-                            isDeleted
-                              ? "line-through text-muted-foreground"
-                              : gainValue >= 0
-                                ? "text-emerald-600 dark:text-emerald-400"
-                                : "text-rose-600 dark:text-rose-400"
-                          )}
-                        >
-                          {gainValue >= 0 ? "+" : ""}
-                          {formatCurrency(gainValue)}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-
-          <div className="hidden sm:block">
-            <Tabs defaultValue="all" className="space-y-3">
-              <TabsList className="grid h-9 w-full grid-cols-4 bg-background/80">
-                <TabsTrigger value="all">All ({desktopHoldingTables.all.length})</TabsTrigger>
-                <TabsTrigger value="analyze">
+          <Tabs defaultValue="all" className="space-y-3">
+            <div className="overflow-x-auto pb-1">
+              <TabsList className="inline-flex h-9 w-max min-w-full bg-background/80">
+                <TabsTrigger className="shrink-0" value="all">
+                  All ({desktopHoldingTables.all.length})
+                </TabsTrigger>
+                <TabsTrigger className="shrink-0" value="analyze">
                   Analyze Eligible ({desktopHoldingTables.analyzeEligible.length})
                 </TabsTrigger>
-                <TabsTrigger value="non-analyze">
+                <TabsTrigger className="shrink-0" value="non-analyze">
                   Non-Analyzable ({desktopHoldingTables.nonAnalyzable.length})
                 </TabsTrigger>
-                <TabsTrigger value="cash">Cash / Sweep ({desktopHoldingTables.cashSweep.length})</TabsTrigger>
+                <TabsTrigger className="shrink-0" value="cash">
+                  Cash / Sweep ({desktopHoldingTables.cashSweep.length})
+                </TabsTrigger>
               </TabsList>
+            </div>
 
-              <TabsContent value="all">
-                <DataTable
-                  columns={holdingsTableColumns}
-                  data={desktopHoldingTables.all}
-                  searchPlaceholder="Search holdings by symbol or name..."
-                  initialPageSize={5}
-                  pageSizeOptions={[5, 10, 20]}
-                  rowClassName={(holding) =>
-                    holding.pending_delete
-                      ? "bg-muted/45 text-muted-foreground"
-                      : "bg-transparent"
-                  }
-                />
-              </TabsContent>
+            <TabsContent value="all">
+              <DataTable
+                columns={holdingsTableColumns}
+                data={desktopHoldingTables.all}
+                searchPlaceholder="Search holdings by symbol or name..."
+                initialPageSize={5}
+                pageSizeOptions={[5, 10, 20]}
+                rowClassName={(holding) =>
+                  holding.pending_delete
+                    ? "bg-muted/45 text-muted-foreground"
+                    : "bg-transparent"
+                }
+                tableContainerClassName="w-full"
+                tableClassName="w-full table-fixed"
+              />
+            </TabsContent>
 
-              <TabsContent value="analyze">
-                <DataTable
-                  columns={holdingsTableColumns}
-                  data={desktopHoldingTables.analyzeEligible}
-                  searchPlaceholder="Search analyzable holdings..."
-                  initialPageSize={5}
-                  pageSizeOptions={[5, 10, 20]}
-                  rowClassName={(holding) =>
-                    holding.pending_delete
-                      ? "bg-muted/45 text-muted-foreground"
-                      : "bg-transparent"
-                  }
-                />
-              </TabsContent>
+            <TabsContent value="analyze">
+              <DataTable
+                columns={holdingsTableColumns}
+                data={desktopHoldingTables.analyzeEligible}
+                searchPlaceholder="Search analyzable holdings..."
+                initialPageSize={5}
+                pageSizeOptions={[5, 10, 20]}
+                rowClassName={(holding) =>
+                  holding.pending_delete
+                    ? "bg-muted/45 text-muted-foreground"
+                    : "bg-transparent"
+                }
+                tableContainerClassName="w-full"
+                tableClassName="w-full table-fixed"
+              />
+            </TabsContent>
 
-              <TabsContent value="non-analyze">
-                <DataTable
-                  columns={holdingsTableColumns}
-                  data={desktopHoldingTables.nonAnalyzable}
-                  searchPlaceholder="Search non-analyzable holdings..."
-                  initialPageSize={5}
-                  pageSizeOptions={[5, 10, 20]}
-                  rowClassName={(holding) =>
-                    holding.pending_delete
-                      ? "bg-muted/45 text-muted-foreground"
-                      : "bg-transparent"
-                  }
-                />
-              </TabsContent>
+            <TabsContent value="non-analyze">
+              <DataTable
+                columns={holdingsTableColumns}
+                data={desktopHoldingTables.nonAnalyzable}
+                searchPlaceholder="Search non-analyzable holdings..."
+                initialPageSize={5}
+                pageSizeOptions={[5, 10, 20]}
+                rowClassName={(holding) =>
+                  holding.pending_delete
+                    ? "bg-muted/45 text-muted-foreground"
+                    : "bg-transparent"
+                }
+                tableContainerClassName="w-full"
+                tableClassName="w-full table-fixed"
+              />
+            </TabsContent>
 
-              <TabsContent value="cash">
-                <DataTable
-                  columns={holdingsTableColumns}
-                  data={desktopHoldingTables.cashSweep}
-                  searchPlaceholder="Search cash / sweep holdings..."
-                  initialPageSize={5}
-                  pageSizeOptions={[5, 10, 20]}
-                  rowClassName={(holding) =>
-                    holding.pending_delete
-                      ? "bg-muted/45 text-muted-foreground"
-                      : "bg-transparent"
-                  }
-                />
-              </TabsContent>
-            </Tabs>
-          </div>
+            <TabsContent value="cash">
+              <DataTable
+                columns={holdingsTableColumns}
+                data={desktopHoldingTables.cashSweep}
+                searchPlaceholder="Search cash / sweep holdings..."
+                initialPageSize={5}
+                pageSizeOptions={[5, 10, 20]}
+                rowClassName={(holding) =>
+                  holding.pending_delete
+                    ? "bg-muted/45 text-muted-foreground"
+                    : "bg-transparent"
+                }
+                tableContainerClassName="w-full"
+                tableClassName="w-full table-fixed"
+              />
+            </TabsContent>
+          </Tabs>
 
           {hasHoldingsChanges ? (
             <div className="pt-2">
@@ -1470,8 +1387,8 @@ export function DashboardMasterView({
         </div>
       </section>
 
-      <Card variant="none" effect="glass" className="min-w-0 overflow-hidden rounded-[24px]">
-        <CardContent className="p-5 sm:p-6">
+      <Card variant="none" effect="glass" className="min-w-0 overflow-hidden rounded-[22px]">
+        <CardContent className="p-4 sm:p-5">
           <ProfileBasedPicksList
             userId={userId}
             vaultOwnerToken={vaultOwnerToken}

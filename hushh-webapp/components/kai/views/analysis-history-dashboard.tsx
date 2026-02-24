@@ -8,6 +8,8 @@ import {
   Search,
   BarChart3,
   MessageSquareText,
+  Trash2,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Icon } from "@/lib/morphy-ux/ui";
@@ -27,13 +29,23 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/lib/morphy-ux/button";
 import { format } from "date-fns";
 import { HushhLoader } from "@/components/app-ui/hushh-loader";
 import { WorldModelService } from "@/lib/services/world-model-service";
+import { CacheService, CACHE_KEYS } from "@/lib/services/cache-service";
 import { mapPortfolioToDashboardViewModel } from "@/components/kai/views/dashboard-data-mapper";
 import type { PortfolioData } from "@/components/kai/types/portfolio";
 import { DebateReadinessChart } from "@/components/kai/charts/debate-readiness-chart";
@@ -48,6 +60,7 @@ export interface AnalysisHistoryDashboardProps {
   vaultOwnerToken?: string;
   onSelectTicker: (ticker: string) => void;
   onViewHistory: (entry: AnalysisHistoryEntry) => void;
+  showDebateInputs?: boolean;
 }
 
 interface DebateCoverageRow {
@@ -109,17 +122,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function clampPercent(value: number): number {
   if (!Number.isFinite(value)) return 0;
   return Math.max(0, Math.min(100, value));
-}
-
-function normalizeTickerInput(value: string): string {
-  return String(value || "")
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9.-]/g, "");
-}
-
-function isTickerLike(value: string): boolean {
-  return /^[A-Z][A-Z0-9.-]{0,5}$/.test(value);
 }
 
 function buildDebateInputsSnapshot(portfolio: PortfolioData): DebateInputsSnapshot {
@@ -227,6 +229,102 @@ function processHistory(map: AnalysisHistoryMap): HistoryEntryWithVersion[] {
   );
 }
 
+function cloneHistoryMap(historyMap: AnalysisHistoryMap): AnalysisHistoryMap {
+  return Object.fromEntries(
+    Object.entries(historyMap).map(([ticker, entries]) => [ticker, [...entries]])
+  );
+}
+
+function toEpochMs(value: string | null | undefined): number | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const epoch = Date.parse(trimmed);
+  return Number.isFinite(epoch) ? epoch : null;
+}
+
+function timestampsMatch(left: string | null | undefined, right: string | null | undefined): boolean {
+  const leftTrimmed = typeof left === "string" ? left.trim() : "";
+  const rightTrimmed = typeof right === "string" ? right.trim() : "";
+  if (!leftTrimmed || !rightTrimmed) return false;
+  if (leftTrimmed === rightTrimmed) return true;
+  const leftEpoch = toEpochMs(leftTrimmed);
+  const rightEpoch = toEpochMs(rightTrimmed);
+  if (leftEpoch === null || rightEpoch === null) return false;
+  return Math.abs(leftEpoch - rightEpoch) <= 1000;
+}
+
+function normalizeTickerKey(historyMap: AnalysisHistoryMap, ticker: string): string | null {
+  const wanted = String(ticker || "").trim().toUpperCase();
+  const canonicalWanted = wanted.replace(/[^A-Z0-9]/g, "");
+  if (!wanted && !canonicalWanted) return null;
+  if (Object.prototype.hasOwnProperty.call(historyMap, wanted)) return wanted;
+  const matched = Object.keys(historyMap).find((key) => {
+    const keyUpper = key.toUpperCase();
+    if (keyUpper === wanted) return true;
+    return keyUpper.replace(/[^A-Z0-9]/g, "") === canonicalWanted;
+  });
+  return matched ?? null;
+}
+
+function extractEntryStreamId(entry: AnalysisHistoryEntry): string | null {
+  const rawCard = entry.raw_card;
+  if (!rawCard || typeof rawCard !== "object") return null;
+  const diagnostics = (rawCard as Record<string, unknown>).stream_diagnostics;
+  if (!diagnostics || typeof diagnostics !== "object") return null;
+  const streamId = (diagnostics as Record<string, unknown>).stream_id;
+  if (typeof streamId !== "string") return null;
+  const trimmed = streamId.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function removeEntryFromHistoryMap(
+  historyMap: AnalysisHistoryMap,
+  entry: AnalysisHistoryEntry
+): { nextMap: AnalysisHistoryMap; changed: boolean } {
+  const nextMap = cloneHistoryMap(historyMap);
+  const tickerKey = normalizeTickerKey(nextMap, entry.ticker);
+  if (!tickerKey) return { nextMap: historyMap, changed: false };
+
+  const wantedTimestamp = String(entry.timestamp || "").trim();
+  const wantedStreamId = extractEntryStreamId(entry);
+  const current = nextMap[tickerKey] || [];
+  if (current.length === 0) return { nextMap: historyMap, changed: false };
+
+  const originalLen = current.length;
+  let filtered = current.filter((candidate) => {
+    const byTimestamp = wantedTimestamp.length > 0 && timestampsMatch(candidate.timestamp, wantedTimestamp);
+    const byStreamId = wantedStreamId !== null && extractEntryStreamId(candidate) === wantedStreamId;
+    return !(byTimestamp || byStreamId);
+  });
+
+  if (filtered.length === originalLen) {
+    filtered = current.slice(1);
+  }
+
+  if (filtered.length === 0) {
+    delete nextMap[tickerKey];
+  } else {
+    nextMap[tickerKey] = filtered;
+  }
+
+  return {
+    nextMap,
+    changed: filtered.length !== originalLen || !nextMap[tickerKey],
+  };
+}
+
+function removeTickerFromHistoryMap(
+  historyMap: AnalysisHistoryMap,
+  ticker: string
+): { nextMap: AnalysisHistoryMap; changed: boolean; tickerKey: string | null } {
+  const nextMap = cloneHistoryMap(historyMap);
+  const tickerKey = normalizeTickerKey(nextMap, ticker);
+  if (!tickerKey) return { nextMap: historyMap, changed: false, tickerKey: null };
+  delete nextMap[tickerKey];
+  return { nextMap, changed: true, tickerKey };
+}
+
 // ============================================================================
 // Empty State
 // ============================================================================
@@ -251,19 +349,18 @@ function EmptyState() {
 interface DebateInputsCardProps {
   loading: boolean;
   snapshot: DebateInputsSnapshot | null;
-  manualTicker: string;
-  onManualTickerChange: (value: string) => void;
-  onRunDebate: () => void;
   onSelectTicker: (ticker: string) => void;
   historyTickers: string[];
 }
 
+type PendingDeleteAction =
+  | { kind: "entry"; entry: AnalysisHistoryEntry }
+  | { kind: "ticker"; ticker: string }
+  | null;
+
 function DebateInputsCard({
   loading,
   snapshot,
-  manualTicker,
-  onManualTickerChange,
-  onRunDebate,
   onSelectTicker,
   historyTickers,
 }: DebateInputsCardProps) {
@@ -274,7 +371,7 @@ function DebateInputsCard({
   const quickStartTickers = eligibleSymbols.length > 0 ? eligibleSymbols : historyTickers;
 
   return (
-    <Card className="rounded-[24px] border border-border/60 bg-card/70 shadow-[0_12px_36px_rgba(15,23,42,0.05)] backdrop-blur">
+    <Card className="rounded-2xl border border-border/60 bg-background/75 shadow-sm">
       <CardHeader>
         <div className="flex items-center justify-between gap-2">
           <CardTitle className="flex items-center gap-2 text-sm">
@@ -290,24 +387,6 @@ function DebateInputsCard({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <Input
-            value={manualTicker}
-            onChange={(event) => onManualTickerChange(event.target.value)}
-            placeholder="Enter ticker (e.g. NVDA)"
-            className="h-10"
-          />
-          <Button
-            variant="blue-gradient"
-            effect="fill"
-            size="sm"
-            className="h-10 min-w-[140px]"
-            onClick={onRunDebate}
-          >
-            Start Debate
-          </Button>
-        </div>
-
         {loading ? (
           <div className="rounded-xl border border-dashed border-border/60 bg-background/80 p-3 text-sm text-muted-foreground">
             Loading debate context from vault...
@@ -334,7 +413,7 @@ function DebateInputsCard({
                 label: row.label,
                 value: row.value,
               }))}
-              className="h-[220px] w-full"
+              className="h-[236px] w-full"
             />
 
             <div className="grid gap-3 sm:grid-cols-2">
@@ -372,7 +451,7 @@ function DebateInputsCard({
             </div>
           ) : (
             <p className="mt-2 text-xs text-muted-foreground">
-              No eligible symbols yet. Import a statement first or enter a ticker manually above.
+              No eligible symbols yet. Import a statement first.
             </p>
           )}
         </div>
@@ -409,16 +488,18 @@ export function AnalysisHistoryDashboard({
   vaultOwnerToken,
   onSelectTicker,
   onViewHistory,
+  showDebateInputs = true,
 }: AnalysisHistoryDashboardProps) {
   const [entries, setEntries] = useState<HistoryEntryWithVersion[]>([]);
   const [loading, setLoading] = useState(true);
   const [debateSnapshot, setDebateSnapshot] = useState<DebateInputsSnapshot | null>(null);
   const [debateSnapshotLoading, setDebateSnapshotLoading] = useState(true);
-  const [manualTicker, setManualTicker] = useState("");
 
   const [historyMap, setHistoryMap] = useState<AnalysisHistoryMap>({});
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [versionsTicker, setVersionsTicker] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<PendingDeleteAction>(null);
+  const [deleteInFlight, setDeleteInFlight] = useState(false);
 
   const fetchHistory = useCallback(async () => {
     try {
@@ -441,6 +522,15 @@ export function AnalysisHistoryDashboard({
   const fetchDebateSnapshot = useCallback(async () => {
     try {
       setDebateSnapshotLoading(true);
+      const cache = CacheService.getInstance();
+      const cachedPortfolio =
+        cache.get<PortfolioData>(CACHE_KEYS.PORTFOLIO_DATA(userId)) ??
+        cache.get<PortfolioData>(CACHE_KEYS.DOMAIN_DATA(userId, "financial"));
+      if (cachedPortfolio && Array.isArray(cachedPortfolio.holdings)) {
+        setDebateSnapshot(buildDebateInputsSnapshot(cachedPortfolio));
+        return;
+      }
+
       const blob = await WorldModelService.loadFullBlob({
         userId,
         vaultKey,
@@ -481,10 +571,19 @@ export function AnalysisHistoryDashboard({
 
   // ----- Delete Handlers -----
 
-  const handleDeleteEntry = useCallback(async (entry: AnalysisHistoryEntry) => {
-    const rawCard = entry.raw_card as Record<string, unknown> | undefined;
-    const diagnostics = rawCard?.stream_diagnostics as Record<string, unknown> | undefined;
-    const streamId = typeof diagnostics?.stream_id === "string" ? diagnostics.stream_id : null;
+  const executeDeleteEntry = useCallback(async (entry: AnalysisHistoryEntry) => {
+    const { nextMap, changed } = removeEntryFromHistoryMap(historyMap, entry);
+    if (!changed) {
+      toast.error("Failed to delete analysis");
+      return;
+    }
+    const previousMap = historyMap;
+    setHistoryMap(nextMap);
+    setEntries(processHistory(nextMap));
+
+    const toastId = toast.loading("Deleting analysis entry...");
+    setDeleteInFlight(true);
+    const streamId = extractEntryStreamId(entry);
     const success = await KaiHistoryService.deleteEntry({
       userId,
       vaultKey,
@@ -493,35 +592,70 @@ export function AnalysisHistoryDashboard({
       timestamp: entry.timestamp,
       streamId,
     });
+    setDeleteInFlight(false);
 
     if (success) {
-      toast.success("Analysis deleted");
-      fetchHistory();
-    } else {
-      toast.error("Failed to delete analysis");
+      toast.success("Analysis deleted", { id: toastId });
+      return;
     }
-  }, [userId, vaultKey, vaultOwnerToken, fetchHistory]);
 
-  const handleDeleteTicker = useCallback(async (ticker: string) => {
+    setHistoryMap(previousMap);
+    setEntries(processHistory(previousMap));
+    toast.error("Failed to delete analysis", { id: toastId });
+  }, [historyMap, userId, vaultKey, vaultOwnerToken]);
+
+  const executeDeleteTicker = useCallback(async (ticker: string) => {
     const canonicalTicker = String(ticker || "").trim().toUpperCase();
     if (!canonicalTicker || canonicalTicker === "UNDEFINED" || canonicalTicker === "NULL") {
       toast.error("Failed to delete history: invalid ticker");
       return;
     }
+    const { nextMap, changed, tickerKey } = removeTickerFromHistoryMap(historyMap, canonicalTicker);
+    if (!changed || !tickerKey) {
+      toast.error(`Failed to delete history for ${canonicalTicker}`);
+      return;
+    }
+    const previousMap = historyMap;
+    setHistoryMap(nextMap);
+    setEntries(processHistory(nextMap));
+
+    const toastId = toast.loading(`Deleting history for ${canonicalTicker}...`);
+    setDeleteInFlight(true);
     const success = await KaiHistoryService.deleteTickerHistory({
       userId,
       vaultKey,
       vaultOwnerToken,
       ticker: canonicalTicker,
     });
+    setDeleteInFlight(false);
 
     if (success) {
-      toast.success(`All history for ${canonicalTicker} deleted`);
-      fetchHistory();
+      toast.success(`All history for ${canonicalTicker} deleted`, { id: toastId });
     } else {
-      toast.error(`Failed to delete history for ${canonicalTicker}`);
+      setHistoryMap(previousMap);
+      setEntries(processHistory(previousMap));
+      toast.error(`Failed to delete history for ${canonicalTicker}`, { id: toastId });
     }
-  }, [userId, vaultKey, vaultOwnerToken, fetchHistory]);
+  }, [historyMap, userId, vaultKey, vaultOwnerToken]);
+
+  const handleDeleteEntry = useCallback((entry: AnalysisHistoryEntry) => {
+    setPendingDelete({ kind: "entry", entry });
+  }, []);
+
+  const handleDeleteTicker = useCallback((ticker: string) => {
+    setPendingDelete({ kind: "ticker", ticker });
+  }, []);
+
+  const confirmDelete = useCallback(async () => {
+    if (!pendingDelete || deleteInFlight) return;
+    if (pendingDelete.kind === "entry") {
+      await executeDeleteEntry(pendingDelete.entry);
+      setPendingDelete(null);
+      return;
+    }
+    await executeDeleteTicker(pendingDelete.ticker);
+    setPendingDelete(null);
+  }, [pendingDelete, deleteInFlight, executeDeleteEntry, executeDeleteTicker]);
 
   // ----- Columns -----
   const openVersions = useCallback((ticker: string) => {
@@ -559,12 +693,14 @@ export function AnalysisHistoryDashboard({
   useEffect(() => {
     if (userId && vaultKey) {
       fetchHistory();
-      void fetchDebateSnapshot();
+      if (showDebateInputs) {
+        void fetchDebateSnapshot();
+      }
     } else {
       setLoading(false);
       setDebateSnapshotLoading(false);
     }
-  }, [userId, vaultKey, fetchDebateSnapshot, fetchHistory]);
+  }, [userId, vaultKey, fetchDebateSnapshot, fetchHistory, showDebateInputs]);
 
   const historyTickers = useMemo(() => {
     const unique = new Set<string>();
@@ -576,20 +712,6 @@ export function AnalysisHistoryDashboard({
     }
     return Array.from(unique);
   }, [entries]);
-
-  const normalizedManualTicker = useMemo(
-    () => normalizeTickerInput(manualTicker),
-    [manualTicker]
-  );
-
-  const handleRunDebate = useCallback(() => {
-    if (!isTickerLike(normalizedManualTicker)) {
-      toast.error("Enter a valid ticker symbol to start debate");
-      return;
-    }
-    onSelectTicker(normalizedManualTicker);
-    setManualTicker("");
-  }, [normalizedManualTicker, onSelectTicker]);
 
   // ----- Loading state -----
   if (loading) {
@@ -607,15 +729,14 @@ export function AnalysisHistoryDashboard({
     return (
       <div className="space-y-6 px-4 sm:px-6 pb-safe max-w-4xl mx-auto">
         <EmptyState />
-        <DebateInputsCard
-          loading={debateSnapshotLoading}
-          snapshot={debateSnapshot}
-          manualTicker={manualTicker}
-          onManualTickerChange={setManualTicker}
-          onRunDebate={handleRunDebate}
-          onSelectTicker={onSelectTicker}
-          historyTickers={historyTickers}
-        />
+        {showDebateInputs ? (
+          <DebateInputsCard
+            loading={debateSnapshotLoading}
+            snapshot={debateSnapshot}
+            onSelectTicker={onSelectTicker}
+            historyTickers={historyTickers}
+          />
+        ) : null}
       </div>
     );
   }
@@ -640,7 +761,8 @@ export function AnalysisHistoryDashboard({
           columns={columns}
           data={entries}
           searchKey="ticker"
-          enableSearch={false}
+          searchPlaceholder="Search analysis history by ticker..."
+          enableSearch
           filterKey="decision"
           filterOptions={[
             { label: "Buy", value: "buy" },
@@ -650,15 +772,14 @@ export function AnalysisHistoryDashboard({
         />
       </div>
 
-      <DebateInputsCard
-        loading={debateSnapshotLoading}
-        snapshot={debateSnapshot}
-        manualTicker={manualTicker}
-        onManualTickerChange={setManualTicker}
-        onRunDebate={handleRunDebate}
-        onSelectTicker={onSelectTicker}
-        historyTickers={historyTickers}
-      />
+      {showDebateInputs ? (
+        <DebateInputsCard
+          loading={debateSnapshotLoading}
+          snapshot={debateSnapshot}
+          onSelectTicker={onSelectTicker}
+          historyTickers={historyTickers}
+        />
+      ) : null}
 
       {/* Versions Modal */}
       <Dialog
@@ -684,47 +805,103 @@ export function AnalysisHistoryDashboard({
                 const ts = entry.timestamp ? new Date(entry.timestamp) : null;
 
                 return (
-                  <Button
+                  <div
                     key={`${entry.ticker}-${entry.timestamp}`}
-                    type="button"
-                    variant="none"
-                    effect="fade"
-                    size="sm"
-                    showRipple={false}
-                    className="w-full justify-between h-auto py-3 px-3 border border-transparent hover:border-border/40"
-                    onClick={() => {
-                      onViewHistory(entry);
-                      setVersionsOpen(false);
-                      setVersionsTicker(null);
-                    }}
+                    className="flex items-center gap-2"
                   >
-                    <div className="flex flex-col items-start gap-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold">v{entry.version}</span>
-                        <span
-                          className={cn(
-                            "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
-                            styles.bg,
-                            styles.text,
-                            styles.border
-                          )}
-                        >
-                          {styles.icon}
-                          {entry.decision}
+                    <Button
+                      type="button"
+                      variant="none"
+                      effect="fade"
+                      size="sm"
+                      showRipple={false}
+                      className="min-w-0 flex-1 justify-between h-auto py-3 px-3 border border-transparent hover:border-border/40"
+                      onClick={() => {
+                        onViewHistory(entry);
+                        setVersionsOpen(false);
+                        setVersionsTicker(null);
+                      }}
+                    >
+                      <div className="flex min-w-0 flex-col items-start gap-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold">v{entry.version}</span>
+                          <span
+                            className={cn(
+                              "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+                              styles.bg,
+                              styles.text,
+                              styles.border
+                            )}
+                          >
+                            {styles.icon}
+                            {entry.decision}
+                          </span>
+                        </div>
+                        <span className="truncate text-xs text-muted-foreground">
+                          {ts ? format(ts, "PPpp") : ""}
                         </span>
                       </div>
-                      <span className="text-xs text-muted-foreground">
-                        {ts ? format(ts, "PPpp") : ""}
-                      </span>
-                    </div>
-                    <span className="text-xs text-muted-foreground">Open</span>
-                  </Button>
+                      <span className="text-xs text-muted-foreground">Open</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="none"
+                      effect="fade"
+                      size="icon-sm"
+                      showRipple={false}
+                      className="h-9 w-9 shrink-0 border border-transparent text-red-600 hover:border-red-500/30 hover:bg-red-500/10 dark:text-red-400"
+                      onClick={() => setPendingDelete({ kind: "entry", entry })}
+                      title="Delete this version"
+                    >
+                      <Icon icon={Trash2} size="sm" />
+                    </Button>
+                  </div>
                 );
               })}
             </div>
           )}
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={Boolean(pendingDelete)}
+        onOpenChange={(open) => {
+          if (!open && !deleteInFlight) setPendingDelete(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {pendingDelete?.kind === "ticker" ? "Delete all versions?" : "Delete this version?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingDelete?.kind === "ticker"
+                ? `This will remove all saved analysis versions for ${pendingDelete.ticker}.`
+                : "This will permanently remove the selected analysis version from history."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteInFlight}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                void confirmDelete();
+              }}
+              disabled={deleteInFlight}
+              className="bg-red-600 text-white hover:bg-red-700"
+            >
+              {deleteInFlight ? (
+                <span className="inline-flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Deleting...
+                </span>
+              ) : (
+                "Delete"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

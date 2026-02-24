@@ -51,6 +51,8 @@ interface DataTableProps<TData, TValue> {
   pageSizeOptions?: number[];
   rowClassName?: (row: TData) => string;
   enableSearch?: boolean;
+  tableContainerClassName?: string;
+  tableClassName?: string;
 }
 
 export function DataTable<TData, TValue>({
@@ -66,6 +68,8 @@ export function DataTable<TData, TValue>({
   pageSizeOptions = [10, 25, 50],
   rowClassName,
   enableSearch = true,
+  tableContainerClassName,
+  tableClassName,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
@@ -163,8 +167,8 @@ export function DataTable<TData, TValue>({
       )}
 
       {/* Table */}
-      <div className="overflow-hidden rounded border">
-        <Table>
+      <div className={cn("overflow-x-auto overflow-y-hidden rounded border", tableContainerClassName)}>
+        <Table className={tableClassName}>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>

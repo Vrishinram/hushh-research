@@ -453,6 +453,35 @@ export function KaiFlow({
 
         setState("checking");
 
+        const cachedPortfolioData = getPortfolioData(userId) ?? undefined;
+        const hasCachedPortfolioData = Boolean(
+          cachedPortfolioData &&
+            Array.isArray(cachedPortfolioData.holdings) &&
+            cachedPortfolioData.holdings.length > 0
+        );
+
+        // Dashboard-first UX: use trusted in-memory cache immediately and avoid
+        // blocking on metadata/blob reads when holdings already exist locally.
+        if (isDashboardMode && hasCachedPortfolioData && cachedPortfolioData) {
+          const normalizedCachedHoldings = normalizeHoldingsWithPct(
+            cachedPortfolioData.holdings
+          );
+          const normalizedCachedPortfolio: PortfolioData = {
+            ...cachedPortfolioData,
+            holdings: normalizedCachedHoldings,
+          };
+          setPortfolioData(userId, normalizedCachedPortfolio);
+          setFlowData({
+            hasFinancialData: true,
+            holdingsCount: normalizedCachedPortfolio.holdings?.length || 0,
+            portfolioData: normalizedCachedPortfolio,
+            holdings: normalizedCachedPortfolio.holdings?.map((h) => h.symbol) || [],
+          });
+          setOnboardingFlowActiveCookie(false);
+          setState("dashboard");
+          return;
+        }
+
         // Fetch user's World Model metadata
         const metadata = await WorldModelService.getMetadata(userId, false, effectiveVaultOwnerToken);
 
@@ -463,13 +492,6 @@ export function KaiFlow({
 
         const hasFinancialData =
           financialDomain && financialDomain.attributeCount > 0;
-        const cachedPortfolioData = getPortfolioData(userId) ?? undefined;
-        const hasCachedPortfolioData = Boolean(
-          cachedPortfolioData &&
-            Array.isArray(cachedPortfolioData.holdings) &&
-            cachedPortfolioData.holdings.length > 0
-        );
-
         if (hasFinancialData) {
           // Prefer CacheProvider (in-memory) for reuse with Manage page
           let portfolioData: PortfolioData | undefined = cachedPortfolioData;

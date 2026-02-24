@@ -60,8 +60,13 @@ export function HoldingsConcentrationChart({
         </CardTitle>
       </CardHeader>
       <CardContent className="pt-0 min-w-0 overflow-hidden">
-        <ChartContainer config={chartConfig} className="h-[220px] w-full min-w-0 sm:h-[230px]">
-          <BarChart data={chartData} layout="vertical" margin={{ top: 10, right: 44, left: 0, bottom: 0 }}>
+        <ChartContainer config={chartConfig} className="h-[192px] w-full min-w-0 sm:h-[204px]">
+          <BarChart
+            data={chartData}
+            layout="vertical"
+            margin={{ top: 6, right: 46, left: 6, bottom: 0 }}
+            barCategoryGap="24%"
+          >
             <CartesianGrid
               strokeDasharray="3 3"
               stroke="hsl(var(--border))"
@@ -77,7 +82,7 @@ export function HoldingsConcentrationChart({
             <YAxis
               type="category"
               dataKey="symbol"
-              width={44}
+              width={52}
               axisLine={false}
               tickLine={false}
               tick={{ fontSize: 10 }}
@@ -91,6 +96,9 @@ export function HoldingsConcentrationChart({
                     const payload = item.payload as ConcentrationDatum;
                     return (
                       <div className="flex flex-col gap-1">
+                        <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          Holdings Concentration
+                        </span>
                         <span className="text-sm font-semibold">{payload.symbol}</span>
                         <span className="text-xs text-muted-foreground truncate">{payload.name}</span>
                         <span className="text-sm font-medium">
@@ -102,7 +110,7 @@ export function HoldingsConcentrationChart({
                 />
               }
             />
-            <Bar dataKey="weightPct" radius={[0, 6, 6, 0]}>
+            <Bar dataKey="weightPct" radius={[0, 6, 6, 0]} maxBarSize={16}>
               <LabelList
                 dataKey="weightPct"
                 position="right"

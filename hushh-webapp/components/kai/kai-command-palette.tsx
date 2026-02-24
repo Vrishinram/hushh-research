@@ -7,7 +7,8 @@ import {
   Compass,
   History,
   Search,
-  Settings2,
+  ShieldCheck,
+  UserRound,
 } from "lucide-react";
 
 import {
@@ -31,7 +32,8 @@ import { Icon } from "@/lib/morphy-ux/ui";
 export type KaiCommandAction =
   | "analyze"
   | "optimize"
-  | "manage"
+  | "consent"
+  | "profile"
   | "history"
   | "dashboard"
   | "home";
@@ -335,6 +337,8 @@ export function KaiCommandPalette({
       .slice(0, 20);
   }, [portfolioRows, portfolioTickerSet, query, universe, remoteMatches]);
 
+  const isFiltering = query.trim().length > 0;
+
   function run(command: KaiCommandAction, params?: Record<string, unknown>) {
     onOpenChange(false);
     setQuery("");
@@ -361,22 +365,13 @@ export function KaiCommandPalette({
             <Icon icon={BarChart3} size="sm" className="mr-2 text-muted-foreground" />
             Dashboard
           </CommandItem>
-          <CommandItem
-            className={commandItemClass}
-            disabled
-          >
-            <Icon icon={Activity} size="sm" className="mr-2 text-muted-foreground" />
-            <span>Optimize Portfolio</span>
-            <span className="ml-auto text-xs text-muted-foreground">Coming soon</span>
-          </CommandItem>
-          <CommandItem
-            className={commandItemClass}
-            disabled={!hasPortfolioData}
-            onSelect={() => run("manage")}
-          >
-            <Icon icon={Settings2} size="sm" className="mr-2 text-muted-foreground" />
-            Manage Portfolio
-          </CommandItem>
+          {!isFiltering ? (
+            <CommandItem className={commandItemClass} disabled>
+              <Icon icon={Activity} size="sm" className="mr-2 text-muted-foreground" />
+              <span>Optimize Portfolio</span>
+              <span className="ml-auto text-xs text-muted-foreground">Coming soon</span>
+            </CommandItem>
+          ) : null}
         </CommandGroup>
 
         <CommandSeparator />
@@ -393,6 +388,19 @@ export function KaiCommandPalette({
           <CommandItem className={commandItemClass} onSelect={() => run("home")}>
             <Icon icon={Compass} size="sm" className="mr-2 text-muted-foreground" />
             Kai Home
+          </CommandItem>
+        </CommandGroup>
+
+        <CommandSeparator />
+
+        <CommandGroup heading="Account">
+          <CommandItem className={commandItemClass} onSelect={() => run("consent")}>
+            <Icon icon={ShieldCheck} size="sm" className="mr-2 text-muted-foreground" />
+            Consents
+          </CommandItem>
+          <CommandItem className={commandItemClass} onSelect={() => run("profile")}>
+            <Icon icon={UserRound} size="sm" className="mr-2 text-muted-foreground" />
+            Profile
           </CommandItem>
         </CommandGroup>
 

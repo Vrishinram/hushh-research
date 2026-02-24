@@ -43,13 +43,18 @@ export function DebateReadinessChart({ data, className }: DebateReadinessChartPr
   if (data.length === 0) return null;
 
   return (
-    <ChartContainer config={CHART_CONFIG} className={className ?? "h-[230px] w-full"}>
+    <ChartContainer
+      config={CHART_CONFIG}
+      className={className ?? "h-[236px] w-full rounded-xl border border-border/60 bg-background/70 p-2"}
+    >
       <BarChart
         accessibilityLayer
         data={data}
-        margin={{ top: 10, right: 8, left: -6, bottom: 0 }}
+        margin={{ top: 24, right: 8, left: 6, bottom: 4 }}
+        barSize={28}
       >
         <CartesianGrid
+          vertical={false}
           strokeDasharray="3 3"
           stroke="hsl(var(--border))"
           strokeOpacity={0.95}
@@ -67,7 +72,8 @@ export function DebateReadinessChart({ data, className }: DebateReadinessChartPr
           tickFormatter={(value) => `${value}%`}
           tickLine={false}
           axisLine={false}
-          width={36}
+          width={42}
+          tick={{ fontSize: 11 }}
         />
         <ChartTooltip
           cursor={false}
@@ -77,10 +83,11 @@ export function DebateReadinessChart({ data, className }: DebateReadinessChartPr
             />
           }
         />
-        <Bar dataKey="value" radius={[8, 8, 0, 0]}>
+        <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={30}>
           <LabelList
             dataKey="value"
             position="top"
+            offset={8}
             className="fill-foreground"
             fontSize={10}
             formatter={(value: number) => `${clampCoverage(Number(value)).toFixed(0)}%`}

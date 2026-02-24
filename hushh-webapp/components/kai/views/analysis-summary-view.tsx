@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, RefreshCw, Scale } from "lucide-react";
 
 import { Button } from "@/lib/morphy-ux/button";
@@ -7,12 +8,21 @@ import { Card, CardContent } from "@/lib/morphy-ux/card";
 import { Icon } from "@/lib/morphy-ux/ui";
 import type { AnalysisHistoryEntry } from "@/lib/services/kai-history-service";
 import { cn } from "@/lib/utils";
+import {
+  fetchLatestMarketSnapshot,
+  getLatestMarketSnapshotFromCache,
+  pickPreferredMarketSnapshot,
+  type TickerMarketSnapshot,
+} from "@/lib/kai/market-snapshot";
 
 interface AnalysisSummaryViewProps {
   entry: AnalysisHistoryEntry;
-  onBack: () => void;
-  onOpenDebate: () => void;
-  onReanalyze: (ticker: string) => void;
+  onBack?: () => void;
+  onOpenDebate?: () => void;
+  onReanalyze?: (ticker: string) => void;
+  embedded?: boolean;
+  userId?: string;
+  vaultOwnerToken?: string;
 }
 
 function readNumber(value: unknown): number | null {
@@ -55,6 +65,12 @@ function formatTimestamp(value: string | undefined): string {
 }
 
 function resolveCurrentPrice(rawCard: Record<string, unknown>): number | null {
+  const marketSnapshotRaw =
+    rawCard.market_snapshot &&
+    typeof rawCard.market_snapshot === "object" &&
+    !Array.isArray(rawCard.market_snapshot)
+      ? (rawCard.market_snapshot as Record<string, unknown>)
+      : {};
   const keyMetricsRaw =
     rawCard.key_metrics &&
     typeof rawCard.key_metrics === "object" &&
@@ -75,6 +91,7 @@ function resolveCurrentPrice(rawCard: Record<string, unknown>): number | null {
       : {};
 
   return (
+    readNumber(marketSnapshotRaw.last_price) ??
     readNumber(rawCard.current_price) ??
     readNumber(valuationRaw.current_price) ??
     readNumber(valuationRaw.price) ??
@@ -82,6 +99,72 @@ function resolveCurrentPrice(rawCard: Record<string, unknown>): number | null {
     readNumber(priceTargetsRaw.current) ??
     readNumber(priceTargetsRaw.market_price)
   );
+}
+
+function resolveDailyChangePct(rawCard: Record<string, unknown>): number | null {
+  const marketSnapshotRaw =
+    rawCard.market_snapshot &&
+    typeof rawCard.market_snapshot === "object" &&
+    !Array.isArray(rawCard.market_snapshot)
+      ? (rawCard.market_snapshot as Record<string, unknown>)
+      : {};
+  const keyMetricsRaw =
+    rawCard.key_metrics &&
+    typeof rawCard.key_metrics === "object" &&
+    !Array.isArray(rawCard.key_metrics)
+      ? (rawCard.key_metrics as Record<string, unknown>)
+      : {};
+  const sentimentRaw =
+    keyMetricsRaw.sentiment &&
+    typeof keyMetricsRaw.sentiment === "object" &&
+    !Array.isArray(keyMetricsRaw.sentiment)
+      ? (keyMetricsRaw.sentiment as Record<string, unknown>)
+      : {};
+
+  return (
+    readNumber(marketSnapshotRaw.change_pct) ??
+    readNumber(rawCard.day_change_pct) ??
+    readNumber(rawCard.todays_change_pct) ??
+    readNumber(sentimentRaw.day_change_pct)
+  );
+}
+
+function resolveRawCardMarketSnapshot(
+  rawCard: Record<string, unknown>,
+  fallbackObservedAt?: string
+): TickerMarketSnapshot | null {
+  const marketSnapshotRaw =
+    rawCard.market_snapshot &&
+    typeof rawCard.market_snapshot === "object" &&
+    !Array.isArray(rawCard.market_snapshot)
+      ? (rawCard.market_snapshot as Record<string, unknown>)
+      : {};
+  const direct = readNumber(marketSnapshotRaw.last_price);
+  if (direct !== null && direct > 0) {
+    return {
+      last_price: direct,
+      change_pct: readNumber(marketSnapshotRaw.change_pct),
+      observed_at:
+        (typeof marketSnapshotRaw.observed_at === "string" && marketSnapshotRaw.observed_at) ||
+        fallbackObservedAt ||
+        null,
+      source:
+        (typeof marketSnapshotRaw.source === "string" && marketSnapshotRaw.source) ||
+        "decision_payload.market_snapshot",
+    };
+  }
+
+  const fallback = resolveCurrentPrice(rawCard);
+  if (fallback !== null && fallback > 0) {
+    return {
+      last_price: fallback,
+      change_pct: resolveDailyChangePct(rawCard),
+      observed_at: fallbackObservedAt || null,
+      source: "decision_payload.fallback",
+    };
+  }
+
+  return null;
 }
 
 function ScoreBar({
@@ -127,9 +210,61 @@ export function AnalysisSummaryView({
   onBack,
   onOpenDebate,
   onReanalyze,
+  embedded = false,
+  userId,
+  vaultOwnerToken,
 }: AnalysisSummaryViewProps) {
   const rawCard = (entry.raw_card || {}) as Record<string, unknown>;
   const entryRecord = entry as unknown as Record<string, unknown>;
+  const rawCardSnapshot = useMemo(
+    () =>
+      resolveRawCardMarketSnapshot(
+        rawCard,
+        String(rawCard.analysis_updated_at || entry.timestamp || "")
+      ),
+    [entry.timestamp, rawCard]
+  );
+  const [marketSnapshot, setMarketSnapshot] = useState<TickerMarketSnapshot | null>(
+    rawCardSnapshot
+  );
+
+  useEffect(() => {
+    setMarketSnapshot(rawCardSnapshot);
+  }, [rawCardSnapshot, entry.ticker]);
+
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+
+    const cached = getLatestMarketSnapshotFromCache(userId, entry.ticker);
+    if (!cancelled) {
+      setMarketSnapshot((prev) => pickPreferredMarketSnapshot(prev, cached));
+    }
+
+    if (!vaultOwnerToken) return () => {
+      cancelled = true;
+    };
+
+    void (async () => {
+      try {
+        const live = await fetchLatestMarketSnapshot({
+          userId,
+          ticker: entry.ticker,
+          vaultOwnerToken,
+          daysBack: 7,
+        });
+        if (!cancelled) {
+          setMarketSnapshot((prev) => pickPreferredMarketSnapshot(prev, live));
+        }
+      } catch {
+        // Non-blocking: keep best known snapshot.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [entry.ticker, userId, vaultOwnerToken]);
 
   const companyStrength = readNumber(rawCard.company_strength_score);
   const marketTrendScore = readNumber(rawCard.market_trend_score);
@@ -137,7 +272,8 @@ export function AnalysisSummaryView({
   const fairValueGapPct = readNumber(rawCard.fair_value_gap_pct);
   const marketTrendLabel = String(rawCard.market_trend_label || "Trend unavailable");
   const fairValueLabel = String(rawCard.fair_value_label || "Fair value unavailable");
-  const currentPrice = resolveCurrentPrice(rawCard);
+  const currentPrice = marketSnapshot?.last_price ?? resolveCurrentPrice(rawCard);
+  const todayChangePct = marketSnapshot?.change_pct ?? resolveDailyChangePct(rawCard);
   const priceLabel = formatCurrency(currentPrice);
   const fairValueGapLabel =
     fairValueGapPct === null
@@ -166,16 +302,24 @@ export function AnalysisSummaryView({
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-4 px-4 pb-safe pt-4">
-      <div className="flex items-center justify-between gap-3">
-        <Button variant="none" effect="fade" size="sm" onClick={onBack}>
-          <Icon icon={ArrowLeft} size="sm" className="mr-1" />
-          History
-        </Button>
-        <Button variant="none" effect="fade" size="sm" onClick={() => onReanalyze(entry.ticker)}>
-          <Icon icon={RefreshCw} size="sm" className="mr-1" />
-          Re-analyze
-        </Button>
-      </div>
+      {!embedded ? (
+        <div className="flex items-center justify-between gap-3">
+          <Button variant="none" effect="fade" size="sm" onClick={onBack} disabled={!onBack}>
+            <Icon icon={ArrowLeft} size="sm" className="mr-1" />
+            History
+          </Button>
+          <Button
+            variant="none"
+            effect="fade"
+            size="sm"
+            onClick={() => onReanalyze?.(entry.ticker)}
+            disabled={!onReanalyze}
+          >
+            <Icon icon={RefreshCw} size="sm" className="mr-1" />
+            Re-analyze
+          </Button>
+        </div>
+      ) : null}
 
       <div className="flex items-center gap-4 px-1">
         <div className="grid h-14 w-14 place-items-center rounded-full bg-black text-lg font-black text-white dark:bg-white dark:text-black">
@@ -185,6 +329,21 @@ export function AnalysisSummaryView({
           <h2 className="text-2xl font-black tracking-tight leading-tight">{entry.ticker} Insight</h2>
           <div className="mt-1 flex flex-wrap items-center gap-2">
             <span className="font-mono text-sm text-muted-foreground">{priceLabel}</span>
+            {todayChangePct !== null ? (
+              <span
+                className={cn(
+                  "rounded px-1.5 py-0.5 text-xs font-semibold",
+                  todayChangePct >= 0
+                    ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                    : "bg-rose-500/10 text-rose-600 dark:text-rose-400"
+                )}
+              >
+                Today {todayChangePct >= 0 ? "+" : ""}
+                {todayChangePct.toFixed(2)}%
+              </span>
+            ) : (
+              <span className="text-xs text-muted-foreground">Today's status unavailable</span>
+            )}
             {fairValueGapLabel ? (
               <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
                 {fairValueGapLabel}
@@ -234,10 +393,12 @@ export function AnalysisSummaryView({
               Kai Insight
             </p>
           </div>
-          <Button variant="blue-gradient" effect="fill" size="sm" onClick={onOpenDebate}>
-            <Icon icon={Scale} size="sm" className="mr-1" />
-            Open Detailed Debate
-          </Button>
+          {!embedded && onOpenDebate ? (
+            <Button variant="blue-gradient" effect="fill" size="sm" onClick={onOpenDebate}>
+              <Icon icon={Scale} size="sm" className="mr-1" />
+              Open Detailed Debate
+            </Button>
+          ) : null}
         </CardContent>
       </Card>
     </div>

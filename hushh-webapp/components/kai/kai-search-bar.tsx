@@ -67,7 +67,7 @@ export function KaiSearchBar({
               onClick={() => setOpen(true)}
             >
               <Icon icon={Search} size="sm" className="mr-2 text-muted-foreground" />
-              Analyze, optimize, manage with Kai
+              Analyze, dashboard, consent with Kai
             </Button>
             <button
               type="button"
