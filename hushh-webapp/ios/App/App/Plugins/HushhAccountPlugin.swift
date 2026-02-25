@@ -14,8 +14,6 @@ public class HushhAccountPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "deleteAccount", returnType: CAPPluginReturnPromise)
     ]
     
-    private let defaultBackendUrl = "https://consent-protocol-1006304528804.us-central1.run.app"
-    
     private lazy var urlSession: URLSession = {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 45 // Longer timeout for deletion
@@ -29,7 +27,11 @@ public class HushhAccountPlugin: CAPPlugin, CAPBridgedPlugin {
              return
         }
         
-        let backendUrl = call.getString("backendUrl") ?? defaultBackendUrl
+        let backendUrl = HushhProxyClient.resolveBackendUrl(
+            call: call,
+            plugin: self,
+            jsName: jsName
+        )
         
         guard let url = URL(string: "\(backendUrl)/api/account/delete") else {
             call.reject("Invalid URL")

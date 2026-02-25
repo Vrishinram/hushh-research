@@ -297,6 +297,13 @@ export class VaultService {
     return state.wrappers.find((wrapper) => wrapper.method === method) ?? null;
   }
 
+  private static isPasskeyMethod(method: VaultMethod): boolean {
+    return (
+      method === "generated_default_web_prf" ||
+      method === "generated_default_native_passkey_prf"
+    );
+  }
+
   static getWrapperByMethod(
     state: VaultState,
     method: VaultMethod,
@@ -308,25 +315,37 @@ export class VaultService {
     const all = state.wrappers.filter((wrapper) => wrapper.method === method);
     if (!all.length) return null;
 
+    const shouldPreferRp =
+      this.isPasskeyMethod(method) ? (options?.preferCurrentRpId ?? true) : false;
+    const rpId = shouldPreferRp ? this.getCurrentRpId() : null;
+
     const requestedWrapperId = this.normalizeNullableString(options?.wrapperId);
     if (requestedWrapperId) {
-      return (
+      const requested =
         all.find((wrapper) => (wrapper.wrapperId ?? "default") === requestedWrapperId) ??
-        null
+        null;
+      if (!requested) return null;
+      if (!shouldPreferRp || !rpId) return requested;
+      const wrapperRpId = this.normalizeNullableString(requested.passkeyRpId);
+      if (!wrapperRpId || wrapperRpId === rpId) return requested;
+      return (
+        all.find((wrapper) => this.normalizeNullableString(wrapper.passkeyRpId) === rpId) ?? null
       );
     }
 
-    if (
-      method === "generated_default_web_prf" ||
-      method === "generated_default_native_passkey_prf"
-    ) {
-      const shouldPreferRp = options?.preferCurrentRpId ?? true;
-      if (shouldPreferRp) {
-        const rpId = this.getCurrentRpId();
-        if (rpId) {
-          const rpMatch = all.find((wrapper) => wrapper.passkeyRpId === rpId);
-          if (rpMatch) return rpMatch;
-        }
+    if (shouldPreferRp && rpId) {
+      const rpMatch = all.find(
+        (wrapper) => this.normalizeNullableString(wrapper.passkeyRpId) === rpId
+      );
+      if (rpMatch) return rpMatch;
+
+      // If wrappers are explicitly pinned to other RP IDs, fail closed and fall
+      // back to passphrase/recovery rather than triggering cross-device QR UX.
+      const hasExplicitRpIds = all.some(
+        (wrapper) => !!this.normalizeNullableString(wrapper.passkeyRpId)
+      );
+      if (hasExplicitRpIds) {
+        return null;
       }
     }
 

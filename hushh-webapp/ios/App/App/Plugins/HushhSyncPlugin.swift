@@ -19,7 +19,6 @@ public class HushhSyncPlugin: CAPPlugin, CAPBridgedPlugin {
     ]
     
     private let TAG = "HushhSync"
-    private let defaultBackendUrl = "https://consent-protocol-1006304528804.us-central1.run.app"
     
     private lazy var urlSession: URLSession = {
         let config = URLSessionConfiguration.default

@@ -74,6 +74,12 @@ const config: CapacitorConfig = {
     WorldModel: {
       backendUrl: NORMALIZED_BACKEND_URL,
     },
+    HushhAccount: {
+      backendUrl: NORMALIZED_BACKEND_URL,
+    },
+    HushhSync: {
+      backendUrl: NORMALIZED_BACKEND_URL,
+    },
     CapacitorHttp: {
       enabled: true,
     },

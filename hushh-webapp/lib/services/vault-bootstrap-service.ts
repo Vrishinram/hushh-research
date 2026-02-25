@@ -113,10 +113,37 @@ async function canUseNativeBiometricVault(): Promise<boolean> {
 }
 
 function resolveRpId(): string {
-  if (typeof window === "undefined") {
-    return process.env.NEXT_PUBLIC_PASSKEY_RP_ID || "localhost";
+  const configuredRp = process.env.NEXT_PUBLIC_PASSKEY_RP_ID?.trim();
+  if (configuredRp) {
+    return configuredRp;
   }
-  return process.env.NEXT_PUBLIC_PASSKEY_RP_ID || getRpId();
+
+  if (Capacitor.isNativePlatform()) {
+    const configuredAppUrl =
+      process.env.NEXT_PUBLIC_APP_URL?.trim() ||
+      process.env.NEXT_PUBLIC_FRONTEND_URL?.trim() ||
+      "";
+    if (configuredAppUrl) {
+      try {
+        const hostname = new URL(configuredAppUrl).hostname;
+        if (hostname) {
+          return hostname;
+        }
+      } catch {
+        // Ignore malformed URL and continue to runtime-derived fallbacks.
+      }
+    }
+
+    // Native WebViews may run under a local/app scheme. Production builds should
+    // set NEXT_PUBLIC_PASSKEY_RP_ID explicitly or NEXT_PUBLIC_APP_URL with a
+    // passkey-capable host.
+    return getRpId();
+  }
+
+  if (typeof window === "undefined") {
+    return "localhost";
+  }
+  return getRpId();
 }
 
 async function canUseNativePasskeyVault(): Promise<boolean> {

@@ -287,10 +287,10 @@ export function PortfolioImportView({
               gradient: false,
             }}
           >
-            {isPreloadingSchema ? "Preloading..." : "Preload Schema Data"}
+            {isPreloadingSchema ? "Loading Demo Mode..." : "Load Demo Mode Data"}
           </MorphyButton>
           <p className="px-1 text-[11px] text-muted-foreground">
-            First-time option: load sample world model data to test vault flows.
+            First-time option: load demo portfolio data, review it, then save to vault.
           </p>
         </div>
       ) : null}

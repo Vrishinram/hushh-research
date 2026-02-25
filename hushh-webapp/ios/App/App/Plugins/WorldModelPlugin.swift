@@ -53,17 +53,11 @@ public class WorldModelPlugin: CAPPlugin, CAPBridgedPlugin {
     
     // MARK: - Configuration
     
-    private var defaultBackendUrl: String {
-        return (bridge?.config.getPluginConfig(jsName).getString("backendUrl")) 
-            ?? "https://consent-protocol-1006304528804.us-central1.run.app"
-    }
-
     private func getBackendUrl(_ call: CAPPluginCall) -> String {
         return HushhProxyClient.resolveBackendUrl(
             call: call,
             plugin: self,
-            jsName: jsName,
-            defaultBackendUrl: defaultBackendUrl
+            jsName: jsName
         )
     }
 

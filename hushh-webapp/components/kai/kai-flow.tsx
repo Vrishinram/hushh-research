@@ -113,6 +113,17 @@ interface LiveHoldingPreview {
   asset_type?: string;
 }
 
+interface DemoTemplateResponse {
+  account_info?: unknown;
+  account_summary?: unknown;
+  asset_allocation?: unknown;
+  holdings?: unknown;
+  cash_balance?: unknown;
+  total_value?: unknown;
+  parse_fallback?: unknown;
+  domain_intent?: unknown;
+}
+
 // Streaming state
 interface StreamingState {
   stage: ImportStage;
@@ -508,6 +519,33 @@ function createPreloadedPortfolioTemplate(now?: Date): ReviewPortfolioData {
       updated_at: nowIso,
     },
   };
+}
+
+function isReviewPortfolioData(value: unknown): value is ReviewPortfolioData {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return Array.isArray(record.holdings);
+}
+
+async function fetchDemoModePortfolioTemplate(
+  _vaultOwnerToken?: string
+): Promise<ReviewPortfolioData> {
+  const response = await fetch("/demo-mode/portfolio-template.json", {
+    method: "GET",
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error("Demo template unavailable.");
+  }
+
+  const payload = (await response.json().catch(() => ({}))) as DemoTemplateResponse;
+  if (!isReviewPortfolioData(payload)) {
+    throw new Error("Demo template is invalid.");
+  }
+  return payload;
 }
 
 // =============================================================================
@@ -1683,140 +1721,34 @@ export function KaiFlow({
   const handlePreloadSchema = useCallback(async () => {
     if (isPreloadingSchema) return;
 
-    if (!vaultKey || !effectiveVaultOwnerToken) {
-      setPendingImportFile(null);
-      setResumeImportAfterVault(false);
-      setPendingSchemaPreload(true);
-      setVaultDialogOpen(true);
-      toast.info("Create or unlock vault to preload schema data.");
-      return;
-    }
-
     setIsPreloadingSchema(true);
     setError(null);
 
     try {
-      const nowIso = new Date().toISOString();
-      const template = createPreloadedPortfolioTemplate();
-      const baseFullBlob = await WorldModelService.loadFullBlob({
-        userId,
-        vaultKey,
-        vaultOwnerToken: effectiveVaultOwnerToken,
-      }).catch(() => ({} as Record<string, unknown>));
+      const template = await fetchDemoModePortfolioTemplate(effectiveVaultOwnerToken);
 
-      const existingFinancialRaw = baseFullBlob.financial;
-      const existingFinancial =
-        existingFinancialRaw &&
-        typeof existingFinancialRaw === "object" &&
-        !Array.isArray(existingFinancialRaw)
-          ? ({ ...(existingFinancialRaw as Record<string, unknown>) } as Record<string, unknown>)
-          : {};
-
-      const existingDocumentsRaw = existingFinancial.documents;
-      const documentsDomain =
-        existingDocumentsRaw &&
-        typeof existingDocumentsRaw === "object" &&
-        !Array.isArray(existingDocumentsRaw)
-          ? (existingDocumentsRaw as Record<string, unknown>)
-          : null;
-
-      const nextFinancialDomain = {
-        ...existingFinancial,
-        schema_version: 3,
-        domain_intent: {
-          primary: "financial",
-          source: "domain_registry_prepopulate",
-          contract_version: 2,
-          updated_at: nowIso,
-        },
-        portfolio: {
-          ...template,
-          domain_intent: {
-            primary: "financial",
-            secondary: "portfolio",
-            source: "kai_schema_preload",
-            captured_sections: ["account_info", "account_summary", "asset_allocation", "holdings"],
-            updated_at: nowIso,
-          },
-        },
-        documents:
-          documentsDomain ??
-          {
-            schema_version: 1,
-            statements: [],
-            domain_intent: {
-              primary: "financial",
-              secondary: "documents",
-              source: "kai_schema_preload",
-              captured_sections: ["account_info", "holdings"],
-              updated_at: nowIso,
-            },
-          },
-        updated_at: nowIso,
-      };
-
-      const investableCount =
-        template.holdings?.filter((holding) => holding.is_investable).length ?? 0;
-      const cashCount =
-        template.holdings?.filter((holding) => holding.is_cash_equivalent).length ?? 0;
-      const holdingsCount = template.holdings?.length ?? 0;
-
-      const result = await WorldModelService.storeMergedDomainWithPreparedBlob({
-        userId,
-        vaultKey,
-        domain: "financial",
-        domainData: nextFinancialDomain as Record<string, unknown>,
-        summary: {
-          intent_source: "kai_schema_preload",
-          has_portfolio: true,
-          holdings_count: holdingsCount,
-          attribute_count: holdingsCount,
-          item_count: holdingsCount,
-          investable_positions_count: investableCount,
-          cash_positions_count: cashCount,
-          allocation_coverage_pct: 1,
-          parser_quality_score: 1,
-          last_statement_total_value: template.total_value ?? 0,
-          parse_fallback_last_import: false,
-          domain_contract_version: 2,
-          intent_map: [
-            "portfolio",
-            "analytics",
-            "profile",
-            "documents",
-            "analysis_history",
-            "runtime",
-            "analysis.decisions",
-          ],
-          last_updated: nowIso,
-        },
-        baseFullBlob,
-        vaultOwnerToken: effectiveVaultOwnerToken,
-      });
-
-      if (!result.success) {
-        throw new Error("Failed to preload schema data.");
-      }
-
-      await handleSaveComplete(template);
-      toast.success("Schema data preloaded into your vault.");
+      setFlowData((previous) => ({
+        ...previous,
+        parsedPortfolio: template,
+      }));
+      setState("reviewing");
+      toast.success("Demo mode data loaded. Review and save to vault.");
     } catch (preloadError) {
       console.error("[KaiFlow] Failed to preload schema data:", preloadError);
-      toast.error(
-        preloadError instanceof Error
-          ? preloadError.message
-          : "Failed to preload schema data"
-      );
+      const fallbackTemplate = createPreloadedPortfolioTemplate();
+      setFlowData((previous) => ({
+        ...previous,
+        parsedPortfolio: fallbackTemplate,
+      }));
+      setState("reviewing");
+      toast.info("Loaded default demo template. Review and save to vault.");
     } finally {
       setPendingSchemaPreload(false);
       setIsPreloadingSchema(false);
     }
   }, [
     effectiveVaultOwnerToken,
-    handleSaveComplete,
     isPreloadingSchema,
-    userId,
-    vaultKey,
   ]);
 
   useEffect(() => {

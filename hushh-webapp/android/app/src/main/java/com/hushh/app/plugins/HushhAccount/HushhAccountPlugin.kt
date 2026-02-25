@@ -6,6 +6,7 @@ import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
+import com.hushh.app.plugins.shared.BackendUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
@@ -29,8 +30,9 @@ class HushhAccountPlugin : Plugin() {
         .writeTimeout(45, TimeUnit.SECONDS)
         .build()
 
-    // Default backend URL
-    private val defaultBackendUrl = "https://consent-protocol-1006304528804.us-central1.run.app"
+    private fun getBackendUrl(call: PluginCall): String {
+        return BackendUrl.resolve(bridge, call, "HushhAccount")
+    }
 
     /**
      * Delete the user's account and all associated data.
@@ -45,7 +47,7 @@ class HushhAccountPlugin : Plugin() {
             return
         }
 
-        val backendUrl = call.getString("backendUrl") ?: defaultBackendUrl
+        val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/api/account/delete"
 
         Log.w(TAG, "🚨 [HushhAccountPlugin] Requesting account deletion...")

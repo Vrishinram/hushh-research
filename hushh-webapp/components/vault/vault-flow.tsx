@@ -131,18 +131,10 @@ export function VaultFlow({
           const vaultData = await VaultService.getVaultState(user.uid);
           const primaryWrapper = VaultService.getPrimaryWrapper(vaultData);
           const quickMethod =
-            (primaryWrapper.method === "generated_default_native_biometric" ||
-              primaryWrapper.method === "generated_default_web_prf" ||
-              primaryWrapper.method === "generated_default_native_passkey_prf")
-              ? primaryWrapper
-              : vaultData.wrappers.find(
-                  (wrapper) =>
-                    wrapper.method === "generated_default_native_biometric" ||
-                    wrapper.method === "generated_default_web_prf" ||
-                    wrapper.method === "generated_default_native_passkey_prf"
-                );
-          const nextQuickMethod =
-            (quickMethod?.method as GeneratedVaultKeyMode | undefined) ?? null;
+            VaultService.getWrapperByMethod(vaultData, "generated_default_native_passkey_prf") ??
+            VaultService.getWrapperByMethod(vaultData, "generated_default_web_prf") ??
+            VaultService.getWrapperByMethod(vaultData, "generated_default_native_biometric");
+          const nextQuickMethod = (quickMethod?.method as GeneratedVaultKeyMode | undefined) ?? null;
           setAvailableGeneratedMethod(nextQuickMethod);
           if (
             (vaultData.primaryMethod === "generated_default_native_biometric" ||
@@ -152,16 +144,23 @@ export function VaultFlow({
           ) {
             setVaultMode("passphrase");
             setUnlockWithPassphraseFallback(true);
+          } else if (
+            primaryWrapper.method === "generated_default_native_biometric" ||
+            primaryWrapper.method === "generated_default_web_prf" ||
+            primaryWrapper.method === "generated_default_native_passkey_prf"
+          ) {
+            setVaultMode(primaryWrapper.method);
+            setUnlockWithPassphraseFallback(false);
           } else {
             setVaultMode(vaultData.primaryMethod);
+            setUnlockWithPassphraseFallback(false);
           }
         } catch (metadataError) {
           console.warn("Vault mode detection failed, defaulting to passphrase:", metadataError);
           setVaultMode("passphrase");
           setAvailableGeneratedMethod(null);
+          setUnlockWithPassphraseFallback(false);
         }
-
-        setUnlockWithPassphraseFallback(false);
         setStep("unlock");
       } catch (err) {
         console.error("Vault status check failed:", err);
@@ -239,6 +238,19 @@ export function VaultFlow({
       });
 
       if (decryptedKey) {
+        if (enableGeneratedDefault) {
+          const capability = await VaultMethodService.getCapabilityMatrix();
+          if (capability.recommendedMethod !== "passphrase") {
+            const hasRecommendedWrapper =
+              VaultService.getWrapperByMethod(vaultData, capability.recommendedMethod) !== null;
+            if (!hasRecommendedWrapper) {
+              setPendingUnlockKey(decryptedKey);
+              setRecommendedQuickMethod(capability.recommendedMethod);
+              setStep("method");
+              return;
+            }
+          }
+        }
         await finalizeUnlock(decryptedKey);
       } else {
         const message = "Invalid passphrase. Please try again.";
@@ -253,7 +265,7 @@ export function VaultFlow({
     } finally {
       setIsUnlocking(false);
     }
-  }, [finalizeUnlock, passphrase, user.uid]);
+  }, [enableGeneratedDefault, finalizeUnlock, passphrase, user.uid]);
 
   const handleUnlockGeneratedDefault = useCallback(async () => {
     setIsUnlocking(true);

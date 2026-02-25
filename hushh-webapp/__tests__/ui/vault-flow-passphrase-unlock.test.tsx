@@ -14,6 +14,10 @@ vi.mock("@/lib/services/vault-service", () => ({
   VaultService: {
     checkVault: vi.fn(),
     getVaultState: vi.fn(),
+    getPrimaryWrapper: vi.fn((state: any) => state?.wrappers?.[0] ?? null),
+    getWrapperByMethod: vi.fn((state: any, method: string) =>
+      state?.wrappers?.find((wrapper: any) => wrapper?.method === method) ?? null
+    ),
     unlockWithMethod: vi.fn(),
     getOrIssueVaultOwnerToken: vi.fn(),
     setVaultCheckCache: vi.fn(),
@@ -78,4 +82,3 @@ describe("VaultFlow passphrase unlock", () => {
     });
   });
 });
-
