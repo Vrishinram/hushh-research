@@ -1198,7 +1198,7 @@ export function DashboardMasterView({
   );
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-8 overflow-x-hidden px-5 pb-[calc(160px+var(--app-bottom-inset))] pt-4 sm:px-8">
+    <div className="mx-auto w-full max-w-5xl space-y-8 overflow-x-hidden px-5 pb-[calc(160px+var(--app-bottom-inset))] pt-2 sm:px-8">
       <Card
         variant="muted"
         effect="fill"

@@ -177,6 +177,16 @@ function extractStreamId(entry: AnalysisHistoryEntry): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function extractRunId(entry: AnalysisHistoryEntry): string | null {
+  const rawCard = entry.raw_card;
+  if (!rawCard || typeof rawCard !== "object") return null;
+  const direct = (rawCard as Record<string, unknown>).debate_run_id;
+  if (typeof direct === "string" && direct.trim().length > 0) {
+    return direct.trim();
+  }
+  return extractStreamId(entry);
+}
+
 function buildHistorySummary(
   historyMap: AnalysisHistoryMap,
   lastTicker?: string,
@@ -316,6 +326,26 @@ export class KaiHistoryService {
 
       // 3. Get or create the ticker array
       const tickerHistory = historyMap[entry.ticker] || [];
+      const incomingRunId = extractRunId(entry);
+
+      if (incomingRunId) {
+        const existingIndex = tickerHistory.findIndex(
+          (candidate) => extractRunId(candidate) === incomingRunId
+        );
+        if (existingIndex >= 0) {
+          const existing = tickerHistory[existingIndex];
+          if (existing) {
+            const sameTimestamp = timestampsMatch(existing.timestamp, entry.timestamp);
+            const sameDecision = String(existing.decision || "") === String(entry.decision || "");
+            const sameConfidence = Number(existing.confidence || 0) === Number(entry.confidence || 0);
+            if (sameTimestamp && sameDecision && sameConfidence) {
+              // Idempotent no-op for duplicate save attempts.
+              return true;
+            }
+          }
+          tickerHistory.splice(existingIndex, 1);
+        }
+      }
 
       // 4. Prepend new entry (newest first)
       tickerHistory.unshift(entry);

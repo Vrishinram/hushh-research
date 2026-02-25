@@ -219,6 +219,13 @@ export function KaiCommandBarGlobal() {
         }
 
         if (command === "analyze" && params?.symbol) {
+          if (busyOperations["stock_analysis_active"]) {
+            toast.error("A debate is already running.", {
+              description: "Open analysis to continue with the active run.",
+            });
+            router.push(ROUTES.KAI_ANALYSIS);
+            return;
+          }
           const symbol = String(params.symbol).toUpperCase();
           setAnalysisParams({
             ticker: symbol,

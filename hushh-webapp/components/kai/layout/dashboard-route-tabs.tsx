@@ -259,15 +259,15 @@ export function DashboardRouteTabs() {
 
   return createPortal(
     <div
-      className="pointer-events-none fixed inset-x-0 z-[90]"
+      className="pointer-events-none fixed inset-x-0 z-[45]"
       style={{
-        top: "calc(env(safe-area-inset-top, 0px) + var(--app-top-safe-offset, 0px) + 58px)",
+        top: "calc(env(safe-area-inset-top, 0px) + var(--app-top-safe-offset, 0px) + var(--app-top-bar-height, 72px))",
       }}
     >
       <div
         aria-hidden
         className={cn(
-          "pointer-events-none absolute inset-x-0 -top-4 h-[90px] bar-glass bar-glass-top transform-gpu transition-all duration-300 ease-out will-change-transform",
+          "pointer-events-none absolute inset-x-0 -top-10 h-[126px] bar-glass bar-glass-top transform-gpu transition-all duration-300 ease-out will-change-transform",
           hideRouteTabs ? "opacity-0" : "opacity-100"
         )}
         style={{

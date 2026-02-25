@@ -364,13 +364,17 @@ export function KaiCommandPalette({
     "rounded-lg border border-transparent transition-colors duration-300 hover:bg-primary/10 hover:text-foreground data-[selected=true]:border-primary/25 data-[selected=true]:bg-primary/15 data-[selected=true]:text-foreground data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-45";
 
   return (
-    <CommandDialog open={open} onOpenChange={onOpenChange}>
+    <CommandDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      className="top-[calc(env(safe-area-inset-top)+0.75rem)] max-h-[min(70dvh,32rem)] w-[calc(100%-1rem)] translate-y-0 sm:top-1/2 sm:w-full sm:max-h-none sm:-translate-y-1/2"
+    >
       <CommandInput
         value={query}
         onValueChange={setQuery}
         placeholder="Run Kai command or search ticker..."
       />
-      <CommandList>
+      <CommandList className="max-h-[min(56dvh,24rem)] sm:max-h-[300px]">
         <CommandEmpty>{commandEmptyMessage}</CommandEmpty>
 
         <CommandGroup heading="Portfolio Actions">

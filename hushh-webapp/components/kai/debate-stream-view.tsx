@@ -6,7 +6,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Loader2, AlertCircle, RefreshCw, X, WifiOff, ShieldAlert, Clock, CheckCircle2 } from "lucide-react";
 import { Icon } from "@/lib/morphy-ux/ui";
 import { setKaiVaultOwnerToken } from "@/lib/services/kai-service";
-import { KaiHistoryService, type AnalysisHistoryEntry } from "@/lib/services/kai-history-service";
+import { type AnalysisHistoryEntry } from "@/lib/services/kai-history-service";
 import { type DecisionResult } from "./views/decision-card";
 import { RoundTabsCard } from "./views/round-tabs-card";
 import { toast } from "sonner";
@@ -19,12 +19,15 @@ import { Progress } from "@/components/ui/progress";
 import { ApiService } from "@/lib/services/api-service";
 import type { KaiHomeInsightsV2 } from "@/lib/services/api-service";
 import { CACHE_KEYS, CacheService } from "@/lib/services/cache-service";
-import { consumeCanonicalKaiStream } from "@/lib/streaming/kai-stream-client";
 import type { KaiStreamEnvelope } from "@/lib/streaming/kai-stream-types";
 import { useKaiSession } from "@/lib/stores/kai-session-store";
 import { KaiProfileService } from "@/lib/services/kai-profile-service";
 import { WorldModelService } from "@/lib/services/world-model-service";
 import { cn } from "@/lib/utils";
+import {
+  DebateRunManagerService,
+  type DebateRunTask,
+} from "@/lib/services/debate-run-manager";
 import {
   getLatestMarketSnapshotFromCache,
   pickPreferredMarketSnapshot,
@@ -153,8 +156,6 @@ function getErrorDisplay(errorType: ErrorType, retryIn?: number): { icon: React.
 // Constants
 // ============================================================================
 
-const MAX_RETRIES = 3;
-const RETRY_DELAYS = [2000, 4000, 8000]; // Exponential backoff
 const HEADER_MARKET_QUOTE_TTL_MS = 10 * 60 * 1000;
 
 const TICKER_SYMBOL_REGEX = /^[A-Z][A-Z0-9.\-]{0,5}$/;
@@ -373,6 +374,7 @@ interface DebateStreamViewProps {
   riskProfile?: string;
   vaultOwnerToken: string;
   vaultKey?: string;
+  runId?: string;
   onClose: () => void;
   onDecisionSaved?: (entry: AnalysisHistoryEntry) => void;
   showHeader?: boolean;
@@ -595,6 +597,7 @@ export function DebateStreamView({
   riskProfile: riskProfileProp,
   vaultOwnerToken,
   vaultKey,
+  runId,
   onClose,
   onDecisionSaved,
   showHeader = true,
@@ -686,10 +689,11 @@ export function DebateStreamView({
     return `Round ${activeRound} — Analyzing…`;
   }, [round1States, round2States, activeRound, decision]);
 
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const hasStartedRef = useRef(false);
-  const retryCountRef = useRef(0);
-  const retryTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [currentRunId, setCurrentRunId] = useState<string | null>(runId ?? null);
+  const [managerTask, setManagerTask] = useState<DebateRunTask | null>(null);
+  const [reloadNonce, setReloadNonce] = useState(0);
+  const processedSeqRef = useRef(0);
+  const decisionNotifiedRef = useRef(false);
   // Helper to update specific agent state in current round
   const updateAgentState = useCallback((round: 1 | 2, agent: string, update: Partial<AgentState>) => {
     // Update Ref (Source of Truth for Stream)
@@ -710,17 +714,22 @@ export function DebateStreamView({
     });
   }, []);
 
-  // Handle close - ensuring ABORT
-  const handleClose = useCallback(() => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    if (retryTimerRef.current) {
-      clearTimeout(retryTimerRef.current);
+  // Handle close - explicit cancel only.
+  const handleClose = useCallback(async () => {
+    if (currentRunId && managerTask?.status === "running") {
+      try {
+        await DebateRunManagerService.cancelRun({
+          runId: currentRunId,
+          userId,
+          vaultOwnerToken,
+        });
+      } catch (cancelError) {
+        console.warn("[DebateStreamView] Failed to cancel run:", cancelError);
+      }
     }
     setBusyOperation("stock_analysis_stream", false);
     onClose();
-  }, [onClose, setBusyOperation]);
+  }, [currentRunId, managerTask?.status, onClose, setBusyOperation, userId, vaultOwnerToken]);
 
   useEffect(() => {
     if (!showHeader) {
@@ -786,537 +795,478 @@ export function DebateStreamView({
     setDecision(null);
     setInsights([]);
     setRetryCountdown(null);
+    decisionNotifiedRef.current = false;
+    processedSeqRef.current = 0;
     // Reset refs
     round1StatesRef.current = JSON.parse(JSON.stringify(INITIAL_ROUND_STATE));
     round2StatesRef.current = JSON.parse(JSON.stringify(INITIAL_ROUND_STATE));
   }, []);
 
-  // Start stream with retry logic
-  const startStream = useCallback(
-    async (isRetry = false) => {
-      if (!isRetry && hasStartedRef.current) return;
-      hasStartedRef.current = true;
+  const resolveRoundForEnvelope = useCallback((data: Record<string, any>): 1 | 2 => {
+    if (data.round === 2 || data.round === "2") return 2;
+    if (data.round === 1 || data.round === "1") return 1;
+    const phase = typeof data.phase === "string" ? data.phase.toLowerCase() : "";
+    if (phase === "debate" || phase === "round2" || phase === "decision") return 2;
+    if (phase === "analysis" || phase === "round1") return 1;
+    return activeRoundRef.current;
+  }, []);
 
-      // Ensure token is set for service layer
+  const applyEnvelope = useCallback(
+    (envelope: KaiStreamEnvelope) => {
+      const resolvedEventType = envelope.event;
+      const data = envelope.payload as Record<string, any>;
+      setLoading(false);
+      setRetryCountdown(null);
+
+      switch (resolvedEventType) {
+        case "start": {
+          const message =
+            (typeof data.message === "string" && data.message) ||
+            (typeof data.text === "string" ? data.text : "");
+          const statusMessage = sanitizeStatusMessage(message);
+          if (statusMessage) {
+            setKaiThinking(statusMessage);
+          }
+          break;
+        }
+        case "warning": {
+          const message =
+            (typeof data.message === "string" && data.message) ||
+            (typeof data.code === "string" ? data.code : "Streaming warning");
+          const statusMessage = sanitizeStatusMessage(message);
+          if (statusMessage) {
+            setKaiThinking(statusMessage);
+          }
+          break;
+        }
+        case "kai_thinking": {
+          setKaiThinking(
+            sanitizeStatusMessage(
+              (typeof data.message === "string" && data.message) ||
+                (typeof data.text === "string" ? data.text : "")
+            )
+          );
+          const r = resolveRoundForEnvelope(data);
+          if (r === 2 && activeRoundRef.current !== 2) {
+            activeRoundRef.current = 2;
+            setActiveRound(2);
+            setCollapsedRounds(getRoundCollapseStateForRound(2));
+          }
+          break;
+        }
+        case "debate_round":
+        case "round_start": {
+          const r = resolveRoundForEnvelope(data);
+          if (r === 2 && activeRoundRef.current !== 2) {
+            activeRoundRef.current = 2;
+            setActiveRound(2);
+            setCollapsedRounds(getRoundCollapseStateForRound(2));
+          }
+          break;
+        }
+        case "agent_start": {
+          const r = resolveRoundForEnvelope(data);
+          if (r === 2 && activeRoundRef.current !== 2) {
+            activeRoundRef.current = 2;
+            setActiveRound(2);
+          }
+          setActiveAgent((data.agent || "").toString());
+          updateAgentState(r, (data.agent || "").toString(), { stage: "active" });
+          break;
+        }
+        case "agent_token": {
+          const ag = (data.agent || data.agent_name || "").toString().toLowerCase();
+          const txt = (data.text || data.token || "").toString();
+          if (!ag || !txt) break;
+          const r = resolveRoundForEnvelope(data);
+          if (r === 2 && activeRoundRef.current !== 2) {
+            activeRoundRef.current = 2;
+            setActiveRound(2);
+          }
+
+          const ref = r === 1 ? round1StatesRef : round2StatesRef;
+          const runRef = ref.current;
+          if (runRef?.[ag]) {
+            runRef[ag] = {
+              ...runRef[ag],
+              stage: runRef[ag].stage === "idle" ? "active" : runRef[ag].stage,
+              text: (runRef[ag].text || "") + txt,
+            };
+          }
+
+          const setter = r === 1 ? setRound1States : setRound2States;
+          setter((prev) => ({
+            ...prev,
+            [ag]: {
+              ...prev[ag],
+              stage: prev[ag]?.stage === "idle" ? "active" : prev[ag]?.stage,
+              text: (prev[ag]?.text || "") + txt,
+            },
+          }));
+          break;
+        }
+        case "agent_complete": {
+          const r = resolveRoundForEnvelope(data);
+          updateAgentState(r, (data.agent || "").toString(), {
+            stage: "complete",
+            text: data.summary || "",
+            thoughts: [],
+            recommendation: data.recommendation,
+            confidence: data.confidence,
+            sources: data.sources,
+            keyMetrics: data.key_metrics,
+            quantMetrics: data.quant_metrics,
+            businessMoat: data.business_moat,
+            financialResilience: data.financial_resilience,
+            growthEfficiency: data.growth_efficiency,
+            bullCase: data.bull_case,
+            bearCase: data.bear_case,
+            sentimentScore: data.sentiment_score,
+            keyCatalysts: data.key_catalysts,
+            valuationMetrics: data.valuation_metrics,
+            peerComparison: data.peer_comparison,
+            priceTargets: data.price_targets,
+          });
+          break;
+        }
+        case "agent_error": {
+          const r = resolveRoundForEnvelope(data);
+          const errMsg = data.error || "Agent analysis failed";
+          updateAgentState(r, (data.agent || "").toString(), {
+            stage: "error",
+            error: errMsg,
+          });
+          break;
+        }
+        case "insight_extracted": {
+          const insightType = (data.type || "claim") as Insight["type"];
+          const newInsight: Insight = {
+            type: insightType,
+            agent: (data.agent || "kai").toString(),
+            content: (data.content || "").toString(),
+            id: data.id ? data.id.toString() : undefined,
+            classification: data.classification ? data.classification.toString() : undefined,
+            confidence: typeof data.confidence === "number" ? data.confidence : undefined,
+            source: data.source ? data.source.toString() : undefined,
+            magnitude: data.magnitude ? data.magnitude.toString() : undefined,
+            score: typeof data.score === "number" ? data.score : undefined,
+            target_claim_id: data.target_claim_id ? data.target_claim_id.toString() : undefined,
+            timestamp: new Date().toISOString(),
+          };
+
+          setInsights((prev) => [...prev, newInsight]);
+          insightsRef.current.push(newInsight);
+          break;
+        }
+        case "decision": {
+          const degradedAgents = Array.isArray(data.degraded_agents)
+            ? data.degraded_agents
+                .map((item) => String(item || "").trim().toLowerCase())
+                .filter((item) => item.length > 0)
+            : [];
+          const backendShort =
+            typeof data.short_recommendation === "string"
+              ? data.short_recommendation.trim()
+              : "";
+          const rawCardShort =
+            typeof (data.raw_card as Record<string, unknown> | undefined)?.short_recommendation ===
+            "string"
+              ? String((data.raw_card as Record<string, unknown>).short_recommendation).trim()
+              : "";
+          const fallbackShort =
+            typeof data.final_statement === "string" && data.final_statement.trim().length > 0
+              ? data.final_statement.trim().slice(0, 280)
+              : "Final recommendation synthesized from the completed debate.";
+
+          const marketSnapshot = extractMarketSnapshotFromDecision(data);
+          const cachedMarketSnapshot = getLatestMarketSnapshotFromCache(
+            userId,
+            String(data.ticker || ticker).toUpperCase()
+          );
+          const resolvedMarketSnapshot =
+            pickPreferredMarketSnapshot(marketSnapshot, cachedMarketSnapshot) || marketSnapshot;
+          const incomingRawCard =
+            data.raw_card && typeof data.raw_card === "object"
+              ? (data.raw_card as DecisionResult["raw_card"])
+              : {};
+          const normalizedDecision: DecisionResult = {
+            ticker: String(data.ticker || ticker).toUpperCase(),
+            decision: String(data.decision || "hold"),
+            confidence: Number(data.confidence || 0),
+            consensus_reached: Boolean(data.consensus_reached),
+            final_statement: String(data.final_statement || ""),
+            short_recommendation: backendShort || rawCardShort || fallbackShort,
+            analysis_degraded:
+              Boolean(data.analysis_degraded) ||
+              Boolean((data.raw_card as Record<string, unknown> | undefined)?.analysis_degraded),
+            degraded_agents: degradedAgents,
+            stream_id:
+              typeof data.stream_id === "string"
+                ? data.stream_id
+                : typeof (data.raw_card as Record<string, unknown> | undefined)?.stream_diagnostics === "object"
+                  ? String(
+                      ((data.raw_card as Record<string, unknown>).stream_diagnostics as Record<string, unknown>)
+                        .stream_id || ""
+                    )
+                  : undefined,
+            llm_calls_count:
+              typeof data.llm_calls_count === "number" ? data.llm_calls_count : undefined,
+            provider_calls_count:
+              typeof data.provider_calls_count === "number" ? data.provider_calls_count : undefined,
+            retry_counts:
+              data.retry_counts && typeof data.retry_counts === "object"
+                ? (data.retry_counts as Record<string, number>)
+                : undefined,
+            analysis_mode:
+              typeof data.analysis_mode === "string" ? data.analysis_mode : undefined,
+            agent_votes:
+              data.agent_votes && typeof data.agent_votes === "object"
+                ? (data.agent_votes as Record<string, string>)
+                : undefined,
+            dissenting_opinions: Array.isArray(data.dissenting_opinions)
+              ? data.dissenting_opinions.map((value: unknown) => String(value))
+              : undefined,
+            fundamental_summary:
+              typeof data.fundamental_summary === "string"
+                ? data.fundamental_summary
+                : undefined,
+            sentiment_summary:
+              typeof data.sentiment_summary === "string" ? data.sentiment_summary : undefined,
+            valuation_summary:
+              typeof data.valuation_summary === "string" ? data.valuation_summary : undefined,
+            raw_card: {
+              ...incomingRawCard,
+              market_snapshot: resolvedMarketSnapshot,
+            } as DecisionResult["raw_card"],
+          };
+          setDecision(normalizedDecision);
+          setKaiThinking("Analysis Complete.");
+          setCollapsedRounds(getRoundCollapseStateForDecision());
+          setBusyOperation("stock_analysis_stream", false);
+          if (!decisionNotifiedRef.current) {
+            decisionNotifiedRef.current = true;
+            const historyEntry: AnalysisHistoryEntry = {
+              ticker: ticker.toUpperCase(),
+              timestamp: new Date().toISOString(),
+              decision: normalizedDecision.decision || "hold",
+              confidence: normalizedDecision.confidence || 0,
+              consensus_reached: normalizedDecision.consensus_reached ?? false,
+              agent_votes: normalizedDecision.agent_votes || {},
+              final_statement: normalizedDecision.final_statement || "",
+              raw_card: normalizedDecision.raw_card || {},
+              debate_transcript: {
+                round1: round1StatesRef.current,
+                round2: round2StatesRef.current,
+              },
+            };
+            onDecisionSaved?.(historyEntry);
+          }
+          break;
+        }
+        case "error": {
+          const errMsg = data.message || "Analysis failed";
+          const errType = classifyError(null, errMsg);
+          setBusyOperation("stock_analysis_stream", false);
+          setError(errMsg);
+          setErrorType(errType);
+          break;
+        }
+        case "aborted": {
+          const errMsg = data.message || "Analysis stream stopped";
+          setBusyOperation("stock_analysis_stream", false);
+          setError(errMsg);
+          setErrorType("connection_lost");
+          break;
+        }
+        default:
+          break;
+      }
+    },
+    [onDecisionSaved, resolveRoundForEnvelope, setBusyOperation, ticker, updateAgentState, userId]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    let unsubscribeRun: (() => void) | undefined;
+    let unsubscribeState: (() => void) | undefined;
+
+    async function bootstrapRun(): Promise<void> {
+      setLoading(true);
+      setError(null);
+      resetState();
+
       if (vaultOwnerToken) {
         setKaiVaultOwnerToken(vaultOwnerToken);
       }
 
-      try {
-        if (!isRetry) {
-          setLoading(true);
-          setError(null);
-        }
-        setBusyOperation("stock_analysis_stream", true);
-        abortControllerRef.current = new AbortController();
-
-        // Build user context payload for backend personalization.
-        let context: Record<string, unknown> | null = null;
-        let effectiveRiskProfile = riskProfileProp || "balanced";
-        if (vaultKey) {
-          try {
-            const profile = await KaiProfileService.getProfile({
-              userId,
-              vaultKey,
-              vaultOwnerToken,
-            });
-            effectiveRiskProfile =
-              (profile.preferences.risk_profile as unknown as string | null) ||
-              effectiveRiskProfile;
-            context = {
-              user_name: userId,
-              preferences: {
-                investment_horizon: profile.preferences.investment_horizon,
-                investment_horizon_selected_at:
-                  profile.preferences.investment_horizon_selected_at,
-                investment_horizon_anchor_at:
-                  profile.preferences.investment_horizon_anchor_at,
-                drawdown_response: profile.preferences.drawdown_response,
-                drawdown_response_selected_at:
-                  profile.preferences.drawdown_response_selected_at,
-                volatility_preference: profile.preferences.volatility_preference,
-                volatility_preference_selected_at:
-                  profile.preferences.volatility_preference_selected_at,
-                risk_score: profile.preferences.risk_score,
-                risk_profile: profile.preferences.risk_profile,
-                risk_profile_selected_at:
-                  profile.preferences.risk_profile_selected_at,
-              },
-              financial_profile: profile,
-            };
-          } catch (err) {
-            console.warn("[DebateStreamView] Failed to load Kai profile context:", err);
-            // Non-fatal, proceed without context
-          }
-        }
-
-        let portfolioContext = extractDebatePortfolioContext(userId);
-        if (!hasRequiredDebateContext(portfolioContext) && vaultKey) {
-          try {
-            const fullBlob = await WorldModelService.loadFullBlob({
-              userId,
-              vaultKey,
-              vaultOwnerToken,
-            });
-            const financialDomain =
-              fullBlob.financial && typeof fullBlob.financial === "object" && !Array.isArray(fullBlob.financial)
-                ? (fullBlob.financial as Record<string, unknown>)
-                : null;
-            const hydratedContext =
-              extractDebatePortfolioContext(userId, financialDomain ?? fullBlob) ?? portfolioContext;
-            portfolioContext = hydratedContext;
-          } catch (err) {
-            console.warn("[DebateStreamView] Failed to hydrate debate context from world-model blob:", err);
-          }
-        }
-        if (portfolioContext) {
+      let context: Record<string, unknown> | null = null;
+      let effectiveRiskProfile = riskProfileProp || "balanced";
+      if (vaultKey) {
+        try {
+          const profile = await KaiProfileService.getProfile({
+            userId,
+            vaultKey,
+            vaultOwnerToken,
+          });
+          effectiveRiskProfile =
+            (profile.preferences.risk_profile as unknown as string | null) ||
+            effectiveRiskProfile;
           context = {
-            ...(context || {}),
-            ...portfolioContext,
+            user_name: userId,
+            preferences: {
+              investment_horizon: profile.preferences.investment_horizon,
+              investment_horizon_selected_at:
+                profile.preferences.investment_horizon_selected_at,
+              investment_horizon_anchor_at:
+                profile.preferences.investment_horizon_anchor_at,
+              drawdown_response: profile.preferences.drawdown_response,
+              drawdown_response_selected_at:
+                profile.preferences.drawdown_response_selected_at,
+              volatility_preference: profile.preferences.volatility_preference,
+              volatility_preference_selected_at:
+                profile.preferences.volatility_preference_selected_at,
+              risk_score: profile.preferences.risk_score,
+              risk_profile: profile.preferences.risk_profile,
+              risk_profile_selected_at:
+                profile.preferences.risk_profile_selected_at,
+            },
+            financial_profile: profile,
           };
+        } catch (profileError) {
+          console.warn("[DebateStreamView] Failed to load Kai profile context:", profileError);
+        }
+      }
+
+      let portfolioContext = extractDebatePortfolioContext(userId);
+      if (!hasRequiredDebateContext(portfolioContext) && vaultKey) {
+        try {
+          const fullBlob = await WorldModelService.loadFullBlob({
+            userId,
+            vaultKey,
+            vaultOwnerToken,
+          });
+          const financialDomain =
+            fullBlob.financial &&
+            typeof fullBlob.financial === "object" &&
+            !Array.isArray(fullBlob.financial)
+              ? (fullBlob.financial as Record<string, unknown>)
+              : null;
+          const hydratedContext =
+            extractDebatePortfolioContext(userId, financialDomain ?? fullBlob) ??
+            portfolioContext;
+          portfolioContext = hydratedContext;
+        } catch (blobError) {
+          console.warn(
+            "[DebateStreamView] Failed to hydrate debate context from world-model blob:",
+            blobError
+          );
+        }
+      }
+
+      if (portfolioContext) {
+        context = {
+          ...(context || {}),
+          ...portfolioContext,
+        };
+      }
+
+      try {
+        let resolvedTask: DebateRunTask | null = null;
+        if (runId) {
+          resolvedTask = await DebateRunManagerService.resumeActiveRun({
+            userId,
+            vaultOwnerToken,
+            vaultKey,
+          });
+        } else {
+          const ensureResult = await DebateRunManagerService.ensureRun({
+            userId,
+            ticker,
+            riskProfile: effectiveRiskProfile,
+            userContext: context,
+            vaultOwnerToken,
+            vaultKey,
+          });
+          resolvedTask = ensureResult.task;
+          if (ensureResult.kind === "blocked") {
+            toast.error("A debate is already running in this session.", {
+              description: "Opening the active run.",
+              action: {
+                label: "Open active",
+                onClick: () => {
+                  if (typeof window !== "undefined") {
+                    window.location.assign("/kai/analysis");
+                  }
+                },
+              },
+            });
+          }
         }
 
-        // Start SSE connection via ApiService.
-        // This centralizes Android localhost→10.0.2.2 normalization and
-        // uses native plugins on iOS/Android when available.
-        const response = await ApiService.streamKaiAnalysis({
-          userId,
-          ticker,
-          riskProfile: effectiveRiskProfile,
-          userContext: context, // Pass the FULL decrypted context object
-          vaultOwnerToken,
-          signal: abortControllerRef.current.signal,
+        if (cancelled) return;
+
+        if (!resolvedTask) {
+          setError("No active debate run found.");
+          setErrorType("unknown");
+          setLoading(false);
+          return;
+        }
+
+        setCurrentRunId(resolvedTask.runId);
+        setManagerTask(resolvedTask);
+
+        unsubscribeState = DebateRunManagerService.subscribe((state) => {
+          const nextTask = state.tasks.find((item) => item.runId === resolvedTask!.runId) || null;
+          setManagerTask(nextTask);
         });
 
-        // If the user closes/back while the native plugin is still streaming,
-        // we still abort UI processing; plugin continues but listener cleanup
-        // is handled within ApiService.
-        if (abortControllerRef.current.signal.aborted) {
-          throw new DOMException("Aborted", "AbortError");
-        }
-
-        if (!response.ok) {
-          const status = response.status;
-          const errType = classifyError(status, "");
-
-          // Auto-retry for retryable errors
-          if ((errType === "rate_limit" || errType === "server_error") && retryCountRef.current < MAX_RETRIES) {
-            const delay = RETRY_DELAYS[retryCountRef.current] || 8000;
-            retryCountRef.current++;
-            const seconds = Math.ceil(delay / 1000);
-            setRetryCountdown(seconds);
-            setErrorType(errType);
-            setKaiThinking(`${errType === "rate_limit" ? "Rate limited" : "Server error"}. Retrying in ${seconds}s...`);
-
-            // Countdown timer
-            let countdown = seconds;
-            const countdownInterval = setInterval(() => {
-              countdown--;
-              setRetryCountdown(countdown);
-              if (countdown <= 0) {
-                clearInterval(countdownInterval);
-              }
-            }, 1000);
-
-            retryTimerRef.current = setTimeout(() => {
-              clearInterval(countdownInterval);
-              setRetryCountdown(null);
-              startStream(true);
-            }, delay);
-            return;
-          }
-
-          throw new Error(`API error: ${status}`);
-        }
-
-        // Reset retry count on successful connection
-        retryCountRef.current = 0;
-        setLoading(false);
-        setRetryCountdown(null);
-
-        const resolveRound = (data: Record<string, any>): 1 | 2 => {
-          if (data.round === 2 || data.round === "2") return 2;
-          if (data.round === 1 || data.round === "1") return 1;
-          const phase = typeof data.phase === "string" ? data.phase.toLowerCase() : "";
-          if (phase === "debate" || phase === "round2" || phase === "decision") return 2;
-          if (phase === "analysis" || phase === "round1") return 1;
-          return activeRoundRef.current;
-        };
-
-        await consumeCanonicalKaiStream(
-          response,
-          (envelope: KaiStreamEnvelope) => {
-            const resolvedEventType = envelope.event;
-            const data = envelope.payload as Record<string, any>;
-
-            switch (resolvedEventType) {
-              case "start": {
-                const message =
-                  (typeof data.message === "string" && data.message) ||
-                  (typeof data.text === "string" ? data.text : "");
-                const statusMessage = sanitizeStatusMessage(message);
-                if (statusMessage) {
-                  setKaiThinking(statusMessage);
-                }
-                break;
-              }
-              case "warning": {
-                const message =
-                  (typeof data.message === "string" && data.message) ||
-                  (typeof data.code === "string" ? data.code : "Streaming warning");
-                const statusMessage = sanitizeStatusMessage(message);
-                if (statusMessage) {
-                  setKaiThinking(statusMessage);
-                  toast.warning("Streaming warning", { description: message });
-                }
-                break;
-              }
-              case "kai_thinking": {
-                setKaiThinking(sanitizeStatusMessage(
-                  (typeof data.message === "string" && data.message) ||
-                    (typeof data.text === "string" ? data.text : "")
-                ));
-                const r = resolveRound(data);
-                if (r === 2 && activeRoundRef.current !== 2) {
-                  activeRoundRef.current = 2;
-                  setActiveRound(2);
-                  setCollapsedRounds(getRoundCollapseStateForRound(2));
-                  toast.info("Entering Round 2: Debate & Rebuttal");
-                }
-                break;
-              }
-              case "debate_round":
-              case "round_start": {
-                const r = resolveRound(data);
-                if (r === 2 && activeRoundRef.current !== 2) {
-                  activeRoundRef.current = 2;
-                  setActiveRound(2);
-                  setCollapsedRounds(getRoundCollapseStateForRound(2));
-                }
-                break;
-              }
-              case "agent_start": {
-                const r = resolveRound(data);
-                if (r === 2 && activeRoundRef.current !== 2) {
-                  activeRoundRef.current = 2;
-                  setActiveRound(2);
-                }
-                setActiveAgent((data.agent || "").toString());
-                updateAgentState(r, (data.agent || "").toString(), { stage: "active" });
-                break;
-              }
-              case "agent_token": {
-                const ag = (data.agent || data.agent_name || "").toString().toLowerCase();
-                const txt = (data.text || data.token || "").toString();
-                if (!ag || !txt) break;
-                const r = resolveRound(data);
-                if (r === 2 && activeRoundRef.current !== 2) {
-                  activeRoundRef.current = 2;
-                  setActiveRound(2);
-                }
-
-                const ref = r === 1 ? round1StatesRef : round2StatesRef;
-                const runRef = ref.current;
-                if (runRef?.[ag]) {
-                  runRef[ag] = {
-                    ...runRef[ag],
-                    stage: runRef[ag].stage === "idle" ? "active" : runRef[ag].stage,
-                    text: (runRef[ag].text || "") + txt,
-                  };
-                }
-
-                const setter = r === 1 ? setRound1States : setRound2States;
-                setter((prev) => ({
-                  ...prev,
-                  [ag]: {
-                    ...prev[ag],
-                    stage: prev[ag]?.stage === "idle" ? "active" : prev[ag]?.stage,
-                    text: (prev[ag]?.text || "") + txt,
-                  },
-                }));
-                break;
-              }
-              case "agent_complete": {
-                const r = resolveRound(data);
-                updateAgentState(r, (data.agent || "").toString(), {
-                  stage: "complete",
-                  text: data.summary || "",
-                  thoughts: [],
-                  recommendation: data.recommendation,
-                  confidence: data.confidence,
-                  sources: data.sources,
-                  keyMetrics: data.key_metrics,
-                  quantMetrics: data.quant_metrics,
-                  businessMoat: data.business_moat,
-                  financialResilience: data.financial_resilience,
-                  growthEfficiency: data.growth_efficiency,
-                  bullCase: data.bull_case,
-                  bearCase: data.bear_case,
-                  sentimentScore: data.sentiment_score,
-                  keyCatalysts: data.key_catalysts,
-                  valuationMetrics: data.valuation_metrics,
-                  peerComparison: data.peer_comparison,
-                  priceTargets: data.price_targets,
-                });
-                break;
-              }
-              case "agent_error": {
-                const r = resolveRound(data);
-                const errMsg = data.error || "Agent analysis failed";
-                updateAgentState(r, (data.agent || "").toString(), {
-                  stage: "error",
-                  error: errMsg,
-                });
-                toast.error(`${data.agent} encountered an error`, {
-                  description: errMsg.length > 100 ? errMsg.slice(0, 100) + "..." : errMsg,
-                });
-                break;
-              }
-              case "insight_extracted": {
-                const insightType = (data.type || "claim") as Insight["type"];
-                const newInsight: Insight = {
-                  type: insightType,
-                  agent: (data.agent || "kai").toString(),
-                  content: (data.content || "").toString(),
-                  id: data.id ? data.id.toString() : undefined,
-                  classification: data.classification ? data.classification.toString() : undefined,
-                  confidence: typeof data.confidence === "number" ? data.confidence : undefined,
-                  source: data.source ? data.source.toString() : undefined,
-                  magnitude: data.magnitude ? data.magnitude.toString() : undefined,
-                  score: typeof data.score === "number" ? data.score : undefined,
-                  target_claim_id: data.target_claim_id ? data.target_claim_id.toString() : undefined,
-                  timestamp: new Date().toISOString(),
-                };
-
-                setInsights((prev) => [...prev, newInsight]);
-                insightsRef.current.push(newInsight);
-                if (data.type === "impact" && (data.magnitude === "high" || data.score >= 8)) {
-                  toast(data.classification === "risk" ? "⚠️ Portfolio Risk Detected" : "🚀 Portfolio Opportunity", {
-                    description: data.content,
-                    action: { label: "View", onClick: () => {} },
-                  });
-                }
-                break;
-              }
-              case "decision": {
-                const degradedAgents = Array.isArray(data.degraded_agents)
-                  ? data.degraded_agents
-                      .map((item) => String(item || "").trim().toLowerCase())
-                      .filter((item) => item.length > 0)
-                  : [];
-                const backendShort =
-                  typeof data.short_recommendation === "string"
-                    ? data.short_recommendation.trim()
-                    : "";
-                const rawCardShort =
-                  typeof (data.raw_card as Record<string, unknown> | undefined)?.short_recommendation ===
-                  "string"
-                    ? String((data.raw_card as Record<string, unknown>).short_recommendation).trim()
-                    : "";
-                const fallbackShort =
-                  typeof data.final_statement === "string" && data.final_statement.trim().length > 0
-                    ? data.final_statement.trim().slice(0, 280)
-                    : "Final recommendation synthesized from the completed debate.";
-
-                const marketSnapshot = extractMarketSnapshotFromDecision(data);
-                const cachedMarketSnapshot = getLatestMarketSnapshotFromCache(
-                  userId,
-                  String(data.ticker || ticker).toUpperCase()
-                );
-                const resolvedMarketSnapshot =
-                  pickPreferredMarketSnapshot(marketSnapshot, cachedMarketSnapshot) || marketSnapshot;
-                const incomingRawCard =
-                  data.raw_card && typeof data.raw_card === "object"
-                    ? (data.raw_card as DecisionResult["raw_card"])
-                    : {};
-                const normalizedDecision: DecisionResult = {
-                  ticker: String(data.ticker || ticker).toUpperCase(),
-                  decision: String(data.decision || "hold"),
-                  confidence: Number(data.confidence || 0),
-                  consensus_reached: Boolean(data.consensus_reached),
-                  final_statement: String(data.final_statement || ""),
-                  short_recommendation: backendShort || rawCardShort || fallbackShort,
-                  analysis_degraded:
-                    Boolean(data.analysis_degraded) ||
-                    Boolean((data.raw_card as Record<string, unknown> | undefined)?.analysis_degraded),
-                  degraded_agents: degradedAgents,
-                  stream_id:
-                    typeof data.stream_id === "string"
-                      ? data.stream_id
-                      : typeof (data.raw_card as Record<string, unknown> | undefined)?.stream_diagnostics === "object"
-                        ? String(
-                            ((data.raw_card as Record<string, unknown>).stream_diagnostics as Record<string, unknown>)
-                              .stream_id || ""
-                          )
-                        : undefined,
-                  llm_calls_count:
-                    typeof data.llm_calls_count === "number"
-                      ? data.llm_calls_count
-                      : undefined,
-                  provider_calls_count:
-                    typeof data.provider_calls_count === "number"
-                      ? data.provider_calls_count
-                      : undefined,
-                  retry_counts:
-                    data.retry_counts && typeof data.retry_counts === "object"
-                      ? (data.retry_counts as Record<string, number>)
-                      : undefined,
-                  analysis_mode:
-                    typeof data.analysis_mode === "string" ? data.analysis_mode : undefined,
-                  agent_votes:
-                    data.agent_votes && typeof data.agent_votes === "object"
-                      ? (data.agent_votes as Record<string, string>)
-                      : undefined,
-                  dissenting_opinions: Array.isArray(data.dissenting_opinions)
-                    ? data.dissenting_opinions.map((value: unknown) => String(value))
-                    : undefined,
-                  fundamental_summary:
-                    typeof data.fundamental_summary === "string"
-                      ? data.fundamental_summary
-                      : undefined,
-                  sentiment_summary:
-                    typeof data.sentiment_summary === "string"
-                      ? data.sentiment_summary
-                      : undefined,
-                  valuation_summary:
-                    typeof data.valuation_summary === "string"
-                      ? data.valuation_summary
-                      : undefined,
-                  raw_card: {
-                    ...incomingRawCard,
-                    market_snapshot: resolvedMarketSnapshot,
-                  } as DecisionResult["raw_card"],
-                };
-                setDecision(normalizedDecision);
-                setKaiThinking("Analysis Complete.");
-                setCollapsedRounds(getRoundCollapseStateForDecision());
-                setBusyOperation("stock_analysis_stream", false);
-                const historyEntry: AnalysisHistoryEntry = {
-                  ticker: ticker.toUpperCase(),
-                  timestamp: new Date().toISOString(),
-                  decision: normalizedDecision.decision || "hold",
-                  confidence: normalizedDecision.confidence || 0,
-                  consensus_reached: normalizedDecision.consensus_reached ?? false,
-                  agent_votes: normalizedDecision.agent_votes || {},
-                  final_statement: normalizedDecision.final_statement || "",
-                  raw_card: normalizedDecision.raw_card || {},
-                  debate_transcript: {
-                    round1: round1StatesRef.current,
-                    round2: round2StatesRef.current,
-                  },
-                };
-                onDecisionSaved?.(historyEntry);
-                if (vaultKey && userId) {
-                  KaiHistoryService.saveAnalysis({
-                    userId,
-                    vaultKey,
-                    vaultOwnerToken,
-                    entry: historyEntry,
-                  })
-                    .then(() => undefined)
-                    .catch((e) => console.warn("[DebateStreamView] History save failed:", e));
-                }
-                break;
-              }
-              case "error": {
-                const errMsg = data.message || "Analysis failed";
-                const errType = classifyError(null, errMsg);
-                setBusyOperation("stock_analysis_stream", false);
-                const hasProgress =
-                  AGENTS.some((agent) => round1StatesRef.current[agent]?.stage !== "idle") ||
-                  AGENTS.some((agent) => round2StatesRef.current[agent]?.stage !== "idle");
-                if (
-                  !hasProgress &&
-                  (errType === "rate_limit" || errType === "server_error") &&
-                  retryCountRef.current < MAX_RETRIES
-                ) {
-                  const delay = RETRY_DELAYS[retryCountRef.current] || 8000;
-                  retryCountRef.current++;
-                  const seconds = Math.ceil(delay / 1000);
-                  setRetryCountdown(seconds);
-                  setErrorType(errType);
-                  setKaiThinking(`Error encountered. Retrying in ${seconds}s...`);
-
-                  retryTimerRef.current = setTimeout(() => {
-                    setRetryCountdown(null);
-                    resetState();
-                    hasStartedRef.current = false;
-                    startStream(true);
-                  }, delay);
-                  return;
-                }
-                setError(errMsg);
-                setErrorType(errType);
-                break;
-              }
-              case "aborted": {
-                const errMsg = data.message || "Analysis stream stopped";
-                setBusyOperation("stock_analysis_stream", false);
-                setError(errMsg);
-                setErrorType("connection_lost");
-                break;
-              }
-              default:
-                break;
-            }
+        unsubscribeRun = DebateRunManagerService.subscribeRunEvents(
+          resolvedTask.runId,
+          (envelope) => {
+            if (envelope.seq <= processedSeqRef.current) return;
+            processedSeqRef.current = envelope.seq;
+            applyEnvelope(envelope);
           },
-          {
-            signal: abortControllerRef.current.signal,
-            idleTimeoutMs: 360000,
-            requireTerminal: true,
-          }
+          { replay: true }
         );
-      } catch (err: any) {
-        if (err.name === "AbortError") {
-          console.log("Stream aborted by user");
-          setBusyOperation("stock_analysis_stream", false);
-          return;
-        }
-
-        console.error("Stream error:", err);
-        const errMsg = err.message || "Connection failed";
-        const errType = classifyError(null, errMsg);
-
-        // Auto-retry for connection errors (once)
-        if (errType === "connection_lost" && retryCountRef.current < 1) {
-          retryCountRef.current++;
-          setKaiThinking("Connection lost. Reconnecting...");
-          retryTimerRef.current = setTimeout(() => {
-            hasStartedRef.current = false;
-            startStream(true);
-          }, 2000);
-          return;
-        }
-
-        setError(errMsg);
-        setErrorType(errType);
-        setBusyOperation("stock_analysis_stream", false);
+      } catch (streamError) {
+        if (cancelled) return;
+        setError((streamError as Error).message || "Unable to start analysis stream.");
+        setErrorType("unknown");
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
-    },
-    [ticker, userId, vaultOwnerToken, vaultKey, riskProfileProp, updateAgentState, resetState, setBusyOperation, onDecisionSaved]
-  );
+    }
 
-  // Effect to start stream on mount
-  useEffect(() => {
-    startStream();
-
-    // Keep analysis stream alive when app/tab is backgrounded; abort only on explicit unload.
-    const abortStream = () => abortControllerRef.current?.abort();
-    window.addEventListener('beforeunload', abortStream);
+    void bootstrapRun();
 
     return () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-      if (retryTimerRef.current) {
-        clearTimeout(retryTimerRef.current);
-      }
-      window.removeEventListener('beforeunload', abortStream);
+      cancelled = true;
+      if (unsubscribeRun) unsubscribeRun();
+      if (unsubscribeState) unsubscribeState();
       setBusyOperation("stock_analysis_stream", false);
     };
-  }, [startStream, setBusyOperation]);
+  }, [
+    applyEnvelope,
+    reloadNonce,
+    resetState,
+    riskProfileProp,
+    runId,
+    setBusyOperation,
+    ticker,
+    userId,
+    vaultKey,
+    vaultOwnerToken,
+  ]);
+
+  useEffect(() => {
+    setBusyOperation("stock_analysis_stream", managerTask?.status === "running");
+    return () => {
+      setBusyOperation("stock_analysis_stream", false);
+    };
+  }, [managerTask?.status, setBusyOperation]);
 
   // -------------- RENDER ----------------
 
@@ -1351,10 +1301,8 @@ export function DebateStreamView({
                 <MorphyButton
                   size="sm"
                   onClick={() => {
-                    retryCountRef.current = 0;
                     resetState();
-                    hasStartedRef.current = false;
-                    startStream();
+                    setReloadNonce((prev) => prev + 1);
                   }}
                 >
                   <Icon icon={RefreshCw} size="sm" className="mr-2" /> Retry
@@ -1427,7 +1375,9 @@ export function DebateStreamView({
               effect="fade"
               size="sm"
               showRipple={false}
-              onClick={handleClose}
+              onClick={() => {
+                void handleClose();
+              }}
             >
               <Icon icon={X} size="xs" />
               Cancel
