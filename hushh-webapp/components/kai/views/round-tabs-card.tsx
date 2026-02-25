@@ -115,10 +115,6 @@ export function RoundTabsCard({
     return AGENT_ORDER.every((agent) => agentStates[agent]?.stage === "complete");
   }, [agentStates]);
 
-  const hasAnyError = useMemo(() => {
-    return AGENT_ORDER.some((agent) => agentStates[agent]?.stage === "error");
-  }, [agentStates]);
-
   const completedCount = useMemo(() => {
     return AGENT_ORDER.filter((agent) => agentStates[agent]?.stage === "complete").length;
   }, [agentStates]);

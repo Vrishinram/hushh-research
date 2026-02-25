@@ -40,6 +40,7 @@ import { setOnboardingFlowActiveCookie } from "@/lib/services/onboarding-route-c
 import { ROUTES } from "@/lib/navigation/routes";
 import { useScrollReset } from "@/lib/navigation/use-scroll-reset";
 import { KAI_PORTFOLIO_IMPORT_IDLE_TIMEOUT_MS } from "@/lib/services/kai-import-stream-config";
+import { fetchDemoPortfolioTemplateAsset } from "@/lib/services/demo-mode-template-service";
 import { useAuth } from "@/hooks/use-auth";
 import { VaultFlow } from "@/components/vault/vault-flow";
 import {
@@ -111,17 +112,6 @@ interface LiveHoldingPreview {
   market_value?: number | null;
   quantity?: number | null;
   asset_type?: string;
-}
-
-interface DemoTemplateResponse {
-  account_info?: unknown;
-  account_summary?: unknown;
-  asset_allocation?: unknown;
-  holdings?: unknown;
-  cash_balance?: unknown;
-  total_value?: unknown;
-  parse_fallback?: unknown;
-  domain_intent?: unknown;
 }
 
 // Streaming state
@@ -388,139 +378,6 @@ function normalizeHoldingsWithPct<T extends {
   });
 }
 
-function createPreloadedPortfolioTemplate(now?: Date): ReviewPortfolioData {
-  const base = now ?? new Date();
-  const nowIso = base.toISOString();
-  const statementStart = new Date(base.getFullYear(), base.getMonth(), 1)
-    .toISOString()
-    .slice(0, 10);
-  const statementEnd = nowIso.slice(0, 10);
-
-  const holdings: ReviewPortfolioData["holdings"] = [
-    {
-      symbol: "NVDA",
-      name: "NVIDIA Corporation",
-      quantity: 12,
-      price: 850,
-      market_value: 10200,
-      instrument_kind: "equity",
-      is_cash_equivalent: false,
-      is_investable: true,
-      analyze_eligible: true,
-      debate_eligible: true,
-      optimize_eligible: true,
-    },
-    {
-      symbol: "MSFT",
-      name: "Microsoft Corporation",
-      quantity: 15,
-      price: 430,
-      market_value: 6450,
-      instrument_kind: "equity",
-      is_cash_equivalent: false,
-      is_investable: true,
-      analyze_eligible: true,
-      debate_eligible: true,
-      optimize_eligible: true,
-    },
-    {
-      symbol: "AMZN",
-      name: "Amazon.com Inc.",
-      quantity: 20,
-      price: 170,
-      market_value: 3400,
-      instrument_kind: "equity",
-      is_cash_equivalent: false,
-      is_investable: true,
-      analyze_eligible: true,
-      debate_eligible: true,
-      optimize_eligible: true,
-    },
-    {
-      symbol: "TSLA",
-      name: "Tesla Inc.",
-      quantity: 15,
-      price: 250,
-      market_value: 3750,
-      instrument_kind: "equity",
-      is_cash_equivalent: false,
-      is_investable: true,
-      analyze_eligible: true,
-      debate_eligible: true,
-      optimize_eligible: true,
-    },
-    {
-      symbol: "CASH",
-      name: "Cash Sweep",
-      quantity: 1,
-      price: 3750,
-      market_value: 3750,
-      instrument_kind: "cash_equivalent",
-      is_cash_equivalent: true,
-      is_investable: false,
-      analyze_eligible: false,
-      debate_eligible: false,
-      optimize_eligible: false,
-    },
-  ];
-
-  return {
-    account_info: {
-      holder_name: "Demo Investor",
-      brokerage: "Hushh Sandbox",
-      account_number: "XXXX-TEST",
-      account_type: "Individual Brokerage",
-      statement_period_start: statementStart,
-      statement_period_end: statementEnd,
-    },
-    account_summary: {
-      beginning_value: 25000,
-      ending_value: 27550,
-      change_in_value: 2550,
-      cash_balance: 3750,
-      equities_value: 23800,
-      investment_gain_loss: 2550,
-      total_income_period: 0,
-      total_income_ytd: 0,
-    },
-    asset_allocation: {
-      cash_pct: 13.61,
-      cash_value: 3750,
-      equities_pct: 86.39,
-      equities_value: 23800,
-      bonds_pct: 0,
-      bonds_value: 0,
-      other_pct: 0,
-      other_value: 0,
-    },
-    holdings,
-    income_summary: {
-      dividends_taxable: 0,
-      interest_income: 0,
-      total_income: 0,
-    },
-    realized_gain_loss: {
-      short_term_gain: 0,
-      long_term_gain: 0,
-      net_realized: 0,
-    },
-    cash_balance: 3750,
-    total_value: 27550,
-    parse_fallback: false,
-    domain_intent: {
-      primary: "financial",
-      source: "kai_schema_preload",
-      captured_sections: [
-        "account_info",
-        "account_summary",
-        "asset_allocation",
-        "holdings",
-      ],
-      updated_at: nowIso,
-    },
-  };
-}
-
 function isReviewPortfolioData(value: unknown): value is ReviewPortfolioData {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return false;
@@ -532,33 +389,17 @@ function isReviewPortfolioData(value: unknown): value is ReviewPortfolioData {
 async function fetchDemoModePortfolioTemplate(
   _vaultOwnerToken?: string
 ): Promise<ReviewPortfolioData> {
-  const cacheBust = "v=2026-02-25";
-  const assetPath = `/demo-mode/portfolio-template.json?${cacheBust}`;
-  const assetUrl =
-    typeof window !== "undefined"
-      ? new URL(assetPath, window.location.origin).toString()
-      : assetPath;
-
-  // Demo template is a bundled static asset. Do not use ApiService here;
-  // ApiService routes native calls to backend URLs, which breaks local asset reads.
-  const response = await fetch(assetUrl, {
-    method: "GET",
-    cache: "no-store",
-    headers: {
-      Accept: "application/json",
-      "Cache-Control": "no-cache",
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error("Demo template unavailable.");
-  }
-
-  const payload = (await response.json().catch(() => ({}))) as DemoTemplateResponse;
+  const payload = await fetchDemoPortfolioTemplateAsset();
   if (!isReviewPortfolioData(payload)) {
     throw new Error("Demo template is invalid.");
   }
-  return payload;
+
+  const normalized = normalizePortfolioData(payload as Record<string, unknown>);
+  if (!Array.isArray(normalized.holdings) || normalized.holdings.length === 0) {
+    throw new Error("Demo template has no holdings.");
+  }
+
+  return normalized;
 }
 
 // =============================================================================
@@ -629,11 +470,10 @@ export function KaiFlow({
 
         // Avoid resetting active import/review UI when vault state changes mid-flow.
         if (
-          mode === "import" &&
-          (vaultDialogOpen ||
-            stateRef.current === "importing" ||
-            stateRef.current === "import_complete" ||
-            stateRef.current === "reviewing")
+          vaultDialogOpen ||
+          stateRef.current === "importing" ||
+          stateRef.current === "import_complete" ||
+          stateRef.current === "reviewing"
         ) {
           return;
         }
@@ -1766,6 +1606,7 @@ export function KaiFlow({
         parsedPortfolio: template,
       }));
       setState("reviewing");
+      setError(null);
       toast.success("Demo mode data loaded. Review and save to vault.");
     } catch (preloadError) {
       console.error("[KaiFlow] Failed to preload schema data:", preloadError);
@@ -1778,6 +1619,19 @@ export function KaiFlow({
     effectiveVaultOwnerToken,
     isPreloadingSchema,
   ]);
+
+  useEffect(() => {
+    if (mode !== "import" || state !== "reviewing") return;
+    if (flowData.parsedPortfolio) return;
+
+    const timer = window.setTimeout(() => {
+      if (stateRef.current !== "reviewing" || flowData.parsedPortfolio) return;
+      setError("Could not open review data. Please load demo data again.");
+      setState("import_required");
+    }, 250);
+
+    return () => window.clearTimeout(timer);
+  }, [mode, state, flowData.parsedPortfolio]);
 
   useEffect(() => {
     if (!resumePreloadAfterVault) return;
@@ -1872,7 +1726,7 @@ export function KaiFlow({
       )}
 
       {/* State-based rendering */}
-      {mode === "import" && state === "import_required" && (
+      {state === "import_required" && (
         <PortfolioImportView
           onFileSelect={handleFileUpload}
           onSkip={handleSkipImport}
@@ -1882,7 +1736,7 @@ export function KaiFlow({
         />
       )}
 
-      {mode === "import" && state === "importing" && (
+      {state === "importing" && (
         <ImportProgressView
           stage={streaming.stage}
           stageTrail={streaming.stageTrail}
@@ -1908,7 +1762,7 @@ export function KaiFlow({
         />
       )}
 
-      {mode === "import" && state === "import_complete" && (
+      {state === "import_complete" && (
         <ImportProgressView
           stage="complete"
           stageTrail={streaming.stageTrail}
@@ -1926,7 +1780,7 @@ export function KaiFlow({
         />
       )}
 
-      {mode === "import" && state === "reviewing" && flowData.parsedPortfolio && (
+      {state === "reviewing" && flowData.parsedPortfolio && (
         <PortfolioReviewView
           portfolioData={flowData.parsedPortfolio}
           userId={userId}
@@ -1936,6 +1790,22 @@ export function KaiFlow({
           onReimport={handleReimport}
           onBack={() => setState("import_required")}
         />
+      )}
+
+      {state === "reviewing" && !flowData.parsedPortfolio && (
+        <div className="flex min-h-[360px] w-full flex-col items-center justify-center gap-3 px-6 text-center">
+          <HushhLoader variant="inline" label="Preparing review..." />
+          <p className="text-sm text-muted-foreground">
+            Demo data loaded, but review payload is not available yet.
+          </p>
+          <button
+            type="button"
+            onClick={() => setState("import_required")}
+            className="text-sm font-semibold text-primary underline underline-offset-4"
+          >
+            Back to import
+          </button>
+        </div>
       )}
 
       {isDashboardMode &&
@@ -1983,7 +1853,7 @@ export function KaiFlow({
         </div>
       )}
 
-      {mode === "import" && user && (
+      {user && (
         <Dialog
           open={vaultDialogOpen}
           onOpenChange={setVaultDialogOpen}

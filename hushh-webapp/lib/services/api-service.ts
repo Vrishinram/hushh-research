@@ -116,14 +116,26 @@ async function apiFetch(
   const apiBase = getApiBaseUrl();
   const url = `${apiBase}${path}`;
 
-  const defaultHeaders: HeadersInit =
-    options.body instanceof FormData
-      ? {}
-      : { "Content-Type": "application/json" };
-  const mergedHeaders = new Headers(defaultHeaders);
+  const mergedHeaders: Record<string, string> = {};
+  if (!(options.body instanceof FormData)) {
+    mergedHeaders["Content-Type"] = "application/json";
+  }
+
   if (options.headers) {
-    const requestHeaders = new Headers(options.headers);
-    requestHeaders.forEach((value, key) => mergedHeaders.set(key, value));
+    if (options.headers instanceof Headers) {
+      options.headers.forEach((value, key) => {
+        mergedHeaders[key] = value;
+      });
+    } else if (Array.isArray(options.headers)) {
+      for (const [key, value] of options.headers) {
+        mergedHeaders[String(key)] = String(value);
+      }
+    } else {
+      for (const [key, value] of Object.entries(options.headers)) {
+        if (value === undefined || value === null) continue;
+        mergedHeaders[key] = String(value);
+      }
+    }
   }
 
   // Dynamically import tracker to avoid creating a hard dependency for environments
@@ -163,10 +175,10 @@ async function apiFetch(
       } = {
         url,
         method,
-        headers: Object.fromEntries(mergedHeaders.entries()),
+        headers: mergedHeaders,
       };
 
-      if (options.body !== undefined && options.body !== null && method !== "GET") {
+        if (options.body !== undefined && options.body !== null && method !== "GET") {
         if (options.body instanceof FormData) {
           // Multipart uploads route through native plugins; keep fetch fallback for safety.
           return fetch(url, {
@@ -176,7 +188,10 @@ async function apiFetch(
           });
         }
         if (typeof options.body === "string") {
-          const contentType = mergedHeaders.get("content-type") || "";
+          const contentType =
+            mergedHeaders["Content-Type"] ||
+            mergedHeaders["content-type"] ||
+            "";
           if (contentType.includes("application/json")) {
             try {
               request.data = JSON.parse(options.body);

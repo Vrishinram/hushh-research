@@ -35,6 +35,7 @@ import { HushhLoader } from "@/components/app-ui/hushh-loader";
 import { Icon } from "@/lib/morphy-ux/ui";
 import type { GeneratedVaultKeyMode } from "@/lib/services/vault-bootstrap-service";
 import { VaultMethodService, type VaultMethod } from "@/lib/services/vault-method-service";
+import { VaultMethodPromptLocalService } from "@/lib/services/vault-method-prompt-local-service";
 
 type VaultStep =
   | "checking"
@@ -243,7 +244,11 @@ export function VaultFlow({
           if (capability.recommendedMethod !== "passphrase") {
             const hasRecommendedWrapper =
               VaultService.getWrapperByMethod(vaultData, capability.recommendedMethod) !== null;
-            if (!hasRecommendedWrapper) {
+            const promptState = await VaultMethodPromptLocalService.load(user.uid);
+            const dismissedForRecommendedMethod =
+              promptState?.dismissed_for_method === capability.recommendedMethod;
+
+            if (!hasRecommendedWrapper && !dismissedForRecommendedMethod) {
               setPendingUnlockKey(decryptedKey);
               setRecommendedQuickMethod(capability.recommendedMethod);
               setStep("method");
@@ -372,10 +377,15 @@ export function VaultFlow({
       if (vaultMode === "passphrase" && enableGeneratedDefault) {
         const capability = await VaultMethodService.getCapabilityMatrix();
         if (capability.recommendedMethod !== "passphrase") {
-          setPendingUnlockKey(decryptedKey);
-          setRecommendedQuickMethod(capability.recommendedMethod);
-          setStep("method");
-          return;
+          const promptState = await VaultMethodPromptLocalService.load(user.uid);
+          const dismissedForRecommendedMethod =
+            promptState?.dismissed_for_method === capability.recommendedMethod;
+          if (!dismissedForRecommendedMethod) {
+            setPendingUnlockKey(decryptedKey);
+            setRecommendedQuickMethod(capability.recommendedMethod);
+            setStep("method");
+            return;
+          }
         }
       }
 
@@ -858,6 +868,19 @@ export function VaultFlow({
                   disabled={isUnlocking || !pendingUnlockKey}
                   onClick={async () => {
                     if (!pendingUnlockKey) return;
+                    if (recommendedQuickMethod) {
+                      try {
+                        await VaultMethodPromptLocalService.dismiss(
+                          user.uid,
+                          recommendedQuickMethod
+                        );
+                      } catch (dismissError) {
+                        console.warn(
+                          "[VaultFlow] Failed to persist quick-unlock dismissal:",
+                          dismissError
+                        );
+                      }
+                    }
                     await finalizeUnlock(pendingUnlockKey);
                   }}
                 >

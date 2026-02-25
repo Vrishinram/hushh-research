@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { useRouter } from "next/navigation";
 import {
   Pencil,
   Plus,
@@ -31,7 +30,6 @@ import { Button as MorphyButton } from "@/lib/morphy-ux/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/lib/morphy-ux/card";
 import { Icon } from "@/lib/morphy-ux/ui";
 import { KAI_EXPERIENCE_CONTRACT } from "@/lib/kai/experience-contract";
-import { ROUTES } from "@/lib/navigation/routes";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   AlertDialog,
@@ -322,7 +320,6 @@ export function DashboardMasterView({
   onAnalyzeStock,
   onReupload,
 }: DashboardMasterViewProps) {
-  const router = useRouter();
   const { vaultKey } = useVault();
   const { setPortfolioData: setCachePortfolioData } = useCache();
   const baselineBySourceRef = useRef<Map<string, ComparableHolding>>(new Map());
@@ -1081,17 +1078,10 @@ export function DashboardMasterView({
         cell: ({ row }) => {
           const holding = row.original;
           const deleted = Boolean(holding.pending_delete);
-          const canAnalyze = isHoldingAnalyzeEligible(holding);
-          const isCash = holding.is_cash_equivalent === true;
-          const categoryLabel = isCash
-            ? "Cash / Sweep"
-            : canAnalyze
-              ? "Analyze Eligible"
-              : "Non-Analyzable";
           return (
             <div
               className={cn(
-                "min-w-0 max-w-[130px] sm:max-w-[280px] lg:max-w-[340px]",
+                "min-w-0 max-w-[160px] sm:max-w-[280px] lg:max-w-[340px]",
                 deleted && "opacity-60"
               )}
             >
@@ -1104,9 +1094,6 @@ export function DashboardMasterView({
               >
                 {holding.name || "Unnamed security"}
               </p>
-              <span className="mt-1 inline-flex rounded-full bg-background px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-                {categoryLabel}
-              </span>
             </div>
           );
         },
@@ -1174,18 +1161,19 @@ export function DashboardMasterView({
         cell: ({ row }) => {
           const holding = row.original;
           const isDeleted = Boolean(holding.pending_delete);
-          const canAnalyze = isHoldingAnalyzeEligible(holding);
           return (
             <div className="flex flex-wrap items-center justify-end gap-1">
               <MorphyButton
                 variant="none"
                 effect="fade"
-                size="icon-sm"
+                size="sm"
                 disabled={isDeleted}
                 aria-label={`Edit ${holding.symbol || "holding"}`}
                 onClick={() => handleEditHolding(holding.client_id)}
+                className="min-w-[88px] justify-center"
               >
-                <Icon icon={Pencil} size="sm" />
+                <Icon icon={Pencil} size="sm" className="mr-1" />
+                Edit
               </MorphyButton>
               <MorphyButton
                 variant="none"
@@ -1194,39 +1182,19 @@ export function DashboardMasterView({
                 aria-label={isDeleted ? `Undo remove ${holding.symbol}` : `Remove ${holding.symbol}`}
                 onClick={() => handleToggleDeleteHolding(holding.client_id)}
                 className={cn(
-                  "min-w-[34px] sm:min-w-[78px]",
+                  "min-w-[88px] justify-center",
                   isDeleted ? "text-muted-foreground" : "text-rose-600 hover:text-rose-700"
                 )}
               >
                 <Icon icon={isDeleted ? Undo2 : Trash2} size="sm" className="mr-1" />
-                <span className="hidden sm:inline">{isDeleted ? "Restore" : "Remove"}</span>
-              </MorphyButton>
-              <MorphyButton
-                variant="none"
-                effect="fade"
-                size="sm"
-                disabled={isDeleted || !canAnalyze}
-                className="px-2 sm:px-3"
-                onClick={() => {
-                  if (!canAnalyze) return;
-                  onAnalyzeStock?.(holding.symbol);
-                }}
-              >
-                {canAnalyze ? (
-                  <>
-                    <span className="sm:hidden">Go</span>
-                    <span className="hidden sm:inline">Analyze</span>
-                  </>
-                ) : (
-                  "N/A"
-                )}
+                {isDeleted ? "Restore" : "Remove"}
               </MorphyButton>
             </div>
           );
         },
       },
     ],
-    [handleEditHolding, handleToggleDeleteHolding, onAnalyzeStock]
+    [handleEditHolding, handleToggleDeleteHolding]
   );
 
   return (
@@ -1418,31 +1386,31 @@ export function DashboardMasterView({
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <span className="font-semibold text-foreground">Bifurcation</span>
               <span className="rounded-full bg-background px-2 py-0.5">
-                Analyze Eligible: {holdingsBifurcation.analyzeEligible}
+                Equities: {holdingsBifurcation.analyzeEligible}
               </span>
               <span className="rounded-full bg-background px-2 py-0.5">
-                Non-Analyzable: {holdingsBifurcation.nonAnalyzable}
+                Other Assets: {holdingsBifurcation.nonAnalyzable}
               </span>
               <span className="rounded-full bg-background px-2 py-0.5">
-                Cash / Sweep: {holdingsBifurcation.cashSweep}
+                Cash: {holdingsBifurcation.cashSweep}
               </span>
             </div>
           </div>
 
           <Tabs defaultValue="all" className="space-y-3">
             <div className="pb-1">
-              <TabsList className="grid h-auto w-full grid-cols-2 gap-1 bg-background/80 p-1">
-                <TabsTrigger className="h-8 min-w-0 px-2 text-[11px] sm:text-xs" value="all">
+              <TabsList className="grid h-10 w-full grid-cols-4 gap-1 rounded-xl bg-background/80 p-1">
+                <TabsTrigger className="h-8 min-w-0 truncate px-2 text-[11px] sm:text-xs" value="all">
                   All ({desktopHoldingTables.all.length})
                 </TabsTrigger>
-                <TabsTrigger className="h-8 min-w-0 px-2 text-[11px] sm:text-xs" value="analyze">
-                  Analyze Eligible ({desktopHoldingTables.analyzeEligible.length})
+                <TabsTrigger className="h-8 min-w-0 truncate px-2 text-[11px] sm:text-xs" value="analyze">
+                  Equities ({desktopHoldingTables.analyzeEligible.length})
                 </TabsTrigger>
-                <TabsTrigger className="h-8 min-w-0 px-2 text-[11px] sm:text-xs" value="non-analyze">
-                  Non-Analyzable ({desktopHoldingTables.nonAnalyzable.length})
+                <TabsTrigger className="h-8 min-w-0 truncate px-2 text-[11px] sm:text-xs" value="non-analyze">
+                  Other Assets ({desktopHoldingTables.nonAnalyzable.length})
                 </TabsTrigger>
-                <TabsTrigger className="h-8 min-w-0 px-2 text-[11px] sm:text-xs" value="cash">
-                  Cash / Sweep ({desktopHoldingTables.cashSweep.length})
+                <TabsTrigger className="h-8 min-w-0 truncate px-2 text-[11px] sm:text-xs" value="cash">
+                  Cash ({desktopHoldingTables.cashSweep.length})
                 </TabsTrigger>
               </TabsList>
             </div>
@@ -1468,7 +1436,7 @@ export function DashboardMasterView({
               <DataTable
                 columns={holdingsTableColumns}
                 data={desktopHoldingTables.analyzeEligible}
-                searchPlaceholder="Search analyzable holdings..."
+                searchPlaceholder="Search equities..."
                 initialPageSize={5}
                 pageSizeOptions={[5, 10, 20]}
                 rowClassName={(holding) =>
@@ -1485,7 +1453,7 @@ export function DashboardMasterView({
               <DataTable
                 columns={holdingsTableColumns}
                 data={desktopHoldingTables.nonAnalyzable}
-                searchPlaceholder="Search non-analyzable holdings..."
+                searchPlaceholder="Search other assets..."
                 initialPageSize={5}
                 pageSizeOptions={[5, 10, 20]}
                 rowClassName={(holding) =>
@@ -1502,7 +1470,7 @@ export function DashboardMasterView({
               <DataTable
                 columns={holdingsTableColumns}
                 data={desktopHoldingTables.cashSweep}
-                searchPlaceholder="Search cash / sweep holdings..."
+                searchPlaceholder="Search cash holdings..."
                 initialPageSize={5}
                 pageSizeOptions={[5, 10, 20]}
                 rowClassName={(holding) =>
@@ -1609,17 +1577,7 @@ export function DashboardMasterView({
 
       <Card variant="none" effect="glass" className="min-w-0 overflow-hidden rounded-[24px]">
         <CardHeader className="pb-2 px-5 pt-5 sm:px-6 sm:pt-6">
-          <div className="flex items-center justify-between gap-3">
-            <CardTitle className="text-sm">Recommendations</CardTitle>
-            <MorphyButton
-              variant="none"
-              effect="fade"
-              size="sm"
-              onClick={() => router.push(ROUTES.KAI_OPTIMIZE)}
-            >
-              Optimize
-            </MorphyButton>
-          </div>
+          <CardTitle className="text-sm">Recommendations</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3 px-5 pb-5 pt-0 sm:px-6 sm:pb-6">
           <p className="text-xs text-muted-foreground">

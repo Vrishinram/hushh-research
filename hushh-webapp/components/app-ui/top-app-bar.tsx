@@ -52,7 +52,7 @@ import { getKaiChromeState } from "@/lib/navigation/kai-chrome-state";
 import { ROUTES } from "@/lib/navigation/routes";
 
 /** Shared style so Capacitor status bar area and top bar match (masked blur on all platforms) */
-const BAR_GLASS_CLASS = "top-bar-glass";
+const BAR_GLASS_CLASS = "bar-glass bar-glass-top";
 
 /**
  * TopBarBackground - Single background layer for status bar and top app bar.

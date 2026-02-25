@@ -40,7 +40,7 @@ function DialogOverlay({
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
       className={cn(
-        "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/28 backdrop-blur-[3px]",
+        "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-transparent",
         className
       )}
       {...props}
@@ -58,6 +58,10 @@ function DialogContent({
 }) {
   return (
     <DialogPortal data-slot="dialog-portal">
+      <div
+        aria-hidden
+        className="pointer-events-none fixed inset-0 z-[49] bg-black/22 backdrop-blur-[8px] [-webkit-backdrop-filter:blur(8px)]"
+      />
       <DialogOverlay />
       <DialogPrimitive.Content
         data-slot="dialog-content"

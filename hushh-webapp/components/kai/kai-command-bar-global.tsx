@@ -186,8 +186,8 @@ export function KaiCommandBarGlobal() {
     return Array.from(deduped.values());
   }, [cache, user?.uid]);
 
-  // Command palette is vault-gated and hidden on review/save overlays.
-  if (loading || !user || !isVaultUnlocked || reviewScreenActive) {
+  // Command palette is hidden only during loading/review overlays.
+  if (loading || !user || reviewScreenActive) {
     return null;
   }
 

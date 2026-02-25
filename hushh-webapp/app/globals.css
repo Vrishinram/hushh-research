@@ -544,47 +544,43 @@ md-ripple.morphy-md-ripple {
   border-radius: inherit;
 }
 
-/* Top bar (StatusBarBlur + TopAppBar): masked blur - glass + faded bottom edge, all platforms.
- * Use standard backdrop-filter only (no -webkit-backdrop-filter) so normal backdrop blur works. */
-.top-bar-glass {
-  background-color: color-mix(in oklch, lab(100 0 0 / 0.72) 26%, transparent);
-  -webkit-backdrop-filter: blur(3px);
-  backdrop-filter: blur(3px);
-  transform: translate3d(0, 0, 0);
-  will-change: transform;
-  mask-image: linear-gradient(
-    to bottom,
-    black 0%,
-    black 48%,
-    rgba(0, 0, 0, 0.92) 62%,
-    rgba(0, 0, 0, 0.7) 76%,
-    rgba(0, 0, 0, 0.38) 90%,
-    transparent 100%
-  );
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    black 0%,
-    black 48%,
-    rgba(0, 0, 0, 0.92) 62%,
-    rgba(0, 0, 0, 0.7) 76%,
-    rgba(0, 0, 0, 0.38) 90%,
-    transparent 100%
-  );
-  mask-size: 100% 100%;
-  -webkit-mask-size: 100% 100%;
-}
-
-.dark .top-bar-glass {
-  background-color: color-mix(in oklch, lab(0 0 0 / 0.72) 46%, transparent);
-}
-
-/* Bottom chrome glass counterpart for fixed-bottom bars. */
+/* Shared masked glass for top/bottom app chrome. */
+.bar-glass,
+.top-bar-glass,
 .bottom-bar-glass {
   background-color: color-mix(in oklch, lab(100 0 0 / 0.72) 26%, transparent);
   -webkit-backdrop-filter: blur(3px);
   backdrop-filter: blur(3px);
   transform: translate3d(0, 0, 0);
   will-change: transform;
+  mask-size: 100% 100%;
+  -webkit-mask-size: 100% 100%;
+}
+
+.bar-glass-top,
+.top-bar-glass {
+  mask-image: linear-gradient(
+    to bottom,
+    black 0%,
+    black 48%,
+    rgba(0, 0, 0, 0.92) 62%,
+    rgba(0, 0, 0, 0.7) 76%,
+    rgba(0, 0, 0, 0.38) 90%,
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    black 0%,
+    black 48%,
+    rgba(0, 0, 0, 0.92) 62%,
+    rgba(0, 0, 0, 0.7) 76%,
+    rgba(0, 0, 0, 0.38) 90%,
+    transparent 100%
+  );
+}
+
+.bar-glass-bottom,
+.bottom-bar-glass {
   mask-image: linear-gradient(
     to top,
     black 0%,
@@ -603,10 +599,10 @@ md-ripple.morphy-md-ripple {
     rgba(0, 0, 0, 0.38) 90%,
     transparent 100%
   );
-  mask-size: 100% 100%;
-  -webkit-mask-size: 100% 100%;
 }
 
+.dark .bar-glass,
+.dark .top-bar-glass,
 .dark .bottom-bar-glass {
   background-color: color-mix(in oklch, lab(0 0 0 / 0.72) 46%, transparent);
 }
