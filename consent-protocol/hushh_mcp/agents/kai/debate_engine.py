@@ -47,6 +47,50 @@ from .valuation_agent import ValuationInsight
 logger = logging.getLogger(__name__)
 
 
+def _safe_float(value: Any) -> Optional[float]:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        parsed = float(value)
+        if parsed != parsed:  # NaN guard
+            return None
+        return parsed
+    try:
+        text = str(value).strip().replace(",", "")
+        if not text:
+            return None
+        parsed = float(text)
+        if parsed != parsed:
+            return None
+        return parsed
+    except Exception:
+        return None
+
+
+def _format_currency(value: Any) -> str:
+    parsed = _safe_float(value)
+    if parsed is None:
+        return "n/a"
+    sign = "-" if parsed < 0 else ""
+    amount = abs(parsed)
+    if amount >= 1_000_000_000:
+        return f"{sign}${amount / 1_000_000_000:.2f}B"
+    if amount >= 1_000_000:
+        return f"{sign}${amount / 1_000_000:.2f}M"
+    if amount >= 1_000:
+        return f"{sign}${amount / 1_000:.0f}K"
+    return f"{sign}${amount:.0f}"
+
+
+def _format_percent(value: Any) -> str:
+    parsed = _safe_float(value)
+    if parsed is None:
+        return "n/a"
+    # Frontend sends coverage in [0,1]. Keep support for [0,100] for safety.
+    pct = parsed * 100.0 if parsed <= 1.0 else parsed
+    return f"{pct:.0f}%"
+
+
 @dataclass
 class DebateRound:
     """Single round of debate."""
@@ -709,12 +753,15 @@ class DebateEngine:
                 or ""
             ).strip()
             screening_excerpt = screening_criteria[:1800] if screening_criteria else ""
+            screening_line = (
+                "- Screening Criteria:\n" + screening_excerpt if screening_excerpt else ""
+            )
             ren_context_str = f"""
         RENAISSANCE DATA (THE MATHEMATICAL TRUTH):
         - Tier: {tier} (ACE/KING = Strong Buy, QUEEN/JACK = Watch/Hold)
         - Free Cash Flow (Billions): {fcf}
         - Thesis: {thesis}
-        {"- Screening Criteria:\\n" + screening_excerpt if screening_excerpt else ""}
+        {screening_line}
         
         MANDATE: You MUST reference this 'Renaissance' data. 
         If Tier is ACE/KING, respect the math even if sentiment is weak.
@@ -727,17 +774,106 @@ class DebateEngine:
             holdings = self.user_context.get("holdings_summary", [])
             port_alloc = self.user_context.get("portfolio_allocation", {})
             preferences = self.user_context.get("preferences", {})
+            debate_context = self.user_context.get("debate_context", {})
             investment_horizon = preferences.get("investment_horizon", "unknown")
             investment_style = preferences.get("investment_style", "unknown")
-            holdings_count = len(holdings) if isinstance(holdings, list) else 0
+            if isinstance(debate_context, dict):
+                portfolio_snapshot = debate_context.get("portfolio_snapshot", {})
+                coverage = debate_context.get("coverage", {})
+                statement_signals = debate_context.get("statement_signals", {})
+                eligible_symbols = debate_context.get("eligible_symbols", [])
+                top_positions = debate_context.get("top_positions", [])
+            else:
+                portfolio_snapshot = {}
+                coverage = {}
+                statement_signals = {}
+                eligible_symbols = []
+                top_positions = []
+
+            holdings_count = int(self.user_context.get("holdings_count") or 0)
+            if holdings_count <= 0 and isinstance(holdings, list):
+                holdings_count = len(holdings)
+
+            investable_count = (
+                int(_safe_float(portfolio_snapshot.get("investable_holdings_count")) or 0)
+                if isinstance(portfolio_snapshot, dict)
+                else 0
+            )
+            cash_positions_count = (
+                int(_safe_float(portfolio_snapshot.get("cash_positions_count")) or 0)
+                if isinstance(portfolio_snapshot, dict)
+                else 0
+            )
+            total_value = (
+                portfolio_snapshot.get("total_value")
+                if isinstance(portfolio_snapshot, dict)
+                else self.user_context.get("total_value")
+            )
+            cash_balance = (
+                portfolio_snapshot.get("cash_balance")
+                if isinstance(portfolio_snapshot, dict)
+                else self.user_context.get("cash_balance")
+            )
+            allocation_summary = "n/a"
+            if isinstance(port_alloc, dict) and port_alloc:
+                allocation_entries: list[str] = []
+                preferred_keys = ("equities", "cash", "fixed_income", "other")
+                for key in preferred_keys:
+                    parsed = _safe_float(port_alloc.get(key))
+                    if parsed is None:
+                        continue
+                    allocation_entries.append(f"{key}:{parsed:.1f}%")
+                if not allocation_entries:
+                    for key, raw_value in list(port_alloc.items())[:4]:
+                        parsed = _safe_float(raw_value)
+                        if parsed is None:
+                            continue
+                        allocation_entries.append(f"{key}:{parsed:.1f}%")
+                if allocation_entries:
+                    allocation_summary = ", ".join(allocation_entries)
+
+            top_position_lines: list[str] = []
+            if isinstance(top_positions, list):
+                for item in top_positions[:5]:
+                    if not isinstance(item, dict):
+                        continue
+                    symbol = str(item.get("symbol") or "").strip().upper()
+                    if not symbol:
+                        continue
+                    mv = _format_currency(item.get("market_value"))
+                    top_position_lines.append(f"{symbol} ({mv})")
+            if not top_position_lines and isinstance(holdings, list):
+                for item in holdings[:5]:
+                    if not isinstance(item, dict):
+                        continue
+                    symbol = str(item.get("symbol") or "").strip().upper()
+                    if not symbol:
+                        continue
+                    mv = _format_currency(item.get("market_value"))
+                    top_position_lines.append(f"{symbol} ({mv})")
+
+            eligible_preview: list[str] = []
+            if isinstance(eligible_symbols, list):
+                eligible_preview = [
+                    str(symbol).strip().upper()
+                    for symbol in eligible_symbols[:8]
+                    if str(symbol).strip()
+                ]
+
             user_context_str = f"""
         USER CONTEXT (THE PERSON):
         - Risk Profile: {risk}
         - Investment Horizon: {investment_horizon}
         - Investment Style: {investment_style}
-        - Portfolio Alloc: {port_alloc}
         - Holdings Count: {holdings_count}
-        - Current Holdings: {holdings}
+        - Investable Symbols: {investable_count or len(eligible_preview)}
+        - Cash Positions: {cash_positions_count}
+        - Portfolio Value: {_format_currency(total_value)} | Cash: {_format_currency(cash_balance)}
+        - Coverage (Ticker / Sector / Gain-Loss): {_format_percent(coverage.get("ticker_coverage_pct") if isinstance(coverage, dict) else None)} / {_format_percent(coverage.get("sector_coverage_pct") if isinstance(coverage, dict) else None)} / {_format_percent(coverage.get("gain_loss_coverage_pct") if isinstance(coverage, dict) else None)}
+        - Statement Signals: Investment Results {_format_currency(statement_signals.get("investment_gain_loss") if isinstance(statement_signals, dict) else None)}, Income {_format_currency(statement_signals.get("total_income_period") if isinstance(statement_signals, dict) else None)}, Fees {_format_currency(statement_signals.get("total_fees") if isinstance(statement_signals, dict) else None)}
+        - Eligible Symbol Sample: {", ".join(eligible_preview) if eligible_preview else "n/a"}
+        - Top Positions: {", ".join(top_position_lines) if top_position_lines else "n/a"}
+        - Allocation Snapshot: {allocation_summary}
         
         MANDATE: You MUST personalize your argument.
         Example: "Since you own [Holding], adding [Ticker] increases/decreases risk..."
@@ -751,6 +887,13 @@ class DebateEngine:
         - Each specialist speaks at least twice and must challenge weak assumptions.
         - Prefer evidence over narrative. Convert disagreements into explicit portfolio impact.
         - Keep claims falsifiable and tied to available data.
+
+        CONTEXT FUSION RULES (MANDATORY):
+        - Reference at least one Renaissance screening signal (tier, investable/avoid, rubric criteria).
+        - Reference at least one world-model portfolio fact (holdings, concentration, coverage, or statement signal).
+        - Explicitly frame risk tradeoff (concentration/diversification/downside) for this user.
+        - If your view conflicts with Renaissance screening, state the conflict and mitigation.
+        - Avoid raw data dumps; use only the highest-signal facts.
         
         AUDIENCE CONTEXT:
         User Name: {self.user_context.get("user_name", "Value Investor")}

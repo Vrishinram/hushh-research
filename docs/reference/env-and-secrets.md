@@ -12,6 +12,22 @@ See also: [deploy/README.md](../../deploy/README.md), [consent-protocol/.env.exa
 - **Local:** `.env` (backend) and `.env.local` (frontend) must contain exactly the keys the application code reads. Use the repo `.env.example` files as the template; they are audited to match the code.
 - **Production:** GCP Secret Manager must hold **exactly** the secrets the code expects — no more, no less. The Cloud Build config (`deploy/*.cloudbuild.yaml`) injects only these; do not add secrets that are not read by the code, and do not remove any that are.
 
+### One-command parity audit
+
+```bash
+python3 scripts/ops/verify-env-secrets-parity.py \
+  --project hushh-pda \
+  --region us-central1 \
+  --backend-service consent-protocol \
+  --frontend-service hushh-webapp
+```
+
+The script reports:
+- key matrix across local env files, deploy manifests, Secret Manager, and live Cloud Run
+- unknown live secret refs
+- missing required secrets
+- legacy keys still wired
+
 ---
 
 ## Audit: env vars read by code
@@ -55,7 +71,7 @@ See also: [deploy/README.md](../../deploy/README.md), [consent-protocol/.env.exa
 |----------|------------|----------|--------|
 | `NEXT_PUBLIC_BACKEND_URL` | `lib/api/consent.ts`, `lib/config.ts`, api routes, etc. | Yes | Prod build: from Secret Manager `BACKEND_URL` |
 | `NEXT_PUBLIC_FIREBASE_*` (6 keys) | `lib/firebase/config.ts` | Yes | API key, auth domain, project ID, storage bucket, messaging sender ID, app ID |
-| `NEXT_PUBLIC_FIREBASE_VAPID_KEY` | `lib/notifications/fcm-service.ts` | No (for push) | Web FCM token registration; from Firebase Console. See [fcm-notifications.md](../../consent-protocol/docs/reference/fcm-notifications.md). |
+| `NEXT_PUBLIC_FIREBASE_VAPID_KEY` | `lib/notifications/fcm-service.ts` | Yes (prod build) | Web FCM token registration; from Firebase Console. See [fcm-notifications.md](../../consent-protocol/docs/reference/fcm-notifications.md). |
 | `NEXT_PUBLIC_CONSENT_TIMEOUT_SECONDS` | `lib/constants.ts` | No | |
 | `NEXT_PUBLIC_FRONTEND_URL` | `lib/config.ts` | No | |
 | `CAPACITOR_BUILD` | `next.config.ts` | Build script | |
@@ -89,7 +105,7 @@ See also: [deploy/README.md](../../deploy/README.md), [consent-protocol/.env.exa
 | `CONSENT_TIMEOUT_SECONDS` | No | No | `.env` / MCP config | |
 | `PORT` | No | No | Optional (uvicorn/runner) | |
 | `ROOT_PATH` | No | No | Optional (Swagger) | |
-| `APP_REVIEW_MODE` | No | No | Local: `.env`; Prod: Cloud Run env | Backend app-review toggle |
+| `APP_REVIEW_MODE` | No | Yes (prod) | Local: `.env`; Prod: Secret Manager | Backend app-review toggle |
 | `HUSHH_APP_REVIEW_MODE` | No | No | Optional alternative key | Alias toggle for app review |
 | `REVIEWER_UID` | If app review | Yes (prod) | Local: `.env`; Prod: Secret Manager | Reviewer Firebase UID for custom token minting |
 | `CONSENT_SSE_ENABLED` | No | No | Local: `.env`; Prod: Cloud Run env | Keep false in production (FCM-first) |
@@ -121,10 +137,10 @@ These are used by MCP modules (`mcp_modules/`) for MCP server functionality, not
 | `NEXT_PUBLIC_FIREBASE_API_KEY` | Yes | No | Local: `.env.local`; CI: dummy; Prod: build-arg | Public |
 | `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` | Yes | No | Same as above | |
 | `NEXT_PUBLIC_FIREBASE_PROJECT_ID` | Yes | No | Same as above | |
-| `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` | No (recommended) | No | `.env.local` / CI / Prod build-arg | Optional but recommended for full Firebase features |
-| `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | No (recommended) | No | Same | Optional but recommended for full Firebase features |
-| `NEXT_PUBLIC_FIREBASE_APP_ID` | No (recommended) | No | Same | Optional but recommended for full Firebase features |
-| `NEXT_PUBLIC_FIREBASE_VAPID_KEY` | No (for push) | No | Same | **Web push (FCM)**: VAPID key from Firebase Console -> Cloud Messaging -> Web configuration -> Key pair. Required for consent push on web. See [fcm-notifications.md](../../consent-protocol/docs/reference/fcm-notifications.md). |
+| `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` | Yes | No | `.env.local` / CI / Prod build-arg | Required by current Cloud Build frontend manifest |
+| `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | Yes | No | Same | Required by current Cloud Build frontend manifest |
+| `NEXT_PUBLIC_FIREBASE_APP_ID` | Yes | No | Same | Required by current Cloud Build frontend manifest |
+| `NEXT_PUBLIC_FIREBASE_VAPID_KEY` | Yes | No | Same | **Web push (FCM)**: VAPID key from Firebase Console -> Cloud Messaging -> Web configuration -> Key pair. Required for production build and consent push on web. See [fcm-notifications.md](../../consent-protocol/docs/reference/fcm-notifications.md). |
 | `CAPACITOR_BUILD` | For native build | No | Set by npm script | true for cap:build |
 | `ENVIRONMENT_MODE` | No | No | development / production | |
 | `NODE_ENV` | No | No | Set by Next.js / CI | |
@@ -148,7 +164,7 @@ These are used by MCP modules (`mcp_modules/`) for MCP server functionality, not
 
 Secret Manager must hold **exactly** the keys the code uses. No extra secrets; no missing secrets. Cloud Build injects only these.
 
-### Backend (9 secrets) — all injected by `deploy/backend.cloudbuild.yaml`
+### Backend (10 secrets) — all injected by `deploy/backend.cloudbuild.yaml`
 
 | Secret name | Env var / usage in code |
 |-------------|-------------------------|
@@ -159,10 +175,11 @@ Secret Manager must hold **exactly** the keys the code uses. No extra secrets; n
 | `FRONTEND_URL` | `FRONTEND_URL` (server.py CORS) |
 | `DB_USER` | `DB_USER` (db/connection.py, db/db_client.py) |
 | `DB_PASSWORD` | `DB_PASSWORD` (same) |
+| `APP_REVIEW_MODE` | `APP_REVIEW_MODE` (api/routes/health.py) |
 | `REVIEWER_UID` | `REVIEWER_UID` (api/routes/health.py) |
 | `MCP_DEVELOPER_TOKEN` | `MCP_DEVELOPER_TOKEN` (api/routes/session.py) |
 
-**Not in Secret Manager (set as Cloud Run env vars in cloudbuild):** `DB_HOST`, `DB_PORT`, `DB_NAME`, `ENVIRONMENT`, `GOOGLE_GENAI_USE_VERTEXAI`, `APP_REVIEW_MODE`, `CONSENT_SSE_ENABLED`, `SYNC_REMOTE_ENABLED`, `DEVELOPER_API_ENABLED`, `CORS_ALLOWED_ORIGINS`, `DEVELOPER_REGISTRY_JSON` (non-prod only).
+**Not in Secret Manager (set as Cloud Run env vars in cloudbuild):** `DB_HOST`, `DB_PORT`, `DB_NAME`, `ENVIRONMENT`, `GOOGLE_GENAI_USE_VERTEXAI`, `CONSENT_SSE_ENABLED`, `SYNC_REMOTE_ENABLED`, `DEVELOPER_API_ENABLED`, `CORS_ALLOWED_ORIGINS`, `DEVELOPER_REGISTRY_JSON` (non-prod only).
 
 **Strict parity:** `DATABASE_URL` is not used anywhere. Migrations (`db/migrate.py`) use **DB_*** only, via `db.connection.get_database_url()`. Do **not** create or keep `DATABASE_URL` in Secret Manager; delete it if present.
 
@@ -182,10 +199,10 @@ Secret Manager must hold **exactly** the keys the code uses. No extra secrets; n
 ### gcloud CLI: list and create only these secrets
 
 ```bash
-# List existing secrets (ensure only the 17 above exist for this project)
+# List existing secrets (ensure only the 18 above exist for this project)
 gcloud secrets list --project=YOUR_PROJECT_ID
 
-# Create a missing backend secret (repeat for each of the 9 names)
+# Create a missing backend secret (repeat for each of the 10 names)
 gcloud secrets create SECRET_KEY --replication-policy=automatic --project=YOUR_PROJECT_ID
 echo -n "your-value" | gcloud secrets versions add SECRET_KEY --data-file=- --project=YOUR_PROJECT_ID
 
@@ -194,7 +211,7 @@ gcloud secrets create BACKEND_URL --replication-policy=automatic --project=YOUR_
 echo -n "https://your-backend.run.app" | gcloud secrets versions add BACKEND_URL --data-file=- --project=YOUR_PROJECT_ID
 ```
 
-**Required backend 9:** `SECRET_KEY`, `VAULT_ENCRYPTION_KEY`, `GOOGLE_API_KEY`, `FIREBASE_SERVICE_ACCOUNT_JSON`, `FRONTEND_URL`, `DB_USER`, `DB_PASSWORD`, `REVIEWER_UID`, `MCP_DEVELOPER_TOKEN`.
+**Required backend 10:** `SECRET_KEY`, `VAULT_ENCRYPTION_KEY`, `GOOGLE_API_KEY`, `FIREBASE_SERVICE_ACCOUNT_JSON`, `FRONTEND_URL`, `DB_USER`, `DB_PASSWORD`, `APP_REVIEW_MODE`, `REVIEWER_UID`, `MCP_DEVELOPER_TOKEN`.
 **Required frontend 8:** `BACKEND_URL`, `NEXT_PUBLIC_FIREBASE_API_KEY`, `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`, `NEXT_PUBLIC_FIREBASE_PROJECT_ID`, `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`, `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`, `NEXT_PUBLIC_FIREBASE_APP_ID`, `NEXT_PUBLIC_FIREBASE_VAPID_KEY`.
 
 These Firebase values are public client config, but storing them in Secret Manager keeps deployment manifests free of hardcoded production values.

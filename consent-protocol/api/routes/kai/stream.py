@@ -11,6 +11,8 @@ import contextvars
 import json
 import logging
 import os
+import re
+from datetime import datetime, timezone
 from typing import Any, AsyncGenerator, Dict, Optional
 
 from fastapi import APIRouter, Header, HTTPException, Request
@@ -35,11 +37,13 @@ from hushh_mcp.operons.kai.llm import (
 )
 from hushh_mcp.services.consent_db import ConsentDBService
 from hushh_mcp.services.renaissance_service import get_renaissance_service
+from hushh_mcp.services.symbol_master_service import get_symbol_master_service
 from hushh_mcp.services.world_model_service import get_world_model_service
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Kai Streaming"])
+_TICKER_SYMBOL_RE = re.compile(r"^[A-Z][A-Z0-9.\-]{0,5}$")
 
 
 # ============================================================================
@@ -223,6 +227,447 @@ def _extract_summary_count(summary: dict[str, Any] | None) -> int:
     return 0
 
 
+def _now_utc_iso() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _safe_float(value: Any) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        out = float(value)
+        if out != out:  # NaN guard
+            return None
+        return out
+    try:
+        text = str(value).strip().replace(",", "")
+        if not text:
+            return None
+        out = float(text)
+        if out != out:
+            return None
+        return out
+    except Exception:
+        return None
+
+
+def _safe_int(value: Any) -> int | None:
+    parsed = _safe_float(value)
+    if parsed is None:
+        return None
+    return int(parsed)
+
+
+def _is_cash_equivalent_context_row(row: dict[str, Any]) -> bool:
+    symbol = str(row.get("symbol") or "").strip().upper()
+    if symbol in {"CASH", "MMF", "SWEEP", "QACDS"}:
+        return True
+    name = str(row.get("name") or row.get("description") or "").strip().lower()
+    asset_type = str(row.get("asset_type") or "").strip().lower()
+    hints = ("cash", "money market", "sweep", "core position", "deposit")
+    return any(hint in name for hint in hints) or any(hint in asset_type for hint in hints)
+
+
+def _context_row_analyze_eligibility(row: dict[str, Any]) -> tuple[bool, str]:
+    listing_status = str(row.get("security_listing_status") or "").strip().lower()
+    symbol_kind = str(row.get("symbol_kind") or "").strip().lower()
+    is_sec_common_equity = bool(row.get("is_sec_common_equity_ticker"))
+    is_cash_equivalent = bool(row.get("is_cash_equivalent")) or _is_cash_equivalent_context_row(row)
+    is_investable = bool(row.get("is_investable")) and not is_cash_equivalent
+
+    if is_cash_equivalent or listing_status == "cash_or_sweep":
+        return False, "excluded_cash"
+    if listing_status == "fixed_income":
+        return False, "excluded_fixed_income"
+    if listing_status == "non_sec_common_equity":
+        return False, "excluded_non_sec_common_equity"
+    if not is_investable:
+        return False, "excluded_missing_equity_classification"
+    if (
+        is_sec_common_equity
+        or listing_status == "sec_common_equity"
+        or symbol_kind == "us_common_equity_ticker"
+    ):
+        return True, "eligible_sec_common_equity"
+    return False, "excluded_missing_equity_classification"
+
+
+def _looks_non_equity_from_ticker_metadata(
+    *,
+    symbol: str,
+    title: str,
+    sector_primary: str,
+    industry_primary: str,
+    sic_description: str,
+) -> tuple[bool, str]:
+    combined = " ".join(
+        [
+            str(title or "").strip().lower(),
+            str(sector_primary or "").strip().lower(),
+            str(industry_primary or "").strip().lower(),
+            str(sic_description or "").strip().lower(),
+        ]
+    )
+
+    if symbol.endswith("X"):
+        return True, "excluded_non_sec_common_equity"
+
+    if any(term in combined for term in ("bond", "fixed income", "treasury", "municipal")):
+        return True, "excluded_fixed_income"
+
+    if any(
+        term in combined
+        for term in (
+            "etf",
+            "fund",
+            "mutual",
+            "index",
+            "trust",
+            "money market",
+            "cash",
+            "sweep",
+            "commodity",
+            "gold",
+            "real estate",
+            "reit",
+        )
+    ):
+        return True, "excluded_non_sec_common_equity"
+
+    return False, "eligible_sec_common_equity"
+
+
+def _resolve_symbol_eligibility(
+    *,
+    ticker: str,
+    request_context: dict[str, Any],
+) -> dict[str, Any]:
+    symbol = str(ticker or "").strip().upper()
+    if not symbol:
+        return {
+            "symbol_eligibility": False,
+            "eligibility_reason": "excluded_missing_equity_classification",
+            "eligibility_source": "request_symbol",
+        }
+
+    holdings = request_context.get("holdings")
+    if isinstance(holdings, list):
+        for row in holdings:
+            if not isinstance(row, dict):
+                continue
+            row_symbol = str(row.get("symbol") or "").strip().upper()
+            if row_symbol != symbol:
+                continue
+            eligible, reason = _context_row_analyze_eligibility(row)
+            return {
+                "symbol_eligibility": eligible,
+                "eligibility_reason": reason,
+                "eligibility_source": "portfolio",
+            }
+
+    symbol_master = get_symbol_master_service()
+    metadata = symbol_master.get_ticker_metadata(symbol) or {}
+    classification = symbol_master.classify(symbol)
+    if not classification.tradable:
+        return {
+            "symbol_eligibility": False,
+            "eligibility_reason": "excluded_missing_equity_classification",
+            "eligibility_source": "ticker_master",
+        }
+
+    non_equity, reason = _looks_non_equity_from_ticker_metadata(
+        symbol=symbol,
+        title=str(metadata.get("title") or ""),
+        sector_primary=str(metadata.get("sector_primary") or ""),
+        industry_primary=str(metadata.get("industry_primary") or ""),
+        sic_description=str(metadata.get("sic_description") or ""),
+    )
+    if non_equity:
+        return {
+            "symbol_eligibility": False,
+            "eligibility_reason": reason,
+            "eligibility_source": "ticker_master",
+        }
+
+    return {
+        "symbol_eligibility": True,
+        "eligibility_reason": "eligible_sec_common_equity",
+        "eligibility_source": "ticker_master",
+    }
+
+
+def _build_canonical_portfolio_context(holdings: list[dict[str, Any]]) -> dict[str, Any]:
+    cleaned = [row for row in holdings if isinstance(row, dict)]
+    non_cash = [row for row in cleaned if not _is_cash_equivalent_context_row(row)]
+    investable = [
+        row
+        for row in non_cash
+        if _TICKER_SYMBOL_RE.match(str(row.get("symbol") or "").strip().upper())
+        and _context_row_analyze_eligibility(row)[0]
+    ]
+
+    investable_symbols: list[str] = []
+    for row in investable:
+        symbol = str(row.get("symbol") or "").strip().upper()
+        if symbol and symbol not in investable_symbols:
+            investable_symbols.append(symbol)
+
+    total_value = sum(_safe_float(row.get("market_value")) or 0.0 for row in cleaned)
+    cash_value = sum(
+        _safe_float(row.get("market_value")) or 0.0
+        for row in cleaned
+        if _is_cash_equivalent_context_row(row)
+    )
+    losers = sum(
+        1 for row in investable if (_safe_float(row.get("unrealized_gain_loss")) or 0.0) < 0
+    )
+    winners = sum(
+        1 for row in investable if (_safe_float(row.get("unrealized_gain_loss")) or 0.0) > 0
+    )
+    estimated_annual_income = sum(
+        _safe_float(row.get("estimated_annual_income")) or 0.0 for row in cleaned
+    )
+
+    return {
+        "holdings_summary": cleaned[:30],
+        "holdings_count": len(cleaned),
+        "non_cash_holdings_count": len(non_cash),
+        "investable_holdings_count": len(investable),
+        "cash_positions_count": len(cleaned) - len(non_cash),
+        "eligible_symbols": investable_symbols[:30],
+        "cash_value": round(cash_value, 2),
+        "total_value": round(total_value, 2),
+        "estimated_annual_income": round(estimated_annual_income, 2),
+        "losers_count": losers,
+        "winners_count": winners,
+    }
+
+
+def _clamp(value: float, low: float, high: float) -> float:
+    return max(low, min(high, value))
+
+
+def _pick_first_numeric(source: dict[str, Any] | None, keys: tuple[str, ...]) -> float | None:
+    if not isinstance(source, dict):
+        return None
+    for key in keys:
+        parsed = _safe_float(source.get(key))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _derive_market_trend(sentiment_score: float | None, decision: str) -> tuple[str, float]:
+    base_score = 5.0
+    if sentiment_score is not None:
+        base_score = _clamp((sentiment_score + 1.0) * 5.0, 0.0, 10.0)
+    decision_bias = {
+        "buy": 0.6,
+        "hold": 0.0,
+        "reduce": -0.6,
+        "sell": -0.6,
+    }.get((decision or "").strip().lower(), 0.0)
+    score = _clamp(base_score + decision_bias, 0.0, 10.0)
+    if score >= 6.4:
+        label = "Bullish"
+    elif score <= 3.6:
+        label = "Bearish"
+    else:
+        label = "Neutral"
+    return label, round(score, 2)
+
+
+def _derive_fair_value(
+    *,
+    price_targets: dict[str, Any] | None,
+    valuation_metrics: dict[str, Any] | None,
+    valuation_recommendation: str,
+) -> tuple[str, float, float | None]:
+    current_price = _pick_first_numeric(
+        valuation_metrics,
+        (
+            "current_price",
+            "price",
+            "market_price",
+            "spot_price",
+            "last_price",
+        ),
+    )
+    target_price = _pick_first_numeric(
+        price_targets,
+        (
+            "base_case",
+            "base",
+            "fair_value",
+            "consensus",
+            "target",
+            "optimistic",
+            "conservative",
+        ),
+    )
+    gap_pct: float | None = None
+    if current_price and current_price > 0 and target_price is not None:
+        gap_pct = ((target_price - current_price) / current_price) * 100.0
+        score = _clamp(5.0 + (gap_pct / 4.0), 0.0, 10.0)
+    else:
+        rec = (valuation_recommendation or "").strip().lower()
+        if "under" in rec:
+            score = 7.2
+        elif "over" in rec:
+            score = 2.8
+        else:
+            score = 5.0
+    if score >= 6.2:
+        label = "Undervalued"
+    elif score <= 3.8:
+        label = "Overvalued"
+    else:
+        label = "Fairly Valued"
+    return label, round(score, 2), (round(gap_pct, 2) if gap_pct is not None else None)
+
+
+def _derive_company_strength_score(
+    *,
+    fundamental_confidence: float | None,
+    valuation_confidence: float | None,
+    debate_confidence: float,
+    sentiment_score: float | None,
+    fair_value_score: float,
+    market_trend_score: float,
+) -> float:
+    fundamental_score = (
+        _clamp((fundamental_confidence or 0.5) * 10.0, 0.0, 10.0)
+        if fundamental_confidence is not None
+        else 5.0
+    )
+    valuation_score = (
+        _clamp((valuation_confidence or 0.5) * 10.0, 0.0, 10.0)
+        if valuation_confidence is not None
+        else fair_value_score
+    )
+    sentiment_component = (
+        _clamp((sentiment_score + 1.0) * 5.0, 0.0, 10.0)
+        if sentiment_score is not None
+        else market_trend_score
+    )
+    debate_score = _clamp((debate_confidence or 0.5) * 10.0, 0.0, 10.0)
+    blended = (
+        (fundamental_score * 0.40)
+        + (valuation_score * 0.20)
+        + (sentiment_component * 0.20)
+        + (debate_score * 0.20)
+    )
+    return round(_clamp(blended, 0.0, 10.0), 2)
+
+
+def _derive_market_snapshot(
+    *,
+    valuation_metrics: dict[str, Any] | None,
+    price_targets: dict[str, Any] | None,
+    analysis_updated_at: str,
+) -> dict[str, Any]:
+    candidate_fields = (
+        ("current_price", valuation_metrics, "valuation_metrics.current_price"),
+        ("price", valuation_metrics, "valuation_metrics.price"),
+        ("market_price", price_targets, "price_targets.market_price"),
+        ("current_price", price_targets, "price_targets.current_price"),
+        ("current", price_targets, "price_targets.current"),
+    )
+    for key, source, source_label in candidate_fields:
+        if not isinstance(source, dict):
+            continue
+        parsed = _safe_float(source.get(key))
+        if parsed is not None:
+            return {
+                "last_price": round(parsed, 4),
+                "observed_at": analysis_updated_at,
+                "source": source_label,
+            }
+    return {
+        "last_price": None,
+        "observed_at": analysis_updated_at,
+        "source": "unavailable",
+    }
+
+
+def _validate_world_model_context_requirements(
+    full_user_context: dict[str, Any],
+) -> list[str]:
+    missing: list[str] = []
+    request_context = (
+        full_user_context.get("request_context")
+        if isinstance(full_user_context.get("request_context"), dict)
+        else {}
+    )
+
+    holdings = request_context.get("holdings")
+    if not isinstance(holdings, list) or len(holdings) == 0:
+        missing.append("world_model_holdings")
+
+    debate_context = request_context.get("debate_context")
+    if not isinstance(debate_context, dict):
+        missing.append("world_model_debate_context")
+        return missing
+
+    portfolio_snapshot = debate_context.get("portfolio_snapshot")
+    if not isinstance(portfolio_snapshot, dict) or len(portfolio_snapshot) == 0:
+        missing.append("world_model_portfolio_snapshot")
+
+    coverage = debate_context.get("coverage")
+    if not isinstance(coverage, dict) or len(coverage) == 0:
+        missing.append("world_model_coverage")
+
+    return missing
+
+
+def _validate_renaissance_context_requirements(
+    renaissance_context: dict[str, Any],
+    renaissance_lookup_error: Exception | None,
+) -> list[str]:
+    missing: list[str] = []
+    if renaissance_lookup_error is not None:
+        missing.append("renaissance_context_lookup")
+        return missing
+
+    if not isinstance(renaissance_context, dict) or not renaissance_context:
+        missing.append("renaissance_context_payload")
+        return missing
+
+    if "is_investable" not in renaissance_context:
+        missing.append("renaissance_investable_flag")
+
+    return missing
+
+
+def _build_renaissance_comparison(renaissance_context: dict[str, Any]) -> dict[str, Any]:
+    tier = renaissance_context.get("tier")
+    is_investable = bool(renaissance_context.get("is_investable"))
+    is_avoid = bool(renaissance_context.get("is_avoid"))
+    recommendation_bias = renaissance_context.get("recommendation_bias")
+
+    if is_avoid:
+        status = "avoid"
+        comparison_label = "Renaissance avoid"
+    elif is_investable:
+        status = "investable"
+        comparison_label = f"Renaissance investable ({tier})" if tier else "Renaissance investable"
+    elif renaissance_context.get("is_investable") is False:
+        status = "outside_universe"
+        comparison_label = "Outside Renaissance investable universe"
+    else:
+        status = "unknown"
+        comparison_label = "Renaissance status unavailable"
+
+    return {
+        "status": status,
+        "tier": tier,
+        "is_investable": is_investable,
+        "is_avoid": is_avoid,
+        "comparison_label": comparison_label,
+        "recommendation_bias": recommendation_bias,
+    }
+
+
 async def stream_agent_thinking(
     agent_name: str,
     ticker: str,
@@ -259,6 +704,7 @@ Think step by step in 2-3 sentences about what you'll analyze and why it matters
                         "agent": agent_name.lower(),
                         "text": event.get("text", ""),
                         "type": "token",
+                        "token_source": event.get("token_source", "response"),
                         "round": round_number,
                         "phase": phase,
                     },
@@ -292,6 +738,7 @@ Think step by step in 2-3 sentences about what you'll analyze and why it matters
                         "agent": agent_name.lower(),
                         "text": token_text,
                         "type": "token",
+                        "token_source": "fallback",
                         "round": round_number,
                         "phase": phase,
                     },
@@ -353,6 +800,9 @@ async def analyze_stream_generator(
     retry_counts: dict[str, int] = {"fundamental": 0, "sentiment": 0, "valuation": 0}
     pre_agent_thinking_enabled = _pre_agent_streaming_enabled()
     analysis_mode = "full_stream" if pre_agent_thinking_enabled else "lean_stream"
+    symbol_eligibility = False
+    eligibility_reason = "excluded_missing_equity_classification"
+    eligibility_source = "request_symbol"
 
     def remaining_timeout() -> float:
         elapsed = loop.time() - stream_started_at
@@ -382,6 +832,31 @@ async def analyze_stream_generator(
                 "tokens": ["Connecting", "to", "context", "layers", "and", "screening", "data."],
             },
         )
+
+        request_context: Dict[str, Any] = context if isinstance(context, dict) else {}
+        eligibility = _resolve_symbol_eligibility(ticker=ticker, request_context=request_context)
+        symbol_eligibility = bool(eligibility.get("symbol_eligibility"))
+        eligibility_reason = str(
+            eligibility.get("eligibility_reason") or "excluded_missing_equity_classification"
+        )
+        eligibility_source = str(eligibility.get("eligibility_source") or "request_symbol")
+        if not symbol_eligibility:
+            yield create_event(
+                "error",
+                {
+                    "code": "ANALYZE_NOT_ELIGIBLE_FOR_ALPHAAGENTS",
+                    "message": (
+                        "Selected symbol is not eligible for equity-only AlphaAgents analysis. "
+                        "Choose an SEC common equity holding."
+                    ),
+                    "ticker": ticker,
+                    "symbol_eligibility": symbol_eligibility,
+                    "eligibility_reason": eligibility_reason,
+                    "eligibility_source": eligibility_source,
+                },
+                terminal=True,
+            )
+            return
         if not is_gemini_ready():
             yield create_event(
                 "warning",
@@ -412,23 +887,18 @@ async def analyze_stream_generator(
         )
         renaissance_result, wm_result = context_results
 
-        if isinstance(renaissance_result, Exception):
+        renaissance_lookup_error: Exception | None = (
+            renaissance_result if isinstance(renaissance_result, Exception) else None
+        )
+        if renaissance_lookup_error is not None:
             logger.warning(
                 "[Kai Stream] Renaissance context lookup failed for %s: %s",
                 ticker,
-                renaissance_result,
+                renaissance_lookup_error,
             )
-            renaissance_context: Dict[str, Any] = {
-                "is_investable": False,
-                "tier": None,
-                "tier_description": "Unavailable",
-                "conviction_weight": 0.0,
-                "investment_thesis": "",
-                "sector_peers": [],
-                "recommendation_bias": "NEUTRAL",
-            }
+            renaissance_context: Dict[str, Any] = {}
         else:
-            renaissance_context = renaissance_result or {}
+            renaissance_context = renaissance_result if isinstance(renaissance_result, dict) else {}
 
         if isinstance(wm_result, Exception):
             logger.warning("[Kai Stream] World model fetch failed for %s: %s", user_id, wm_result)
@@ -436,7 +906,6 @@ async def analyze_stream_generator(
         else:
             wm_index = wm_result
 
-        request_context: Dict[str, Any] = context if isinstance(context, dict) else {}
         full_user_context: Dict[str, Any] = {
             "risk_profile": risk_profile,
             "holdings_summary": [],
@@ -451,27 +920,99 @@ async def analyze_stream_generator(
             "request_context": request_context,
         }
 
+        request_holdings = request_context.get("holdings")
+        if isinstance(request_holdings, list):
+            canonical_portfolio_context = _build_canonical_portfolio_context(request_holdings)
+            full_user_context["holdings_summary"] = canonical_portfolio_context["holdings_summary"]
+            full_user_context["holdings_count"] = canonical_portfolio_context["holdings_count"]
+            full_user_context["portfolio_snapshot"] = {
+                "non_cash_holdings_count": canonical_portfolio_context["non_cash_holdings_count"],
+                "investable_holdings_count": canonical_portfolio_context[
+                    "investable_holdings_count"
+                ],
+                "cash_positions_count": canonical_portfolio_context["cash_positions_count"],
+                "cash_value": canonical_portfolio_context["cash_value"],
+                "total_value": canonical_portfolio_context["total_value"],
+                "estimated_annual_income": canonical_portfolio_context["estimated_annual_income"],
+                "losers_count": canonical_portfolio_context["losers_count"],
+                "winners_count": canonical_portfolio_context["winners_count"],
+            }
+            full_user_context["eligible_symbols"] = canonical_portfolio_context["eligible_symbols"]
+
+        requested_holdings_count = _safe_int(request_context.get("holdings_count"))
+        if requested_holdings_count is not None:
+            full_user_context["holdings_count"] = max(
+                int(full_user_context.get("holdings_count") or 0),
+                max(0, requested_holdings_count),
+            )
+
+        request_debate_context = request_context.get("debate_context")
+        if isinstance(request_debate_context, dict):
+            full_user_context["debate_context"] = request_debate_context
+            snapshot = request_debate_context.get("portfolio_snapshot")
+            if isinstance(snapshot, dict):
+                snapshot_holdings = _safe_int(snapshot.get("holdings_count"))
+                if snapshot_holdings is not None:
+                    full_user_context["holdings_count"] = max(
+                        int(full_user_context.get("holdings_count") or 0),
+                        max(0, snapshot_holdings),
+                    )
+
+        for rich_key in (
+            "account_summary",
+            "asset_allocation",
+            "income_summary",
+            "realized_gain_loss",
+            "quality_report_v2",
+        ):
+            value = request_context.get(rich_key)
+            if isinstance(value, dict):
+                full_user_context[rich_key] = value
+
+        total_value_context = _safe_float(request_context.get("total_value"))
+        if total_value_context is not None:
+            full_user_context["total_value"] = total_value_context
+
+        cash_balance_context = _safe_float(request_context.get("cash_balance"))
+        if cash_balance_context is not None:
+            full_user_context["cash_balance"] = cash_balance_context
+
         if wm_index and wm_index.domain_summaries:
             # Extract Financial Context
             fin_summary = wm_index.domain_summaries.get("financial", {})
-            request_holdings = request_context.get("holdings")
-            if isinstance(request_holdings, list):
-                full_user_context["holdings_summary"] = [
-                    row for row in request_holdings if isinstance(row, dict)
-                ]
-            full_user_context["holdings_count"] = _extract_summary_count(
+            summary_holdings_count = _extract_summary_count(
                 fin_summary if isinstance(fin_summary, dict) else {}
             )
-            full_user_context["portfolio_allocation"] = {
-                "equities": fin_summary.get("equities_pct", 0),
-                "cash": fin_summary.get("cash_pct", 0),
-            }
+            full_user_context["holdings_count"] = max(
+                int(full_user_context.get("holdings_count") or 0),
+                summary_holdings_count,
+            )
+
+            requested_allocation = request_context.get("asset_allocation")
+            if isinstance(requested_allocation, dict):
+                full_user_context["portfolio_allocation"] = requested_allocation
+            else:
+                full_user_context["portfolio_allocation"] = {
+                    "equities": fin_summary.get("equities_pct", 0),
+                    "cash": fin_summary.get("cash_pct", 0),
+                    "fixed_income": fin_summary.get("bonds_pct", 0),
+                }
             full_user_context["financial_summary"] = fin_summary
 
-            # Extract Kai profile summary flags (stored from onboarding preferences flow)
-            kai_profile_summary = wm_index.domain_summaries.get("kai_profile", {})
-            if isinstance(kai_profile_summary, dict):
-                full_user_context["kai_profile_summary"] = kai_profile_summary
+            # Extract financial profile summary flags (stored from onboarding preferences flow)
+            financial_profile_summary = {
+                "profile_completed": fin_summary.get("profile_completed"),
+                "risk_profile": fin_summary.get("risk_profile"),
+                "risk_score": fin_summary.get("risk_score"),
+                "has_investment_horizon": fin_summary.get("has_investment_horizon"),
+                "has_drawdown_response": fin_summary.get("has_drawdown_response"),
+                "has_volatility_preference": fin_summary.get("has_volatility_preference"),
+            }
+            full_user_context["financial_profile_summary"] = {
+                key: value
+                for key, value in financial_profile_summary.items()
+                if value not in (None, "")
+            }
 
             # Extract Learned Attributes (across all domains)
             # In a real implementation, we might filter for relevant ones
@@ -482,12 +1023,13 @@ async def analyze_stream_generator(
         preference_container = {}
         if isinstance(request_context.get("preferences"), dict):
             preference_container.update(request_context.get("preferences", {}))
-        if isinstance(request_context.get("kai_profile"), dict):
-            profile = request_context.get("kai_profile", {})
+        if isinstance(request_context.get("financial_profile"), dict):
+            profile = request_context.get("financial_profile", {})
             preference_container.update(
                 {
                     "investment_horizon": profile.get("investment_horizon"),
                     "investment_style": profile.get("investment_style"),
+                    "risk_profile": profile.get("risk_profile"),
                 }
             )
         if "investment_horizon" in request_context:
@@ -497,6 +1039,42 @@ async def analyze_stream_generator(
         full_user_context["preferences"] = {
             key: value for key, value in preference_container.items() if value not in (None, "")
         }
+
+        missing_requirements = sorted(
+            set(
+                _validate_world_model_context_requirements(full_user_context)
+                + _validate_renaissance_context_requirements(
+                    renaissance_context,
+                    renaissance_lookup_error,
+                )
+            )
+        )
+        context_integrity = {
+            "world_model_context_present": not any(
+                item.startswith("world_model_") for item in missing_requirements
+            ),
+            "renaissance_context_present": not any(
+                item.startswith("renaissance_") for item in missing_requirements
+            ),
+            "missing_requirements": missing_requirements,
+        }
+        if missing_requirements:
+            yield create_event(
+                "error",
+                {
+                    "code": "ANALYZE_CONTEXT_REQUIRED",
+                    "message": (
+                        "Analysis requires both world-model portfolio context "
+                        "and Renaissance screening context."
+                    ),
+                    "ticker": ticker,
+                    "missing_requirements": missing_requirements,
+                    "context_integrity": context_integrity,
+                },
+                terminal=True,
+            )
+            return
+        renaissance_comparison = _build_renaissance_comparison(renaissance_context)
 
         # Yield thinking event about context retrieval
         yield create_event(
@@ -542,7 +1120,7 @@ async def analyze_stream_generator(
             {
                 "phase": "analysis",
                 "round": 1,
-                "message": f"🧠 Initializing analysis pipeline for {ticker}...",
+                "message": f"🧠 Starting analysis pipeline for {ticker}...",
                 "tokens": [
                     "Activating",
                     "three",
@@ -1265,6 +1843,30 @@ async def analyze_stream_generator(
                 degraded_agents,
             )
         )
+        sentiment_score_value = _safe_float(sentiment_insight.sentiment_score)
+        market_trend_label, market_trend_score = _derive_market_trend(
+            sentiment_score_value,
+            debate_result.decision,
+        )
+        fair_value_label, fair_value_score, fair_value_gap_pct = _derive_fair_value(
+            price_targets=valuation_insight.price_targets,
+            valuation_metrics=valuation_insight.valuation_metrics,
+            valuation_recommendation=valuation_insight.recommendation,
+        )
+        company_strength_score = _derive_company_strength_score(
+            fundamental_confidence=_safe_float(fundamental_insight.confidence),
+            valuation_confidence=_safe_float(valuation_insight.confidence),
+            debate_confidence=_safe_float(debate_result.confidence) or 0.5,
+            sentiment_score=sentiment_score_value,
+            fair_value_score=fair_value_score,
+            market_trend_score=market_trend_score,
+        )
+        analysis_updated_at = _now_utc_iso()
+        market_snapshot = _derive_market_snapshot(
+            valuation_metrics=valuation_insight.valuation_metrics,
+            price_targets=valuation_insight.price_targets,
+            analysis_updated_at=analysis_updated_at,
+        )
 
         world_model_context = {
             "risk_profile": full_user_context.get("risk_profile"),
@@ -1312,6 +1914,8 @@ async def analyze_stream_generator(
             "dissenting_opinions": debate_result.dissenting_opinions,
             "debate_highlights": debate_highlights[:20],
             "world_model_context": world_model_context,
+            "context_integrity": context_integrity,
+            "renaissance_comparison": renaissance_comparison,
             "renaissance_tier": renaissance_context.get("tier"),
             "renaissance_score": float(renaissance_context.get("conviction_weight", 0.0) or 0.0)
             * 100.0,
@@ -1339,6 +1943,14 @@ async def analyze_stream_generator(
                 "consensus_reached": debate_result.consensus_reached,
             },
             "llm_synthesis": synthesis_payload,
+            "company_strength_score": company_strength_score,
+            "market_trend_label": market_trend_label,
+            "market_trend_score": market_trend_score,
+            "fair_value_label": fair_value_label,
+            "fair_value_score": fair_value_score,
+            "fair_value_gap_pct": fair_value_gap_pct,
+            "analysis_updated_at": analysis_updated_at,
+            "market_snapshot": market_snapshot,
             "short_recommendation": short_recommendation,
             "analysis_degraded": analysis_degraded,
             "degraded_agents": sorted(set(degraded_agents)),
@@ -1349,6 +1961,9 @@ async def analyze_stream_generator(
                 "retry_counts": retry_counts,
                 "analysis_mode": analysis_mode,
             },
+            "symbol_eligibility": symbol_eligibility,
+            "eligibility_reason": eligibility_reason,
+            "eligibility_source": eligibility_source,
         }
 
         yield create_event(
@@ -1364,6 +1979,14 @@ async def analyze_stream_generator(
                 "fundamental_summary": fundamental_insight.summary,
                 "sentiment_summary": sentiment_insight.summary,
                 "valuation_summary": valuation_insight.summary,
+                "company_strength_score": company_strength_score,
+                "market_trend_label": market_trend_label,
+                "market_trend_score": market_trend_score,
+                "fair_value_label": fair_value_label,
+                "fair_value_score": fair_value_score,
+                "fair_value_gap_pct": fair_value_gap_pct,
+                "analysis_updated_at": analysis_updated_at,
+                "market_snapshot": market_snapshot,
                 "short_recommendation": short_recommendation,
                 "analysis_degraded": analysis_degraded,
                 "degraded_agents": sorted(set(degraded_agents)),
@@ -1372,6 +1995,11 @@ async def analyze_stream_generator(
                 "provider_calls_count": provider_calls_count,
                 "retry_counts": retry_counts,
                 "analysis_mode": analysis_mode,
+                "symbol_eligibility": symbol_eligibility,
+                "eligibility_reason": eligibility_reason,
+                "eligibility_source": eligibility_source,
+                "context_integrity": context_integrity,
+                "renaissance_comparison": renaissance_comparison,
                 "raw_card": raw_card,
                 "round": 2,
                 "phase": "decision",

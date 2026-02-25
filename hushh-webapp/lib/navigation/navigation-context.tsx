@@ -25,13 +25,17 @@ import { usePathname, useRouter } from "next/navigation";
 import { Capacitor, type PluginListenerHandle } from "@capacitor/core";
 import { App } from "@capacitor/app";
 import { ExitDialog } from "@/components/exit-dialog";
+import { ROUTES } from "@/lib/navigation/routes";
 
 // Level 1 root paths (exit prompt on back button)
-const LEVEL_1_PATHS = [
-  "/",
-  "/kai",
-  "/consents",
-  "/profile",
+const LEVEL_1_PATHS: string[] = [
+  ROUTES.HOME,
+  ROUTES.KAI_HOME,
+  ROUTES.KAI_DASHBOARD,
+  ROUTES.KAI_ANALYSIS,
+  ROUTES.KAI_OPTIMIZE,
+  ROUTES.CONSENTS,
+  ROUTES.PROFILE,
 ];
 
 interface NavigationContextType {
@@ -210,7 +214,13 @@ export function NavigationProvider({
         onOpenChange={setShowExitDialog}
         onConfirm={() => {
           if (exitDialogMode === "exit") {
-            void App.exitApp();
+            const isAndroidNative =
+              Capacitor.isNativePlatform() && Capacitor.getPlatform() === "android";
+            if (isAndroidNative) {
+              void App.exitApp();
+            } else {
+              router.push(ROUTES.HOME);
+            }
           }
           setShowExitDialog(false);
         }}

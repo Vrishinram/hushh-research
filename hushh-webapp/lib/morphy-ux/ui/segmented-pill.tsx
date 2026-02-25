@@ -9,7 +9,7 @@ import { Icon } from "@/lib/morphy-ux/ui/icon";
 export type SegmentedPillOption = {
   value: string;
   label: string;
-  icon: LucideIcon;
+  icon?: LucideIcon;
   badge?: number;
   disabled?: boolean;
   dataTourId?: string;
@@ -91,7 +91,7 @@ export const SegmentedPill = React.forwardRef<HTMLDivElement, SegmentedPillProps
           className="pointer-events-none absolute left-1 top-1 bottom-1 rounded-full bg-zinc-900 text-zinc-50 shadow-sm ring-1 ring-black/10 dark:bg-zinc-50 dark:text-zinc-900 dark:ring-white/20 transition-transform duration-500 ease-[cubic-bezier(0.25,1,0.5,1)]"
           style={{
             width: `calc((100% - 0.5rem) / ${Math.max(options.length, 1)})`,
-            transform: `translateX(${activeIndex * 100}%)`,
+            transform: `translateX(calc(${activeIndex * 100}% + var(--segment-drag-x, 0px)))`,
           }}
         />
         {options.map((option) => {
@@ -120,21 +120,25 @@ export const SegmentedPill = React.forwardRef<HTMLDivElement, SegmentedPillProps
                 isDisabled && "opacity-45"
               )}
             >
-              <span className="relative flex shrink-0 items-center justify-center">
-                <Icon
-                  icon={option.icon}
-                  size={styles.icon}
-                  className={cn(
-                    "transition-transform duration-500 ease-[cubic-bezier(0.25,1,0.5,1)]",
-                    isActive && "scale-105"
-                  )}
-                />
-                {typeof option.badge === "number" && option.badge > 0 ? (
-                  <span className="absolute -right-1 -top-1 inline-flex h-3.5 min-w-[0.875rem] items-center justify-center rounded-full border border-background bg-red-500 px-1 text-[9px] font-bold leading-none text-white">
-                    {option.badge > 9 ? "9+" : option.badge}
-                  </span>
-                ) : null}
-              </span>
+              {option.icon || (typeof option.badge === "number" && option.badge > 0) ? (
+                <span className="relative flex shrink-0 items-center justify-center">
+                  {option.icon ? (
+                    <Icon
+                      icon={option.icon}
+                      size={styles.icon}
+                      className={cn(
+                        "transition-transform duration-500 ease-[cubic-bezier(0.25,1,0.5,1)]",
+                        isActive && "scale-105"
+                      )}
+                    />
+                  ) : null}
+                  {typeof option.badge === "number" && option.badge > 0 ? (
+                    <span className="absolute -right-1 -top-1 inline-flex h-3.5 min-w-[0.875rem] items-center justify-center rounded-full border border-background bg-red-500 px-1 text-[9px] font-bold leading-none text-white">
+                      {option.badge > 9 ? "9+" : option.badge}
+                    </span>
+                  ) : null}
+                </span>
+              ) : null}
               <span className={cn("whitespace-nowrap", styles.label)}>{option.label}</span>
             </button>
           );

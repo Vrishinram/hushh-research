@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { TrendingUpDown } from "lucide-react";
-import { Bar, BarChart, CartesianGrid, Cell, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, Cell, LabelList, XAxis, YAxis } from "recharts";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/lib/morphy-ux/card";
 import {
@@ -67,9 +67,14 @@ export function GainLossDistributionChart({
         </CardTitle>
       </CardHeader>
       <CardContent className="pt-0 min-w-0 overflow-hidden">
-        <ChartContainer config={chartConfig} className="h-[220px] w-full min-w-0">
-          <BarChart data={chartData} margin={{ top: 10, right: 8, left: 0, bottom: 4 }}>
-            <CartesianGrid vertical={false} strokeDasharray="3 3" />
+        <ChartContainer config={chartConfig} className="h-[192px] w-full min-w-0">
+          <BarChart data={chartData} margin={{ top: 22, right: 6, left: 0, bottom: 0 }}>
+            <CartesianGrid
+              vertical={false}
+              strokeDasharray="3 3"
+              stroke="hsl(var(--foreground) / 0.22)"
+              strokeOpacity={0.55}
+            />
             <XAxis
               dataKey="band"
               tickFormatter={(value) => compactBandLabel(String(value))}
@@ -77,26 +82,44 @@ export function GainLossDistributionChart({
               tickLine={false}
               tickMargin={8}
               interval={0}
-              tick={{ fontSize: 10 }}
+              tick={{ fontSize: 10, fill: "hsl(var(--foreground) / 0.72)" }}
             />
-            <YAxis allowDecimals={false} axisLine={false} tickLine={false} tick={{ fontSize: 10 }} />
+            <YAxis
+              allowDecimals={false}
+              axisLine={false}
+              tickLine={false}
+              tick={{ fontSize: 10, fill: "hsl(var(--foreground) / 0.72)" }}
+            />
             <ChartTooltip
               cursor={false}
               content={
                 <ChartTooltipContent
-                  formatter={(_value, _name, item) => {
-                    const payload = item.payload as GainLossBandDatum;
+                  hideIndicator
+                  hideLabel
+                  formatter={(value, _name, item) => {
+                    const count = typeof value === "number" ? value : Number(value || 0);
+                    const payload = item?.payload as GainLossBandDatum | undefined;
+                    const suffix = count === 1 ? "" : "s";
+                    const label = payload?.band ? `${payload.band}: ` : "";
                     return (
-                      <div className="flex flex-col gap-1">
-                        <span className="text-sm font-semibold">{payload.band}</span>
-                        <span className="text-sm">{payload.count} holding(s)</span>
-                      </div>
+                      <span className="text-sm text-muted-foreground">
+                        {label}
+                        {count} holding{suffix}
+                      </span>
                     );
                   }}
                 />
               }
             />
-            <Bar dataKey="count" radius={[6, 6, 0, 0]}>
+            <Bar dataKey="count" radius={[6, 6, 0, 0]} maxBarSize={28}>
+              <LabelList
+                dataKey="count"
+                position="top"
+                offset={8}
+                className="fill-foreground"
+                fontSize={10}
+                formatter={(value: number) => Number(value).toFixed(0)}
+              />
               {chartData.map((entry) => (
                 <Cell key={entry.band} fill={bandColor(entry.band)} />
               ))}

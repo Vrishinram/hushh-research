@@ -25,12 +25,17 @@ export function WatchlistStrip({ items }: WatchlistStripProps) {
   }
 
   return (
-    <div className="-mx-4 overflow-x-auto px-4 pb-2">
+    <div className="-mx-4 overflow-x-auto overflow-y-visible px-6 py-3">
       <div className="flex min-w-0 gap-3">
         {items.map((item) => {
           const positive = typeof item.change_pct === "number" && item.change_pct >= 0;
           return (
-            <Card key={item.symbol} variant="none" effect="glass" className="w-[182px] shrink-0 rounded-xl p-0">
+            <Card
+              key={item.symbol}
+              variant="none"
+              effect="glass"
+              className="w-[182px] shrink-0 rounded-xl p-0 shadow-[0_10px_24px_rgba(15,23,42,0.06)]"
+            >
               <CardContent className="space-y-2 p-3">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
@@ -38,10 +43,7 @@ export function WatchlistStrip({ items }: WatchlistStripProps) {
                     <p className="truncate text-[11px] text-muted-foreground">{item.company_name}</p>
                   </div>
                   <span
-                    className={cn(
-                      "rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-wide",
-                      item.degraded ? "bg-muted text-muted-foreground" : "bg-background/70 text-foreground/80"
-                    )}
+                    className="rounded-full bg-background/70 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-foreground/80"
                   >
                     {item.recommendation}
                   </span>
@@ -59,13 +61,6 @@ export function WatchlistStrip({ items }: WatchlistStripProps) {
                   </p>
                 </div>
 
-                <div className="flex flex-wrap gap-1">
-                  {(item.source_tags || []).slice(0, 2).map((tag) => (
-                    <span key={`${item.symbol}-${tag}`} className="rounded-full bg-background/70 px-2 py-0.5 text-[10px] text-muted-foreground">
-                      {tag}
-                    </span>
-                  ))}
-                </div>
               </CardContent>
             </Card>
           );

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
-import { HushhLoader } from "@/components/ui/hushh-loader";
+import { HushhLoader } from "@/components/app-ui/hushh-loader";
 import { KaiProfileService } from "@/lib/services/kai-profile-service";
 import { KaiProfileSyncService } from "@/lib/services/kai-profile-sync-service";
 import { PreVaultOnboardingService } from "@/lib/services/pre-vault-onboarding-service";
@@ -12,6 +12,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useVault } from "@/lib/vault/vault-context";
 import {
   isOnboardingRequiredCookieEnabled,
+  setOnboardingFlowActiveCookie,
   setOnboardingRequiredCookie,
 } from "@/lib/services/onboarding-route-cookie";
 import { ROUTES } from "@/lib/navigation/routes";
@@ -37,11 +38,6 @@ export function KaiOnboardingGuard({ children }: { children: React.ReactNode }) 
       // VaultLockGuard handles unauthenticated states.
       if (!user) {
         setChecking(false);
-        return;
-      }
-
-      if (chromeState.onboardingFlowActive && !onImportRoute && !onOnboardingRoute) {
-        router.replace(ROUTES.KAI_IMPORT);
         return;
       }
 
@@ -121,9 +117,10 @@ export function KaiOnboardingGuard({ children }: { children: React.ReactNode }) 
           return;
         }
 
-        if (!onboardingIncomplete && chromeState.onboardingFlowActive && !onImportRoute) {
-          router.replace(ROUTES.KAI_IMPORT);
-          return;
+        if (!onboardingIncomplete && chromeState.onboardingFlowActive) {
+          // Cookie can remain set after completed onboarding/import and cause
+          // repeated redirects back to /kai/import for returning users.
+          setOnboardingFlowActiveCookie(false);
         }
 
         if (!onboardingIncomplete && onOnboardingRoute) {

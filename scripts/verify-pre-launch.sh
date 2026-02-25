@@ -90,7 +90,7 @@ cd "$REPO_ROOT"
 echo ""
 
 # 10. Kai System Audit
-echo "▶ [10/12] Kai System Audit..."
+echo "▶ [10/13] Kai System Audit..."
 python3 scripts/ops/kai-system-audit.py --api-base "$API_BASE" --web-base "$WEB_BASE" || {
   FAIL=1
   echo "❌ Kai system audit failed"
@@ -98,15 +98,32 @@ python3 scripts/ops/kai-system-audit.py --api-base "$API_BASE" --web-base "$WEB_
 echo ""
 
 # 11. App Edge-Case Audit (runtime-first)
-echo "▶ [11/12] App Edge-Case Audit..."
+echo "▶ [11/13] App Edge-Case Audit..."
 python3 scripts/ops/app-edge-case-audit.py --out "/tmp/app-edge-case-audit-prelaunch.json" || {
   FAIL=1
   echo "❌ App edge-case audit failed"
 }
 echo ""
 
-# 12. Git Status (strict blocking)
-echo "▶ [12/12] Git Status (Strict)..."
+# 12. Env/Secrets/Deploy parity (strict blocking)
+echo "▶ [12/13] Env/Secrets/Deploy Parity..."
+if command -v gcloud >/dev/null 2>&1; then
+  python3 scripts/ops/verify-env-secrets-parity.py \
+    --project "${GCP_PROJECT_ID:-hushh-pda}" \
+    --region "${GCP_REGION:-us-central1}" \
+    --backend-service "${BACKEND_SERVICE:-consent-protocol}" \
+    --frontend-service "${FRONTEND_SERVICE:-hushh-webapp}" || {
+      FAIL=1
+      echo "❌ Env/secrets/deploy parity verification failed"
+    }
+else
+  echo "❌ gcloud not found; cannot verify live env/secrets parity"
+  FAIL=1
+fi
+echo ""
+
+# 13. Git Status (strict blocking)
+echo "▶ [13/13] Git Status (Strict)..."
 MODIFIED=$(git status --porcelain | grep "^ M" | wc -l | tr -d ' ')
 UNTRACKED=$(git status --porcelain | grep "^??" | wc -l | tr -d ' ')
 STAGED=$(git status --porcelain | grep "^[AMDRC]" | wc -l | tr -d ' ')

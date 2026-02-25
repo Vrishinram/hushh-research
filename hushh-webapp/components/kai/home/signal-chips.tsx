@@ -12,7 +12,7 @@ export function SignalChips({ signals }: SignalChipsProps) {
     return (
       <Card variant="muted" effect="fill" className="rounded-xl p-0">
         <CardContent className="p-4 text-sm text-muted-foreground">
-          Signal engine is waiting for sufficient live context.
+          Signals are unavailable right now.
         </CardContent>
       </Card>
     );
@@ -30,18 +30,6 @@ export function SignalChips({ signals }: SignalChipsProps) {
               </span>
             </div>
             <p className="text-xs leading-relaxed text-muted-foreground">{signal.summary}</p>
-            <div className="flex flex-wrap items-center gap-1">
-              {signal.degraded ? (
-                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
-                  Partial
-                </span>
-              ) : null}
-              {signal.source_tags.slice(0, 2).map((tag) => (
-                <span key={`${signal.id}-${tag}`} className="rounded-full bg-background/70 px-2 py-0.5 text-[10px] text-muted-foreground">
-                  {tag}
-                </span>
-              ))}
-            </div>
           </CardContent>
         </Card>
       ))}

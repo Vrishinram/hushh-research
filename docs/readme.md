@@ -30,6 +30,7 @@ For repo-level setup instructions, see the root [`readme.md`](../readme.md) and 
 | Build for iOS or Android | [guides/mobile.md](./guides/mobile.md) |
 | Implement native SSE streaming | [guides/native_streaming.md](./guides/native_streaming.md) |
 | Check environment variables | [reference/env-and-secrets.md](./reference/env-and-secrets.md) |
+| Review env key matrix | [reference/env-secrets-key-matrix.md](./reference/env-secrets-key-matrix.md) |
 | Understand FCM notifications | [fcm-notifications.md](../consent-protocol/docs/reference/fcm-notifications.md) |
 | Review the design system | [reference/design-system.md](./reference/design-system.md) |
 | Review CI pipeline | [reference/ci.md](./reference/ci.md) |
@@ -68,6 +69,7 @@ docs/
     route_contracts.md               # Next.js route governance (tri-flow contracts)
     design-system.md                 # Morphy-UX + Shadcn design system
     env-and-secrets.md               # All environment variables and GCP secrets
+    env-secrets-key-matrix.md        # Key-level source matrix for env + Secret Manager + Cloud Run
     ci.md                            # CI/CD pipeline
     streaming-contract.md            # Canonical SSE schema and event contract
     streaming-implementation-guide.md # Reusable implementation pattern

@@ -43,23 +43,21 @@ vi.mock("@/lib/services/kai-profile-service", () => {
       return "aggressive";
     }),
     KaiProfileService: {
-      savePreferences: vi.fn(),
-      setOnboardingCompleted: vi.fn(),
+      syncOnboardingAndNavState: vi.fn(),
     },
   };
 });
 
-vi.mock("@/lib/services/kai-nav-tour-sync-service", () => ({
-  KaiNavTourSyncService: {
-    syncPendingToVault: vi.fn().mockResolvedValue({
-      synced: false,
-      reason: "no_pending_state",
-    }),
+vi.mock("@/lib/services/kai-nav-tour-local-service", () => ({
+  KaiNavTourLocalService: {
+    load: vi.fn().mockResolvedValue(null),
+    markSynced: vi.fn(),
   },
 }));
 
 import { PreVaultOnboardingService } from "@/lib/services/pre-vault-onboarding-service";
 import { KaiProfileService } from "@/lib/services/kai-profile-service";
+import { KaiNavTourLocalService } from "@/lib/services/kai-nav-tour-local-service";
 import { KaiProfileSyncService } from "@/lib/services/kai-profile-sync-service";
 
 describe("KaiProfileSyncService", () => {
@@ -88,14 +86,16 @@ describe("KaiProfileSyncService", () => {
     });
 
     expect(result.synced).toBe(true);
-    expect(KaiProfileService.setOnboardingCompleted).toHaveBeenCalledWith(
-      expect.objectContaining({ skippedPreferences: true })
+    expect(KaiProfileService.syncOnboardingAndNavState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        onboarding: expect.objectContaining({ skippedPreferences: true }),
+      })
     );
-    expect(KaiProfileService.savePreferences).not.toHaveBeenCalled();
     expect(PreVaultOnboardingService.markSynced).toHaveBeenCalledWith("uid-1");
+    expect(KaiNavTourLocalService.markSynced).not.toHaveBeenCalled();
   });
 
-  it("syncs answered onboarding by saving preferences then completion", async () => {
+  it("syncs answered onboarding with one persistence write", async () => {
     (PreVaultOnboardingService.load as any).mockResolvedValue({
       completed: true,
       skipped: false,
@@ -116,14 +116,64 @@ describe("KaiProfileSyncService", () => {
     });
 
     expect(result.synced).toBe(true);
-    expect(KaiProfileService.savePreferences).toHaveBeenCalledTimes(1);
-    expect(KaiProfileService.setOnboardingCompleted).toHaveBeenCalledWith(
-      expect.objectContaining({ skippedPreferences: false })
+    expect(KaiProfileService.syncOnboardingAndNavState).toHaveBeenCalledTimes(1);
+    expect(KaiProfileService.syncOnboardingAndNavState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        onboarding: expect.objectContaining({
+          skippedPreferences: false,
+          answers: expect.objectContaining({
+            investment_horizon: "long_term",
+            drawdown_response: "buy_more",
+            volatility_preference: "large",
+          }),
+        }),
+      })
     );
     expect(PreVaultOnboardingService.markSynced).toHaveBeenCalledWith("uid-2");
   });
 
-  it("does not mark synced when persistence fails", async () => {
+  it("syncs onboarding + nav pending state through one combined write", async () => {
+    (PreVaultOnboardingService.load as any).mockResolvedValue({
+      completed: true,
+      skipped: false,
+      synced_to_vault_at: null,
+      completed_at: "2026-02-19T00:00:00.000Z",
+      answers: {
+        investment_horizon: "medium_term",
+        drawdown_response: "stay",
+        volatility_preference: "moderate",
+      },
+      risk_score: 3,
+      risk_profile: "balanced",
+    });
+    (KaiNavTourLocalService.load as any).mockResolvedValue({
+      completed_at: "2026-02-20T00:00:00.000Z",
+      skipped_at: null,
+      synced_to_vault_at: null,
+    });
+
+    const result = await KaiProfileSyncService.syncPendingToVault({
+      userId: "uid-2b",
+      vaultKey: "key-2b",
+      vaultOwnerToken: "token-2b",
+    });
+
+    expect(result.synced).toBe(true);
+    expect(KaiProfileService.syncOnboardingAndNavState).toHaveBeenCalledTimes(1);
+    expect(KaiProfileService.syncOnboardingAndNavState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        onboarding: expect.any(Object),
+        navTour: expect.objectContaining({
+          completedAt: "2026-02-20T00:00:00.000Z",
+          skippedAt: null,
+        }),
+      })
+    );
+    expect(PreVaultOnboardingService.markSynced).toHaveBeenCalledWith("uid-2b");
+    expect(KaiNavTourLocalService.markSynced).toHaveBeenCalledWith("uid-2b");
+  });
+
+  it("does not mark synced when combined persistence fails", async () => {
     (PreVaultOnboardingService.load as any).mockResolvedValue({
       completed: true,
       skipped: false,
@@ -137,7 +187,7 @@ describe("KaiProfileSyncService", () => {
       risk_profile: "balanced",
     });
 
-    (KaiProfileService.savePreferences as any).mockRejectedValue(new Error("save failed"));
+    (KaiProfileService.syncOnboardingAndNavState as any).mockRejectedValue(new Error("save failed"));
 
     await expect(
       KaiProfileSyncService.syncPendingToVault({
@@ -148,5 +198,6 @@ describe("KaiProfileSyncService", () => {
     ).rejects.toThrow("save failed");
 
     expect(PreVaultOnboardingService.markSynced).not.toHaveBeenCalled();
+    expect(KaiNavTourLocalService.markSynced).not.toHaveBeenCalled();
   });
 });

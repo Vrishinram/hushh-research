@@ -22,10 +22,15 @@ function getErrorDetail(data: unknown): string | null {
   return typeof detail === "string" ? detail : null;
 }
 
-export async function GET(_request: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url);
+    const refresh = searchParams.get("refresh");
     const backendUrl = getPythonApiUrl();
-    const response = await fetch(`${backendUrl}/api/tickers/all`, {
+    const upstream = refresh === "1" || refresh === "true"
+      ? `${backendUrl}/api/tickers/all?refresh=1`
+      : `${backendUrl}/api/tickers/all`;
+    const response = await fetch(upstream, {
       method: "GET",
       headers: {
         "Content-Type": "application/json",

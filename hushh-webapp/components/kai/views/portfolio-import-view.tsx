@@ -15,7 +15,15 @@ import { useState, useCallback, useRef } from "react";
 import { Card, CardContent } from "@/lib/morphy-ux/card";
 import { Button as MorphyButton } from "@/lib/morphy-ux/button";
 
-import { Upload, FileText, CheckCircle, AlertCircle, Link2 } from "lucide-react";
+import {
+  Upload,
+  FileText,
+  CheckCircle,
+  AlertCircle,
+  Link2,
+  Database,
+  Loader2,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Icon } from "@/lib/morphy-ux/ui";
@@ -27,7 +35,9 @@ import { Icon } from "@/lib/morphy-ux/ui";
 interface PortfolioImportViewProps {
   onFileSelect: (file: File) => void;
   onSkip: () => void;
+  onPreloadSchema?: () => void;
   isUploading?: boolean;
+  isPreloadingSchema?: boolean;
 }
 
 // =============================================================================
@@ -37,11 +47,18 @@ interface PortfolioImportViewProps {
 export function PortfolioImportView({
   onFileSelect,
   onSkip,
+  onPreloadSchema,
   isUploading = false,
+  isPreloadingSchema = false,
 }: PortfolioImportViewProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectionError, setSelectionError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const isSupportedFile = useCallback((file: File) => {
+    const validTypes = ["application/pdf", "text/csv", "application/vnd.ms-excel"];
+    return validTypes.includes(file.type) || file.name.endsWith(".csv") || file.name.endsWith(".pdf");
+  }, []);
 
   // Handle file drop
   const handleDrop = useCallback(
@@ -52,12 +69,14 @@ export function PortfolioImportView({
       const files = Array.from(e.dataTransfer.files);
       const file = files[0];
 
-      if (file && (file.type === "application/pdf" || file.name.endsWith(".csv"))) {
+      if (file && isSupportedFile(file)) {
         setSelectedFile(file);
-        onFileSelect(file);
+        setSelectionError(null);
+        return;
       }
+      setSelectionError("Please select a PDF or CSV statement.");
     },
-    [onFileSelect]
+    [isSupportedFile]
   );
 
   // Handle file input change
@@ -65,11 +84,17 @@ export function PortfolioImportView({
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files;
       if (files && files[0]) {
-        setSelectedFile(files[0]);
-        onFileSelect(files[0]);
+        const file = files[0];
+        if (isSupportedFile(file)) {
+          setSelectedFile(file);
+          setSelectionError(null);
+        } else {
+          setSelectionError("Please select a PDF or CSV statement.");
+        }
       }
+      e.currentTarget.value = "";
     },
-    [onFileSelect]
+    [isSupportedFile]
   );
 
   // Handle drag over
@@ -87,6 +112,16 @@ export function PortfolioImportView({
   const triggerFileInput = () => {
     fileInputRef.current?.click();
   };
+
+  const handleContinue = useCallback(() => {
+    if (!selectedFile || isUploading) return;
+    onFileSelect(selectedFile);
+  }, [selectedFile, isUploading, onFileSelect]);
+
+  const handlePreloadSchema = useCallback(() => {
+    if (!onPreloadSchema || isUploading || isPreloadingSchema) return;
+    onPreloadSchema();
+  }, [onPreloadSchema, isPreloadingSchema, isUploading]);
 
   return (
     <div className="w-full max-w-md mx-auto space-y-4 px-4 pt-4 pb-[calc(var(--app-bottom-inset)+1rem)]">
@@ -212,6 +247,10 @@ export function PortfolioImportView({
         </CardContent>
       </Card>
 
+      {selectionError && (
+        <p className="text-xs text-destructive px-2">{selectionError}</p>
+      )}
+
       <div className="flex items-start gap-2 rounded-xl border border-border/60 bg-muted/30 px-3 py-2.5">
         <Icon icon={AlertCircle} size="sm" className="mt-0.5 text-muted-foreground shrink-0" />
         <p className="text-[12px] leading-relaxed text-muted-foreground">
@@ -219,13 +258,50 @@ export function PortfolioImportView({
         </p>
       </div>
 
+      <MorphyButton
+        variant="morphy"
+        effect="fill"
+        size="default"
+        className="w-full font-black shadow-xl border-none"
+        onClick={handleContinue}
+        disabled={isUploading || isPreloadingSchema || !selectedFile}
+        icon={{
+          icon: Upload,
+          gradient: false,
+        }}
+      >
+        {isUploading ? "Parsing..." : "Continue"}
+      </MorphyButton>
+
+      {onPreloadSchema ? (
+        <div className="space-y-1.5">
+          <MorphyButton
+            variant="none"
+            effect="fade"
+            size="default"
+            className="w-full border border-border/70 bg-background/75"
+            onClick={handlePreloadSchema}
+            disabled={isUploading || isPreloadingSchema}
+            icon={{
+              icon: isPreloadingSchema ? Loader2 : Database,
+              gradient: false,
+            }}
+          >
+            {isPreloadingSchema ? "Preloading..." : "Preload Schema Data"}
+          </MorphyButton>
+          <p className="px-1 text-[11px] text-muted-foreground">
+            First-time option: load sample world model data to test vault flows.
+          </p>
+        </div>
+      ) : null}
+
       {/* Skip Option */}
       <div className="text-center pt-1">
         <MorphyButton
           variant="none"
           effect="fade"
           onClick={onSkip}
-          disabled={isUploading}
+          disabled={isUploading || isPreloadingSchema}
           className="text-muted-foreground hover:text-foreground text-base"
         >
           Skip for now

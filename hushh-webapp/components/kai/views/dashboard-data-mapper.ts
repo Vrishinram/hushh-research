@@ -1,4 +1,9 @@
 import type { Holding, PortfolioData } from "@/components/kai/types/portfolio";
+import {
+  type DashboardPortfolioModel,
+  type DashboardPosition,
+  buildDashboardPortfolioModel,
+} from "@/components/kai/views/dashboard-portfolio-model";
 
 export interface AllocationDatum {
   name: string;
@@ -35,7 +40,9 @@ export interface DashboardHeroData {
   netChange: number;
   changePct: number;
   holdingsCount: number;
-  riskLabel: string;
+  investableHoldingsCount: number;
+  cashPositionsCount: number;
+  portfolioConcentrationLabel: string;
   statementPeriod?: string;
 }
 
@@ -49,17 +56,74 @@ export interface DashboardQualityFlags {
   gainLossCoveragePct: number;
 }
 
+export interface DashboardSummaryMetrics {
+  investmentGainLoss: number | null;
+  totalIncomePeriod: number | null;
+  totalIncomeYtd: number | null;
+  totalFees: number | null;
+  netDepositsPeriod: number | null;
+  netDepositsYtd: number | null;
+}
+
+export interface DashboardEquitySectorAllocationDatum {
+  sector: string;
+  value: number;
+  pct: number;
+  count: number;
+}
+
+export interface DashboardNonEquityAllocationDatum {
+  bucket: string;
+  value: number;
+  pct: number;
+  count: number;
+}
+
+export interface DashboardAllocationQuality {
+  equityCoveragePct: number;
+  nonEquityCoveragePct: number;
+}
+
 export interface DashboardViewModel {
   hero: DashboardHeroData;
   holdings: Holding[];
   allocation: AllocationDatum[];
+  equity_sector_allocation: DashboardEquitySectorAllocationDatum[];
+  non_equity_allocation: DashboardNonEquityAllocationDatum[];
+  allocation_denominator_total_value: number;
+  allocation_quality: DashboardAllocationQuality;
   history: HistoryDatum[];
   concentration: ConcentrationDatum[];
   gainLossDistribution: GainLossBandDatum[];
   recommendations: DashboardRecommendation[];
   sourceBrokerage?: string;
   quality: DashboardQualityFlags;
+  summaryMetrics: DashboardSummaryMetrics;
+  canonicalModel: DashboardPortfolioModel;
 }
+
+const ALLOCATION_COLORS: Record<string, string> = {
+  Equities: "#2563eb",
+  "Fixed Income": "#0ea5e9",
+  Cash: "#14b8a6",
+  "Real Assets": "#f59e0b",
+  Other: "#8b5cf6",
+};
+
+const GENERIC_SECTOR_LABELS = new Set([
+  "equity",
+  "equities",
+  "stock",
+  "stocks",
+  "fixed income",
+  "bond",
+  "bonds",
+  "cash",
+  "cash & cash equivalents",
+  "other",
+  "unknown",
+  "unclassified",
+]);
 
 function toNumber(value: unknown): number | undefined {
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -74,112 +138,117 @@ function toNumber(value: unknown): number | undefined {
   return undefined;
 }
 
-function toSafeHolding(raw: Holding): Holding | null {
-  const symbol = String(raw.symbol || "").trim().toUpperCase();
-  if (!symbol) return null;
-  const marketValue = toNumber(raw.market_value) ?? 0;
-  const sector =
-    typeof raw.sector === "string" && raw.sector.trim().length > 0
-      ? raw.sector.trim()
-      : undefined;
-  const assetType =
-    typeof raw.asset_type === "string" && raw.asset_type.trim().length > 0
-      ? raw.asset_type.trim()
-      : undefined;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isSpecificSectorLabel(value: string | null | undefined): boolean {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  return !GENERIC_SECTOR_LABELS.has(text.toLowerCase());
+}
+
+function classifyNonEquityBucket(position: DashboardPosition): string {
+  if (position.isCashEquivalent || position.assetBucket === "cash_equivalent") {
+    return "Cash & Cash Equivalents";
+  }
+  const hint = `${position.name} ${position.assetType || ""} ${position.sector || ""}`.toLowerCase();
+  if (position.assetBucket === "fixed_income") {
+    if (
+      hint.includes("tax free")
+      || hint.includes("municipal")
+      || hint.includes("muni")
+      || hint.includes("non-taxable")
+      || hint.includes("tax-exempt")
+    ) {
+      return "Fixed Income Tax-Exempt";
+    }
+    return "Fixed Income Taxable";
+  }
+  if (position.assetBucket === "real_asset") {
+    if (hint.includes("gold") || hint.includes("commodity")) {
+      return "Commodities";
+    }
+    return "Real Assets";
+  }
+  return "Other";
+}
+
+function computeDetailedAllocation(model: DashboardPortfolioModel): {
+  equitySectorAllocation: DashboardEquitySectorAllocationDatum[];
+  nonEquityAllocation: DashboardNonEquityAllocationDatum[];
+  denominator: number;
+  quality: DashboardAllocationQuality;
+} {
+  const denominator = model.totals.marketValue > 0 ? model.totals.marketValue : 0;
+  const equityPositions = model.positions.filter(
+    (position) => !position.isCashEquivalent && position.assetBucket === "equity"
+  );
+  const nonEquityPositions = model.positions.filter(
+    (position) => position.isCashEquivalent || position.assetBucket !== "equity"
+  );
+
+  const equityMap = new Map<string, { value: number; count: number }>();
+  for (const position of equityPositions) {
+    const sector =
+      (isSpecificSectorLabel(position.sector) ? String(position.sector).trim() : "")
+      || "Other Equity";
+    const existing = equityMap.get(sector) || { value: 0, count: 0 };
+    equityMap.set(sector, {
+      value: existing.value + position.marketValue,
+      count: existing.count + 1,
+    });
+  }
+
+  const nonEquityMap = new Map<string, { value: number; count: number }>();
+  for (const position of nonEquityPositions) {
+    const bucket = classifyNonEquityBucket(position);
+    const existing = nonEquityMap.get(bucket) || { value: 0, count: 0 };
+    nonEquityMap.set(bucket, {
+      value: existing.value + position.marketValue,
+      count: existing.count + 1,
+    });
+  }
+
+  const equitySectorAllocation = Array.from(equityMap.entries())
+    .map(([sector, value]) => ({
+      sector,
+      value: value.value,
+      count: value.count,
+      pct: denominator > 0 ? (value.value / denominator) * 100 : 0,
+    }))
+    .sort((a, b) => b.value - a.value);
+
+  const nonEquityAllocation = Array.from(nonEquityMap.entries())
+    .map(([bucket, value]) => ({
+      bucket,
+      value: value.value,
+      count: value.count,
+      pct: denominator > 0 ? (value.value / denominator) * 100 : 0,
+    }))
+    .sort((a, b) => b.value - a.value);
 
   return {
-    ...raw,
-    symbol,
-    name: String(raw.name || symbol),
-    quantity: toNumber(raw.quantity) ?? 0,
-    price: toNumber(raw.price) ?? 0,
-    market_value: marketValue,
-    cost_basis: toNumber(raw.cost_basis),
-    unrealized_gain_loss: toNumber(raw.unrealized_gain_loss),
-    unrealized_gain_loss_pct: toNumber(raw.unrealized_gain_loss_pct),
-    sector,
-    asset_type: assetType,
+    equitySectorAllocation,
+    nonEquityAllocation,
+    denominator,
+    quality: {
+      equityCoveragePct:
+        equityPositions.length > 0
+          ? equityPositions.filter((position) => isSpecificSectorLabel(position.sector)).length
+            / equityPositions.length
+          : 1,
+      nonEquityCoveragePct: nonEquityPositions.length > 0 ? 1 : 1,
+    },
   };
 }
 
-function formatStatementPeriod(data: PortfolioData): string | undefined {
-  const start = data.account_info?.statement_period_start;
-  const end = data.account_info?.statement_period_end;
-  if (!start || !end) return undefined;
-  try {
-    const formatter = new Intl.DateTimeFormat("en-US", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    });
-    return `${formatter.format(new Date(start))} - ${formatter.format(new Date(end))}`;
-  } catch {
-    return undefined;
-  }
-}
-
-function deriveRiskLabel(holdings: Holding[]): string {
-  if (!holdings.length) return "Unknown";
-  const concentration = holdings
-    .map((holding) => toNumber(holding.market_value) ?? 0)
-    .sort((a, b) => b - a);
-  const total = concentration.reduce((sum, value) => sum + value, 0);
-  if (total <= 0) return "Unknown";
-  const largestWeight = concentration[0] ? (concentration[0] / total) * 100 : 0;
-  if (largestWeight >= 40) return "Aggressive";
-  if (largestWeight >= 25) return "Moderate";
-  return "Conservative";
-}
-
-function computeAllocationFromAssetTypes(
-  holdings: Holding[],
-  totalValue: number
-): AllocationDatum[] {
-  const grouped = new Map<string, number>();
-  for (const holding of holdings) {
-    const bucket = (holding.asset_type || holding.asset_class || "Other")
-      .toString()
-      .trim();
-    const key = bucket.length > 0 ? bucket : "Other";
-    grouped.set(key, (grouped.get(key) || 0) + (toNumber(holding.market_value) ?? 0));
-  }
-
-  return Array.from(grouped.entries())
-    .map(([name, value], index) => ({
-      name,
-      value,
-      color: `var(--chart-${(index % 5) + 1})`,
-    }))
-    .filter((row) => row.value > 0)
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 6)
-    .map((row) => ({
-      ...row,
-      value: totalValue > 0 ? row.value : 0,
-    }));
-}
-
-function computeAllocation(data: PortfolioData, holdings: Holding[], totalValue: number): AllocationDatum[] {
-  const allocation = data.asset_allocation;
-  if (allocation && !Array.isArray(allocation)) {
-    const cashPct = toNumber(allocation.cash_pct ?? allocation.cash_percent) ?? 0;
-    const equitiesPct = toNumber(allocation.equities_pct ?? allocation.equities_percent) ?? 0;
-    const bondsPct = toNumber(allocation.bonds_pct ?? allocation.bonds_percent) ?? 0;
-    const otherPct = toNumber(allocation.other_percent) ?? Math.max(0, 100 - cashPct - equitiesPct - bondsPct);
-
-    const fromPct: AllocationDatum[] = [
-      { name: "Equities", value: (equitiesPct / 100) * totalValue, color: "var(--chart-2)" },
-      { name: "Cash", value: (cashPct / 100) * totalValue, color: "var(--chart-1)" },
-      { name: "Bonds", value: (bondsPct / 100) * totalValue, color: "var(--chart-4)" },
-      { name: "Other", value: (otherPct / 100) * totalValue, color: "var(--chart-3)" },
-    ].filter((row) => row.value > 0);
-
-    if (fromPct.length > 0) {
-      return fromPct;
-    }
-  }
-
-  return computeAllocationFromAssetTypes(holdings, totalValue);
+function derivePortfolioConcentrationLabel(concentration: ConcentrationDatum[]): string {
+  if (!concentration.length) return "Unknown";
+  const largestWeight = concentration[0]?.weightPct || 0;
+  if (largestWeight >= 40) return "High Concentration";
+  if (largestWeight >= 25) return "Medium Concentration";
+  return "Diversified";
 }
 
 function computeHistory(data: PortfolioData, beginningValue: number, endingValue: number): HistoryDatum[] {
@@ -219,72 +288,39 @@ function computeHistory(data: PortfolioData, beginningValue: number, endingValue
   return [];
 }
 
-function computeConcentration(holdings: Holding[], totalValue: number): ConcentrationDatum[] {
-  return holdings
-    .map((holding) => {
-      const marketValue = toNumber(holding.market_value) ?? 0;
-      return {
-        symbol: holding.symbol,
-        name: holding.name || holding.symbol,
-        marketValue,
-        weightPct: totalValue > 0 ? (marketValue / totalValue) * 100 : 0,
-      };
-    })
-    .filter((row) => row.marketValue > 0)
-    .sort((a, b) => b.marketValue - a.marketValue)
-    .slice(0, 8);
-}
-
-function computeGainLossDistribution(holdings: Holding[]): GainLossBandDatum[] {
-  const bands = [
-    { band: "< -10%", min: Number.NEGATIVE_INFINITY, max: -10, count: 0 },
-    { band: "-10% to -2%", min: -10, max: -2, count: 0 },
-    { band: "-2% to +2%", min: -2, max: 2, count: 0 },
-    { band: "+2% to +10%", min: 2, max: 10, count: 0 },
-    { band: "> +10%", min: 10, max: Number.POSITIVE_INFINITY, count: 0 },
-  ];
-
-  for (const holding of holdings) {
-    const pct = toNumber(holding.unrealized_gain_loss_pct);
-    if (pct === undefined) continue;
-    const bucket = bands.find((row) => pct > row.min && pct <= row.max);
-    if (bucket) bucket.count += 1;
-  }
-
-  return bands.map(({ band, count }) => ({ band, count }));
-}
-
-function computeRecommendations(
-  concentration: ConcentrationDatum[],
-  gainLossDistribution: GainLossBandDatum[],
-  allocation: AllocationDatum[]
-): DashboardRecommendation[] {
+function computeRecommendations(model: DashboardPortfolioModel): DashboardRecommendation[] {
   const recommendations: DashboardRecommendation[] = [];
-  const biggestPosition = concentration[0];
-  if (biggestPosition && biggestPosition.weightPct >= 35) {
-    recommendations.push({
-      title: `Reduce ${biggestPosition.symbol} concentration`,
-      detail: `${biggestPosition.symbol} is ${biggestPosition.weightPct.toFixed(
-        1
-      )}% of portfolio value.`,
-    });
+  const totalValue = model.totals.marketValue;
+  const biggest = model.positions[0];
+
+  if (biggest && totalValue > 0) {
+    const biggestWeight = (biggest.marketValue / totalValue) * 100;
+    if (biggestWeight >= 35) {
+      recommendations.push({
+        title: `Reduce ${biggest.displaySymbol} concentration`,
+        detail: `${biggest.displaySymbol} is ${biggestWeight.toFixed(
+          1
+        )}% of portfolio value.`,
+      });
+    }
   }
 
-  const losers = gainLossDistribution
-    .filter((row) => row.band.includes("-"))
-    .reduce((sum, row) => sum + row.count, 0);
-  if (losers > 0) {
+  if (model.optimizeContext.losersCount > 0) {
     recommendations.push({
       title: "Review underperforming positions",
-      detail: `${losers} holding${losers === 1 ? "" : "s"} are currently in loss bands.`,
+      detail: `${model.optimizeContext.losersCount} holding${
+        model.optimizeContext.losersCount === 1 ? "" : "s"
+      } currently have unrealized losses.`,
     });
   }
 
-  const cash = allocation.find((row) => row.name.toLowerCase().includes("cash"));
-  if (cash && cash.value > 0) {
+  if (model.counts.cashPositions > 0 && totalValue > 0) {
+    const cashPct = (model.totals.cashValue / totalValue) * 100;
     recommendations.push({
-      title: "Evaluate idle cash allocation",
-      detail: "Cash exposure is material; evaluate deployment vs. risk buffer goals.",
+      title: "Evaluate cash-equivalent exposure",
+      detail: `Cash-equivalent allocation is ${cashPct.toFixed(
+        1
+      )}% of portfolio. Validate this against your liquidity plan.`,
     });
   }
 
@@ -299,75 +335,145 @@ function computeRecommendations(
 }
 
 export function mapPortfolioToDashboardViewModel(portfolioData: PortfolioData): DashboardViewModel {
-  const rawHoldings = (
-    portfolioData.holdings ||
-    portfolioData.detailed_holdings ||
-    []
-  ) as Holding[];
-  const holdings = rawHoldings
-    .map(toSafeHolding)
-    .filter((row): row is Holding => Boolean(row))
-    .sort((a, b) => (toNumber(b.market_value) ?? 0) - (toNumber(a.market_value) ?? 0));
-  const holdingsCount = holdings.length;
+  const canonicalModel = buildDashboardPortfolioModel(portfolioData);
+  const analytics = isRecord(portfolioData.analytics_v2)
+    ? (portfolioData.analytics_v2 as Record<string, unknown>)
+    : undefined;
+  const detailedAllocation = computeDetailedAllocation(canonicalModel);
 
-  const endingValue =
-    toNumber(portfolioData.total_value) ??
-    toNumber(portfolioData.account_summary?.ending_value) ??
-    holdings.reduce((sum, row) => sum + (toNumber(row.market_value) ?? 0), 0);
-  const beginningValue =
-    toNumber(portfolioData.account_summary?.beginning_value) ??
-    (endingValue > 0 ? endingValue : 0);
-  const netChange =
-    toNumber(portfolioData.account_summary?.change_in_value) ??
-    endingValue - beginningValue;
-  const changePct = beginningValue > 0 ? (netChange / beginningValue) * 100 : 0;
+  const holdings = canonicalModel.positions.map((position) => ({
+    symbol: position.displaySymbol,
+    name: position.name,
+    quantity: position.quantity,
+    price: position.price,
+    market_value: position.marketValue,
+    cost_basis: position.costBasis,
+    unrealized_gain_loss: position.gainLoss ?? undefined,
+    unrealized_gain_loss_pct: position.gainLossPct ?? undefined,
+    estimated_annual_income: position.estimatedAnnualIncome ?? undefined,
+    est_yield: position.estimatedYield ?? undefined,
+    sector: position.sector || undefined,
+    asset_type: position.assetType || position.assetBucket,
+  })) as Holding[];
 
-  const allocation = computeAllocation(portfolioData, holdings, endingValue);
-  const history = computeHistory(portfolioData, beginningValue, endingValue);
-  const concentration = computeConcentration(holdings, endingValue);
-  const gainLossDistribution = computeGainLossDistribution(holdings);
-  const recommendations = computeRecommendations(
-    concentration,
-    gainLossDistribution,
-    allocation
+  const allocationMix = Array.isArray(analytics?.allocation_mix)
+    ? (analytics?.allocation_mix as Array<Record<string, unknown>>)
+    : [];
+  const allocation =
+    allocationMix.length > 0
+      ? allocationMix
+          .map((row) => {
+            const bucket = String(row.bucket || "").trim();
+            const value = toNumber(row.value) ?? 0;
+            if (!bucket || value <= 0) return null;
+            const label =
+              bucket === "cash_equivalent"
+                ? "Cash"
+                : bucket === "fixed_income"
+                  ? "Fixed Income"
+                  : bucket === "real_asset"
+                    ? "Real Assets"
+                    : bucket === "equity"
+                      ? "Equities"
+                      : "Other";
+            return {
+              name: label,
+              value,
+              color: ALLOCATION_COLORS[label] || "#2563eb",
+            };
+          })
+          .filter((row): row is AllocationDatum => Boolean(row))
+      : canonicalModel.allocation.map((bucket) => ({
+          name: bucket.label,
+          value: bucket.value,
+          color: ALLOCATION_COLORS[bucket.label] || "#2563eb",
+        }));
+
+  const history = computeHistory(
+    portfolioData,
+    canonicalModel.beginningValue,
+    canonicalModel.endingValue
   );
-  const sectorCoverageCount = holdings.filter((holding) => {
-    const value = (holding.sector || holding.asset_type || "").trim().toLowerCase();
-    return value.length > 0 && value !== "unknown" && value !== "other";
-  }).length;
-  const gainLossCoverageCount = holdings.filter(
-    (holding) => typeof toNumber(holding.unrealized_gain_loss_pct) === "number"
-  ).length;
-  const sectorCoveragePct = holdingsCount > 0 ? sectorCoverageCount / holdingsCount : 0;
-  const gainLossCoveragePct = holdingsCount > 0 ? gainLossCoverageCount / holdingsCount : 0;
+
+  const concentrationRaw = Array.isArray(analytics?.concentration)
+    ? (analytics?.concentration as Array<Record<string, unknown>>)
+    : [];
+  const concentration =
+    concentrationRaw.length > 0
+      ? concentrationRaw
+          .map((row) => ({
+            symbol: String(row.symbol || "").trim(),
+            name: String(row.name || row.symbol || "").trim(),
+            marketValue: toNumber(row.market_value) ?? 0,
+            weightPct: toNumber(row.weight_pct) ?? 0,
+          }))
+          .filter((row) => row.symbol && row.marketValue > 0)
+          .slice(0, 8)
+      : canonicalModel.positions
+          .filter((position) => position.marketValue > 0)
+          .slice(0, 8)
+          .map((position) => ({
+            symbol: position.displaySymbol,
+            name: position.name,
+            marketValue: position.marketValue,
+            weightPct:
+              canonicalModel.totals.marketValue > 0
+                ? (position.marketValue / canonicalModel.totals.marketValue) * 100
+                : 0,
+          }));
+
+  const gainLossRaw = Array.isArray(analytics?.gain_loss_distribution)
+    ? (analytics?.gain_loss_distribution as Array<Record<string, unknown>>)
+    : [];
+  const gainLossDistribution =
+    gainLossRaw.length > 0
+      ? gainLossRaw.map((row) => ({
+          band: String(row.band || "").trim() || "Unknown",
+          count: Number(toNumber(row.count) ?? 0),
+        }))
+      : canonicalModel.gainLossBands.map((band) => ({
+          band: band.label,
+          count: band.count,
+        }));
+
   const quality: DashboardQualityFlags = {
     allocationReady: allocation.length >= 2,
-    sectorReady: holdingsCount > 0 && sectorCoveragePct >= 0.35,
+    sectorReady:
+      canonicalModel.counts.investablePositions > 0 && canonicalModel.quality.sectorCoveragePct >= 0.35,
     historyReady: history.length >= 2,
     concentrationReady: concentration.length >= 3,
-    gainLossReady: gainLossDistribution.some((row) => row.count > 0) && gainLossCoveragePct >= 0.35,
-    sectorCoveragePct,
-    gainLossCoveragePct,
+    gainLossReady:
+      gainLossDistribution.some((row) => row.count > 0) && canonicalModel.quality.gainLossCoveragePct >= 0.35,
+    sectorCoveragePct: canonicalModel.quality.sectorCoveragePct,
+    gainLossCoveragePct: canonicalModel.quality.gainLossCoveragePct,
   };
 
   return {
     hero: {
-      totalValue: endingValue,
-      beginningValue,
-      endingValue,
-      netChange,
-      changePct,
-      holdingsCount,
-      riskLabel: deriveRiskLabel(holdings),
-      statementPeriod: formatStatementPeriod(portfolioData),
+      totalValue: canonicalModel.totals.marketValue,
+      beginningValue: canonicalModel.beginningValue,
+      endingValue: canonicalModel.endingValue,
+      netChange: canonicalModel.netChange,
+      changePct: canonicalModel.netChangePct,
+      holdingsCount: canonicalModel.counts.totalPositions,
+      investableHoldingsCount: canonicalModel.counts.investablePositions,
+      cashPositionsCount: canonicalModel.counts.cashPositions,
+      portfolioConcentrationLabel: derivePortfolioConcentrationLabel(concentration),
+      statementPeriod: canonicalModel.statementPeriod,
     },
     holdings,
     allocation,
+    equity_sector_allocation: detailedAllocation.equitySectorAllocation,
+    non_equity_allocation: detailedAllocation.nonEquityAllocation,
+    allocation_denominator_total_value: detailedAllocation.denominator,
+    allocation_quality: detailedAllocation.quality,
     history,
     concentration,
     gainLossDistribution,
-    recommendations,
-    sourceBrokerage: portfolioData.account_info?.brokerage_name,
+    recommendations: computeRecommendations(canonicalModel),
+    sourceBrokerage: canonicalModel.sourceBrokerage,
     quality,
+    summaryMetrics: canonicalModel.summaryMetrics,
+    canonicalModel,
   };
 }

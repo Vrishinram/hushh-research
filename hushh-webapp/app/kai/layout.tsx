@@ -9,8 +9,14 @@
 import { VaultLockGuard } from "@/components/vault/vault-lock-guard";
 import { KaiOnboardingGuard } from "@/components/kai/onboarding/kai-onboarding-guard";
 import { KaiNavTour } from "@/components/kai/onboarding/kai-nav-tour";
+import { DashboardRouteTabs } from "@/components/kai/layout/dashboard-route-tabs";
 import { VaultMethodPrompt } from "@/components/vault/vault-method-prompt";
 import { usePathname } from "next/navigation";
+import { cn } from "@/lib/utils";
+import { useEffect } from "react";
+import { useAuth } from "@/lib/firebase/auth-context";
+import { useVault } from "@/lib/vault/vault-context";
+import { UnlockWarmOrchestrator } from "@/lib/services/unlock-warm-orchestrator";
 
 export default function KaiLayout({
   children,
@@ -18,15 +24,35 @@ export default function KaiLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const { user } = useAuth();
+  const { vaultKey, vaultOwnerToken } = useVault();
   const onOnboardingRoute = pathname.startsWith("/kai/onboarding");
   const onImportRoute = pathname.startsWith("/kai/import");
+  const showKaiRouteTabs = !onOnboardingRoute && !onImportRoute;
   const shouldEnableMethodPrompt = !onOnboardingRoute && !onImportRoute;
+
+  useEffect(() => {
+    if (onOnboardingRoute || onImportRoute) return;
+    if (!user?.uid || !vaultKey || !vaultOwnerToken) return;
+
+    void UnlockWarmOrchestrator.run({
+      userId: user.uid,
+      vaultKey,
+      vaultOwnerToken,
+      routePath: pathname,
+    }).catch((error) => {
+      console.warn("[KaiLayout] Route-priority warm orchestration failed:", error);
+    });
+  }, [onImportRoute, onOnboardingRoute, pathname, user?.uid, vaultKey, vaultOwnerToken]);
 
   return (
     <VaultLockGuard>
       <KaiOnboardingGuard>
-        <div className="flex flex-col min-h-screen">
-          <main className="flex-1 pb-32">{children}</main>
+        <div className="flex min-h-screen flex-col [--morphy-glass-accent-a:rgba(148,163,184,0.08)] [--morphy-glass-accent-b:rgba(226,232,240,0.08)] dark:[--morphy-glass-accent-a:rgba(63,63,70,0.16)] dark:[--morphy-glass-accent-b:rgba(82,82,91,0.14)]">
+          {showKaiRouteTabs ? <DashboardRouteTabs /> : null}
+          <main className={cn("flex-1 pb-32", showKaiRouteTabs ? "pt-14" : undefined)}>
+            {children}
+          </main>
           <VaultMethodPrompt enabled={shouldEnableMethodPrompt} />
           <KaiNavTour />
         </div>
@@ -34,4 +60,3 @@ export default function KaiLayout({
     </VaultLockGuard>
   );
 }
-

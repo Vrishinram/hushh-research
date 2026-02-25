@@ -14,9 +14,11 @@ No legacy stream payload shape is supported.
 
 ## Runtime Guardrails
 
-- User-facing stream timeout is capped at `120s`.
+- `portfolio_import` timeout is `360s`.
+- `portfolio_optimize` timeout is `240s`.
+- `stock_analyze` timeout is `300s`.
 - Producers emit heartbeat-safe `stage` updates roughly every `3-5s` while waiting for model chunks.
-- Terminal behavior is mandatory: every stream ends with one terminal `complete` or `error`.
+- Terminal behavior is mandatory: every stream ends with one terminal `complete`, `aborted`, or `error`.
 
 ## Transport Format
 
@@ -63,14 +65,26 @@ Rules:
 - `stage`
 - `thinking`
 - `chunk`
+- `aborted` (terminal)
 - `complete` (terminal)
 - `error` (terminal)
+
+Import phase values now include:
+- `uploading`
+- `indexing`
+- `scanning`
+- `thinking`
+- `extracting`
+- `normalizing`
+- `validating`
+- `complete`
 
 ### Optimize Portfolio (`stream_kind=portfolio_optimize`)
 
 - `stage`
 - `thinking`
 - `chunk`
+- `aborted` (terminal, optional)
 - `complete` (terminal)
 - `error` (terminal)
 
@@ -103,6 +117,13 @@ The terminal `decision` payload must include final recommendation context and de
   "event": "decision",
   "phase": "decision",
   "short_recommendation": "Concise actionable recommendation",
+  "company_strength_score": 7.4,
+  "market_trend_label": "Bullish",
+  "market_trend_score": 7.1,
+  "fair_value_label": "Near fair value",
+  "fair_value_score": 6.6,
+  "fair_value_gap_pct": -2.3,
+  "analysis_updated_at": "2026-02-22T02:15:12Z",
   "analysis_degraded": false,
   "degraded_agents": [],
   "stream_id": "strm_<uuid>",
@@ -115,6 +136,9 @@ The terminal `decision` payload must include final recommendation context and de
 
 Notes:
 - `short_recommendation` is mandatory in terminal decision output.
+- `company_strength_score`, `market_trend_score`, and `fair_value_score` are additive deterministic scores in `0..10`.
+- `market_trend_label`, `fair_value_label`, and `fair_value_gap_pct` are additive valuation/trend summaries derived from real decision inputs.
+- `analysis_updated_at` is a UTC ISO timestamp for the final decision synthesis.
 - `analysis_degraded`/`degraded_agents` are mandatory when one or more agents/providers fail.
 - `stream_id` in payload should match envelope `stream_id`.
 
@@ -124,6 +148,16 @@ Thought summaries are best-effort telemetry.
 
 - UI must never depend on thought events for control-flow progression.
 - Missing thought events is valid and must not block completion.
+- Import/optimize `thinking` payloads normalize to:
+  - `phase`
+  - `message`
+  - `thought`
+  - `count`
+  - `token_source`
+  - `timestamp` (envelope-normalized)
+  - `progress_pct` (envelope-normalized)
+- Import uses phase-aware thought streaming for the single deterministic extraction pass.
+- Analyze stream continues to use `kai_thinking` plus `agent_token`; `agent_token` includes `token_source`.
 
 ## Parser Requirements
 

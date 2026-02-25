@@ -42,23 +42,26 @@ interface AssetAllocationDonutProps {
   className?: string;
 }
 
-// Theme-aware colors using CSS variables
+// Distinct palette tuned for adjacent-segment contrast.
 const CHART_COLORS = [
-  "var(--chart-2)",  // Emerald/Teal for equities
-  "var(--chart-1)",  // Orange for cash
-  "var(--chart-4)",  // Yellow for bonds
-  "var(--chart-3)",  // Blue for ETF
-  "var(--chart-5)",  // Orange variant for mutual funds
+  "#2563eb",
+  "#0ea5e9",
+  "#14b8a6",
+  "#22c55e",
+  "#f59e0b",
+  "#ef4444",
+  "#8b5cf6",
+  "#ec4899",
 ];
 
 // Fallback colors for specific asset types
 const DEFAULT_COLORS: Record<string, string> = {
-  cash: "var(--chart-1)",
-  equities: "var(--chart-2)",
-  bonds: "var(--chart-4)",
-  etf: "var(--chart-3)",
-  mutual_funds: "var(--chart-5)",
-  other: "var(--muted-foreground)",
+  cash: "#0ea5e9",
+  equities: "#2563eb",
+  bonds: "#f59e0b",
+  etf: "#14b8a6",
+  mutual_funds: "#8b5cf6",
+  other: "#94a3b8",
 };
 
 function formatCurrency(value: number): string {
@@ -196,7 +199,7 @@ export function AssetAllocationDonut({
         </PieChart>
       </ChartContainer>
 
-      {/* Legend - simplified, no percentages (tooltip shows details) */}
+      {/* Legend - always visible values for mobile/non-hover contexts */}
       {showLegend && (
         <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 sm:flex sm:flex-wrap sm:justify-center sm:gap-4">
           {chartData.map((item, index) => (
@@ -208,7 +211,12 @@ export function AssetAllocationDonut({
                 className="w-3 h-3 rounded-full shrink-0"
                 style={{ backgroundColor: item.color }}
               />
-              <span className="truncate text-foreground">{item.name}</span>
+              <div className="min-w-0">
+                <p className="truncate text-foreground">{item.name}</p>
+                <p className="text-[11px] font-medium text-foreground/80">
+                  {formatCurrency(item.value)} ({formatPercent(item.percent || 0)})
+                </p>
+              </div>
             </div>
           ))}
         </div>

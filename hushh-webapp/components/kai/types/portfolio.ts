@@ -1,5 +1,7 @@
 export interface Holding {
   symbol: string;
+  symbol_cusip?: string;
+  identifier_type?: "ticker" | "cusip" | "derived";
   name: string;
   quantity: number;
   price: number;
@@ -13,6 +15,17 @@ export interface Holding {
   asset_class?: string;
   sector?: string;
   asset_type?: string;
+  instrument_kind?: string;
+  is_cash_equivalent?: boolean;
+  is_investable?: boolean;
+  analyze_eligible?: boolean;
+  analyze_eligible_reason?: string;
+  debate_eligible?: boolean;
+  optimize_eligible?: boolean;
+  symbol_source?: string;
+  symbol_kind?: string;
+  security_listing_status?: string;
+  is_sec_common_equity_ticker?: boolean;
   is_margin?: boolean;
   is_short?: boolean;
   confidence?: number;
@@ -27,7 +40,12 @@ export interface AccountSummary {
   equities_value?: number;
   total_change?: number;
   net_deposits_withdrawals?: number;
+  net_deposits_period?: number;
+  net_deposits_ytd?: number;
   investment_gain_loss?: number;
+  total_income_period?: number;
+  total_income_ytd?: number;
+  total_fees?: number;
 }
 
 export interface PortfolioData {
@@ -43,7 +61,6 @@ export interface PortfolioData {
   };
   account_summary?: AccountSummary;
   holdings?: Holding[];
-  detailed_holdings?: Holding[];
   transactions?: Array<Record<string, unknown>>;
   activity_and_transactions?: Array<Record<string, unknown>>;
   asset_allocation?:
@@ -55,6 +72,11 @@ export interface PortfolioData {
         bonds_percent?: number;
         bonds_pct?: number;
         other_percent?: number;
+        other_pct?: number;
+        cash_value?: number;
+        equities_value?: number;
+        bonds_value?: number;
+        other_value?: number;
       }
     | Array<{ category: string; market_value: number; percentage: number }>;
   income_summary?: {
@@ -87,14 +109,32 @@ export interface PortfolioData {
   total_fees?: number;
   projections_and_mrd?: Record<string, unknown>;
   legal_and_disclosures?: string[];
-  quality_report?: {
-    raw?: number;
-    validated?: number;
-    aggregated?: number;
-    dropped?: number;
-    reconciled?: number;
-    mismatch_detected?: number;
+  quality_report_v2?: {
+    schema_version?: number;
+    raw_count?: number;
+    validated_count?: number;
+    aggregated_count?: number;
+    holdings_count?: number;
+    investable_positions_count?: number;
+    cash_positions_count?: number;
+    allocation_coverage_pct?: number;
+    symbol_trust_coverage_pct?: number;
+    parser_quality_score?: number;
+    quality_gate?: Record<string, unknown>;
     dropped_reasons?: Record<string, number>;
-    average_confidence?: number;
+    diagnostics?: Record<string, unknown>;
   };
+  raw_extract_v2?: Record<string, unknown>;
+  analytics_v2?: {
+    allocation_mix?: Array<Record<string, unknown>>;
+    sector_exposure?: Array<Record<string, unknown>>;
+    concentration?: Array<Record<string, unknown>>;
+    gain_loss_distribution?: Array<Record<string, unknown>>;
+    income_breakdown?: Record<string, unknown>;
+    reconciliation_metrics?: Record<string, unknown>;
+    quality_metrics?: Record<string, unknown>;
+    debate_readiness?: Record<string, unknown>;
+    optimize_signals?: Record<string, unknown>;
+  };
+  parse_fallback?: boolean;
 }

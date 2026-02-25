@@ -4,15 +4,15 @@ Single source map for how Kai surfaces are connected across routes, service laye
 
 ## Core Flows
 
-### 1) Onboarding/Profile -> `kai_profile` Domain
+### 1) Onboarding/Profile -> `financial.profile`
 
 | Step | Route/UI | Web Service Layer | Backend Route | Persistence | Cache / Sync |
 | --- | --- | --- | --- | --- | --- |
-| Persona/preferences capture | `/kai/onboarding`, `/profile` | `KaiProfileService`, `WorldModelService` | `/api/world-model/store-domain` | `world_model_data` + `world_model_index_v2.domain_summaries.kai_profile` | `CacheSyncService.onWorldModelDomainStored(...)` patches metadata and domain blob cache |
-| Completion + nav tour state | onboarding components + nav tour | `KaiNavTourSyncService` / profile sync | `/api/world-model/store-domain` | encrypted `kai_profile` fields | cache write-through + metadata reconciliation |
+| Persona/preferences capture | `/kai/onboarding`, `/profile` | `KaiProfileService`, `WorldModelService` | `/api/world-model/store-domain` | `world_model_data.financial.profile` + `world_model_index_v2.domain_summaries.financial` | `CacheSyncService.onWorldModelDomainStored(...)` patches metadata and domain blob cache |
+| Completion + nav tour state | onboarding components + nav tour | `KaiNavTourSyncService` / profile sync | `/api/world-model/store-domain` | encrypted `financial.profile` fields | cache write-through + metadata reconciliation |
 
 Notes:
-- `kai_profile` is the canonical encrypted source for onboarding state.
+- `financial.profile` is the canonical encrypted source for onboarding state.
 - Local pending/on-device flags are transitional and must reconcile after vault unlock.
 
 ### 2) Import -> `financial` Domain -> Dashboard/Home/Debate
@@ -21,8 +21,10 @@ Notes:
 | --- | --- | --- | --- | --- | --- |
 | Statement upload/stream | `/kai/import` | `ApiService.streamPortfolioImport`, `kai-flow` | `/api/kai/portfolio/import/stream` | stream output only until commit | stage timeline + extracted holdings state in UI |
 | Save validated holdings | portfolio review / save CTA | `WorldModelService.storeDomainData`, `CacheSyncService.onPortfolioUpserted` | `/api/world-model/store-domain` | encrypted `financial` domain + summary in index | `portfolio_data_*`, `world_model_metadata_*`, `domain_blob_*` write-through |
-| Dashboard render | `/kai/dashboard` | `DashboardDataMapper`, `CacheService` | optional refresh via `/api/world-model/*` and market APIs | reads encrypted domain via vault key | cache-first with metadata/domain reconciliation |
-| Debate context usage | `/kai/dashboard/analysis` + stream views | `ApiService.streamKaiAnalysis` | `/api/kai/analyze/stream` | decision persisted in `kai_decisions` path when stored | context derived from index summaries + optional decrypted domain fields |
+| Import quality gate | import stream terminal | canonical SSE envelope | `/api/kai/portfolio/import/stream` | terminal `quality_gate` + `quality_report_v2` diagnostics | emits terminal `aborted` on strict validation failure (no silent success) |
+| Dashboard render + holdings manage fusion | `/kai/dashboard?tab=overview|holdings` | `DashboardDataMapper`, `ManagePortfolioView`, `CacheService` | optional refresh via `/api/world-model/*` and market APIs | reads encrypted domain via vault key | cache-first with metadata/domain reconciliation |
+| Dashboard profile picks | `/kai/dashboard` profile picks card | `ApiService.getDashboardProfilePicks` | `/api/kai/dashboard/profile-picks/{user_id}` | no new persistence (derived response) | quote-backed, risk-profile aware additive payload |
+| Debate context usage | `/kai/dashboard/analysis` + stream views | `ApiService.streamKaiAnalysis` | `/api/kai/analyze/stream` | decision persisted under `financial.analysis.decisions` | context derived from index summaries + optional decrypted domain fields |
 
 ### 3) Kai Home (`/kai`) -> Token Guard -> Market Cache -> Providers
 
@@ -31,7 +33,7 @@ Notes:
 | Token resolution | `/kai` | `ensureKaiVaultOwnerToken` (`lib/services/kai-token-guard.ts`) | `/api/consent/vault-owner-token` (through web proxy) | in-memory token + expiry in vault context | N/A |
 | Home fetch | `KaiMarketPreviewView` | `ApiService.getKaiMarketInsights` | `/api/kai/market/insights/{user_id}` | frontend memory/session cache (3 min), backend L1 memory + L2 postgres (`kai_market_cache_entries`) | Finnhub -> PMP/FMP -> fallbacks with cooldowns |
 | Refresh behavior | manual refresh + poll | same as above | same as above | cache-first while fresh; stale fallback if provider errors | degraded labels and provider status emitted in payload |
-| Startup/unlock warm | vault unlock flow + onboarding bridge | `UnlockWarmOrchestrator` (single-flight) | same endpoints as above | preloads world-model + consents + kai home caches | avoids duplicate warm calls across components |
+| Startup/unlock warm | vault unlock flow + onboarding bridge | `UnlockWarmOrchestrator` (single-flight) | same endpoints as above | route-priority warm (`/kai` -> market cache first, `/kai/dashboard` -> financial + profile picks first, `/kai/analysis` -> analysis context first) | avoids duplicate warm calls across components |
 
 ### 4) Debate Stream -> Degraded Mode -> UI Decision Cards
 
@@ -59,12 +61,16 @@ Notes:
 
 ### `/kai/dashboard`
 - UI: `hushh-webapp/components/kai/views/dashboard-master-view.tsx`
+- Route contract: `hushh-webapp/app/kai/dashboard/page.tsx` (dashboard surface tabs)
 - Mapper: `hushh-webapp/components/kai/views/dashboard-data-mapper.ts`
-- Domain consumption: `hushh-webapp/lib/utils/portfolio-normalize.ts`
+- Domain consumption: `hushh-webapp/lib/utils/portfolio-normalize.ts` (`financial.portfolio` + `financial.analytics`)
+- Picks cache hydration: `hushh-webapp/components/kai/cards/profile-based-picks-list.tsx`
 - Source domain: encrypted `financial` + index summary
+- Profile picks API: `consent-protocol/api/routes/kai/portfolio.py` (`/api/kai/dashboard/profile-picks/{user_id}`)
 
 ### `/kai/dashboard/analysis`
 - UI stream consumer: `hushh-webapp/components/kai/debate-stream-view.tsx`
+- Route contract: `hushh-webapp/app/kai/dashboard/analysis/page.tsx` (`tab=history|summary|debate`, `debate_id=<stream_id>`)
 - Decision card: `hushh-webapp/components/kai/views/decision-card.tsx`
 - Backend stream: `consent-protocol/api/routes/kai/stream.py`
 - Debate engine: `consent-protocol/hushh_mcp/agents/kai/debate_engine.py`
@@ -74,7 +80,7 @@ Notes:
 | Change Surface | Immediate Impact | Downstream Risk | Required Validation |
 | --- | --- | --- | --- |
 | Route or payload schema change | API service parse and UI render paths | Silent undefined fields in cards/charts | `verify:routes`, stream contract checks, manual `/kai` + dashboard smoke |
-| Cache key/TTL change | stale/fresh behavior in home/dashboard | hidden over-fetch or stale UI claims | `verify:cache`, `kai-system-audit.py`, cache logs |
+| Cache key/TTL change | stale/fresh behavior in home/dashboard | hidden over-fetch or stale UI claims | `verify:cache`, `scripts/verify-pre-launch.sh`, cache logs |
 | Unlock warm orchestration change | initial route readiness after vault unlock | duplicate warm calls, repeated `/db/vault/get`, delayed first paint | unlock-to-ready smoke + cache-hit logs |
 | World-model summary change | context counters and dashboard hero values | false-zero context or missing counts | world-model audit script + debate context smoke |
 | Provider fallback/cooldown change | market home and debate data completeness | rate-limit loops, noisy degraded states | provider status telemetry + `/kai` refresh behavior |
@@ -86,7 +92,7 @@ Notes:
 - Route parity guard: `hushh-webapp/scripts/verify-capacitor-routes.cjs`
 - Plugin parity guard: `hushh-webapp/scripts/verify-native-parity.cjs`
 - Canonical app routes: `hushh-webapp/lib/navigation/routes.ts`
-- Kai runtime audit: `scripts/ops/kai-system-audit.py`
+- Runtime audit entrypoint: `scripts/verify-pre-launch.sh`
 
 See also:
 - `docs/reference/mobile-kai-parity-map.md`

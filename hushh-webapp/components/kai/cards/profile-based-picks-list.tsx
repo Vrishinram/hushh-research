@@ -1,62 +1,215 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 
 import { Button } from "@/lib/morphy-ux/button";
 import { Card, CardContent } from "@/lib/morphy-ux/card";
 import { Icon } from "@/lib/morphy-ux/ui";
-
-type Pick = {
-  symbol: string;
-  company: string;
-  category: string;
-};
-
-const DEFAULT_PICKS: Pick[] = [
-  { symbol: "JNJ", company: "Johnson & Johnson", category: "Consumer Health" },
-  { symbol: "PG", company: "Procter & Gamble", category: "Consumer Goods" },
-  { symbol: "PEP", company: "PepsiCo Inc.", category: "Beverages" },
-];
+import { ApiService, type KaiDashboardProfilePick } from "@/lib/services/api-service";
+import { CacheService, CACHE_KEYS, CACHE_TTL } from "@/lib/services/cache-service";
+import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 
 interface ProfileBasedPicksListProps {
+  userId: string;
+  vaultOwnerToken: string;
+  symbols: string[];
   onAdd: (symbol: string) => void;
+  limit?: number;
 }
 
-export function ProfileBasedPicksList({ onAdd }: ProfileBasedPicksListProps) {
+function toSymbolsKey(symbols: string[]): string {
+  if (!Array.isArray(symbols) || symbols.length === 0) return "default";
+  return [...symbols].sort((a, b) => a.localeCompare(b)).join("-");
+}
+
+function formatPrice(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return "Price unavailable";
+  }
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function PicksSkeleton() {
   return (
-    <div className="space-y-3">
-      <div className="space-y-1">
-        <h3 className="text-sm font-black">Based on your profile</h3>
-        <p className="text-xs font-medium text-muted-foreground">Curated for steady, balanced growth.</p>
-      </div>
-
-      <div className="space-y-2">
-        {DEFAULT_PICKS.map((pick) => (
-          <Card key={pick.symbol} variant="none" effect="glass" className="rounded-2xl p-0" showRipple>
-            <CardContent className="flex items-center justify-between gap-3 p-4">
-              <div className="flex items-center gap-3">
-                <div className="grid h-10 w-10 place-items-center rounded-full border border-border/70 bg-muted text-xs font-black">
-                  {pick.symbol}
-                </div>
-                <div>
-                  <p className="text-sm font-bold leading-tight">{pick.company}</p>
-                  <p className="text-xs font-medium text-muted-foreground">{pick.category}</p>
-                </div>
+    <div className="space-y-2">
+      {Array.from({ length: 3 }).map((_, idx) => (
+        <Card key={idx} variant="none" effect="glass" className="rounded-2xl p-0">
+          <CardContent className="flex items-center justify-between gap-3 p-4">
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-10 w-10 rounded-full" />
+              <div className="space-y-1">
+                <Skeleton className="h-3 w-28" />
+                <Skeleton className="h-3 w-20" />
               </div>
+            </div>
+            <Skeleton className="h-8 w-8 rounded-full" />
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
 
-              <Button
-                variant="none"
-                effect="fade"
-                size="icon-sm"
-                aria-label={`Add ${pick.symbol}`}
-                onClick={() => onAdd(pick.symbol)}
-              >
-                <Icon icon={Plus} size="sm" />
-              </Button>
-            </CardContent>
-          </Card>
-        ))}
+export function ProfileBasedPicksList({
+  userId,
+  vaultOwnerToken,
+  symbols,
+  onAdd,
+  limit = 3,
+}: ProfileBasedPicksListProps) {
+  const [loading, setLoading] = useState(true);
+  const [riskProfile, setRiskProfile] = useState("balanced");
+  const [picks, setPicks] = useState<KaiDashboardProfilePick[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  const normalizedSymbols = useMemo(
+    () =>
+      symbols
+        .map((symbol) => symbol.trim().toUpperCase())
+        .filter((symbol, idx, arr) => Boolean(symbol) && arr.indexOf(symbol) === idx)
+        .slice(0, 16),
+    [symbols]
+  );
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let isMounted = true;
+    const cache = CacheService.getInstance();
+    const symbolsKey = toSymbolsKey(normalizedSymbols);
+    const cacheKey = CACHE_KEYS.KAI_DASHBOARD_PROFILE_PICKS(userId, symbolsKey, limit);
+
+    const cached = cache.get<{
+      picks?: KaiDashboardProfilePick[];
+      risk_profile?: string;
+    }>(cacheKey);
+    if (cached && isMounted) {
+      setRiskProfile(cached.risk_profile || "balanced");
+      setPicks((cached.picks || []).filter((pick) => Boolean(pick?.symbol)));
+      setLoading(false);
+      setError(null);
+    }
+
+    async function load() {
+      if (!userId || !vaultOwnerToken) {
+        if (isMounted) {
+          setPicks([]);
+          setLoading(false);
+        }
+        return;
+      }
+      if (!cached) {
+        setLoading(true);
+      }
+      setError(null);
+      try {
+        const response = await ApiService.getDashboardProfilePicks({
+          userId,
+          vaultOwnerToken,
+          symbols: normalizedSymbols,
+          limit,
+          signal: controller.signal,
+        });
+        if (!isMounted) return;
+        setRiskProfile(response.risk_profile || "balanced");
+        setPicks((response.picks || []).filter((pick) => Boolean(pick?.symbol)));
+        cache.set(cacheKey, response, CACHE_TTL.MEDIUM);
+      } catch (loadError) {
+        if (!isMounted) return;
+        if (!cached) {
+          setPicks([]);
+          setError(loadError instanceof Error ? loadError.message : "Unable to load picks");
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void load();
+
+    return () => {
+      isMounted = false;
+      controller.abort();
+    };
+  }, [limit, normalizedSymbols, userId, vaultOwnerToken]);
+
+  return (
+    <div className="space-y-2">
+      <div className="space-y-0.5">
+        <h3 className="text-sm font-black">Based on your profile</h3>
+        <p className="text-[11px] text-muted-foreground">
+          Source: Kai risk profile ({riskProfile}) + current holdings context.
+        </p>
       </div>
+
+      {loading ? <PicksSkeleton /> : null}
+
+      {!loading && picks.length === 0 ? (
+        <Card variant="muted" effect="fill" className="rounded-2xl p-0">
+          <CardContent className="p-3 text-xs text-muted-foreground">
+            {error
+              ? "Profile picks are temporarily unavailable."
+              : "No profile picks available from current market context."}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {!loading && picks.length > 0 ? (
+        <div className="space-y-2">
+          {picks.map((pick) => {
+            const change = typeof pick.change_percent === "number" ? pick.change_percent : null;
+            return (
+              <Card key={pick.symbol} variant="none" effect="glass" className="rounded-2xl p-0" showRipple>
+                <CardContent className="flex items-center justify-between gap-3 p-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="grid h-9 w-9 place-items-center rounded-full border border-border/70 bg-muted text-[11px] font-black">
+                      {pick.symbol}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold leading-tight">{pick.company_name}</p>
+                      <p className="truncate text-xs font-medium text-muted-foreground">
+                        {(pick.tier || "Tier N/A").toUpperCase()}
+                        {pick.sector ? ` • ${pick.sector}` : ""}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {formatPrice(pick.price)}
+                        {change !== null ? (
+                          <span
+                            className={cn(
+                              "ml-1 font-semibold",
+                              change >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
+                            )}
+                          >
+                            {change >= 0 ? "+" : ""}
+                            {change.toFixed(2)}%
+                          </span>
+                        ) : null}
+                      </p>
+                    </div>
+                  </div>
+
+                  <Button
+                    variant="none"
+                    effect="fade"
+                    size="icon-sm"
+                    aria-label={`Add ${pick.symbol}`}
+                    onClick={() => onAdd(pick.symbol)}
+                  >
+                    <Icon icon={Plus} size="sm" />
+                  </Button>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      ) : null}
     </div>
   );
 }

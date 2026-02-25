@@ -2,11 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const loadFullBlobMock = vi.fn();
 const storeMergedDomainMock = vi.fn();
+const storeMergedDomainWithPreparedBlobMock = vi.fn();
 
 vi.mock("@/lib/services/world-model-service", () => ({
   WorldModelService: {
     loadFullBlob: loadFullBlobMock,
     storeMergedDomain: storeMergedDomainMock,
+    storeMergedDomainWithPreparedBlob: storeMergedDomainWithPreparedBlobMock,
   },
 }));
 
@@ -15,6 +17,7 @@ describe("KaiProfileService", () => {
     vi.clearAllMocks();
     loadFullBlobMock.mockResolvedValue({});
     storeMergedDomainMock.mockResolvedValue({ success: true });
+    storeMergedDomainWithPreparedBlobMock.mockResolvedValue({ success: true });
   });
 
   it("returns default v2 profile when no stored domain exists", async () => {
@@ -32,7 +35,7 @@ describe("KaiProfileService", () => {
     expect(profile.preferences.risk_profile).toBeNull();
   });
 
-  it("normalizes legacy v1 intro_seen into v2 onboarding completion (without forcing v2)", async () => {
+  it("returns default profile when only legacy kai_profile exists", async () => {
     loadFullBlobMock.mockResolvedValue({
       kai_profile: {
         schema_version: 1,
@@ -51,9 +54,9 @@ describe("KaiProfileService", () => {
     });
 
     expect(profile.schema_version).toBe(2);
-    expect(profile.onboarding.completed).toBe(true);
-    expect(profile.onboarding.skipped_preferences).toBe(true);
-    expect(profile.preferences.investment_horizon).toBe("long_term");
+    expect(profile.onboarding.completed).toBe(false);
+    expect(profile.onboarding.skipped_preferences).toBe(false);
+    expect(profile.preferences.investment_horizon).toBeNull();
     expect(profile.preferences.drawdown_response).toBeNull();
     expect(profile.preferences.volatility_preference).toBeNull();
     expect(profile.preferences.risk_profile).toBeNull();
@@ -88,17 +91,20 @@ describe("KaiProfileService", () => {
       expect.objectContaining({
         userId: "user_123",
         vaultKey: "key_abc",
-        domain: "kai_profile",
+        domain: "financial",
         vaultOwnerToken: "token_xyz",
         domainData: expect.objectContaining({
-          schema_version: 2,
-          preferences: expect.objectContaining({
-            risk_profile: "aggressive",
-            risk_score: 6,
+          schema_version: 3,
+          profile: expect.objectContaining({
+            schema_version: 2,
+            preferences: expect.objectContaining({
+              risk_profile: "aggressive",
+              risk_score: 6,
+            }),
           }),
         }),
         summary: expect.objectContaining({
-          onboarding_completed: false,
+          profile_completed: false,
           risk_profile: "aggressive",
           risk_score: 6,
         }),
@@ -108,27 +114,29 @@ describe("KaiProfileService", () => {
 
   it("keeps original horizon anchor when editing with keep_original", async () => {
     loadFullBlobMock.mockResolvedValue({
-      kai_profile: {
-        schema_version: 2,
-        onboarding: {
-          completed: true,
-          completed_at: "2026-02-10T00:00:00.000Z",
-          skipped_preferences: false,
-          version: 2,
+      financial: {
+        profile: {
+          schema_version: 2,
+          onboarding: {
+            completed: true,
+            completed_at: "2026-02-10T00:00:00.000Z",
+            skipped_preferences: false,
+            version: 2,
+          },
+          preferences: {
+            investment_horizon: "long_term",
+            investment_horizon_selected_at: "2026-01-01T00:00:00.000Z",
+            investment_horizon_anchor_at: "2026-01-01T00:00:00.000Z",
+            drawdown_response: "stay",
+            drawdown_response_selected_at: "2026-01-01T00:00:00.000Z",
+            volatility_preference: "moderate",
+            volatility_preference_selected_at: "2026-01-01T00:00:00.000Z",
+            risk_score: 4,
+            risk_profile: "balanced",
+            risk_profile_selected_at: "2026-01-01T00:00:00.000Z",
+          },
+          updated_at: "2026-02-10T00:00:00.000Z",
         },
-        preferences: {
-          investment_horizon: "long_term",
-          investment_horizon_selected_at: "2026-01-01T00:00:00.000Z",
-          investment_horizon_anchor_at: "2026-01-01T00:00:00.000Z",
-          drawdown_response: "stay",
-          drawdown_response_selected_at: "2026-01-01T00:00:00.000Z",
-          volatility_preference: "moderate",
-          volatility_preference_selected_at: "2026-01-01T00:00:00.000Z",
-          risk_score: 4,
-          risk_profile: "balanced",
-          risk_profile_selected_at: "2026-01-01T00:00:00.000Z",
-        },
-        updated_at: "2026-02-10T00:00:00.000Z",
       },
     });
 
@@ -152,6 +160,46 @@ describe("KaiProfileService", () => {
     expect(next.preferences.investment_horizon_anchor_at).toBe("2026-01-01T00:00:00.000Z");
     expect(next.preferences.risk_profile).toBe("conservative");
     expect(next.preferences.risk_profile_selected_at).toBe(now.toISOString());
+  });
+
+  it("syncs onboarding and nav state with a single prepared-blob write", async () => {
+    const now = new Date("2026-02-21T00:00:00.000Z");
+
+    const { KaiProfileService } = await import("../../lib/services/kai-profile-service");
+    await KaiProfileService.syncOnboardingAndNavState({
+      userId: "user_sync",
+      vaultKey: "vault_sync",
+      vaultOwnerToken: "token_sync",
+      now,
+      onboarding: {
+        completed: true,
+        skippedPreferences: false,
+        completedAt: now.toISOString(),
+        answers: {
+          investment_horizon: "long_term",
+          drawdown_response: "buy_more",
+          volatility_preference: "large",
+        },
+      },
+      navTour: {
+        completedAt: "2026-02-20T00:00:00.000Z",
+        skippedAt: null,
+      },
+    });
+
+    expect(storeMergedDomainWithPreparedBlobMock).toHaveBeenCalledTimes(1);
+    expect(storeMergedDomainMock).not.toHaveBeenCalled();
+    expect(storeMergedDomainWithPreparedBlobMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: "user_sync",
+        vaultKey: "vault_sync",
+        domain: "financial",
+        summary: expect.objectContaining({
+          profile_completed: true,
+          nav_tour_completed: true,
+        }),
+      })
+    );
   });
 });
 
@@ -240,4 +288,3 @@ describe("Kai risk helpers", () => {
     ).toBe("2026-02-17T00:00:00.000Z");
   });
 });
-

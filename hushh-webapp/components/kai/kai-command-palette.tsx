@@ -7,7 +7,8 @@ import {
   Compass,
   History,
   Search,
-  Settings2,
+  ShieldCheck,
+  UserRound,
 } from "lucide-react";
 
 import {
@@ -31,7 +32,8 @@ import { Icon } from "@/lib/morphy-ux/ui";
 export type KaiCommandAction =
   | "analyze"
   | "optimize"
-  | "manage"
+  | "consent"
+  | "profile"
   | "history"
   | "dashboard"
   | "home";
@@ -41,6 +43,106 @@ interface KaiCommandPaletteProps {
   onOpenChange: (open: boolean) => void;
   onCommand: (command: KaiCommandAction, params?: Record<string, unknown>) => void;
   hasPortfolioData?: boolean;
+  portfolioTickers?: Array<{
+    symbol: string;
+    name?: string;
+    sector?: string;
+    asset_type?: string;
+    is_investable?: boolean;
+    analyze_eligible?: boolean;
+  }>;
+}
+
+function isPortfolioAnalyzeEligible(row: {
+  is_investable?: boolean;
+  analyze_eligible?: boolean;
+  asset_type?: string;
+}): boolean {
+  if (typeof row.analyze_eligible === "boolean") return row.analyze_eligible;
+  if (row.is_investable !== true) return false;
+  const assetType = String(row.asset_type || "").toLowerCase();
+  if (
+    assetType.includes("cash") ||
+    assetType.includes("sweep") ||
+    assetType.includes("bond") ||
+    assetType.includes("fixed income")
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function isLikelySecCommonEquityRow(row: TickerUniverseRow): boolean {
+  if (row.tradable === false) return false;
+  const ticker = String(row.ticker || "").trim().toUpperCase();
+  if (!ticker) return false;
+
+  const combined = [
+    String(row.title || ""),
+    String(row.sector || row.sector_primary || ""),
+    String(row.industry || row.industry_primary || ""),
+    String(row.sic_description || ""),
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  if (ticker.endsWith("X")) return false;
+  if (
+    /(?:\betf\b|\bfund\b|\bmutual\b|\btrust\b|\bmoney market\b|\bcash\b|\bsweep\b|\bbond\b|\bfixed income\b|\btreasury\b|\bmunicipal\b|\breit\b|\bcommodity\b|\bgold\b)/i.test(
+      combined
+    )
+  ) {
+    return false;
+  }
+  return true;
+}
+
+const GENERIC_SECTOR_LABELS = new Set([
+  "equity",
+  "equities",
+  "stock",
+  "stocks",
+  "other",
+  "unknown",
+  "unclassified",
+  "n/a",
+]);
+
+function toNonEmpty(value: unknown): string | undefined {
+  const text = String(value || "").trim();
+  return text ? text : undefined;
+}
+
+function isSpecificSectorLabel(value: unknown): boolean {
+  const text = toNonEmpty(value);
+  if (!text) return false;
+  return !GENERIC_SECTOR_LABELS.has(text.toLowerCase());
+}
+
+function pickPreferredLabel(values: Array<unknown>): string | undefined {
+  let fallback: string | undefined;
+  for (const value of values) {
+    const text = toNonEmpty(value);
+    if (!text) continue;
+    if (!fallback) fallback = text;
+    if (isSpecificSectorLabel(text)) {
+      return text;
+    }
+  }
+  return fallback;
+}
+
+function rankTickerRow(row: TickerUniverseRow, qUpper: string): number {
+  const prefixBoost = String(row.ticker || "")
+    .toUpperCase()
+    .startsWith(qUpper)
+    ? 1000
+    : 0;
+  const confidence = Number(row.metadata_confidence || 0) * 100;
+  const sectorBoost = isSpecificSectorLabel(row.sector || row.sector_primary) ? 20 : 0;
+  const exchangeBoost =
+    toNonEmpty(row.exchange) && String(row.exchange).toLowerCase() !== "portfolio" ? 5 : 0;
+  return prefixBoost + confidence + sectorBoost + exchangeBoost;
 }
 
 export function KaiCommandPalette({
@@ -48,6 +150,7 @@ export function KaiCommandPalette({
   onOpenChange,
   onCommand,
   hasPortfolioData = true,
+  portfolioTickers = [],
 }: KaiCommandPaletteProps) {
   const [query, setQuery] = useState("");
   const [universe, setUniverse] = useState<TickerUniverseRow[] | null>(
@@ -61,8 +164,9 @@ export function KaiCommandPalette({
 
     void (async () => {
       try {
-        if (!universe) setLoadingUniverse(true);
-        const rows = await preloadTickerUniverse();
+        setLoadingUniverse(true);
+        // Force-refresh so command bar reflects latest ticker metadata after DB updates.
+        const rows = await preloadTickerUniverse({ forceRefresh: true });
         if (!cancelled) {
           setUniverse(rows);
         }
@@ -80,7 +184,7 @@ export function KaiCommandPalette({
     return () => {
       cancelled = true;
     };
-  }, [universe]);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -112,28 +216,118 @@ export function KaiCommandPalette({
     };
   }, [query]);
 
+  const universeByTicker = useMemo(() => {
+    const map = new Map<string, TickerUniverseRow>();
+    const rows = universe ?? [];
+    for (const row of rows) {
+      const ticker = String(row.ticker || "").trim().toUpperCase();
+      if (!ticker) continue;
+      map.set(ticker, row);
+    }
+    return map;
+  }, [universe]);
+
+  const portfolioRows = useMemo<TickerUniverseRow[]>(() => {
+    const deduped = new Map<string, TickerUniverseRow>();
+    for (const row of portfolioTickers) {
+      const symbol = String(row.symbol || "").trim().toUpperCase();
+      if (!symbol) continue;
+      if (!isPortfolioAnalyzeEligible(row)) continue;
+      if (deduped.has(symbol)) continue;
+      const enriched = universeByTicker.get(symbol);
+      const preferredSector = pickPreferredLabel([
+        enriched?.sector,
+        enriched?.sector_primary,
+        row.sector,
+        row.asset_type,
+      ]);
+      deduped.set(symbol, {
+        ticker: symbol,
+        title:
+          toNonEmpty(row.name) ||
+          toNonEmpty(enriched?.title) ||
+          "Portfolio holding",
+        sector_primary: preferredSector,
+        sector: preferredSector,
+        industry_primary: toNonEmpty(enriched?.industry || enriched?.industry_primary),
+        exchange: toNonEmpty(enriched?.exchange) || "Portfolio",
+        metadata_confidence:
+          typeof enriched?.metadata_confidence === "number"
+            ? enriched.metadata_confidence
+            : 1,
+        tradable: true,
+      });
+    }
+    return Array.from(deduped.values());
+  }, [portfolioTickers, universeByTicker]);
+
+  const portfolioTickerSet = useMemo(() => {
+    return new Set(portfolioRows.map((row) => row.ticker));
+  }, [portfolioRows]);
+
   const tickerMatches = useMemo(() => {
     const rows = universe ?? [];
     const search = query.trim();
-    if (!search) {
-      return [...rows]
-        .filter((row) => row.tradable !== false)
-        .sort((a, b) => Number(b.metadata_confidence || 0) - Number(a.metadata_confidence || 0))
-        .slice(0, 12);
-    }
-    const local = searchTickerUniverse(rows, search, 20);
-    const merged = [...local];
-    for (const row of remoteMatches) {
-      if (!merged.some((candidate) => candidate.ticker === row.ticker)) {
-        merged.push(row);
+    const mergeAndNormalizeRows = (
+      candidates: TickerUniverseRow[],
+      qUpper: string
+    ): TickerUniverseRow[] => {
+      const byTicker = new Map<string, TickerUniverseRow>();
+      for (const row of candidates) {
+        const ticker = String(row.ticker || "").trim().toUpperCase();
+        if (!ticker) continue;
+        const normalized: TickerUniverseRow = {
+          ...row,
+          ticker,
+          sector: pickPreferredLabel([row.sector, row.sector_primary]),
+          sector_primary: pickPreferredLabel([row.sector_primary, row.sector]),
+        };
+        const existing = byTicker.get(ticker);
+        if (
+          !existing ||
+          rankTickerRow(normalized, qUpper) > rankTickerRow(existing, qUpper)
+        ) {
+          byTicker.set(ticker, normalized);
+        }
       }
+      return Array.from(byTicker.values()).filter((row) => row.tradable !== false);
+    };
+
+    if (!search) {
+      const mergedDefaultRows = mergeAndNormalizeRows(
+        [...portfolioRows, ...rows.filter((row) => isLikelySecCommonEquityRow(row))],
+        ""
+      );
+      return mergedDefaultRows
+        .sort((a, b) => {
+          const aPortfolio = portfolioTickerSet.has(a.ticker) ? 1 : 0;
+          const bPortfolio = portfolioTickerSet.has(b.ticker) ? 1 : 0;
+          if (aPortfolio !== bPortfolio) return bPortfolio - aPortfolio;
+          const aScore = Number(a.metadata_confidence || 0);
+          const bScore = Number(b.metadata_confidence || 0);
+          if (aScore !== bScore) return bScore - aScore;
+          return a.ticker.localeCompare(b.ticker);
+        })
+        .slice(0, 20);
     }
-    const qUpper = search.toUpperCase();
-    return merged
-      .filter((row) => row.tradable !== false)
+
+    const searchUpper = search.toUpperCase();
+    const portfolioMatches = portfolioRows.filter((row) => {
+      const title = String(row.title || "").toLowerCase();
+      return row.ticker.includes(searchUpper) || title.includes(search.toLowerCase());
+    });
+    const local = searchTickerUniverse(rows, search, 20).filter((row) =>
+      isLikelySecCommonEquityRow(row)
+    );
+    const merged = [...portfolioMatches, ...local];
+    for (const row of remoteMatches) {
+      if (!isLikelySecCommonEquityRow(row)) continue;
+      merged.push(row);
+    }
+    return mergeAndNormalizeRows(merged, searchUpper)
       .sort((a, b) => {
-        const aPrefix = a.ticker.startsWith(qUpper) ? 1 : 0;
-        const bPrefix = b.ticker.startsWith(qUpper) ? 1 : 0;
+        const aPrefix = a.ticker.startsWith(searchUpper) ? 1 : 0;
+        const bPrefix = b.ticker.startsWith(searchUpper) ? 1 : 0;
         if (aPrefix !== bPrefix) return bPrefix - aPrefix;
         const aScore = Number(a.metadata_confidence || 0);
         const bScore = Number(b.metadata_confidence || 0);
@@ -141,7 +335,9 @@ export function KaiCommandPalette({
         return a.ticker.localeCompare(b.ticker);
       })
       .slice(0, 20);
-  }, [query, universe, remoteMatches]);
+  }, [portfolioRows, portfolioTickerSet, query, universe, remoteMatches]);
+
+  const isFiltering = query.trim().length > 0;
 
   function run(command: KaiCommandAction, params?: Record<string, unknown>) {
     onOpenChange(false);
@@ -169,22 +365,13 @@ export function KaiCommandPalette({
             <Icon icon={BarChart3} size="sm" className="mr-2 text-muted-foreground" />
             Dashboard
           </CommandItem>
-          <CommandItem
-            className={commandItemClass}
-            disabled={!hasPortfolioData}
-            onSelect={() => run("optimize")}
-          >
-            <Icon icon={Activity} size="sm" className="mr-2 text-muted-foreground" />
-            Optimize Portfolio
-          </CommandItem>
-          <CommandItem
-            className={commandItemClass}
-            disabled={!hasPortfolioData}
-            onSelect={() => run("manage")}
-          >
-            <Icon icon={Settings2} size="sm" className="mr-2 text-muted-foreground" />
-            Manage Portfolio
-          </CommandItem>
+          {!isFiltering ? (
+            <CommandItem className={commandItemClass} disabled>
+              <Icon icon={Activity} size="sm" className="mr-2 text-muted-foreground" />
+              <span>Optimize Portfolio</span>
+              <span className="ml-auto text-xs text-muted-foreground">Coming soon</span>
+            </CommandItem>
+          ) : null}
         </CommandGroup>
 
         <CommandSeparator />
@@ -206,10 +393,28 @@ export function KaiCommandPalette({
 
         <CommandSeparator />
 
+        <CommandGroup heading="Account">
+          <CommandItem className={commandItemClass} onSelect={() => run("consent")}>
+            <Icon icon={ShieldCheck} size="sm" className="mr-2 text-muted-foreground" />
+            Consents
+          </CommandItem>
+          <CommandItem className={commandItemClass} onSelect={() => run("profile")}>
+            <Icon icon={UserRound} size="sm" className="mr-2 text-muted-foreground" />
+            Profile
+          </CommandItem>
+        </CommandGroup>
+
+        <CommandSeparator />
+
         <CommandGroup heading="Analyze Stock">
           {!hasPortfolioData && (
             <CommandItem className={commandItemClass} disabled>
               Import portfolio to enable stock analysis.
+            </CommandItem>
+          )}
+          {hasPortfolioData && !loadingUniverse && tickerMatches.length === 0 && (
+            <CommandItem className={commandItemClass} disabled>
+              No matching SEC common equity tickers.
             </CommandItem>
           )}
           {tickerMatches.map((row) => {
@@ -219,7 +424,7 @@ export function KaiCommandPalette({
               <CommandItem
                 className={commandItemClass}
                 key={`${ticker}:${title}`}
-                value={`${ticker} ${title} ${row.sector_primary || ""} ${row.exchange || ""}`}
+                value={`${ticker} ${title} ${row.sector || row.sector_primary || ""} ${row.exchange || ""}`}
                 disabled={!hasPortfolioData}
                 onSelect={() => run("analyze", { symbol: ticker })}
               >
@@ -227,7 +432,9 @@ export function KaiCommandPalette({
                 <span className="font-semibold">{ticker}</span>
                 <span className="ml-2 text-xs text-muted-foreground truncate">
                   {title}
-                  {row.sector_primary ? ` • ${row.sector_primary}` : ""}
+                  {row.sector || row.sector_primary
+                    ? ` • ${row.sector || row.sector_primary}`
+                    : ""}
                 </span>
               </CommandItem>
             );

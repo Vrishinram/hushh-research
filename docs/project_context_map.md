@@ -108,7 +108,8 @@ Minimum definition of done:
 
 ## Trust/Compliance Reality Check
 
-This repo includes a regulatory readiness audit:
-- `docs/audits/2026-02-16-regulatory-readiness-audit.md`
+Compliance and readiness tracking references:
+- `consent-protocol/COMPLIANCE_PROGRESS.md`
+- `docs/reference/kai-runtime-smoke-checklist.md`
 
 If you're shipping anything investor-facing, read it and close critical findings first.

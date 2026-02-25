@@ -227,7 +227,11 @@ export function PortfolioHistoryChart({
           accessibilityLayer
           margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
         >
-          <CartesianGrid vertical={false} strokeDasharray="3 3" />
+          <CartesianGrid
+            strokeDasharray="3 3"
+            stroke="hsl(var(--border))"
+            strokeOpacity={0.9}
+          />
           <XAxis 
             dataKey="date" 
             tickFormatter={formatDateTick}
@@ -245,7 +249,8 @@ export function PortfolioHistoryChart({
             width={55}
             domain={["dataMin * 0.95", "dataMax * 1.05"]}
           />
-          <ChartTooltip 
+          <ChartTooltip
+            cursor={false}
             content={
               <ChartTooltipContent 
                 formatter={(value) => formatCurrency(value as number)}

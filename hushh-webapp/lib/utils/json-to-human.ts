@@ -47,7 +47,7 @@ const SECTION_LABELS: Record<string, string> = {
   account_metadata: "Account Information",
   portfolio_summary: "Portfolio Summary",
   asset_allocation: "Asset Allocation",
-  detailed_holdings: "Holdings",
+  holdings: "Holdings",
   activity_and_transactions: "Transactions",
   cash_management: "Cash Management",
   income_summary: "Income Summary",
@@ -249,7 +249,7 @@ export function formatCompleteJson(json: Record<string, unknown>): string {
       lines.push(`--- ${sectionLabel} (${sectionValue.length} items) ---`);
       
       // For holdings and transactions, show summary
-      if (sectionKey === "detailed_holdings") {
+      if (sectionKey === "holdings") {
         for (const item of sectionValue.slice(0, 10)) {
           const holding = item as Record<string, unknown>;
           const symbol = holding.symbol_cusip || holding.description || "Unknown";

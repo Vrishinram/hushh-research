@@ -40,14 +40,17 @@ gcloud builds submit --config=deploy/frontend.cloudbuild.yaml
 
 3. **Configure Secrets** (one-time setup)
 
-   Secrets in GCP Secret Manager must match **exactly** what the code uses — no more, no less. See [docs/reference/env_and_secrets.md](../docs/reference/env_and_secrets.md) for the full audit and gcloud CLI.
+   Secrets in GCP Secret Manager must match **exactly** what the code uses — no more, no less. See [docs/reference/env-and-secrets.md](../docs/reference/env-and-secrets.md) for the full audit and gcloud CLI.
 
-   ```powershell
-   cd deploy
-   .\verify-secrets.ps1
+   ```bash
+   python3 scripts/ops/verify-env-secrets-parity.py \
+     --project hushh-pda \
+     --region us-central1 \
+     --backend-service consent-protocol \
+     --frontend-service hushh-webapp
    ```
 
-   Required backend secrets (9):
+   Required backend secrets (10):
 
    - `SECRET_KEY`
    - `VAULT_ENCRYPTION_KEY`
@@ -56,10 +59,11 @@ gcloud builds submit --config=deploy/frontend.cloudbuild.yaml
    - `FRONTEND_URL`
    - `DB_USER`
    - `DB_PASSWORD`
+   - `APP_REVIEW_MODE`
    - `REVIEWER_UID`
    - `MCP_DEVELOPER_TOKEN`
 
-   **Note:** `DB_HOST`, `DB_PORT`, `DB_NAME`, `APP_REVIEW_MODE`, `CONSENT_SSE_ENABLED`, and `SYNC_REMOTE_ENABLED` are set as Cloud Run env vars (not secrets). **Do not use `DATABASE_URL`** — migrations and scripts use DB_* only (strict parity). Delete `DATABASE_URL` from Secret Manager if present.
+   **Note:** `DB_HOST`, `DB_PORT`, `DB_NAME`, `CONSENT_SSE_ENABLED`, and `SYNC_REMOTE_ENABLED` are set as Cloud Run env vars (not secrets). **Do not use `DATABASE_URL`** — migrations and scripts use DB_* only (strict parity). Delete `DATABASE_URL` from Secret Manager if present.
 
 ---
 
@@ -148,13 +152,13 @@ gcloud builds submit --config=deploy/frontend.cloudbuild.yaml
 
 ## 🔐 Secrets Management
 
-All required secrets must exist in Google Cloud Secret Manager before deployment. Run `verify-secrets.ps1` if available, or create any missing secrets manually.
+All required secrets must exist in Google Cloud Secret Manager before deployment. Run the parity audit script, then create any missing secrets manually.
 
-**Backend (9 secrets):** `SECRET_KEY`, `VAULT_ENCRYPTION_KEY`, `GOOGLE_API_KEY`, `FIREBASE_SERVICE_ACCOUNT_JSON`, `FRONTEND_URL`, `DB_USER`, `DB_PASSWORD`, `REVIEWER_UID`, `MCP_DEVELOPER_TOKEN`
+**Backend (10 secrets):** `SECRET_KEY`, `VAULT_ENCRYPTION_KEY`, `GOOGLE_API_KEY`, `FIREBASE_SERVICE_ACCOUNT_JSON`, `FRONTEND_URL`, `DB_USER`, `DB_PASSWORD`, `APP_REVIEW_MODE`, `REVIEWER_UID`, `MCP_DEVELOPER_TOKEN`
 
 **Note:** 
-- `DB_HOST`, `DB_PORT`, `DB_NAME`, `APP_REVIEW_MODE`, `CONSENT_SSE_ENABLED`, and `SYNC_REMOTE_ENABLED` are set as Cloud Run env vars (not secrets) in `backend.cloudbuild.yaml`
-- Migrations use DB_* only (no DATABASE_URL). See docs/reference/env_and_secrets.md.
+- `DB_HOST`, `DB_PORT`, `DB_NAME`, `CONSENT_SSE_ENABLED`, and `SYNC_REMOTE_ENABLED` are set as Cloud Run env vars (not secrets) in `backend.cloudbuild.yaml`
+- Migrations use DB_* only (no DATABASE_URL). See docs/reference/env-and-secrets.md.
 - **Action required:** Create `DB_USER` and `DB_PASSWORD` secrets in Secret Manager if they don't exist:
   ```bash
   echo "your-db-username" | gcloud secrets create DB_USER --data-file=-
@@ -173,7 +177,7 @@ All required secrets must exist in Google Cloud Secret Manager before deployment
 
 These Firebase values are public client config, but are still centrally injected from Secret Manager to avoid hardcoded deploy YAML values.
 
-See [docs/reference/env_and_secrets.md](../docs/reference/env_and_secrets.md) for full reference.
+See [docs/reference/env-and-secrets.md](../docs/reference/env-and-secrets.md) for full reference.
 
 ### Mobile Firebase Artifacts (Regulated)
 
@@ -187,9 +191,12 @@ See [docs/reference/env_and_secrets.md](../docs/reference/env_and_secrets.md) fo
 
 ### Verify Secrets
 
-```powershell
-cd deploy
-.\verify-secrets.ps1
+```bash
+python3 scripts/ops/verify-env-secrets-parity.py \
+  --project hushh-pda \
+  --region us-central1 \
+  --backend-service consent-protocol \
+  --frontend-service hushh-webapp
 ```
 
 ### Create Secret
@@ -292,7 +299,7 @@ gcloud run services update-traffic consent-protocol \
 deploy/
 ├── backend.cloudbuild.yaml      # Backend Cloud Build config
 ├── frontend.cloudbuild.yaml     # Frontend Cloud Build config
-├── verify-secrets.ps1           # Secrets management utility
+├── ../scripts/ops/verify-env-secrets-parity.py  # Secrets/deploy parity audit utility
 ├── .env.backend.example         # Backend env vars template
 ├── .env.frontend.example        # Frontend env vars template
 └── README.md                    # This file

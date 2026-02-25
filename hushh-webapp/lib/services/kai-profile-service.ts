@@ -1,9 +1,20 @@
 "use client";
 
 import { WorldModelService } from "@/lib/services/world-model-service";
+import { CacheService, CACHE_KEYS, CACHE_TTL } from "@/lib/services/cache-service";
 
-const DOMAIN = "kai_profile";
+const FINANCIAL_DOMAIN = "financial";
 const SCHEMA_VERSION = 2 as const;
+const FINANCIAL_SCHEMA_VERSION = 3 as const;
+const FINANCIAL_CONTRACT_VERSION = 1 as const;
+const FINANCIAL_INTENT_MAP = [
+  "portfolio",
+  "profile",
+  "documents",
+  "analysis_history",
+  "runtime",
+  "analysis.decisions",
+] as const;
 
 export type InvestmentHorizon = "short_term" | "medium_term" | "long_term";
 export type DrawdownResponse = "reduce" | "stay" | "buy_more";
@@ -300,11 +311,72 @@ async function getFullBlob(params: {
 }
 
 function selectProfile(fullBlob: Record<string, unknown>): KaiProfileV2 {
-  const nested = fullBlob[DOMAIN];
-  if (nested && typeof nested === "object" && !Array.isArray(nested)) {
-    return normalizeProfile(nested);
+  const financialValue = fullBlob[FINANCIAL_DOMAIN];
+  if (financialValue && typeof financialValue === "object" && !Array.isArray(financialValue)) {
+    const financialRecord = financialValue as Record<string, unknown>;
+    const canonicalProfile = financialRecord.profile;
+    if (
+      canonicalProfile &&
+      typeof canonicalProfile === "object" &&
+      !Array.isArray(canonicalProfile)
+    ) {
+      return normalizeProfile(canonicalProfile);
+    }
   }
-  return normalizeProfile(fullBlob);
+  return createDefaultProfile();
+}
+
+function selectFinancialDomain(fullBlob: Record<string, unknown>): Record<string, unknown> {
+  const raw = fullBlob[FINANCIAL_DOMAIN];
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return {};
+  }
+  return { ...(raw as Record<string, unknown>) };
+}
+
+function buildFinancialProfileDomain(params: {
+  fullBlob: Record<string, unknown>;
+  profile: KaiProfileV2;
+  updatedAtIso: string;
+}): Record<string, unknown> {
+  const existingFinancial = selectFinancialDomain(params.fullBlob);
+  const profileDomainIntent = {
+    primary: "financial",
+    secondary: "profile",
+    source: "financial_profile_sync",
+    updated_at: params.updatedAtIso,
+  } as const;
+
+  return {
+    ...existingFinancial,
+    schema_version: FINANCIAL_SCHEMA_VERSION,
+    domain_intent: {
+      primary: "financial",
+      source: "domain_registry_prepopulate",
+      contract_version: FINANCIAL_CONTRACT_VERSION,
+      updated_at: params.updatedAtIso,
+    },
+    profile: {
+      ...params.profile,
+      domain_intent: profileDomainIntent,
+    },
+    updated_at: params.updatedAtIso,
+  };
+}
+
+function buildProfileSummary(profile: KaiProfileV2): Record<string, unknown> {
+  return {
+    domain_contract_version: FINANCIAL_CONTRACT_VERSION,
+    intent_map: [...FINANCIAL_INTENT_MAP],
+    profile_completed: profile.onboarding.completed,
+    profile_skipped_preferences: profile.onboarding.skipped_preferences,
+    risk_profile: profile.preferences.risk_profile,
+    risk_score: profile.preferences.risk_score,
+    has_investment_horizon: Boolean(profile.preferences.investment_horizon),
+    has_drawdown_response: Boolean(profile.preferences.drawdown_response),
+    has_volatility_preference: Boolean(profile.preferences.volatility_preference),
+    last_updated: profile.updated_at,
+  };
 }
 
 function recomputeDerived(
@@ -339,13 +411,26 @@ export class KaiProfileService {
     userId: string;
     vaultKey: string;
     vaultOwnerToken?: string;
+    forceRefresh?: boolean;
   }): Promise<KaiProfileV2> {
+    const cache = CacheService.getInstance();
+    const cacheKey = CACHE_KEYS.KAI_PROFILE(params.userId);
+    if (!params.forceRefresh) {
+      const cached = cache.get<KaiProfileV2>(cacheKey);
+      if (cached) {
+        return cached;
+      }
+    }
     try {
       const fullBlob = await getFullBlob(params);
-      return selectProfile(fullBlob);
+      const profile = selectProfile(fullBlob);
+      cache.set(cacheKey, profile, CACHE_TTL.SESSION);
+      return profile;
     } catch (error) {
-      console.warn("[KaiProfileService] Failed to load kai_profile:", error);
-      return createDefaultProfile();
+      console.warn("[KaiProfileService] Failed to load financial.profile:", error);
+      const fallback = createDefaultProfile();
+      cache.set(cacheKey, fallback, CACHE_TTL.SHORT);
+      return fallback;
     }
   }
 
@@ -423,29 +508,26 @@ export class KaiProfileService {
     }
 
     next.preferences = recomputeDerived(next.preferences, iso);
+    const financialDomain = buildFinancialProfileDomain({
+      fullBlob,
+      profile: next,
+      updatedAtIso: iso,
+    });
 
     const result = await WorldModelService.storeMergedDomain({
       userId: params.userId,
       vaultKey: params.vaultKey,
-      domain: DOMAIN,
-      domainData: next as unknown as Record<string, unknown>,
-      summary: {
-        domain_intent: "kai_profile",
-        onboarding_completed: next.onboarding.completed,
-        risk_profile: next.preferences.risk_profile,
-        risk_score: next.preferences.risk_score,
-        has_investment_horizon: Boolean(next.preferences.investment_horizon),
-        has_drawdown_response: Boolean(next.preferences.drawdown_response),
-        has_volatility_preference: Boolean(next.preferences.volatility_preference),
-        last_updated: next.updated_at,
-      },
+      domain: FINANCIAL_DOMAIN,
+      domainData: financialDomain,
+      summary: buildProfileSummary(next),
       vaultOwnerToken: params.vaultOwnerToken,
     });
 
     if (!result.success) {
-      throw new Error("Failed to persist kai_profile preferences");
+      throw new Error("Failed to persist financial.profile preferences");
     }
 
+    CacheService.getInstance().set(CACHE_KEYS.KAI_PROFILE(params.userId), next, CACHE_TTL.SESSION);
     return next;
   }
 
@@ -472,29 +554,26 @@ export class KaiProfileService {
       },
       updated_at: iso,
     };
+    const financialDomain = buildFinancialProfileDomain({
+      fullBlob,
+      profile: next,
+      updatedAtIso: iso,
+    });
 
     const result = await WorldModelService.storeMergedDomain({
       userId: params.userId,
       vaultKey: params.vaultKey,
-      domain: DOMAIN,
-      domainData: next as unknown as Record<string, unknown>,
-      summary: {
-        domain_intent: "kai_profile",
-        onboarding_completed: next.onboarding.completed,
-        risk_profile: next.preferences.risk_profile,
-        risk_score: next.preferences.risk_score,
-        has_investment_horizon: Boolean(next.preferences.investment_horizon),
-        has_drawdown_response: Boolean(next.preferences.drawdown_response),
-        has_volatility_preference: Boolean(next.preferences.volatility_preference),
-        last_updated: next.updated_at,
-      },
+      domain: FINANCIAL_DOMAIN,
+      domainData: financialDomain,
+      summary: buildProfileSummary(next),
       vaultOwnerToken: params.vaultOwnerToken,
     });
 
     if (!result.success) {
-      throw new Error("Failed to persist kai_profile onboarding completion");
+      throw new Error("Failed to persist financial.profile onboarding completion");
     }
 
+    CacheService.getInstance().set(CACHE_KEYS.KAI_PROFILE(params.userId), next, CACHE_TTL.SESSION);
     return next;
   }
 
@@ -527,30 +606,140 @@ export class KaiProfileService {
       },
       updated_at: iso,
     };
+    const financialDomain = buildFinancialProfileDomain({
+      fullBlob,
+      profile: next,
+      updatedAtIso: iso,
+    });
 
     const result = await WorldModelService.storeMergedDomain({
       userId: params.userId,
       vaultKey: params.vaultKey,
-      domain: DOMAIN,
-      domainData: next as unknown as Record<string, unknown>,
+      domain: FINANCIAL_DOMAIN,
+      domainData: financialDomain,
       summary: {
-        domain_intent: "kai_profile",
-        onboarding_completed: next.onboarding.completed,
+        ...buildProfileSummary(next),
         nav_tour_completed: Boolean(next.onboarding.nav_tour_completed_at),
-        risk_profile: next.preferences.risk_profile,
-        risk_score: next.preferences.risk_score,
-        has_investment_horizon: Boolean(next.preferences.investment_horizon),
-        has_drawdown_response: Boolean(next.preferences.drawdown_response),
-        has_volatility_preference: Boolean(next.preferences.volatility_preference),
-        last_updated: next.updated_at,
       },
       vaultOwnerToken: params.vaultOwnerToken,
     });
 
     if (!result.success) {
-      throw new Error("Failed to persist kai_profile nav tour state");
+      throw new Error("Failed to persist financial.profile nav tour state");
     }
 
+    return next;
+  }
+
+  static async syncOnboardingAndNavState(params: {
+    userId: string;
+    vaultKey: string;
+    vaultOwnerToken?: string;
+    onboarding?: {
+      completed: boolean;
+      skippedPreferences: boolean;
+      completedAt?: string | null;
+      answers?: {
+        investment_horizon: InvestmentHorizon | null;
+        drawdown_response: DrawdownResponse | null;
+        volatility_preference: VolatilityPreference | null;
+      };
+    };
+    navTour?: {
+      completedAt?: string | null;
+      skippedAt?: string | null;
+    };
+    now?: Date;
+  }): Promise<KaiProfileV2> {
+    const iso = nowIso(params.now);
+    const fullBlob: Record<string, unknown> = await getFullBlob(params).catch(() => ({}));
+    const current = selectProfile(fullBlob);
+
+    const next: KaiProfileV2 = {
+      ...current,
+      schema_version: SCHEMA_VERSION,
+      onboarding: {
+        ...current.onboarding,
+        version: 2,
+      },
+      preferences: { ...current.preferences },
+      updated_at: iso,
+    };
+
+    if (params.onboarding) {
+      const onboardingCompletedAt =
+        params.onboarding.completedAt !== undefined
+          ? params.onboarding.completedAt
+          : params.onboarding.completed
+            ? current.onboarding.completed_at ?? iso
+            : null;
+
+      next.onboarding = {
+        ...next.onboarding,
+        completed: params.onboarding.completed,
+        completed_at: onboardingCompletedAt,
+        skipped_preferences: params.onboarding.skippedPreferences,
+        version: 2,
+      };
+
+      const answers = params.onboarding.answers;
+      if (answers) {
+        if (answers.investment_horizon !== next.preferences.investment_horizon) {
+          next.preferences.investment_horizon = answers.investment_horizon;
+          next.preferences.investment_horizon_selected_at = iso;
+          next.preferences.investment_horizon_anchor_at =
+            next.preferences.investment_horizon_anchor_at ?? iso;
+        }
+        if (answers.drawdown_response !== next.preferences.drawdown_response) {
+          next.preferences.drawdown_response = answers.drawdown_response;
+          next.preferences.drawdown_response_selected_at = iso;
+        }
+        if (answers.volatility_preference !== next.preferences.volatility_preference) {
+          next.preferences.volatility_preference = answers.volatility_preference;
+          next.preferences.volatility_preference_selected_at = iso;
+        }
+        next.preferences = recomputeDerived(next.preferences, iso);
+      }
+    }
+
+    if (params.navTour) {
+      next.onboarding = {
+        ...next.onboarding,
+        nav_tour_completed_at:
+          params.navTour.completedAt !== undefined
+            ? params.navTour.completedAt
+            : next.onboarding.nav_tour_completed_at,
+        nav_tour_skipped_at:
+          params.navTour.skippedAt !== undefined
+            ? params.navTour.skippedAt
+            : next.onboarding.nav_tour_skipped_at,
+      };
+    }
+
+    const financialDomain = buildFinancialProfileDomain({
+      fullBlob,
+      profile: next,
+      updatedAtIso: iso,
+    });
+
+    const result = await WorldModelService.storeMergedDomainWithPreparedBlob({
+      userId: params.userId,
+      vaultKey: params.vaultKey,
+      domain: FINANCIAL_DOMAIN,
+      domainData: financialDomain,
+      summary: {
+        ...buildProfileSummary(next),
+        nav_tour_completed: Boolean(next.onboarding.nav_tour_completed_at),
+      },
+      baseFullBlob: fullBlob,
+      vaultOwnerToken: params.vaultOwnerToken,
+    });
+
+    if (!result.success) {
+      throw new Error("Failed to persist combined financial.profile sync state");
+    }
+
+    CacheService.getInstance().set(CACHE_KEYS.KAI_PROFILE(params.userId), next, CACHE_TTL.SESSION);
     return next;
   }
 }

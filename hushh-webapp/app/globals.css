@@ -178,23 +178,6 @@ html body[data-scroll-locked] {
   --tone-green-glow: rgba(22, 163, 74, 0.26);
   --tone-orange-glow: rgba(249, 115, 22, 0.28);
 
-  /* Sonner semantic tones */
-  --toast-info-bg: #eaf2ff;
-  --toast-info-border: #bfdbfe;
-  --toast-info-fg: #0b3e73;
-  --toast-success-bg: #eaf9ef;
-  --toast-success-border: #b7ebc7;
-  --toast-success-fg: #166534;
-  --toast-warning-bg: #fff6e8;
-  --toast-warning-border: #fbd7a3;
-  --toast-warning-fg: #8a4b08;
-  --toast-error-bg: #feeff1;
-  --toast-error-border: #f8c5cd;
-  --toast-error-fg: #8b1e2b;
-  --morphy-toast-glass-opacity: 0.992;
-  --morphy-toast-blur: 28px;
-  --morphy-toast-shadow: 0 18px 38px color-mix(in oklch, black 28%, transparent);
-
   /* Crystal Glass Effect */
   --crystal-glass-bg: rgba(255, 255, 255, 0.12);
   --crystal-glass-border: rgba(0, 113, 227, 0.2);
@@ -364,23 +347,6 @@ html.native-ios {
   --tone-green-glow: rgba(74, 222, 128, 0.22);
   --tone-orange-glow: rgba(251, 146, 60, 0.24);
 
-  /* Sonner semantic tones (dark mode) */
-  --toast-info-bg: rgba(38, 90, 163, 0.35);
-  --toast-info-border: rgba(96, 165, 250, 0.45);
-  --toast-info-fg: #dbeafe;
-  --toast-success-bg: rgba(20, 83, 45, 0.38);
-  --toast-success-border: rgba(74, 222, 128, 0.42);
-  --toast-success-fg: #dcfce7;
-  --toast-warning-bg: rgba(120, 53, 15, 0.4);
-  --toast-warning-border: rgba(251, 146, 60, 0.45);
-  --toast-warning-fg: #ffedd5;
-  --toast-error-bg: rgba(127, 29, 29, 0.4);
-  --toast-error-border: rgba(248, 113, 113, 0.45);
-  --toast-error-fg: #fee2e2;
-  --morphy-toast-glass-opacity: 0.965;
-  --morphy-toast-blur: 28px;
-  --morphy-toast-shadow: 0 18px 38px color-mix(in oklch, black 52%, transparent);
-
   /* CTA elevation (used by Morphy Button fill variants) */
   --morphy-cta-shadow: rgba(96, 165, 250, 0.22);
 
@@ -434,6 +400,62 @@ html.native-ios {
     font-family: var(--font-heading), var(--font-sans), system-ui, sans-serif;
   }
 
+  h1 {
+    font-size: clamp(1.875rem, 3.4vw, 2.75rem) !important;
+    line-height: 1.1 !important;
+    font-weight: 800 !important;
+    letter-spacing: -0.022em;
+  }
+
+  h2 {
+    font-size: clamp(1.55rem, 2.8vw, 2.25rem) !important;
+    line-height: 1.14 !important;
+    font-weight: 750 !important;
+    letter-spacing: -0.018em;
+  }
+
+  h3 {
+    font-size: clamp(1.35rem, 2.3vw, 1.85rem) !important;
+    line-height: 1.2 !important;
+    font-weight: 700 !important;
+    letter-spacing: -0.014em;
+  }
+
+  h4 {
+    font-size: clamp(1.2rem, 1.85vw, 1.45rem) !important;
+    line-height: 1.24 !important;
+    font-weight: 650 !important;
+  }
+
+  h5 {
+    font-size: clamp(1.12rem, 1.55vw, 1.25rem) !important;
+    line-height: 1.3 !important;
+    font-weight: 625 !important;
+  }
+
+  h6 {
+    font-size: clamp(1.05rem, 1.35vw, 1.125rem) !important;
+    line-height: 1.32 !important;
+    font-weight: 600 !important;
+  }
+
+  [data-slot$="title"] {
+    font-family: var(--font-heading), var(--font-sans), system-ui, sans-serif;
+    font-size: clamp(1.05rem, 1.4vw, 1.2rem) !important;
+    line-height: 1.28 !important;
+    font-weight: 650 !important;
+    letter-spacing: -0.012em;
+  }
+
+  .app-section-heading,
+  [data-section-heading] {
+    font-family: var(--font-heading), var(--font-sans), system-ui, sans-serif;
+    font-size: clamp(1.05rem, 1.4vw, 1.2rem) !important;
+    line-height: 1.28 !important;
+    font-weight: 650 !important;
+    letter-spacing: -0.012em;
+  }
+
   /* Global Lucide icon stroke thickness (lucide-react adds `.lucide` on the SVG). */
   .lucide {
     stroke-width: var(--lucide-stroke-width);
@@ -454,6 +476,9 @@ html.native-ios {
   }
   body {
     @apply bg-background text-foreground;
+    font-family: var(--font-sans), system-ui, sans-serif;
+    font-size: 1rem;
+    line-height: 1.5;
     /* iOS safe area insets for proper spacing around notch/status bar */
     padding-top: env(safe-area-inset-top);
     padding-left: env(safe-area-inset-left);
@@ -542,6 +567,60 @@ md-ripple.morphy-md-ripple {
 
 .dark .top-bar-glass {
   background-color: color-mix(in oklch, lab(0 0 0 / 0.72) 46%, transparent);
+}
+
+/* Bottom chrome glass counterpart for fixed-bottom bars. */
+.bottom-bar-glass {
+  background-color: color-mix(in oklch, lab(100 0 0 / 0.72) 26%, transparent);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+  transform: translate3d(0, 0, 0);
+  will-change: transform;
+  mask-image: linear-gradient(
+    to top,
+    black 0%,
+    black 48%,
+    rgba(0, 0, 0, 0.92) 62%,
+    rgba(0, 0, 0, 0.7) 76%,
+    rgba(0, 0, 0, 0.38) 90%,
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to top,
+    black 0%,
+    black 48%,
+    rgba(0, 0, 0, 0.92) 62%,
+    rgba(0, 0, 0, 0.7) 76%,
+    rgba(0, 0, 0, 0.38) 90%,
+    transparent 100%
+  );
+  mask-size: 100% 100%;
+  -webkit-mask-size: 100% 100%;
+}
+
+.dark .bottom-bar-glass {
+  background-color: color-mix(in oklch, lab(0 0 0 / 0.72) 46%, transparent);
+}
+
+/* Shared frosted surface for persistent chrome (tabs / bottom nav / command bar). */
+.chrome-glass-surface {
+  background-color: color-mix(in oklch, lab(100 0 0 / 0.68) 24%, transparent);
+  border: 1px solid color-mix(in oklch, white 48%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklch, white 42%, transparent),
+    0 14px 32px color-mix(in oklch, black 22%, transparent);
+  -webkit-backdrop-filter: blur(12px) saturate(165%) contrast(105%);
+  backdrop-filter: blur(12px) saturate(165%) contrast(105%);
+  transform: translate3d(0, 0, 0);
+  will-change: transform;
+}
+
+.dark .chrome-glass-surface {
+  background-color: color-mix(in oklch, lab(0 0 0 / 0.7) 44%, transparent);
+  border-color: color-mix(in oklch, white 16%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklch, white 14%, transparent),
+    0 16px 34px color-mix(in oklch, black 54%, transparent);
 }
 
 /* Carousel edge glass (left/right): use to hint adjacent slides while keeping center crisp. */
@@ -733,50 +812,22 @@ md-ripple.morphy-md-ripple {
   pointer-events: none;
 }
 
-/* Subtle App Background Gradients - Clean Professional Theme */
+/* Root app background: neutral surfaces only (no blue gradient cast). */
 .morphy-app-bg {
-  background: linear-gradient(
-    180deg,
-    #ffffff 0%,
-    #fcfeff 18%,
-    #f4f9ff 46%,
-    #e8f2ff 74%,
-    #dbe9ff 100%
-  );
+  background: #ffffff;
 }
 
 .dark .morphy-app-bg {
-  background: linear-gradient(
-    145deg,
-    #09090c 0%,
-    #0c0c14 15%,
-    #0f0f1a 30%,
-    #121218 50%,
-    #0f101a 65%,
-    #0c0c14 80%,
-    #09090c 100%
-  );
+  background: #000000;
 }
 
-/* Radial glow overlay - subtle brand color accent from top */
+/* Keep class defined for compatibility; root overlay is intentionally disabled. */
 .morphy-app-bg-radial {
-  background: radial-gradient(
-    ellipse at 50% 0%,
-    rgba(0, 113, 227, 0.14) 0%,
-    rgba(59, 130, 246, 0.1) 22%,
-    rgba(59, 130, 246, 0.05) 44%,
-    transparent 70%
-  );
+  background: transparent;
 }
 
 .dark .morphy-app-bg-radial {
-  background: radial-gradient(
-    ellipse at 50% 0%,
-    rgba(96, 165, 250, 0.06) 0%,
-    rgba(59, 130, 246, 0.04) 25%,
-    rgba(59, 130, 246, 0.02) 45%,
-    transparent 70%
-  );
+  background: transparent;
 }
 
 /* Custom Scrollbar Styles */
@@ -855,121 +906,6 @@ md-ripple.morphy-md-ripple {
   transition:
     opacity 0.3s ease-in-out,
     visibility 0.3s ease-in-out;
-}
-
-/* Centralized Sonner toast system (semantic + tokenized) */
-.morphy-sonner-toast[data-sonner-toast] {
-  position: relative;
-  overflow: hidden;
-  border-radius: var(--radius-xl);
-  border: 1px solid color-mix(in oklch, var(--toast-info-border) 90%, white 10%);
-  background: color-mix(
-    in oklch,
-    var(--toast-info-bg) calc(var(--morphy-toast-glass-opacity) * 100%),
-    transparent
-  ) !important;
-  color: var(--toast-info-fg);
-  box-shadow:
-    inset 0 1px 0 color-mix(in oklch, white 35%, transparent),
-    var(--morphy-toast-shadow);
-  backdrop-filter: blur(var(--morphy-toast-blur)) saturate(180%) contrast(108%);
-  -webkit-backdrop-filter: blur(var(--morphy-toast-blur)) saturate(180%) contrast(108%);
-  text-shadow: 0 1px 0 color-mix(in oklch, black 12%, transparent);
-}
-
-.morphy-sonner-toast[data-sonner-toast][data-type="success"],
-.morphy-sonner-toast.morphy-sonner-tone-success[data-sonner-toast] {
-  border-color: var(--toast-success-border);
-  background: color-mix(
-    in oklch,
-    var(--toast-success-bg) calc(var(--morphy-toast-glass-opacity) * 100%),
-    transparent
-  ) !important;
-  color: var(--toast-success-fg);
-}
-
-.morphy-sonner-toast[data-sonner-toast][data-type="warning"],
-.morphy-sonner-toast.morphy-sonner-tone-warning[data-sonner-toast] {
-  border-color: var(--toast-warning-border);
-  background: color-mix(
-    in oklch,
-    var(--toast-warning-bg) calc(var(--morphy-toast-glass-opacity) * 100%),
-    transparent
-  ) !important;
-  color: var(--toast-warning-fg);
-}
-
-.morphy-sonner-toast[data-sonner-toast][data-type="error"],
-.morphy-sonner-toast.morphy-sonner-tone-error[data-sonner-toast] {
-  border-color: var(--toast-error-border);
-  background: color-mix(
-    in oklch,
-    var(--toast-error-bg) calc(var(--morphy-toast-glass-opacity) * 100%),
-    transparent
-  ) !important;
-  color: var(--toast-error-fg);
-}
-
-.morphy-sonner-toast [data-sonner-toast-icon] {
-  color: currentColor;
-}
-
-.morphy-sonner-title {
-  color: inherit;
-  font-weight: 600;
-}
-
-.morphy-sonner-description {
-  color: color-mix(in oklch, currentColor 84%, transparent);
-}
-
-.morphy-sonner-action {
-  background: color-mix(in oklch, currentColor 14%, transparent);
-  color: inherit;
-  border: 1px solid color-mix(in oklch, currentColor 24%, transparent);
-}
-
-.morphy-sonner-cancel {
-  background: transparent;
-  color: inherit;
-  border: 1px solid color-mix(in oklch, currentColor 18%, transparent);
-}
-
-.morphy-sonner-close {
-  color: color-mix(in oklch, currentColor 78%, transparent) !important;
-  border: 1px solid color-mix(in oklch, currentColor 16%, transparent) !important;
-  background: color-mix(in oklch, currentColor 8%, transparent) !important;
-  border-radius: 9999px !important;
-}
-
-@keyframes morphy-sonner-enter {
-  from {
-    opacity: 0;
-    transform: translateY(-8px) scale(0.985);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-@keyframes morphy-sonner-exit {
-  from {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-  to {
-    opacity: 0;
-    transform: translateY(-5px) scale(0.985);
-  }
-}
-
-.morphy-sonner-toast[data-sonner-toast][data-state="open"] {
-  animation: morphy-sonner-enter 260ms var(--motion-ease-standard);
-}
-
-.morphy-sonner-toast[data-sonner-toast][data-state="closed"] {
-  animation: morphy-sonner-exit 180ms var(--motion-ease-decelerate);
 }
 
 /* Ripple Animation for Morphy UI */
@@ -1179,7 +1115,13 @@ md-ripple.morphy-md-ripple {
   animation: stage-pulse 1.5s ease-in-out infinite;
 }
 
-/* Loading policy: no spinner glyph rotation, rely on skeleton/pulse + step progress. */
+/* Ensure spinner utilities always rotate in runtime (vault/auth/load states). */
+@keyframes hushh-spin-fallback {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .animate-spin {
-  animation: none !important;
+  animation: hushh-spin-fallback 1s linear infinite !important;
 }

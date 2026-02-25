@@ -5,8 +5,8 @@ Mapping of user-visible KPI surfaces to source systems and freshness rules.
 | KPI / Surface | Source | Freshness / TTL | Fallback Policy |
 | --- | --- | --- | --- |
 | Holdings table | Parsed brokerage statement (`portfolio/import/stream`) | Statement-time snapshot | Hard validation; invalid rows dropped |
-| Total portfolio value | `portfolio_data.total_value` (derived from validated holdings when missing) | Statement-time snapshot | Never synthesize from mock |
-| Allocation strips/charts | `portfolio_data.asset_allocation` + validated holdings | Statement-time snapshot | Show explicit empty state |
+| Total portfolio value | `portfolio_data_v2.total_value` (derived from validated holdings when missing) | Statement-time snapshot | Never synthesize from mock |
+| Allocation strips/charts | `analytics_v2.allocation_mix` (fallback: `portfolio_data_v2.asset_allocation`) | Statement-time snapshot | Show explicit empty state |
 | Symbol quality/trust tier | Parser + symbol master normalization (`symbol_trust_tier`, `tradable`) | Per import + enrichment refresh | Exclude non-tradable/action-token rows from live market fan-out |
 | Holding confidence | Parser normalization (`confidence`) | Generated per import | If missing, treat as low confidence |
 | Statement metadata | `account_info.brokerage_name`, statement period | Statement-time snapshot | Display unknown source label |

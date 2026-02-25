@@ -51,21 +51,34 @@ function main() {
     String(process.env.REQUIRE_PROD_FIREBASE_ARTIFACTS || "").toLowerCase() === "true";
 
   const androidText = readFile(androidPath);
-  const iosText = readFile(iosPath);
+  const iosExists = fs.existsSync(iosPath);
+  const iosText = iosExists ? fs.readFileSync(iosPath, "utf8") : "";
 
   validateAndroidJson(androidText);
 
   const androidIsTemplate = hasTemplateMarker(androidText);
-  const iosIsTemplate = hasTemplateMarker(iosText);
+  const iosIsTemplate = iosExists ? hasTemplateMarker(iosText) : false;
 
   if (!requireProdArtifacts) {
-    if (!androidIsTemplate || !iosIsTemplate) {
+    if (!androidIsTemplate) {
       fail(
         "Committed mobile Firebase artifacts must be template placeholders. Replace production artifacts with templates."
       );
     }
+    if (iosExists && !iosIsTemplate) {
+      fail(
+        "Committed mobile Firebase artifacts must be template placeholders. Replace production artifacts with templates."
+      );
+    }
+    if (!iosExists) {
+      info("iOS GoogleService-Info.plist is not committed; skipping template check for iOS.");
+    }
     info("Template Firebase mobile artifacts are present (expected for source control).");
     return;
+  }
+
+  if (!iosExists) {
+    fail(`Missing required file: ${iosPath}`);
   }
 
   if (androidIsTemplate || iosIsTemplate) {

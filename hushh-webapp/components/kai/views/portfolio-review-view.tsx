@@ -79,6 +79,8 @@ import { scrollAppToTop } from "@/lib/navigation/use-scroll-reset";
 
 export interface Holding {
   symbol: string;
+  symbol_cusip?: string;
+  identifier_type?: "ticker" | "cusip" | "derived";
   name: string;
   quantity: number;
   price: number;
@@ -87,6 +89,16 @@ export interface Holding {
   unrealized_gain_loss?: number;
   unrealized_gain_loss_pct?: number;
   asset_type?: string;
+  instrument_kind?: string;
+  is_cash_equivalent?: boolean;
+  is_investable?: boolean;
+  analyze_eligible?: boolean;
+  debate_eligible?: boolean;
+  optimize_eligible?: boolean;
+  symbol_source?: string;
+  symbol_kind?: string;
+  security_listing_status?: string;
+  is_sec_common_equity_ticker?: boolean;
   pending_delete?: boolean;
 }
 
@@ -105,6 +117,14 @@ export interface AccountSummary {
   cash_balance?: number;
   equities_value?: number;
   change_in_value?: number;
+  total_change?: number;
+  net_deposits_withdrawals?: number;
+  net_deposits_period?: number;
+  net_deposits_ytd?: number;
+  investment_gain_loss?: number;
+  total_income_period?: number;
+  total_income_ytd?: number;
+  total_fees?: number;
 }
 
 export interface AssetAllocation {
@@ -114,6 +134,10 @@ export interface AssetAllocation {
   equities_value?: number;
   bonds_pct?: number;
   bonds_value?: number;
+  real_assets_pct?: number;
+  real_assets_value?: number;
+  other_pct?: number;
+  other_value?: number;
 }
 
 export interface IncomeSummary {
@@ -129,12 +153,18 @@ export interface RealizedGainLoss {
 }
 
 export interface QualityReport {
-  raw?: number;
-  validated?: number;
-  dropped?: number;
-  reconciled?: number;
-  mismatch_detected?: number;
-  parse_repair_applied?: boolean;
+  raw_count?: number;
+  validated_count?: number;
+  aggregated_count?: number;
+  holdings_count?: number;
+  investable_positions_count?: number;
+  cash_positions_count?: number;
+  allocation_coverage_pct?: number;
+  symbol_trust_coverage_pct?: number;
+  parser_quality_score?: number;
+  quality_gate?: Record<string, unknown>;
+  dropped_reasons?: Record<string, number>;
+  diagnostics?: Record<string, unknown>;
 }
 
 export interface PortfolioData {
@@ -150,13 +180,16 @@ export interface PortfolioData {
   cash_management?: Record<string, unknown>;
   projections_and_mrd?: Record<string, unknown>;
   legal_and_disclosures?: string[];
-  quality_report?: QualityReport;
+  quality_report_v2?: QualityReport;
+  raw_extract_v2?: Record<string, unknown>;
+  analytics_v2?: Record<string, unknown>;
   domain_intent?: {
     primary: string;
     source: string;
     captured_sections: readonly string[];
     updated_at: string;
   };
+  parse_fallback?: boolean;
   cash_balance?: number;
   total_value?: number;
 }
@@ -166,8 +199,8 @@ export interface PortfolioReviewViewProps {
   portfolioData: PortfolioData;
   /** User ID for saving */
   userId: string;
-  /** Vault key for encryption */
-  vaultKey: string;
+  /** Vault key for encryption (optional; create/unlock flow may run later) */
+  vaultKey?: string;
   /** VAULT_OWNER token for authentication (required on native) */
   vaultOwnerToken?: string;
   /** Callback when save completes successfully */
@@ -219,6 +252,425 @@ function deriveRiskBucket(holdings: Holding[]): string {
   if (topHoldingPct > 30) return "aggressive";
   if (topHoldingPct > 15) return "moderate";
   return "conservative";
+}
+
+function isCashEquivalentHolding(holding: Holding): boolean {
+  const symbol = String(holding.symbol || "").trim().toUpperCase();
+  if (["CASH", "MMF", "SWEEP", "QACDS"].includes(symbol)) return true;
+  const assetType = String(holding.asset_type || "").trim().toLowerCase();
+  const name = String(holding.name || "").trim().toLowerCase();
+  return (
+    assetType.includes("cash") ||
+    assetType.includes("money market") ||
+    assetType.includes("sweep") ||
+    name.includes("cash") ||
+    name.includes("money market") ||
+    name.includes("sweep")
+  );
+}
+
+function inferHoldingIdentifierType(holding: Holding): "ticker" | "cusip" | "derived" {
+  if (holding.identifier_type === "ticker" || holding.identifier_type === "cusip") {
+    return holding.identifier_type;
+  }
+  const symbol = String(holding.symbol || "").trim().toUpperCase();
+  if (/^[A-Z][A-Z0-9.\-]{0,5}$/.test(symbol)) return "ticker";
+  const symbolCusip = String(holding.symbol_cusip || "").trim().toUpperCase();
+  if (/^[0-9A-Z]{8,12}$/.test(symbolCusip) || /^[0-9A-Z]{8,12}$/.test(symbol)) return "cusip";
+  return "derived";
+}
+
+function inferInstrumentKind(holding: Holding, isCashEquivalent: boolean): string {
+  if (holding.instrument_kind) return holding.instrument_kind;
+  if (isCashEquivalent) return "cash_equivalent";
+  const hint = `${holding.asset_type || ""} ${holding.name || ""}`.toLowerCase();
+  if (hint.includes("bond") || hint.includes("fixed income") || hint.includes("treasury")) {
+    return "fixed_income";
+  }
+  if (
+    hint.includes("real estate") ||
+    hint.includes("reit") ||
+    hint.includes("real asset") ||
+    hint.includes("gold")
+  ) {
+    return "real_asset";
+  }
+  if (hint.includes("equity") || hint.includes("stock") || hint.includes("etf") || hint.includes("fund")) {
+    return "equity";
+  }
+  return "other";
+}
+
+function inferAnalyzeEligibility(
+  holding: Holding,
+  isInvestable: boolean,
+): boolean {
+  if (!isInvestable) return false;
+
+  const listingStatus = String(holding.security_listing_status || "")
+    .trim()
+    .toLowerCase();
+  const symbolKind = String(holding.symbol_kind || "")
+    .trim()
+    .toLowerCase();
+
+  if (listingStatus === "non_sec_common_equity") return false;
+  if (listingStatus === "fixed_income") return false;
+  if (listingStatus === "cash_or_sweep") return false;
+
+  if (holding.is_sec_common_equity_ticker === true) return true;
+  if (listingStatus === "sec_common_equity") return true;
+  if (symbolKind === "us_common_equity_ticker") return true;
+
+  return false;
+}
+
+function normalizeHoldingForStorage(holding: Holding): Holding {
+  const isCashEquivalent = isCashEquivalentHolding(holding);
+  const identifierType = inferHoldingIdentifierType(holding);
+  const isInvestable = !isCashEquivalent && identifierType === "ticker";
+  const analyzeEligible = inferAnalyzeEligibility(holding, isInvestable);
+  return {
+    ...holding,
+    identifier_type: identifierType,
+    instrument_kind: inferInstrumentKind(holding, isCashEquivalent),
+    is_cash_equivalent: isCashEquivalent,
+    is_investable: isInvestable,
+    analyze_eligible: analyzeEligible,
+    debate_eligible: isInvestable,
+    optimize_eligible: isInvestable,
+  };
+}
+
+function toFiniteNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return undefined;
+    const normalized = trimmed
+      .replace(/[,$\s]/g, "")
+      .replace(/%/g, "")
+      .replace(/[()]/g, "");
+    if (!normalized) return undefined;
+    const asNumber = Number(trimmed.startsWith("(") && trimmed.endsWith(")") ? `-${normalized}` : normalized);
+    return Number.isFinite(asNumber) ? asNumber : undefined;
+  }
+  return undefined;
+}
+
+function toRecord(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  return value as Record<string, unknown>;
+}
+
+function compactRecord<T extends Record<string, unknown>>(value: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, entryValue]) => {
+      if (entryValue === undefined || entryValue === null) return false;
+      if (typeof entryValue === "string" && entryValue.trim().length === 0) return false;
+      return true;
+    })
+  ) as Partial<T>;
+}
+
+function hasRecordValues(value: Record<string, unknown> | undefined): boolean {
+  return Boolean(value) && Object.keys(value as Record<string, unknown>).length > 0;
+}
+
+function sanitizeAccountSummary(value: unknown): AccountSummary {
+  const record = toRecord(value);
+  if (!record) return {};
+  return compactRecord({
+    beginning_value: toFiniteNumber(record.beginning_value),
+    ending_value: toFiniteNumber(record.ending_value),
+    cash_balance: toFiniteNumber(record.cash_balance),
+    equities_value: toFiniteNumber(record.equities_value),
+    change_in_value: toFiniteNumber(record.change_in_value),
+    total_change: toFiniteNumber(record.total_change),
+    net_deposits_withdrawals: toFiniteNumber(record.net_deposits_withdrawals),
+    net_deposits_period: toFiniteNumber(record.net_deposits_period),
+    net_deposits_ytd: toFiniteNumber(record.net_deposits_ytd),
+    investment_gain_loss: toFiniteNumber(record.investment_gain_loss),
+    total_income_period: toFiniteNumber(record.total_income_period),
+    total_income_ytd: toFiniteNumber(record.total_income_ytd),
+    total_fees: toFiniteNumber(record.total_fees),
+  } satisfies AccountSummary) as AccountSummary;
+}
+
+function sanitizeAssetAllocation(value: unknown): AssetAllocation {
+  if (Array.isArray(value)) {
+    const bucketTotals: Record<"cash" | "equities" | "bonds" | "real_assets" | "other", number> = {
+      cash: 0,
+      equities: 0,
+      bonds: 0,
+      real_assets: 0,
+      other: 0,
+    };
+    const bucketPct: Record<"cash" | "equities" | "bonds" | "real_assets" | "other", number> = {
+      cash: 0,
+      equities: 0,
+      bonds: 0,
+      real_assets: 0,
+      other: 0,
+    };
+    let totalMarketValue = 0;
+
+    for (const row of value) {
+      const record = toRecord(row);
+      if (!record) continue;
+      const category = String(
+        record.category || record.asset_class || record.asset_type || ""
+      ).trim().toLowerCase();
+      const marketValue = toFiniteNumber(
+        record.market_value ?? record.value ?? record.amount
+      );
+      const percentage = toFiniteNumber(
+        record.percentage ?? record.pct ?? record.weight
+      );
+
+      let bucket: keyof typeof bucketTotals = "other";
+      if (category.includes("cash")) bucket = "cash";
+      else if (
+        category.includes("fixed income") ||
+        category.includes("bond") ||
+        category.includes("taxable") ||
+        category.includes("non-taxable")
+      ) {
+        bucket = "bonds";
+      } else if (
+        category.includes("real asset") ||
+        category.includes("real estate") ||
+        category.includes("commod")
+      ) {
+        bucket = "real_assets";
+      } else if (
+        category.includes("equit") ||
+        category.includes("stock") ||
+        category.includes("fund")
+      ) {
+        bucket = "equities";
+      }
+
+      if (marketValue !== undefined) {
+        bucketTotals[bucket] += marketValue;
+        totalMarketValue += marketValue;
+      }
+      if (percentage !== undefined) {
+        bucketPct[bucket] += percentage;
+      }
+    }
+
+    const fromValue = (bucket: keyof typeof bucketTotals): number | undefined => {
+      if (bucketPct[bucket] > 0) return bucketPct[bucket];
+      if (totalMarketValue <= 0 || bucketTotals[bucket] <= 0) return undefined;
+      return Number(((bucketTotals[bucket] / totalMarketValue) * 100).toFixed(2));
+    };
+
+    return compactRecord({
+      cash_pct: fromValue("cash"),
+      cash_value: bucketTotals.cash || undefined,
+      equities_pct: fromValue("equities"),
+      equities_value: bucketTotals.equities || undefined,
+      bonds_pct: fromValue("bonds"),
+      bonds_value: bucketTotals.bonds || undefined,
+      real_assets_pct: fromValue("real_assets"),
+      real_assets_value: bucketTotals.real_assets || undefined,
+      other_pct: fromValue("other"),
+      other_value: bucketTotals.other || undefined,
+    } satisfies AssetAllocation) as AssetAllocation;
+  }
+
+  const record = toRecord(value);
+  if (!record) return {};
+  return compactRecord({
+    cash_pct: toFiniteNumber(record.cash_pct),
+    cash_value: toFiniteNumber(record.cash_value),
+    equities_pct: toFiniteNumber(record.equities_pct),
+    equities_value: toFiniteNumber(record.equities_value),
+    bonds_pct: toFiniteNumber(record.bonds_pct),
+    bonds_value: toFiniteNumber(record.bonds_value),
+    real_assets_pct: toFiniteNumber(record.real_assets_pct),
+    real_assets_value: toFiniteNumber(record.real_assets_value),
+    other_pct: toFiniteNumber(record.other_pct),
+    other_value: toFiniteNumber(record.other_value),
+  } satisfies AssetAllocation) as AssetAllocation;
+}
+
+function hasSummaryValues(summary: AccountSummary): boolean {
+  return (
+    summary.beginning_value !== undefined ||
+    summary.ending_value !== undefined ||
+    summary.cash_balance !== undefined ||
+    summary.equities_value !== undefined ||
+    summary.change_in_value !== undefined ||
+    summary.total_change !== undefined ||
+    summary.net_deposits_withdrawals !== undefined ||
+    summary.net_deposits_period !== undefined ||
+    summary.net_deposits_ytd !== undefined ||
+    summary.investment_gain_loss !== undefined ||
+    summary.total_income_period !== undefined ||
+    summary.total_income_ytd !== undefined ||
+    summary.total_fees !== undefined
+  );
+}
+
+function hasAllocationValues(allocation: AssetAllocation): boolean {
+  return (
+    allocation.cash_pct !== undefined ||
+    allocation.cash_value !== undefined ||
+    allocation.equities_pct !== undefined ||
+    allocation.equities_value !== undefined ||
+    allocation.bonds_pct !== undefined ||
+    allocation.bonds_value !== undefined ||
+    allocation.real_assets_pct !== undefined ||
+    allocation.real_assets_value !== undefined ||
+    allocation.other_pct !== undefined ||
+    allocation.other_value !== undefined
+  );
+}
+
+function mergeAccountSummary(primary: AccountSummary, fallback: AccountSummary): AccountSummary {
+  return compactRecord({
+    beginning_value: primary.beginning_value ?? fallback.beginning_value,
+    ending_value: primary.ending_value ?? fallback.ending_value,
+    cash_balance: primary.cash_balance ?? fallback.cash_balance,
+    equities_value: primary.equities_value ?? fallback.equities_value,
+    change_in_value: primary.change_in_value ?? fallback.change_in_value,
+    total_change: primary.total_change ?? fallback.total_change,
+    net_deposits_withdrawals:
+      primary.net_deposits_withdrawals ?? fallback.net_deposits_withdrawals,
+    net_deposits_period: primary.net_deposits_period ?? fallback.net_deposits_period,
+    net_deposits_ytd: primary.net_deposits_ytd ?? fallback.net_deposits_ytd,
+    investment_gain_loss: primary.investment_gain_loss ?? fallback.investment_gain_loss,
+    total_income_period: primary.total_income_period ?? fallback.total_income_period,
+    total_income_ytd: primary.total_income_ytd ?? fallback.total_income_ytd,
+    total_fees: primary.total_fees ?? fallback.total_fees,
+  } satisfies AccountSummary) as AccountSummary;
+}
+
+function _mergeAssetAllocation(primary: AssetAllocation, fallback: AssetAllocation): AssetAllocation {
+  return compactRecord({
+    cash_pct: primary.cash_pct ?? fallback.cash_pct,
+    cash_value: primary.cash_value ?? fallback.cash_value,
+    equities_pct: primary.equities_pct ?? fallback.equities_pct,
+    equities_value: primary.equities_value ?? fallback.equities_value,
+    bonds_pct: primary.bonds_pct ?? fallback.bonds_pct,
+    bonds_value: primary.bonds_value ?? fallback.bonds_value,
+    real_assets_pct: primary.real_assets_pct ?? fallback.real_assets_pct,
+    real_assets_value: primary.real_assets_value ?? fallback.real_assets_value,
+    other_pct: primary.other_pct ?? fallback.other_pct,
+    other_value: primary.other_value ?? fallback.other_value,
+  } satisfies AssetAllocation) as AssetAllocation;
+}
+
+function pickRicherAccountSummary(left: AccountSummary, right: AccountSummary): AccountSummary {
+  return Object.keys(right).length > Object.keys(left).length ? right : left;
+}
+
+function pickRicherAssetAllocation(left: AssetAllocation, right: AssetAllocation): AssetAllocation {
+  return Object.keys(right).length > Object.keys(left).length ? right : left;
+}
+
+function isCashLikeHolding(holding: Holding): boolean {
+  const symbol = String(holding.symbol || "").trim().toUpperCase();
+  const name = String(holding.name || "").trim().toLowerCase();
+  const assetType = String(holding.asset_type || "").trim().toLowerCase();
+  if (symbol === "CASH" || symbol === "SWEEP" || symbol === "MMF") return true;
+  if (name.includes("cash") || name.includes("sweep")) return true;
+  if (assetType.includes("cash") || assetType.includes("money market")) return true;
+  return false;
+}
+
+function deriveCashFromHoldings(holdings: Holding[]): number | undefined {
+  const total = holdings.reduce((sum, holding) => {
+    if (!isCashLikeHolding(holding)) return sum;
+    return sum + (toFiniteNumber(holding.market_value) ?? 0);
+  }, 0);
+  return total > 0 ? total : undefined;
+}
+
+function deriveAssetAllocationFromHoldings(holdings: Holding[]): AssetAllocation {
+  const bucketTotals: Record<"cash" | "equities" | "bonds" | "real_assets" | "other", number> = {
+    cash: 0,
+    equities: 0,
+    bonds: 0,
+    real_assets: 0,
+    other: 0,
+  };
+
+  let totalMarketValue = 0;
+
+  for (const holding of holdings) {
+    const marketValue = toFiniteNumber(holding.market_value) ?? 0;
+    if (marketValue <= 0) continue;
+
+    const hint =
+      `${holding.instrument_kind || ""} ${holding.asset_type || ""} ${holding.name || ""}`.toLowerCase();
+
+    let bucket: keyof typeof bucketTotals = "other";
+    if (isCashLikeHolding(holding) || holding.is_cash_equivalent) bucket = "cash";
+    else if (hint.includes("bond") || hint.includes("fixed income") || hint.includes("treasury")) {
+      bucket = "bonds";
+    } else if (
+      hint.includes("real estate") ||
+      hint.includes("real asset") ||
+      hint.includes("reit") ||
+      hint.includes("commod")
+    ) {
+      bucket = "real_assets";
+    } else if (
+      hint.includes("equity") ||
+      hint.includes("stock") ||
+      hint.includes("etf") ||
+      hint.includes("fund") ||
+      hint.includes("adr")
+    ) {
+      bucket = "equities";
+    }
+
+    bucketTotals[bucket] += marketValue;
+    totalMarketValue += marketValue;
+  }
+
+  const fromValue = (bucket: keyof typeof bucketTotals): number | undefined => {
+    if (totalMarketValue <= 0 || bucketTotals[bucket] <= 0) return undefined;
+    return Number(((bucketTotals[bucket] / totalMarketValue) * 100).toFixed(2));
+  };
+
+  return compactRecord({
+    cash_pct: fromValue("cash"),
+    cash_value: bucketTotals.cash || undefined,
+    equities_pct: fromValue("equities"),
+    equities_value: bucketTotals.equities || undefined,
+    bonds_pct: fromValue("bonds"),
+    bonds_value: bucketTotals.bonds || undefined,
+    real_assets_pct: fromValue("real_assets"),
+    real_assets_value: bucketTotals.real_assets || undefined,
+    other_pct: fromValue("other"),
+    other_value: bucketTotals.other || undefined,
+  } satisfies AssetAllocation) as AssetAllocation;
+}
+
+function statementCompletenessScore(statement: Record<string, unknown>): number {
+  const summary = sanitizeAccountSummary(statement.account_summary);
+  const allocation = sanitizeAssetAllocation(statement.asset_allocation);
+  const holdings = Array.isArray(statement.holdings) ? statement.holdings.length : 0;
+  const quality = toRecord(statement.quality_report_v2);
+  const validated = toFiniteNumber(quality?.validated_count);
+
+  const summaryCount = Object.keys(summary).length;
+  const allocationCount = Object.keys(allocation).length;
+  return summaryCount * 6 + allocationCount * 4 + Math.min(holdings, 25) + (validated ?? 0) / 10;
+}
+
+function pickBestStatementSnapshot(statements: unknown): Record<string, unknown> | undefined {
+  if (!Array.isArray(statements) || statements.length === 0) return undefined;
+  const candidates = statements
+    .map((entry) => toRecord(entry))
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry));
+  if (candidates.length === 0) return undefined;
+  candidates.sort((left, right) => statementCompletenessScore(right) - statementCompletenessScore(left));
+  return candidates[0];
 }
 
 const SpinningLoader = (props: any) => (
@@ -391,15 +843,37 @@ export function PortfolioReviewView({
   );
   const pendingDeleteCount = holdings.length - activeHoldings.length;
 
+  const liveCashBalance = useMemo(() => {
+    const holdingsCash = deriveCashFromHoldings(activeHoldings);
+    if (holdingsCash !== undefined) return holdingsCash;
+    return (
+      toFiniteNumber(accountSummary.cash_balance) ??
+      toFiniteNumber(initialData.cash_balance) ??
+      0
+    );
+  }, [activeHoldings, accountSummary.cash_balance, initialData.cash_balance]);
+
   const totalValue = useMemo(() => {
-    const holdingsTotal = activeHoldings.reduce((sum, h) => sum + (h.market_value || 0), 0);
-    const cashBalance = initialData.cash_balance || accountSummary.cash_balance || 0;
-    const derivedTotal = holdingsTotal + cashBalance;
-    if (holdingsTotal > 0) {
-      return derivedTotal;
-    }
-    return accountSummary.ending_value || derivedTotal || holdingsTotal;
-  }, [activeHoldings, accountSummary.cash_balance, accountSummary.ending_value, initialData.cash_balance]);
+    const holdingsTotal = activeHoldings.reduce(
+      (sum, h) => sum + (toFiniteNumber(h.market_value) ?? 0),
+      0
+    );
+    const holdingsCash = deriveCashFromHoldings(activeHoldings);
+    const hasLiveHoldingsMarketValue = activeHoldings.some(
+      (holding) => toFiniteNumber(holding.market_value) !== undefined
+    );
+    // When cash-equivalent positions are already in holdings, do not add cash again.
+    const derivedTotal = holdingsTotal + (holdingsCash !== undefined ? 0 : liveCashBalance);
+    if (hasLiveHoldingsMarketValue) return derivedTotal;
+    return toFiniteNumber(initialData.total_value) ??
+      toFiniteNumber(accountSummary.ending_value) ??
+      derivedTotal;
+  }, [
+    activeHoldings,
+    accountSummary.ending_value,
+    initialData.total_value,
+    liveCashBalance,
+  ]);
 
   const totalUnrealizedGainLoss = useMemo(() => {
     return activeHoldings.reduce(
@@ -409,6 +883,12 @@ export function PortfolioReviewView({
   }, [activeHoldings]);
 
   const riskBucket = useMemo(() => deriveRiskBucket(activeHoldings), [activeHoldings]);
+
+  const displayAssetAllocation = useMemo(() => {
+    const liveAllocation = deriveAssetAllocationFromHoldings(activeHoldings);
+    if (hasAllocationValues(liveAllocation)) return liveAllocation;
+    return assetAllocation;
+  }, [activeHoldings, assetAllocation]);
 
   // Handlers
   const handleDeleteHolding = useCallback((index: number) => {
@@ -441,6 +921,15 @@ export function PortfolioReviewView({
           if (field === "quantity" || field === "price") {
             updated.market_value =
               (updated.quantity || 0) * (updated.price || 0);
+            const costBasis = toFiniteNumber(updated.cost_basis);
+            if (costBasis !== undefined) {
+              const unrealized = (updated.market_value || 0) - costBasis;
+              updated.unrealized_gain_loss = unrealized;
+              updated.unrealized_gain_loss_pct =
+                costBasis === 0
+                  ? undefined
+                  : Number(((unrealized / costBasis) * 100).toFixed(2));
+            }
           }
           return updated;
         })
@@ -452,10 +941,17 @@ export function PortfolioReviewView({
   const handleAddHolding = useCallback(() => {
     const newHolding: Holding = {
       symbol: "",
+      identifier_type: "ticker",
       name: "New Holding",
       quantity: 0,
       price: 0,
       market_value: 0,
+      instrument_kind: "equity",
+      is_cash_equivalent: false,
+      is_investable: false,
+      analyze_eligible: false,
+      debate_eligible: false,
+      optimize_eligible: false,
       pending_delete: false,
     };
     setHoldings((prev) => [...prev, newHolding]);
@@ -465,6 +961,19 @@ export function PortfolioReviewView({
 
   const handleSave = async () => {
     if (!userId) return;
+
+    const shouldVerifySave = process.env.NEXT_PUBLIC_WORLD_MODEL_VERIFY_SAVE === "true";
+    const enableSaveProfiling = process.env.NEXT_PUBLIC_KAI_SAVE_PROFILING === "true";
+    const nowMs = () =>
+      typeof performance !== "undefined" && typeof performance.now === "function"
+        ? performance.now()
+        : Date.now();
+    const saveStartedAt = nowMs();
+    const logSavePhase = (phase: string, phaseStartedAt: number) => {
+      if (!enableSaveProfiling) return;
+      const durationMs = nowMs() - phaseStartedAt;
+      console.log(`[PortfolioReviewView][save] ${phase}: ${durationMs.toFixed(1)}ms`);
+    };
 
     // If vault existence isn't resolved yet, resolve it on-demand so copy/flow is correct.
     let resolvedHasVault = hasVault;
@@ -510,83 +1019,187 @@ export function PortfolioReviewView({
         "legal_and_disclosures",
       ] as const;
 
-      // Build the complete portfolio data
-      const portfolioToSave: PortfolioData = {
-        account_info: accountInfo,
-        account_summary: {
-          ...accountSummary,
-          ending_value: totalValue,
-        },
-        asset_allocation: assetAllocation,
-        holdings: activeHoldings,
-        income_summary: incomeSummary,
-        realized_gain_loss: realizedGainLoss,
-        cash_balance: initialData.cash_balance || accountSummary.cash_balance,
-        total_value: totalValue,
-        domain_intent: {
-          primary: "financial",
-          source: "kai_import_llm",
-          captured_sections: capturedSections,
-          updated_at: new Date().toISOString(),
-        },
-      };
+      const normalizedActiveHoldings = activeHoldings.map((holding) =>
+        normalizeHoldingForStorage(holding)
+      );
 
-      // 1. Fetch existing blob and merge (prevents cross-domain overwrite)
-      // 2. Build summary for indexing (non-sensitive metadata only)
-      const holdingsSummary = activeHoldings.map((h) => ({
-        symbol: h.symbol,
-        name: h.name,
-        quantity: h.quantity,
-        current_price: h.price,
-      }));
-
-      const financialSummary = {
-        domain_intent: "financial",
-        intent_source: "kai_import_llm",
-        holdings_count: activeHoldings.length,
-        holdings: holdingsSummary,
-        risk_bucket: riskBucket,
-        has_income_data: !!(incomeSummary.total_income),
-        has_realized_gains: !!(realizedGainLoss.net_realized),
-        last_updated: new Date().toISOString(),
-      };
-
-      // 3. Store canonical financial domain with full-blob merge semantics.
-      const financialResult = await WorldModelService.storeMergedDomain({
+      const nowIso = new Date().toISOString();
+      const blobLoadStartedAt = nowMs();
+      const fullBlob = await WorldModelService.loadFullBlob({
         userId,
         vaultKey: effectiveVaultKey,
-        domain: "financial",
-        domainData: portfolioToSave as unknown as Record<string, unknown>,
-        summary: financialSummary,
         vaultOwnerToken: effectiveVaultOwnerToken,
-      });
+      }).catch(() => ({} as Record<string, unknown>));
+      logSavePhase("blob load", blobLoadStartedAt);
+      const mergeBuildStartedAt = nowMs();
+      const existingFinancialValue = fullBlob.financial;
+      const existingFinancial =
+        existingFinancialValue &&
+        typeof existingFinancialValue === "object" &&
+        !Array.isArray(existingFinancialValue)
+          ? ({ ...(existingFinancialValue as Record<string, unknown>) } as Record<string, unknown>)
+          : {};
 
-      if (!financialResult.success) {
-        throw new Error("Backend returned failure on store");
-      }
+      const existingPortfolioCandidate = toRecord(existingFinancial.portfolio) ?? existingFinancial;
 
-      // 4. Append structured statement snapshot (no raw PDF bytes).
-      const documentsDomain = "financial_documents";
-      const existingDocsValue = financialResult.fullBlob[documentsDomain];
-      const existingDocs =
+      const parsedAccountSummary = sanitizeAccountSummary(accountSummary);
+      const parsedAssetAllocation = sanitizeAssetAllocation(assetAllocation);
+      const parsedCashBalance =
+        toFiniteNumber(initialData.cash_balance) ?? parsedAccountSummary.cash_balance;
+      const holdingsTotal = normalizedActiveHoldings.reduce(
+        (sum, holding) => sum + (toFiniteNumber(holding.market_value) ?? 0),
+        0
+      );
+      const derivedCashBalance = deriveCashFromHoldings(normalizedActiveHoldings);
+      const holdingsIncludeCash = derivedCashBalance !== undefined;
+
+      // 3. Append structured statement snapshot (no raw PDF bytes).
+      const existingDocsValue = existingFinancial.documents;
+      const existingDocsSource =
         existingDocsValue &&
         typeof existingDocsValue === "object" &&
         !Array.isArray(existingDocsValue)
           ? (existingDocsValue as Record<string, unknown>)
           : {};
+      const existingDocs = { ...existingDocsSource };
       const existingStatementsValue = existingDocs.statements;
       const existingStatements = Array.isArray(existingStatementsValue)
         ? [...existingStatementsValue]
         : [];
+      const bestStatementSnapshot = pickBestStatementSnapshot(existingStatements);
 
-      const snapshotId = `stmt_${Date.now()}`;
-      const snapshot = {
-        id: snapshotId,
-        imported_at: new Date().toISOString(),
+      const existingPortfolioSummary = sanitizeAccountSummary(
+        existingPortfolioCandidate.account_summary
+      );
+      const existingStatementSummary = sanitizeAccountSummary(
+        bestStatementSnapshot?.account_summary
+      );
+      const fallbackAccountSummary = pickRicherAccountSummary(
+        existingPortfolioSummary,
+        existingStatementSummary
+      );
+
+      const existingPortfolioAllocation = sanitizeAssetAllocation(
+        existingPortfolioCandidate.asset_allocation
+      );
+      const existingStatementAllocation = sanitizeAssetAllocation(
+        bestStatementSnapshot?.asset_allocation
+      );
+      const fallbackAssetAllocation = pickRicherAssetAllocation(
+        existingPortfolioAllocation,
+        existingStatementAllocation
+      );
+
+      const fallbackCashBalance =
+        toFiniteNumber(existingPortfolioCandidate.cash_balance) ??
+        existingPortfolioSummary.cash_balance ??
+        toFiniteNumber(bestStatementSnapshot?.cash_balance) ??
+        existingStatementSummary.cash_balance;
+      const fallbackTotalValue =
+        toFiniteNumber(existingPortfolioCandidate.total_value) ??
+        existingPortfolioSummary.ending_value ??
+        toFiniteNumber(bestStatementSnapshot?.total_value) ??
+        existingStatementSummary.ending_value;
+
+      const statementTotalValue =
+        toFiniteNumber(initialData.total_value) ??
+        parsedAccountSummary.ending_value ??
+        (holdingsTotal > 0
+          ? holdingsTotal +
+            (holdingsIncludeCash ? 0 : parsedCashBalance ?? derivedCashBalance ?? 0)
+          : undefined);
+      const resolvedCashBalance = parsedCashBalance ?? derivedCashBalance ?? fallbackCashBalance;
+      const resolvedTotalValue =
+        statementTotalValue ??
+        (holdingsTotal > 0
+          ? holdingsTotal + (holdingsIncludeCash ? 0 : resolvedCashBalance ?? 0)
+          : undefined) ??
+        fallbackTotalValue ??
+        0;
+
+      const resolvedAccountSummary = compactRecord({
+        ...mergeAccountSummary(parsedAccountSummary, fallbackAccountSummary),
+        ending_value: resolvedTotalValue > 0 ? resolvedTotalValue : undefined,
+        cash_balance: resolvedCashBalance,
+      } satisfies AccountSummary) as AccountSummary;
+      const resolvedAssetAllocation = hasAllocationValues(parsedAssetAllocation)
+        ? parsedAssetAllocation
+        : fallbackAssetAllocation;
+
+      const sparseSections: string[] = [];
+      if (!hasSummaryValues(parsedAccountSummary)) sparseSections.push("account_summary");
+      if (!hasAllocationValues(parsedAssetAllocation)) sparseSections.push("asset_allocation");
+      if (!initialData.account_info || Object.keys(initialData.account_info).length === 0) {
+        sparseSections.push("account_info");
+      }
+
+      const parseFallback = initialData.parse_fallback === true;
+
+      const normalizedAccountInfo = compactRecord({
+        holder_name: accountInfo.holder_name,
+        account_number: accountInfo.account_number,
+        account_type: accountInfo.account_type,
+        brokerage: accountInfo.brokerage,
+        statement_period_start: accountInfo.statement_period_start,
+        statement_period_end: accountInfo.statement_period_end,
+      } satisfies AccountInfo) as AccountInfo;
+      const normalizedIncomeSummary = compactRecord({
+        dividends_taxable: incomeSummary.dividends_taxable,
+        interest_income: incomeSummary.interest_income,
+        total_income: incomeSummary.total_income,
+      } satisfies IncomeSummary) as IncomeSummary;
+      const normalizedRealizedGainLoss = compactRecord({
+        short_term_gain: realizedGainLoss.short_term_gain,
+        long_term_gain: realizedGainLoss.long_term_gain,
+        net_realized: realizedGainLoss.net_realized,
+      } satisfies RealizedGainLoss) as RealizedGainLoss;
+
+      const portfolioToSave: PortfolioData = {
+        account_info: hasRecordValues(normalizedAccountInfo as Record<string, unknown>)
+          ? normalizedAccountInfo
+          : undefined,
+        account_summary: hasSummaryValues(resolvedAccountSummary)
+          ? resolvedAccountSummary
+          : undefined,
+        asset_allocation: hasAllocationValues(resolvedAssetAllocation)
+          ? resolvedAssetAllocation
+          : undefined,
+        holdings: normalizedActiveHoldings,
+        income_summary: hasRecordValues(normalizedIncomeSummary as Record<string, unknown>)
+          ? normalizedIncomeSummary
+          : undefined,
+        realized_gain_loss: hasRecordValues(
+          normalizedRealizedGainLoss as Record<string, unknown>
+        )
+          ? normalizedRealizedGainLoss
+          : undefined,
+        cash_balance: resolvedCashBalance,
+        total_value: resolvedTotalValue,
+        parse_fallback: parseFallback,
         domain_intent: {
           primary: "financial",
-          secondary: "financial_documents",
           source: "kai_import_llm",
+          captured_sections: capturedSections,
+          updated_at: nowIso,
+        },
+      };
+
+      const snapshotId = `stmt_${Date.now()}`;
+      const statementAccountSummary = compactRecord({
+        ...parsedAccountSummary,
+        ending_value: statementTotalValue ?? parsedAccountSummary.ending_value,
+        cash_balance: parsedCashBalance ?? derivedCashBalance,
+      } satisfies AccountSummary) as AccountSummary;
+
+      const snapshot = {
+        id: snapshotId,
+        imported_at: nowIso,
+        schema_version: 2,
+        domain_intent: {
+          primary: "financial",
+          secondary: "documents",
+          source: "kai_import_llm",
+          updated_at: nowIso,
         },
         source: {
           brokerage: accountInfo.brokerage || null,
@@ -595,20 +1208,32 @@ export function PortfolioReviewView({
           account_type: accountInfo.account_type || null,
         },
         account_info: portfolioToSave.account_info || null,
-        account_summary: portfolioToSave.account_summary || null,
+        account_summary: hasSummaryValues(statementAccountSummary)
+          ? statementAccountSummary
+          : null,
         holdings: portfolioToSave.holdings || [],
         transactions:
           initialData.transactions ||
           initialData.activity_and_transactions ||
           [],
-        asset_allocation: portfolioToSave.asset_allocation || null,
+        asset_allocation: hasAllocationValues(parsedAssetAllocation)
+          ? parsedAssetAllocation
+          : null,
         income_summary: portfolioToSave.income_summary || null,
         realized_gain_loss: portfolioToSave.realized_gain_loss || null,
         cash_flow: initialData.cash_flow || null,
         cash_management: initialData.cash_management || null,
         projections_and_mrd: initialData.projections_and_mrd || null,
         legal_and_disclosures: initialData.legal_and_disclosures || [],
-        quality_report: initialData.quality_report || null,
+        quality_report_v2: initialData.quality_report_v2 || null,
+        raw_extract_v2: initialData.raw_extract_v2 || null,
+        canonical_v2: portfolioToSave,
+        analytics_v2: initialData.analytics_v2 || null,
+        parse_context: {
+          parse_fallback: parseFallback,
+          sparse_sections: sparseSections,
+          fallback_merge_applied: sparseSections.length > 0,
+        },
       };
       existingStatements.unshift(snapshot);
 
@@ -616,65 +1241,164 @@ export function PortfolioReviewView({
         schema_version: 1,
         statements: existingStatements.slice(0, 25),
         domain_intent: {
-          primary: "financial_documents",
-          parent_domain: "financial",
+          primary: "financial",
+          secondary: "documents",
           source: "kai_import_llm",
           captured_sections: capturedSections,
-          updated_at: new Date().toISOString(),
+          updated_at: nowIso,
         },
       };
 
-      const lastQuality = initialData.quality_report;
+      const lastQuality = initialData.quality_report_v2;
+      const lastQualityRawCount =
+        typeof (lastQuality as Record<string, unknown> | undefined)?.raw_count === "number"
+          ? ((lastQuality as Record<string, unknown>).raw_count as number)
+          : undefined;
+      const lastQualityValidatedCount =
+        typeof (lastQuality as Record<string, unknown> | undefined)?.validated_count === "number"
+          ? ((lastQuality as Record<string, unknown>).validated_count as number)
+          : undefined;
       const lastQualityScore =
-        typeof lastQuality?.validated === "number" &&
-        typeof lastQuality?.raw === "number" &&
-        lastQuality.raw > 0
-          ? Number((lastQuality.validated / lastQuality.raw).toFixed(4))
+        typeof lastQualityValidatedCount === "number" &&
+        typeof lastQualityRawCount === "number" &&
+        lastQualityRawCount > 0
+          ? Number((lastQualityValidatedCount / lastQualityRawCount).toFixed(4))
+          : undefined;
+      const bestSnapshotSource = toRecord(bestStatementSnapshot?.source);
+      const bestSnapshotStatementEnd =
+        typeof bestSnapshotSource?.statement_period_end === "string"
+          ? bestSnapshotSource.statement_period_end
+          : undefined;
+      const bestSnapshotBrokerage =
+        typeof bestSnapshotSource?.brokerage === "string"
+          ? bestSnapshotSource.brokerage
+          : undefined;
+      const existingDocsStatementEnd =
+        typeof existingDocs.last_statement_end === "string"
+          ? (existingDocs.last_statement_end as string)
+          : undefined;
+      const existingDocsBrokerage =
+        typeof existingDocs.last_brokerage === "string"
+          ? (existingDocs.last_brokerage as string)
           : undefined;
 
       const docsSummary: Record<string, unknown> = {
-        domain_intent: "financial_documents",
-        parent_domain: "financial",
         documents_count: nextDocsDomain.statements.length,
-        last_statement_end: accountInfo.statement_period_end || null,
-        last_brokerage: accountInfo.brokerage || null,
-        last_updated: new Date().toISOString(),
+        last_statement_end:
+          accountInfo.statement_period_end ||
+          bestSnapshotStatementEnd ||
+          existingDocsStatementEnd ||
+          null,
+        last_brokerage:
+          accountInfo.brokerage || bestSnapshotBrokerage || existingDocsBrokerage || null,
+        parse_fallback_last_import: parseFallback,
+        sparse_sections_last_import: sparseSections,
+        last_updated: nowIso,
       };
       if (lastQualityScore !== undefined) {
         docsSummary.last_quality_score = lastQualityScore;
       }
 
-      const docsResult = await WorldModelService.storeMergedDomain({
+      const canonicalPortfolio = {
+        ...portfolioToSave,
+        domain_intent: {
+          primary: "financial",
+          secondary: "portfolio",
+          source: "kai_import_llm",
+          captured_sections: capturedSections,
+          updated_at: nowIso,
+        },
+      };
+
+      const nextFinancialDomain = {
+        ...existingFinancial,
+        schema_version: 3,
+        domain_intent: {
+          primary: "financial",
+          source: "domain_registry_prepopulate",
+          contract_version: 1,
+          updated_at: nowIso,
+        },
+        portfolio: canonicalPortfolio,
+        analytics: initialData.analytics_v2 || existingFinancial.analytics || null,
+        documents: nextDocsDomain,
+        updated_at: nowIso,
+      };
+
+      const financialSummary = {
+        intent_source: "kai_import_llm",
+        attribute_count: normalizedActiveHoldings.length,
+        item_count: normalizedActiveHoldings.length,
+        holdings_count: normalizedActiveHoldings.length,
+        investable_positions_count: normalizedActiveHoldings.filter(
+          (holding) => holding.is_investable
+        ).length,
+        cash_positions_count: normalizedActiveHoldings.filter(
+          (holding) => holding.is_cash_equivalent
+        ).length,
+        allocation_coverage_pct: hasAllocationValues(resolvedAssetAllocation) ? 1 : 0,
+        parser_quality_score:
+          typeof lastQualityScore === "number" ? lastQualityScore : null,
+        last_statement_total_value: resolvedTotalValue,
+        portfolio_risk_bucket: riskBucket,
+        risk_bucket: riskBucket,
+        has_income_data: !!incomeSummary.total_income,
+        has_realized_gains: !!realizedGainLoss.net_realized,
+        parse_fallback_last_import: parseFallback,
+        sparse_sections_last_import: sparseSections,
+        domain_contract_version: 2,
+        intent_map: [
+          "portfolio",
+          "analytics",
+          "profile",
+          "documents",
+          "analysis_history",
+          "runtime",
+          "analysis.decisions",
+        ],
+        ...docsSummary,
+        last_updated: nowIso,
+      };
+      logSavePhase("merge/build", mergeBuildStartedAt);
+
+      // 4. Store canonical financial domain with full-blob merge semantics.
+      const encryptStoreStartedAt = nowMs();
+      const financialResult = await WorldModelService.storeMergedDomainWithPreparedBlob({
         userId,
         vaultKey: effectiveVaultKey,
-        domain: documentsDomain,
-        domainData: nextDocsDomain as unknown as Record<string, unknown>,
-        summary: docsSummary,
+        domain: "financial",
+        domainData: nextFinancialDomain as unknown as Record<string, unknown>,
+        summary: financialSummary,
+        baseFullBlob: fullBlob,
         vaultOwnerToken: effectiveVaultOwnerToken,
       });
+      logSavePhase("encrypt/store", encryptStoreStartedAt);
 
-      if (!docsResult.success) {
-        throw new Error("Failed to store financial_documents snapshot");
+      if (!financialResult.success) {
+        throw new Error("Backend returned failure on store");
       }
 
-      // 5b. Prime/invalidate deterministic cache entries for all financial reads.
+      const postSaveSyncStartedAt = nowMs();
+      // 5. Prime/invalidate deterministic cache entries for all financial reads.
       CacheSyncService.onPortfolioUpserted(
         userId,
         portfolioToSave as unknown as CachedPortfolioData
       );
 
-      // 6. Verify the save by reading back
-      try {
-        const readBack = await WorldModelService.getDomainData(
-          userId,
-          "financial",
-          effectiveVaultOwnerToken
-        );
-        if (!readBack) {
-          console.warn("[PortfolioReview] Read-back verification failed: no data returned");
+      // 6. Optional read-back verification (disabled by default in production).
+      if (shouldVerifySave) {
+        try {
+          const readBack = await WorldModelService.getDomainData(
+            userId,
+            "financial",
+            effectiveVaultOwnerToken
+          );
+          if (!readBack) {
+            console.warn("[PortfolioReview] Read-back verification failed: no data returned");
+          }
+        } catch (verifyErr) {
+          console.warn("[PortfolioReview] Read-back verification error:", verifyErr);
         }
-      } catch (verifyErr) {
-        console.warn("[PortfolioReview] Read-back verification error:", verifyErr);
       }
 
       if (createdVaultCopyRef.current) {
@@ -689,6 +1413,8 @@ export function PortfolioReviewView({
       baselineSnapshotRef.current = serializeEditableState(accountInfo, holdings);
       setHasUnsavedChanges(false);
       await Promise.resolve(onSaveComplete(portfolioToSave));
+      logSavePhase("post-save sync", postSaveSyncStartedAt);
+      logSavePhase("total", saveStartedAt);
     } catch (error) {
       console.error("Save error:", error);
       toast.error("Failed to save portfolio");
@@ -804,11 +1530,11 @@ export function PortfolioReviewView({
                   >
                     {riskBucket}
                   </Badge>
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mt-2">Risk</p>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mt-2">Portfolio Risk</p>
                 </div>
                 <div className="min-w-0 text-center sm:text-right sm:pr-4">
                   <p className="text-2xl font-black break-all">
-                    {formatCurrency(initialData.cash_balance || accountSummary.cash_balance || 0)}
+                    {formatCurrency(liveCashBalance)}
                   </p>
                   <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Cash</p>
                 </div>
@@ -893,7 +1619,7 @@ export function PortfolioReviewView({
         </AccordionItem>
 
         {/* Asset Allocation */}
-        {(assetAllocation.cash_pct || assetAllocation.equities_pct) && (
+        {hasAllocationValues(displayAssetAllocation) && (
         <AccordionItem value="allocation" className="border-b-0 bg-card rounded-2xl border px-5">
             <AccordionTrigger className="text-base font-bold py-5 hover:no-underline">
 
@@ -905,42 +1631,70 @@ export function PortfolioReviewView({
             </AccordionTrigger>
             <AccordionContent>
               <div className="space-y-3 pt-2">
-                {assetAllocation.cash_pct !== undefined && (
+                {displayAssetAllocation.cash_pct !== undefined && (
                   <div className="flex justify-between items-center">
                     <span className="text-sm">Cash</span>
                     <div className="text-right">
                       <span className="font-medium">
-                        {assetAllocation.cash_pct?.toFixed(1)}%
+                        {displayAssetAllocation.cash_pct?.toFixed(1)}%
                       </span>
                       <span className="text-muted-foreground text-sm ml-2">
-                        {formatCurrency(assetAllocation.cash_value)}
+                        {formatCurrency(displayAssetAllocation.cash_value)}
                       </span>
                     </div>
                   </div>
                 )}
-                {assetAllocation.equities_pct !== undefined && (
+                {displayAssetAllocation.equities_pct !== undefined && (
                   <div className="flex justify-between items-center">
                     <span className="text-sm">Equities</span>
                     <div className="text-right">
                       <span className="font-medium">
-                        {assetAllocation.equities_pct?.toFixed(1)}%
+                        {displayAssetAllocation.equities_pct?.toFixed(1)}%
                       </span>
                       <span className="text-muted-foreground text-sm ml-2">
-                        {formatCurrency(assetAllocation.equities_value)}
+                        {formatCurrency(displayAssetAllocation.equities_value)}
                       </span>
                     </div>
                   </div>
                 )}
-                {assetAllocation.bonds_pct !== undefined &&
-                  assetAllocation.bonds_pct > 0 && (
+                {displayAssetAllocation.bonds_pct !== undefined &&
+                  displayAssetAllocation.bonds_pct > 0 && (
                     <div className="flex justify-between items-center">
                       <span className="text-sm">Bonds</span>
                       <div className="text-right">
                         <span className="font-medium">
-                          {assetAllocation.bonds_pct?.toFixed(1)}%
+                          {displayAssetAllocation.bonds_pct?.toFixed(1)}%
                         </span>
                         <span className="text-muted-foreground text-sm ml-2">
-                          {formatCurrency(assetAllocation.bonds_value)}
+                          {formatCurrency(displayAssetAllocation.bonds_value)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                {displayAssetAllocation.real_assets_pct !== undefined &&
+                  displayAssetAllocation.real_assets_pct > 0 && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm">Real Assets</span>
+                      <div className="text-right">
+                        <span className="font-medium">
+                          {displayAssetAllocation.real_assets_pct?.toFixed(1)}%
+                        </span>
+                        <span className="text-muted-foreground text-sm ml-2">
+                          {formatCurrency(displayAssetAllocation.real_assets_value)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                {displayAssetAllocation.other_pct !== undefined &&
+                  displayAssetAllocation.other_pct > 0 && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm">Other</span>
+                      <div className="text-right">
+                        <span className="font-medium">
+                          {displayAssetAllocation.other_pct?.toFixed(1)}%
+                        </span>
+                        <span className="text-muted-foreground text-sm ml-2">
+                          {formatCurrency(displayAssetAllocation.other_value)}
                         </span>
                       </div>
                     </div>
@@ -1034,7 +1788,7 @@ export function PortfolioReviewView({
           ) : (
             holdings.map((holding, index) => (
               <div
-                key={`${holding.symbol}-${index}`}
+                key={`holding-${index}`}
                 className={cn(
                   "p-3 rounded-lg border transition-colors",
                   holding.pending_delete && "opacity-60 border-dashed border-muted-foreground/40 bg-muted/40",
@@ -1195,8 +1949,9 @@ export function PortfolioReviewView({
                           )}
                           onClick={() => setEditingHoldingIndex(index)}
                           aria-label={`Edit ${holding.symbol || `holding ${index + 1}`}`}
-                          icon={{ icon: Pencil }}
-                        />
+                        >
+                          <Icon icon={Pencil} size="sm" />
+                        </MorphyButton>
                         <Kbd className="text-[8px] px-1 h-3.5">EDIT</Kbd>
                       </div>
                       <div className="flex flex-col items-center gap-1">
@@ -1215,8 +1970,9 @@ export function PortfolioReviewView({
                               ? `Undo remove ${holding.symbol || `holding ${index + 1}`}`
                               : `Remove ${holding.symbol || `holding ${index + 1}`}`
                           }
-                          icon={{ icon: holding.pending_delete ? Undo2 : Trash2 }}
-                        />
+                        >
+                          <Icon icon={holding.pending_delete ? Undo2 : Trash2} size="sm" />
+                        </MorphyButton>
                         <Kbd className="text-[8px] px-1 h-3.5">
                           {holding.pending_delete ? "UNDO" : "DEL"}
                         </Kbd>
@@ -1274,41 +2030,35 @@ export function PortfolioReviewView({
             if (!open) setPendingVaultSave(false);
           }}
         >
-          <DialogContent className="sm:max-w-md p-0 border-none bg-transparent shadow-none">
-            <div className="bg-background/95 backdrop-blur-xl border rounded-xl overflow-hidden shadow-2xl">
-              <div className="p-4 border-b">
-                <DialogTitle className="font-semibold text-center text-base">
-                  {hasVault === false
-                    ? "Create vault to save portfolio"
-                    : "Unlock vault to save portfolio"}
-                </DialogTitle>
-                <DialogDescription className="sr-only">
-                  Create or unlock your vault to securely save this portfolio to your world model.
-                </DialogDescription>
-              </div>
-              <div className="p-4">
-                <VaultFlow
-                  user={user}
-                  enableGeneratedDefault={hasVault === false}
-                  onSuccess={(meta) => {
-                    createdVaultModeRef.current = meta?.mode ?? null;
-                    setVaultDialogOpen(false);
-                    if (
-                      effectiveVaultKey &&
-                      effectiveVaultOwnerToken &&
-                      !continuationInFlightRef.current
-                    ) {
-                      continuationInFlightRef.current = true;
-                      void handleSave().finally(() => {
-                        continuationInFlightRef.current = false;
-                      });
-                      return;
-                    }
-                    setPendingVaultSave(true);
-                  }}
-                />
-              </div>
-            </div>
+          <DialogContent className="sm:max-w-md p-0 border border-border/60 bg-background shadow-2xl overflow-hidden">
+            <DialogTitle className="sr-only">
+              {hasVault === false
+                ? "Create vault to save portfolio"
+                : "Unlock vault to save portfolio"}
+            </DialogTitle>
+            <DialogDescription className="sr-only">
+              Create or unlock your vault to securely save this portfolio to your world model.
+            </DialogDescription>
+            <VaultFlow
+              user={user}
+              enableGeneratedDefault={hasVault === false}
+              onSuccess={(meta) => {
+                createdVaultModeRef.current = meta?.mode ?? null;
+                setVaultDialogOpen(false);
+                if (
+                  effectiveVaultKey &&
+                  effectiveVaultOwnerToken &&
+                  !continuationInFlightRef.current
+                ) {
+                  continuationInFlightRef.current = true;
+                  void handleSave().finally(() => {
+                    continuationInFlightRef.current = false;
+                  });
+                  return;
+                }
+                setPendingVaultSave(true);
+              }}
+            />
           </DialogContent>
         </Dialog>
       )}

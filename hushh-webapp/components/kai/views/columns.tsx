@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { MoreHorizontal, ArrowRight, Trash2, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { format } from "date-fns";
+import { format, isValid, parseISO } from "date-fns";
 import { Icon } from "@/lib/morphy-ux/ui";
 
 // Extended type to include version number computed at runtime
@@ -27,6 +27,41 @@ interface ColumnsProps {
   onDelete: (entry: AnalysisHistoryEntry) => void;
   onDeleteTicker: (ticker: string) => void;
   onViewVersions?: (ticker: string) => void;
+}
+
+function formatHistoryTimestamp(value: unknown): string {
+  if (value instanceof Date && isValid(value)) {
+    return format(value, "MMM d, h:mm a");
+  }
+
+  if (typeof value === "number") {
+    const fromEpoch = new Date(value);
+    if (isValid(fromEpoch)) {
+      return format(fromEpoch, "MMM d, h:mm a");
+    }
+    return "n/a";
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return "n/a";
+    }
+
+    const parsedIso = parseISO(trimmed);
+    if (isValid(parsedIso)) {
+      return format(parsedIso, "MMM d, h:mm a");
+    }
+
+    const parsedDate = new Date(trimmed);
+    if (isValid(parsedDate)) {
+      return format(parsedDate, "MMM d, h:mm a");
+    }
+
+    return "n/a";
+  }
+
+  return "n/a";
 }
 
 export const getColumns = ({
@@ -58,26 +93,26 @@ export const getColumns = ({
           </DropdownMenuTrigger>
             <DropdownMenuContent align="start">
             <DropdownMenuLabel>Actions</DropdownMenuLabel>
-            <DropdownMenuItem onClick={() => onView(entry)}>
+            <DropdownMenuItem onSelect={() => onView(entry)}>
               <Icon icon={Eye} size="sm" className="mr-2" />
               View Analysis
             </DropdownMenuItem>
             {onViewVersions && (
-              <DropdownMenuItem onClick={() => onViewVersions(entry.ticker)}>
+              <DropdownMenuItem onSelect={() => onViewVersions(entry.ticker)}>
                 <Icon icon={ArrowRight} size="sm" className="mr-2" />
                 View Previous Versions
               </DropdownMenuItem>
             )}
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              onClick={() => onDelete(entry)}
+              onSelect={() => onDelete(entry)}
               className="text-red-600 dark:text-red-400 focus:text-red-600 focus:bg-red-500/10"
             >
               <Icon icon={Trash2} size="sm" className="mr-2" />
               Delete Entry
             </DropdownMenuItem>
             <DropdownMenuItem
-              onClick={() => onDeleteTicker(entry.ticker)}
+              onSelect={() => onDeleteTicker(entry.ticker)}
               className="text-red-600 dark:text-red-400 focus:text-red-600 focus:bg-red-500/10"
             >
               <Icon icon={Trash2} size="sm" className="mr-2" />
@@ -105,20 +140,23 @@ export const getColumns = ({
     accessorKey: "decision",
     header: "Decision",
     cell: ({ row }) => {
-      const decision = row.original.decision.toLowerCase();
+      const decisionValue =
+        typeof row.original.decision === "string" && row.original.decision.trim().length > 0
+          ? row.original.decision.trim().toLowerCase()
+          : "unknown";
       let colorClass = "bg-muted text-muted-foreground border-border";
       
-      if (decision === "buy") {
+      if (decisionValue === "buy") {
         colorClass = "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30";
-      } else if (decision === "sell" || decision === "reduce") {
+      } else if (decisionValue === "sell" || decisionValue === "reduce") {
         colorClass = "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/30";
-      } else if (decision === "hold") {
+      } else if (decisionValue === "hold") {
         colorClass = "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30";
       }
 
       return (
         <Badge variant="outline" className={cn("capitalize font-bold", colorClass)}>
-          {decision}
+          {decisionValue === "unknown" ? "n/a" : decisionValue}
         </Badge>
       );
     },
@@ -148,7 +186,7 @@ export const getColumns = ({
     cell: ({ row }) => {
       return (
         <span className="text-sm text-muted-foreground">
-          {format(new Date(row.original.timestamp), "MMM d, h:mm a")}
+          {formatHistoryTimestamp(row.original.timestamp)}
         </span>
       );
     },

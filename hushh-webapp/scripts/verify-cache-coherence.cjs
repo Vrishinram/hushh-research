@@ -64,10 +64,10 @@ function checkRequiredCoordinatorUsage() {
     ["lib/consent/use-consent-actions.ts", ["CacheSyncService.onConsentMutated"]],
     ["components/kai/views/portfolio-review-view.tsx", ["CacheSyncService.onPortfolioUpserted"]],
     ["components/kai/kai-flow.tsx", ["CacheSyncService.onPortfolioUpserted"]],
-    ["app/kai/dashboard/manage/page.tsx", ["CacheSyncService.onPortfolioUpserted"]],
+    ["components/kai/views/manage-portfolio-view.tsx", ["CacheSyncService.onPortfolioUpserted"]],
     ["lib/firebase/auth-context.tsx", ["CacheSyncService.onAuthSignedOut"]],
     ["app/profile/page.tsx", ["CacheSyncService.onAccountDeleted"]],
-    ["components/ui/top-app-bar.tsx", ["CacheSyncService.onAccountDeleted"]],
+    ["components/app-ui/top-app-bar.tsx", ["CacheSyncService.onAccountDeleted"]],
     ["app/logout/page.tsx", ["CacheSyncService.onAuthSignedOut"]],
   ];
 
@@ -93,7 +93,7 @@ function checkBypassPatterns() {
       ["CacheService.getInstance().invalidate(", "CACHE_KEYS.WORLD_MODEL_METADATA", "CACHE_KEYS.PORTFOLIO_DATA"],
     ],
     [
-      "app/kai/dashboard/manage/page.tsx",
+      "components/kai/views/manage-portfolio-view.tsx",
       ["CacheService.getInstance().invalidate(", "CACHE_KEYS.WORLD_MODEL_METADATA"],
     ],
   ];

@@ -12,35 +12,26 @@ export interface ThemeFocusItem {
   icon: LucideIcon;
 }
 
-const DEFAULT_THEMES: ThemeFocusItem[] = [
-  {
-    id: "ai",
-    title: "AI Infrastructure",
-    subtitle: "Semiconductors and data center demand",
-    icon: Cpu,
-  },
-  {
-    id: "rate",
-    title: "Rate Outlook",
-    subtitle: "Fed policy impact on growth names",
-    icon: Percent,
-  },
-  {
-    id: "energy",
-    title: "Energy Rotation",
-    subtitle: "Renewables and efficiency acceleration",
-    icon: Zap,
-  },
-];
+const FALLBACK_ICON: LucideIcon[] = [Cpu, Percent, Zap];
 
-export function ThemeFocusList({ themes = DEFAULT_THEMES }: { themes?: ThemeFocusItem[] }) {
+export function ThemeFocusList({ themes = [] }: { themes?: ThemeFocusItem[] }) {
+  if (!themes.length) {
+    return (
+      <Card variant="muted" effect="fill" className="rounded-xl p-0">
+        <CardContent className="p-4 text-sm text-muted-foreground">
+          No active market themes are available right now.
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <div className="space-y-3">
-      {themes.map((theme) => (
+      {themes.map((theme, idx) => (
         <Card key={theme.id || theme.title} variant="none" effect="glass" className="rounded-xl p-0">
           <CardContent className="flex items-center gap-4 p-4">
             <div className="grid h-10 w-10 place-items-center rounded-full bg-background/80">
-              <Icon icon={theme.icon} size="md" />
+              <Icon icon={theme.icon || FALLBACK_ICON[idx % FALLBACK_ICON.length] || Cpu} size="md" />
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-bold leading-tight">{theme.title}</p>
