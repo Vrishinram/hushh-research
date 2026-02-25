@@ -186,15 +186,10 @@ export function SectorAllocationChart({
   }, [sectorData.data]);
 
   useEffect(() => {
-    setOpenSectors((prev) => {
+    setOpenSectors(() => {
       const next: Record<string, boolean> = {};
-      sectorData.data.forEach((sector, index) => {
-        const existingState = prev[sector.name];
-        if (typeof existingState === "boolean") {
-          next[sector.name] = existingState;
-        } else {
-          next[sector.name] = index === 0;
-        }
+      sectorData.data.forEach((sector) => {
+        next[sector.name] = false;
       });
       return next;
     });

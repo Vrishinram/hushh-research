@@ -216,7 +216,7 @@ export const getVariantStyles = (
       if (effect === "fade") {
         return "bg-muted/55 text-foreground border border-transparent shadow-none backdrop-blur-none hover:bg-muted/80 hover:text-foreground transition-colors duration-200";
       }
-      return "bg-white/40 dark:bg-black/40 border border-white/20 dark:border-white/10 shadow-sm backdrop-blur-md hover:bg-white/50 dark:hover:bg-black/50 transition-all duration-200";
+      return "bg-white/40 dark:bg-black/40 text-foreground hover:text-foreground border border-white/20 dark:border-white/10 shadow-sm backdrop-blur-md hover:bg-white/50 dark:hover:bg-black/50 transition-all duration-200";
   }
 };
 

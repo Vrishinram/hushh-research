@@ -25,19 +25,12 @@ public class HushhNotificationsPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private let TAG = "HushhNotifications"
 
-    private var defaultBackendUrl: String {
-        return (bridge?.config.getPluginConfig(jsName).getString("backendUrl"))
-            ?? "https://consent-protocol-1006304528804.us-central1.run.app"
-    }
-
     private func getBackendUrl(_ call: CAPPluginCall) -> String {
-        if let url = call.getString("backendUrl"), !url.isEmpty {
-            return url
-        }
-        if let url = bridge?.config.getPluginConfig(jsName).getString("backendUrl"), !url.isEmpty {
-            return url
-        }
-        return defaultBackendUrl
+        return HushhProxyClient.resolveBackendUrl(
+            call: call,
+            plugin: self,
+            jsName: jsName
+        )
     }
 
     private lazy var urlSession: URLSession = {

@@ -158,6 +158,8 @@ export function KaiCommandPalette({
   );
   const [loadingUniverse, setLoadingUniverse] = useState<boolean>(!universe);
   const [remoteMatches, setRemoteMatches] = useState<TickerUniverseRow[]>([]);
+  const [universeError, setUniverseError] = useState<string | null>(null);
+  const [remoteSearchError, setRemoteSearchError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -165,14 +167,17 @@ export function KaiCommandPalette({
     void (async () => {
       try {
         setLoadingUniverse(true);
-        // Force-refresh so command bar reflects latest ticker metadata after DB updates.
-        const rows = await preloadTickerUniverse({ forceRefresh: true });
+        setUniverseError(null);
+        const rows = await preloadTickerUniverse();
         if (!cancelled) {
           setUniverse(rows);
         }
-      } catch {
+      } catch (error) {
         if (!cancelled) {
           setUniverse((prev) => prev ?? []);
+          setUniverseError(
+            error instanceof Error ? error.message : "Failed to load ticker universe"
+          );
         }
       } finally {
         if (!cancelled) {
@@ -191,6 +196,7 @@ export function KaiCommandPalette({
     const q = query.trim();
     if (q.length < 2) {
       setRemoteMatches([]);
+      setRemoteSearchError(null);
       return () => {
         cancelled = true;
       };
@@ -201,10 +207,14 @@ export function KaiCommandPalette({
           const rows = await searchTickerUniverseRemote(q, 20);
           if (!cancelled) {
             setRemoteMatches(rows);
+            setRemoteSearchError(null);
           }
-        } catch {
+        } catch (error) {
           if (!cancelled) {
             setRemoteMatches([]);
+            setRemoteSearchError(
+              error instanceof Error ? error.message : "Ticker search failed"
+            );
           }
         }
       })();
@@ -338,6 +348,11 @@ export function KaiCommandPalette({
   }, [portfolioRows, portfolioTickerSet, query, universe, remoteMatches]);
 
   const isFiltering = query.trim().length > 0;
+  const commandEmptyMessage = loadingUniverse
+    ? "Loading commands..."
+    : universeError
+      ? "Ticker universe unavailable. Check backend connectivity."
+      : "No matching commands.";
 
   function run(command: KaiCommandAction, params?: Record<string, unknown>) {
     onOpenChange(false);
@@ -356,9 +371,7 @@ export function KaiCommandPalette({
         placeholder="Run Kai command or search ticker..."
       />
       <CommandList>
-        <CommandEmpty>
-          {loadingUniverse ? "Loading commands..." : "No matching commands."}
-        </CommandEmpty>
+        <CommandEmpty>{commandEmptyMessage}</CommandEmpty>
 
         <CommandGroup heading="Portfolio Actions">
           <CommandItem className={commandItemClass} onSelect={() => run("dashboard")}>
@@ -407,12 +420,17 @@ export function KaiCommandPalette({
         <CommandSeparator />
 
         <CommandGroup heading="Analyze Stock">
-          {!hasPortfolioData && (
+          {universeError ? (
             <CommandItem className={commandItemClass} disabled>
-              Import portfolio to enable stock analysis.
+              Ticker universe unavailable.
             </CommandItem>
-          )}
-          {hasPortfolioData && !loadingUniverse && tickerMatches.length === 0 && (
+          ) : null}
+          {remoteSearchError && isFiltering ? (
+            <CommandItem className={commandItemClass} disabled>
+              Live ticker search failed.
+            </CommandItem>
+          ) : null}
+          {!loadingUniverse && tickerMatches.length === 0 && (
             <CommandItem className={commandItemClass} disabled>
               No matching SEC common equity tickers.
             </CommandItem>
@@ -425,7 +443,6 @@ export function KaiCommandPalette({
                 className={commandItemClass}
                 key={`${ticker}:${title}`}
                 value={`${ticker} ${title} ${row.sector || row.sector_primary || ""} ${row.exchange || ""}`}
-                disabled={!hasPortfolioData}
                 onSelect={() => run("analyze", { symbol: ticker })}
               >
                 <Icon icon={Search} size="sm" className="mr-2 text-muted-foreground" />

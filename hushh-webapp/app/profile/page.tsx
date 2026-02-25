@@ -373,6 +373,7 @@ export default function ProfilePage() {
 
   const readableMethod = (method: VaultMethod | null): string => {
     if (method === "generated_default_native_biometric") return "Device biometric";
+    if (method === "generated_default_native_passkey_prf") return "Passkey (Native PRF)";
     if (method === "generated_default_web_prf") return "Passkey (PRF)";
     if (method === "passphrase") return "Passphrase";
     return "Unknown";
@@ -380,6 +381,7 @@ export default function ProfilePage() {
 
   const readableQuickMethod = (method: VaultMethod | null): string => {
     if (method === "generated_default_native_biometric") return "device biometric";
+    if (method === "generated_default_native_passkey_prf") return "passkey";
     if (method === "generated_default_web_prf") return "passkey";
     return "quick unlock";
   };
@@ -766,12 +768,12 @@ export default function ProfilePage() {
       </Card>
 
       {/* Sign Out Button */}
-      <div className="flex">
+      <div className="w-full">
         <Button
           variant="destructive"
           effect="fade"
           size="default"
-          className="w-auto min-w-[9rem] px-5"
+          className="w-full justify-center"
           onClick={handleSignOut}
         >
           <Icon icon={LogOut} size="md" className="mr-2" />
@@ -905,7 +907,8 @@ export default function ProfilePage() {
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              variant="destructive"
+              className="opacity-90 transition-opacity hover:opacity-100"
               onClick={(e) => {
                 e.preventDefault(); // Prevent auto-closing
                 handleDeleteAccount();

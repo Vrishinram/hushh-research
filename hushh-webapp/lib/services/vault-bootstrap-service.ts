@@ -2,12 +2,13 @@
 
 import { Capacitor } from "@capacitor/core";
 
-import { HushhKeychain } from "@/lib/capacitor";
+import { HushhKeychain, HushhVault } from "@/lib/capacitor";
 import {
   checkBrowserSupport,
   checkPrfSupport,
   registerWithPrf,
   authenticateWithPrf,
+  getRpId,
 } from "@/lib/vault/prf-auth";
 import {
   createVaultWithPassphrase,
@@ -16,7 +17,8 @@ import {
 
 export type GeneratedVaultKeyMode =
   | "generated_default_native_biometric"
-  | "generated_default_web_prf";
+  | "generated_default_web_prf"
+  | "generated_default_native_passkey_prf";
 
 export type GeneratedVaultSupport =
   | {
@@ -40,6 +42,9 @@ export type GeneratedVaultProvisionResult = {
   recoveryKey: string;
   passkeyCredentialId?: string;
   passkeyPrfSalt?: string;
+  passkeyRpId?: string;
+  passkeyProvider?: string;
+  passkeyDeviceLabel?: string;
 };
 
 export type GeneratedVaultMethodMaterial = {
@@ -48,6 +53,9 @@ export type GeneratedVaultMethodMaterial = {
   wrappingSecret: string;
   passkeyCredentialId?: string;
   passkeyPrfSalt?: string;
+  passkeyRpId?: string;
+  passkeyProvider?: string;
+  passkeyDeviceLabel?: string;
 };
 
 export type GeneratedVaultUnlockInput = {
@@ -80,6 +88,9 @@ function normalizeKeyMode(input: {
   if (value === "generated_default_web_prf") {
     return value;
   }
+  if (value === "generated_default_native_passkey_prf") {
+    return value;
+  }
   return null;
 }
 
@@ -101,6 +112,51 @@ async function canUseNativeBiometricVault(): Promise<boolean> {
   }
 }
 
+function resolveRpId(): string {
+  const configuredRp = process.env.NEXT_PUBLIC_PASSKEY_RP_ID?.trim();
+  if (configuredRp) {
+    return configuredRp;
+  }
+
+  if (Capacitor.isNativePlatform()) {
+    const configuredAppUrl =
+      process.env.NEXT_PUBLIC_APP_URL?.trim() ||
+      process.env.NEXT_PUBLIC_FRONTEND_URL?.trim() ||
+      "";
+    if (configuredAppUrl) {
+      try {
+        const hostname = new URL(configuredAppUrl).hostname;
+        if (hostname) {
+          return hostname;
+        }
+      } catch {
+        // Ignore malformed URL and continue to runtime-derived fallbacks.
+      }
+    }
+
+    // Native WebViews may run under a local/app scheme. Production builds should
+    // set NEXT_PUBLIC_PASSKEY_RP_ID explicitly or NEXT_PUBLIC_APP_URL with a
+    // passkey-capable host.
+    return getRpId();
+  }
+
+  if (typeof window === "undefined") {
+    return "localhost";
+  }
+  return getRpId();
+}
+
+async function canUseNativePasskeyVault(): Promise<boolean> {
+  if (!Capacitor.isNativePlatform()) return false;
+  try {
+    const result = await HushhVault.isPasskeyAvailable({ rpId: resolveRpId() });
+    return !!result.available;
+  } catch (error) {
+    console.warn("[VaultBootstrapService] Native passkey availability check failed:", error);
+    return false;
+  }
+}
+
 async function canUseWebPrfVault(): Promise<boolean> {
   if (Capacitor.isNativePlatform()) return false;
   if (typeof window === "undefined") return false;
@@ -114,6 +170,13 @@ async function canUseWebPrfVault(): Promise<boolean> {
 
 export class VaultBootstrapService {
   static async canUseGeneratedDefaultVault(): Promise<GeneratedVaultSupport> {
+    if (await canUseNativePasskeyVault()) {
+      return {
+        supported: true,
+        mode: "generated_default_native_passkey_prf",
+      };
+    }
+
     if (await canUseNativeBiometricVault()) {
       return {
         supported: true,
@@ -162,6 +225,9 @@ export class VaultBootstrapService {
       recoveryKey: vaultData.recoveryKey,
       passkeyCredentialId: material.passkeyCredentialId,
       passkeyPrfSalt: material.passkeyPrfSalt,
+      passkeyRpId: material.passkeyRpId,
+      passkeyProvider: material.passkeyProvider,
+      passkeyDeviceLabel: material.passkeyDeviceLabel,
     };
   }
 
@@ -189,7 +255,26 @@ export class VaultBootstrapService {
       };
     }
 
+    if (support.mode === "generated_default_native_passkey_prf") {
+      const rpId = resolveRpId();
+      const registered = await HushhVault.registerPasskeyPrf({
+        userId: params.userId,
+        displayName: params.displayName,
+        rpId,
+      });
+      return {
+        mode: support.mode,
+        authMethod: support.mode,
+        wrappingSecret: registered.vaultKeyHex,
+        passkeyCredentialId: registered.credentialId,
+        passkeyPrfSalt: registered.prfSalt,
+        passkeyRpId: rpId,
+        passkeyProvider: "native_passkey",
+      };
+    }
+
     const prfRegistration = await registerWithPrf(params.userId, params.displayName);
+    const rpId = resolveRpId();
 
     return {
       mode: support.mode,
@@ -197,6 +282,8 @@ export class VaultBootstrapService {
       wrappingSecret: prfRegistration.vaultKeyHex,
       passkeyCredentialId: prfRegistration.credentialId,
       passkeyPrfSalt: prfRegistration.prfSalt,
+      passkeyRpId: rpId,
+      passkeyProvider: "webauthn_prf",
     };
   }
 
@@ -233,6 +320,24 @@ export class VaultBootstrapService {
 
       return unlockVaultWithPassphrase(
         secret.value,
+        input.encryptedVaultKey,
+        input.salt,
+        input.iv
+      );
+    }
+
+    if (mode === "generated_default_native_passkey_prf") {
+      if (!input.passkeyPrfSalt) {
+        throw new Error("Passkey metadata missing for native passkey vault.");
+      }
+      const auth = await HushhVault.authenticatePasskeyPrf({
+        userId: input.userId,
+        rpId: resolveRpId(),
+        credentialId: input.passkeyCredentialId ?? undefined,
+        prfSalt: input.passkeyPrfSalt,
+      });
+      return unlockVaultWithPassphrase(
+        auth.vaultKeyHex,
         input.encryptedVaultKey,
         input.salt,
         input.iv

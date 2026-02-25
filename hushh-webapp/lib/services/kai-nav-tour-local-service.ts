@@ -4,6 +4,7 @@ import { Preferences } from "@capacitor/preferences";
 
 const KEY_PREFIX = "kai_nav_tour_v1";
 const VERSION = 1 as const;
+const FALLBACK_STORAGE_PREFIX = `${KEY_PREFIX}:fallback`;
 
 export type KaiNavTourLocalState = {
   version: 1;
@@ -19,6 +20,10 @@ function nowIso(now?: Date): string {
 
 function keyForUser(userId: string): string {
   return `${KEY_PREFIX}:${userId}`;
+}
+
+function fallbackKeyForUser(userId: string): string {
+  return `${FALLBACK_STORAGE_PREFIX}:${userId}`;
 }
 
 function createDefaultState(now?: Date): KaiNavTourLocalState {
@@ -56,21 +61,46 @@ function normalizeState(raw: unknown): KaiNavTourLocalState | null {
 }
 
 async function persist(userId: string, state: KaiNavTourLocalState): Promise<void> {
-  await Preferences.set({
-    key: keyForUser(userId),
-    value: JSON.stringify(state),
-  });
+  const serialized = JSON.stringify(state);
+  try {
+    await Preferences.set({
+      key: keyForUser(userId),
+      value: serialized,
+    });
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(fallbackKeyForUser(userId), serialized);
+    }
+    return;
+  } catch (error) {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(fallbackKeyForUser(userId), serialized);
+      return;
+    }
+    throw error;
+  }
 }
 
 export class KaiNavTourLocalService {
   static async load(userId: string): Promise<KaiNavTourLocalState | null> {
     try {
       const { value } = await Preferences.get({ key: keyForUser(userId) });
-      if (!value) return null;
-      return normalizeState(JSON.parse(value));
+      if (value) return normalizeState(JSON.parse(value));
     } catch {
-      return null;
+      // Fall through to localStorage fallback on environments where
+      // Capacitor Preferences may be temporarily unavailable.
     }
+
+    if (typeof window !== "undefined") {
+      try {
+        const fallback = window.localStorage.getItem(fallbackKeyForUser(userId));
+        if (!fallback) return null;
+        return normalizeState(JSON.parse(fallback));
+      } catch {
+        return null;
+      }
+    }
+
+    return null;
   }
 
   static async markCompleted(userId: string, now?: Date): Promise<KaiNavTourLocalState> {
@@ -95,6 +125,7 @@ export class KaiNavTourLocalService {
 
     const next: KaiNavTourLocalState = {
       ...current,
+      completed_at: null,
       skipped_at: iso,
       synced_to_vault_at: null,
       updated_at: iso,
@@ -120,6 +151,12 @@ export class KaiNavTourLocalService {
   }
 
   static async clear(userId: string): Promise<void> {
-    await Preferences.remove({ key: keyForUser(userId) });
+    try {
+      await Preferences.remove({ key: keyForUser(userId) });
+    } finally {
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem(fallbackKeyForUser(userId));
+      }
+    }
   }
 }

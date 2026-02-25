@@ -38,10 +38,6 @@ public class HushhConsentPlugin: CAPPlugin, CAPBridgedPlugin {
     private let DEFAULT_CONSENT_TOKEN_EXPIRY_MS: Int64 = 1000 * 60 * 60 * 24 * 7  // 7 days
     private let DEFAULT_TRUST_LINK_EXPIRY_MS: Int64 = 1000 * 60 * 60 * 24 * 30    // 30 days
     
-    private var defaultBackendUrl: String {
-        return (bridge?.config.getPluginConfig(jsName).getString("backendUrl")) ?? "https://consent-protocol-1006304528804.us-central1.run.app"
-    }
-    
     private static var revokedTokens = Set<String>()
     
     private var secretKey: String {
@@ -59,8 +55,7 @@ public class HushhConsentPlugin: CAPPlugin, CAPBridgedPlugin {
         return HushhProxyClient.resolveBackendUrl(
             call: call,
             plugin: self,
-            jsName: jsName,
-            defaultBackendUrl: defaultBackendUrl
+            jsName: jsName
         )
     }
     

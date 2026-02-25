@@ -166,6 +166,70 @@ function assertMethodsPresent(label, files, methods) {
   ok(`${label}: required methods present across TS/iOS/Android`);
 }
 
+function assertPathsPresent(label, files, pathFragments) {
+  for (const rel of files) {
+    if (!exists(rel)) {
+      fail(`${label}: missing file ${rel}`);
+      continue;
+    }
+    const src = readText(rel);
+    for (const fragment of pathFragments) {
+      if (!src.includes(fragment)) {
+        fail(`${label}: missing endpoint fragment "${fragment}" in ${rel}`);
+      }
+    }
+  }
+  ok(`${label}: endpoint fragments present`);
+}
+
+function checkBackendResolverUsage() {
+  const iosNetworkPlugins = [
+    "hushh-webapp/ios/App/App/Plugins/HushhVaultPlugin.swift",
+    "hushh-webapp/ios/App/App/Plugins/HushhConsentPlugin.swift",
+    "hushh-webapp/ios/App/App/Plugins/KaiPlugin.swift",
+    "hushh-webapp/ios/App/App/Plugins/WorldModelPlugin.swift",
+    "hushh-webapp/ios/App/App/Plugins/HushhNotificationsPlugin.swift",
+    "hushh-webapp/ios/App/App/Plugins/HushhAccountPlugin.swift",
+  ];
+
+  for (const rel of iosNetworkPlugins) {
+    if (!exists(rel)) {
+      fail(`iOS resolver usage: missing file ${rel}`);
+      continue;
+    }
+    const src = readText(rel);
+    if (!src.includes("HushhProxyClient.resolveBackendUrl")) {
+      fail(
+        `iOS resolver usage: ${rel} must resolve backend via HushhProxyClient.resolveBackendUrl`
+      );
+    }
+  }
+  ok("iOS network plugins resolve backend URL via HushhProxyClient");
+
+  const androidNetworkPlugins = [
+    "hushh-webapp/android/app/src/main/java/com/hushh/app/plugins/HushhVault/HushhVaultPlugin.kt",
+    "hushh-webapp/android/app/src/main/java/com/hushh/app/plugins/HushhConsent/HushhConsentPlugin.kt",
+    "hushh-webapp/android/app/src/main/java/com/hushh/app/plugins/Kai/KaiPlugin.kt",
+    "hushh-webapp/android/app/src/main/java/com/hushh/app/plugins/WorldModel/WorldModelPlugin.kt",
+    "hushh-webapp/android/app/src/main/java/com/hushh/app/plugins/HushhNotifications/HushhNotificationsPlugin.kt",
+    "hushh-webapp/android/app/src/main/java/com/hushh/app/plugins/HushhAccount/HushhAccountPlugin.kt",
+  ];
+
+  for (const rel of androidNetworkPlugins) {
+    if (!exists(rel)) {
+      fail(`Android resolver usage: missing file ${rel}`);
+      continue;
+    }
+    const src = readText(rel);
+    if (!src.includes("BackendUrl.resolve(")) {
+      fail(
+        `Android resolver usage: ${rel} must resolve backend via BackendUrl.resolve(...)`
+      );
+    }
+  }
+  ok("Android network plugins resolve backend URL via BackendUrl.resolve");
+}
+
 function checkMethodLevelParity() {
   assertMethodsPresent(
     "HushhVault multi-wrapper parity",
@@ -206,6 +270,33 @@ function checkMethodLevelParity() {
     ],
     ["getMetadata", "getEncryptedData", "storeDomainData", "getDomainData", "clearDomain"]
   );
+
+  assertPathsPresent(
+    "HushhVault endpoint parity",
+    [
+      "hushh-webapp/ios/App/App/Plugins/HushhVaultPlugin.swift",
+      "hushh-webapp/android/app/src/main/java/com/hushh/app/plugins/HushhVault/HushhVaultPlugin.kt",
+    ],
+    ["/db/vault/check", "/db/vault/get", "/db/vault/setup", "/db/vault/wrapper/upsert", "/db/vault/primary/set"]
+  );
+
+  assertPathsPresent(
+    "Kai endpoint parity",
+    [
+      "hushh-webapp/ios/App/App/Plugins/KaiPlugin.swift",
+      "hushh-webapp/android/app/src/main/java/com/hushh/app/plugins/Kai/KaiPlugin.kt",
+    ],
+    ["/api/kai/analyze", "/api/kai/analyze/stream", "/api/kai/portfolio/import", "/api/kai/portfolio/import/stream"]
+  );
+
+  assertPathsPresent(
+    "WorldModel endpoint parity",
+    [
+      "hushh-webapp/ios/App/App/Plugins/WorldModelPlugin.swift",
+      "hushh-webapp/android/app/src/main/java/com/hushh/app/plugins/WorldModel/WorldModelPlugin.kt",
+    ],
+    ["/api/world-model/metadata/", "/api/world-model/store-domain", "/api/world-model/domain-data/"]
+  );
 }
 
 function main() {
@@ -213,6 +304,7 @@ function main() {
   checkTsRegistrations();
   checkIosRegistration();
   checkAndroidRegistrationAndNames();
+  checkBackendResolverUsage();
   checkMethodLevelParity();
 
   if (process.exitCode) {

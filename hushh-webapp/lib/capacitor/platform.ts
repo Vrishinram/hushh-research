@@ -92,5 +92,5 @@ export const platformConfig = {
    */
   apiBaseUrl: isNative()
     ? ""
-    : process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000",
+    : (process.env.NEXT_PUBLIC_BACKEND_URL || "").trim(),
 };

@@ -1,10 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 
-import { SegmentedPill, type SegmentedPillOption } from "@/lib/morphy-ux/ui";
 import { useKaiBottomChromeVisibility } from "@/lib/navigation/kai-bottom-chrome-visibility";
 import {
   activeKaiRouteTabFromPath,
@@ -12,15 +11,11 @@ import {
 } from "@/lib/navigation/kai-route-tabs";
 import { ROUTES } from "@/lib/navigation/routes";
 import { cn } from "@/lib/utils";
+import { scrollAppToTop } from "@/lib/navigation/use-scroll-reset";
 
-const SWIPE_VERTICAL_LIMIT_PX = 48;
-const SWIPE_DIRECTION_RATIO = 1.35;
-const SWIPE_DRAG_RESISTANCE = 1;
-const SEGMENTED_PILL_HORIZONTAL_INSET_PX = 8;
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
+const SWIPE_MIN_DISTANCE_PX = 54;
+const SWIPE_VERTICAL_LIMIT_PX = 56;
+const SWIPE_DIRECTION_RATIO = 1.2;
 
 function hasHorizontalScrollParent(target: HTMLElement | null): boolean {
   if (!target || typeof window === "undefined") return false;
@@ -29,7 +24,8 @@ function hasHorizontalScrollParent(target: HTMLElement | null): boolean {
     const style = window.getComputedStyle(node);
     const overflowX = style.overflowX;
     const canScroll =
-      (overflowX === "auto" || overflowX === "scroll") && node.scrollWidth > node.clientWidth + 4;
+      (overflowX === "auto" || overflowX === "scroll") &&
+      node.scrollWidth > node.clientWidth + 4;
     if (canScroll) return true;
     node = node.parentElement;
   }
@@ -40,15 +36,23 @@ function shouldIgnoreGlobalSwipeTarget(target: EventTarget | null): boolean {
   const element = target instanceof HTMLElement ? target : null;
   if (!element) return false;
 
+  if (element.closest('[data-tour-id="kai-route-tabs"]')) {
+    return false;
+  }
+
   if (
     element.closest(
-      'input, textarea, select, button, a, [role="button"], [contenteditable="true"], [data-no-route-swipe]'
+      'input, textarea, select, [contenteditable="true"], [data-no-route-swipe], [data-slot="dialog-content"], [data-slot="sheet-content"], [data-slot="alert-dialog-content"], [data-slot="command"], [cmdk-root]'
     )
   ) {
     return true;
   }
 
-  if (element.closest('[data-slot="carousel"], [data-slot="carousel-content"], [data-slot="carousel-item"]')) {
+  if (
+    element.closest(
+      '[data-slot="carousel"], [data-slot="carousel-content"], [data-slot="carousel-item"]'
+    )
+  ) {
     return true;
   }
 
@@ -62,7 +66,6 @@ function shouldIgnoreGlobalSwipeTarget(target: EventTarget | null): boolean {
 export function DashboardRouteTabs() {
   const router = useRouter();
   const pathname = usePathname();
-  const segmentedPillRef = useRef<HTMLDivElement | null>(null);
   const hideTabsForPath =
     pathname.startsWith(ROUTES.KAI_ONBOARDING) || pathname.startsWith(ROUTES.KAI_IMPORT);
   const [mounted, setMounted] = useState(false);
@@ -72,6 +75,7 @@ export function DashboardRouteTabs() {
     () => activeKaiRouteTabFromPath(pathname || ROUTES.KAI_HOME),
     [pathname]
   );
+
   useEffect(() => {
     setMounted(true);
     return () => setMounted(false);
@@ -83,28 +87,12 @@ export function DashboardRouteTabs() {
       router.prefetch(tab.prefetchHref);
     }
   }, [mounted, router]);
-  const tabOptions = useMemo<SegmentedPillOption[]>(
-    () =>
-      KAI_ROUTE_TABS.map((tab) => ({
-        value: tab.id,
-        label: tab.label,
-      })),
-    []
-  );
 
   const handleTabChange = useCallback(
     (nextTab: string) => {
       const target = KAI_ROUTE_TABS.find((tab) => tab.id === nextTab);
       if (!target || target.id === activeTab) return;
-      // Match bottom-navbar tap motion: rely on SegmentedPill native transition.
-      const root = segmentedPillRef.current;
-      const indicator = root?.querySelector<HTMLElement>("[data-segment-indicator]") ?? null;
-      if (indicator) {
-        indicator.style.transition = "";
-      }
-      if (root) {
-        root.style.setProperty("--segment-drag-x", "0px");
-      }
+      scrollAppToTop("auto");
       router.push(target.href);
     },
     [activeTab, router]
@@ -115,76 +103,21 @@ export function DashboardRouteTabs() {
       return;
     }
 
-    let routePushTimeout: number | null = null;
+    const swipeSurface: Document | HTMLElement =
+      document.querySelector<HTMLElement>("[data-app-scroll-root='true']") ?? document;
 
     let startX: number | null = null;
     let startY: number | null = null;
-    let activeGesture = false;
+    let tracking = false;
     let gestureAxis: "undecided" | "horizontal" | "vertical" = "undecided";
     let ignoredTarget = false;
-    let currentOffsetPx = 0;
-    let gestureSegmentWidth = 0;
-    let gestureMinOffset = 0;
-    let gestureMaxOffset = 0;
-    const activeIndex = Math.max(
-      0,
-      KAI_ROUTE_TABS.findIndex((tab) => tab.id === activeTab)
-    );
-
-    const getSegmentMetrics = () => {
-      const root = segmentedPillRef.current;
-      if (!root) {
-        return { segmentWidth: 1, minOffset: 0, maxOffset: 0 };
-      }
-      const totalWidth = root.getBoundingClientRect().width;
-      const segmentWidth = Math.max(
-        1,
-        (totalWidth - SEGMENTED_PILL_HORIZONTAL_INSET_PX) / Math.max(KAI_ROUTE_TABS.length, 1)
-      );
-      const minOffset = -activeIndex * segmentWidth;
-      const maxOffset = (KAI_ROUTE_TABS.length - 1 - activeIndex) * segmentWidth;
-      return {
-        segmentWidth,
-        minOffset,
-        maxOffset,
-      };
-    };
-
-    const setIndicatorOffset = (
-      x: number,
-      {
-        immediate = false,
-        durationMs = 220,
-      }: {
-        immediate?: boolean;
-        durationMs?: number;
-      } = {}
-    ) => {
-      const root = segmentedPillRef.current;
-      const indicator = root?.querySelector<HTMLElement>("[data-segment-indicator]") ?? null;
-      if (!root || !indicator) return;
-      if (immediate) {
-        indicator.style.transition = "none";
-      } else {
-        indicator.style.transition = `transform ${durationMs}ms cubic-bezier(0.22, 1, 0.36, 1)`;
-      }
-      root.style.setProperty("--segment-drag-x", `${x}px`);
-    };
-
-    const resetIndicatorOffset = (immediate = false) => {
-      setIndicatorOffset(0, { immediate, durationMs: 220 });
-    };
 
     const resetGesture = () => {
       startX = null;
       startY = null;
-      activeGesture = false;
+      tracking = false;
       gestureAxis = "undecided";
       ignoredTarget = false;
-      currentOffsetPx = 0;
-      gestureSegmentWidth = 0;
-      gestureMinOffset = 0;
-      gestureMaxOffset = 0;
     };
 
     const onTouchStart = (event: TouchEvent) => {
@@ -192,6 +125,7 @@ export function DashboardRouteTabs() {
         resetGesture();
         return;
       }
+
       ignoredTarget = shouldIgnoreGlobalSwipeTarget(event.target);
       if (ignoredTarget) {
         resetGesture();
@@ -206,17 +140,12 @@ export function DashboardRouteTabs() {
 
       startX = touch.clientX;
       startY = touch.clientY;
-      activeGesture = true;
+      tracking = true;
       gestureAxis = "undecided";
-      const metrics = getSegmentMetrics();
-      gestureSegmentWidth = metrics.segmentWidth;
-      gestureMinOffset = metrics.minOffset;
-      gestureMaxOffset = metrics.maxOffset;
-      setIndicatorOffset(0, { immediate: true });
     };
 
     const onTouchMove = (event: TouchEvent) => {
-      if (!activeGesture || ignoredTarget || event.touches.length === 0) {
+      if (!tracking || ignoredTarget || event.touches.length === 0) {
         return;
       }
 
@@ -234,13 +163,13 @@ export function DashboardRouteTabs() {
         if (absX < 6 && absY < 6) {
           return;
         }
+
         if (absY > absX * 1.1) {
           gestureAxis = "vertical";
-          activeGesture = false;
-          currentOffsetPx = 0;
-          resetIndicatorOffset(false);
+          tracking = false;
           return;
         }
+
         if (absX > absY * 1.1) {
           gestureAxis = "horizontal";
         } else {
@@ -248,21 +177,19 @@ export function DashboardRouteTabs() {
         }
       }
 
-      if (gestureAxis !== "horizontal" || absY > Math.max(16, absX * 1.2)) {
-        activeGesture = false;
-        currentOffsetPx = 0;
-        resetIndicatorOffset(false);
+      if (
+        gestureAxis !== "horizontal" ||
+        absY > Math.max(20, absX * SWIPE_DIRECTION_RATIO)
+      ) {
+        tracking = false;
         return;
       }
 
-      const offset = clamp(-deltaX * SWIPE_DRAG_RESISTANCE, gestureMinOffset, gestureMaxOffset);
-      currentOffsetPx = offset;
-      setIndicatorOffset(offset, { immediate: true });
+      event.preventDefault();
     };
 
     const onTouchEnd = (event: TouchEvent) => {
-      if (!activeGesture || ignoredTarget || event.changedTouches.length === 0) {
-        resetIndicatorOffset(false);
+      if (!tracking || ignoredTarget || event.changedTouches.length === 0) {
         resetGesture();
         return;
       }
@@ -277,79 +204,70 @@ export function DashboardRouteTabs() {
       const deltaY = touch.clientY - startY;
       const absX = Math.abs(deltaX);
       const absY = Math.abs(deltaY);
-      const segmentWidth = gestureSegmentWidth > 0 ? gestureSegmentWidth : 1;
-      const targetIndex = clamp(
-        Math.round(activeIndex + currentOffsetPx / segmentWidth),
+      const finalAxis = gestureAxis;
+      resetGesture();
+
+      if (
+        finalAxis !== "horizontal" ||
+        absY > SWIPE_VERTICAL_LIMIT_PX ||
+        absX < SWIPE_MIN_DISTANCE_PX ||
+        absX < absY * SWIPE_DIRECTION_RATIO
+      ) {
+        return;
+      }
+
+      const activeIndex = Math.max(
         0,
-        KAI_ROUTE_TABS.length - 1
+        KAI_ROUTE_TABS.findIndex((tab) => tab.id === activeTab)
       );
-      resetGesture();
+      const direction = deltaX < 0 ? 1 : -1;
+      const target = KAI_ROUTE_TABS[activeIndex + direction];
+      if (!target) return;
 
-      if (absY > SWIPE_VERTICAL_LIMIT_PX || absX < absY * SWIPE_DIRECTION_RATIO) {
-        resetIndicatorOffset(false);
-        return;
-      }
-
-      if (targetIndex === activeIndex) {
-        resetIndicatorOffset(false);
-        return;
-      }
-
-      const targetHref = KAI_ROUTE_TABS[targetIndex]?.href;
-      if (!targetHref) {
-        resetIndicatorOffset(false);
-        return;
-      }
-
-      const commitOffset = (targetIndex - activeIndex) * segmentWidth;
-      setIndicatorOffset(commitOffset, { immediate: false, durationMs: 150 });
-      routePushTimeout = window.setTimeout(() => {
-        router.push(targetHref);
-      }, 110);
+      scrollAppToTop("auto");
+      router.push(target.href);
     };
 
-    const onTouchCancel = () => {
-      resetIndicatorOffset(false);
-      resetGesture();
-    };
+    const onTouchCancel = () => resetGesture();
 
-    document.addEventListener("touchstart", onTouchStart, { passive: true });
-    document.addEventListener("touchmove", onTouchMove, { passive: true });
-    document.addEventListener("touchend", onTouchEnd, { passive: true });
-    document.addEventListener("touchcancel", onTouchCancel, { passive: true });
+    const touchStartListener: EventListener = (event) => onTouchStart(event as TouchEvent);
+    const touchMoveListener: EventListener = (event) => onTouchMove(event as TouchEvent);
+    const touchEndListener: EventListener = (event) => onTouchEnd(event as TouchEvent);
+    const touchCancelListener: EventListener = () => onTouchCancel();
+
+    swipeSurface.addEventListener("touchstart", touchStartListener, { passive: true });
+    swipeSurface.addEventListener("touchmove", touchMoveListener, { passive: false });
+    swipeSurface.addEventListener("touchend", touchEndListener, { passive: true });
+    swipeSurface.addEventListener("touchcancel", touchCancelListener, { passive: true });
 
     return () => {
-      if (routePushTimeout) {
-        window.clearTimeout(routePushTimeout);
-      }
-      document.removeEventListener("touchstart", onTouchStart);
-      document.removeEventListener("touchmove", onTouchMove);
-      document.removeEventListener("touchend", onTouchEnd);
-      document.removeEventListener("touchcancel", onTouchCancel);
+      swipeSurface.removeEventListener("touchstart", touchStartListener);
+      swipeSurface.removeEventListener("touchmove", touchMoveListener);
+      swipeSurface.removeEventListener("touchend", touchEndListener);
+      swipeSurface.removeEventListener("touchcancel", touchCancelListener);
     };
-  }, [mounted, hideTabsForPath, pathname, router]);
-
-  useEffect(() => {
-    const root = segmentedPillRef.current;
-    const indicator = root?.querySelector<HTMLElement>("[data-segment-indicator]") ?? null;
-    if (!root || !indicator) return;
-    indicator.style.transition = "";
-    root.style.setProperty("--segment-drag-x", "0px");
-  }, [pathname]);
+  }, [mounted, hideTabsForPath, activeTab, router]);
 
   if (!mounted || typeof document === "undefined" || hideTabsForPath) {
     return null;
   }
 
+  const activeTabIndex = Math.max(
+    0,
+    KAI_ROUTE_TABS.findIndex((tab) => tab.id === activeTab)
+  );
+
   return createPortal(
     <div
       className="pointer-events-none fixed inset-x-0 z-[90]"
-      style={{ top: "calc(env(safe-area-inset-top, 0px) + 58px)" }}
+      style={{
+        top: "calc(env(safe-area-inset-top, 0px) + var(--app-top-safe-offset, 0px) + 58px)",
+      }}
     >
       <div
         aria-hidden
         className={cn(
-          "pointer-events-none absolute inset-x-0 -top-4 h-[90px] top-bar-glass transform-gpu transition-all duration-300 ease-out will-change-transform",
+          "pointer-events-none absolute inset-x-0 -top-4 h-[90px] bar-glass bar-glass-top transform-gpu transition-all duration-300 ease-out will-change-transform",
           hideRouteTabs ? "opacity-0" : "opacity-100"
         )}
         style={{
@@ -361,9 +279,7 @@ export function DashboardRouteTabs() {
       <div
         className={cn(
           "relative mx-auto flex w-full max-w-6xl justify-center px-4 transform-gpu transition-all duration-300 ease-out will-change-transform sm:px-6",
-          hideRouteTabs
-            ? "pointer-events-none opacity-0"
-            : "pointer-events-auto opacity-100"
+          hideRouteTabs ? "pointer-events-none opacity-0" : "pointer-events-auto opacity-100"
         )}
         style={{
           transform: hideRouteTabs
@@ -371,16 +287,36 @@ export function DashboardRouteTabs() {
             : "translate3d(0, 0, 0)",
         }}
       >
-        <div className="pointer-events-auto w-full max-w-[460px] touch-pan-x">
-          <SegmentedPill
-            ref={segmentedPillRef}
-            size="compact"
-            value={activeTab}
-            options={tabOptions}
-            onValueChange={handleTabChange}
-            ariaLabel="Kai route tabs"
-            className="w-full"
-          />
+        <div
+          data-tour-id="kai-route-tabs"
+          className="pointer-events-auto w-full max-w-[460px] overflow-hidden"
+        >
+          <div className="relative grid grid-cols-3 items-center border-b border-border/65 px-1">
+            {KAI_ROUTE_TABS.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => handleTabChange(tab.id)}
+                className={cn(
+                  "relative z-[1] h-9 text-sm font-semibold transition-colors duration-200",
+                  tab.id === activeTab
+                    ? "text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+                aria-current={tab.id === activeTab ? "page" : undefined}
+              >
+                {tab.label}
+              </button>
+            ))}
+            <span
+              aria-hidden
+              className="pointer-events-none absolute -bottom-px left-0 h-[2px] bg-primary transition-transform duration-250 ease-out"
+              style={{
+                width: `calc(100% / ${KAI_ROUTE_TABS.length})`,
+                transform: `translate3d(${activeTabIndex * 100}%, 0, 0)`,
+              }}
+            />
+          </div>
         </div>
       </div>
     </div>,

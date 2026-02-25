@@ -24,8 +24,11 @@ export function AuthLegalDialog({ docType, onOpenChange }: AuthLegalDialogProps)
   const content = docType ? KAI_LEGAL_DOCUMENTS[docType] : null;
 
   return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[min(36rem,calc(100%-1.5rem))] gap-3 p-0">
+    <Dialog open={isOpen} onOpenChange={onOpenChange} modal={false}>
+      <DialogContent
+        className="max-w-[min(36rem,calc(100%-1.5rem))] gap-3 p-0"
+        onInteractOutside={(event) => event.preventDefault()}
+      >
         {content ? (
           <>
             <DialogHeader className="px-5 pt-5 text-left">

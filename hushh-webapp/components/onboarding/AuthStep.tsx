@@ -41,6 +41,10 @@ export function AuthStep({
   const [activeLegalDoc, setActiveLegalDoc] = useState<KaiLegalDocumentType | null>(
     null
   );
+  const openLegalDoc = useCallback((docType: KaiLegalDocumentType) => {
+    // Defer open so the originating tap does not get interpreted as outside-interact.
+    requestAnimationFrame(() => setActiveLegalDoc(docType));
+  }, []);
 
   const resolveAndNavigate = useCallback(
     async (userId: string) => {
@@ -298,7 +302,7 @@ export function AuthStep({
             By continuing, you agree to Kai&apos;s{" "}
             <button
               type="button"
-              onClick={() => setActiveLegalDoc("terms")}
+              onClick={() => openLegalDoc("terms")}
               className="font-semibold text-foreground underline underline-offset-2 transition-opacity hover:opacity-70"
             >
               Terms
@@ -306,7 +310,7 @@ export function AuthStep({
             and{" "}
             <button
               type="button"
-              onClick={() => setActiveLegalDoc("privacy")}
+              onClick={() => openLegalDoc("privacy")}
               className="font-semibold text-foreground underline underline-offset-2 transition-opacity hover:opacity-70"
             >
               Privacy Policy

@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { useRouter } from "next/navigation";
 import {
   Pencil,
   Plus,
@@ -31,7 +30,6 @@ import { Button as MorphyButton } from "@/lib/morphy-ux/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/lib/morphy-ux/card";
 import { Icon } from "@/lib/morphy-ux/ui";
 import { KAI_EXPERIENCE_CONTRACT } from "@/lib/kai/experience-contract";
-import { ROUTES } from "@/lib/navigation/routes";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   AlertDialog,
@@ -322,7 +320,6 @@ export function DashboardMasterView({
   onAnalyzeStock,
   onReupload,
 }: DashboardMasterViewProps) {
-  const router = useRouter();
   const { vaultKey } = useVault();
   const { setPortfolioData: setCachePortfolioData } = useCache();
   const baselineBySourceRef = useRef<Map<string, ComparableHolding>>(new Map());
@@ -999,8 +996,7 @@ export function DashboardMasterView({
         throw new Error("Failed to delete imported data");
       }
 
-      setCachePortfolioData(userId, clearedPortfolioData as CachedPortfolioData);
-      CacheSyncService.onPortfolioUpserted(userId, clearedPortfolioData as CachedPortfolioData);
+      CacheSyncService.onWorldModelDomainCleared(userId, "financial");
       baselineBySourceRef.current = new Map();
       setHoldingsDraft([]);
       setDeleteImportedDialogOpen(false);
@@ -1082,17 +1078,10 @@ export function DashboardMasterView({
         cell: ({ row }) => {
           const holding = row.original;
           const deleted = Boolean(holding.pending_delete);
-          const canAnalyze = isHoldingAnalyzeEligible(holding);
-          const isCash = holding.is_cash_equivalent === true;
-          const categoryLabel = isCash
-            ? "Cash / Sweep"
-            : canAnalyze
-              ? "Analyze Eligible"
-              : "Non-Analyzable";
           return (
             <div
               className={cn(
-                "min-w-0 max-w-[130px] sm:max-w-[280px] lg:max-w-[340px]",
+                "min-w-0 max-w-[160px] sm:max-w-[280px] lg:max-w-[340px]",
                 deleted && "opacity-60"
               )}
             >
@@ -1105,9 +1094,6 @@ export function DashboardMasterView({
               >
                 {holding.name || "Unnamed security"}
               </p>
-              <span className="mt-1 inline-flex rounded-full bg-background px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-                {categoryLabel}
-              </span>
             </div>
           );
         },
@@ -1175,16 +1161,17 @@ export function DashboardMasterView({
         cell: ({ row }) => {
           const holding = row.original;
           const isDeleted = Boolean(holding.pending_delete);
-          const canAnalyze = isHoldingAnalyzeEligible(holding);
           return (
-            <div className="flex flex-wrap items-center justify-end gap-1">
+            <div className="flex items-center justify-end gap-1">
               <MorphyButton
                 variant="none"
                 effect="fade"
-                size="icon-sm"
+                size="sm"
                 disabled={isDeleted}
                 aria-label={`Edit ${holding.symbol || "holding"}`}
                 onClick={() => handleEditHolding(holding.client_id)}
+                title={`Edit ${holding.symbol || "holding"}`}
+                className="h-8 w-8 min-w-8 justify-center p-0"
               >
                 <Icon icon={Pencil} size="sm" />
               </MorphyButton>
@@ -1194,44 +1181,24 @@ export function DashboardMasterView({
                 size="sm"
                 aria-label={isDeleted ? `Undo remove ${holding.symbol}` : `Remove ${holding.symbol}`}
                 onClick={() => handleToggleDeleteHolding(holding.client_id)}
+                title={isDeleted ? `Restore ${holding.symbol || "holding"}` : `Remove ${holding.symbol || "holding"}`}
                 className={cn(
-                  "min-w-[34px] sm:min-w-[78px]",
+                  "h-8 w-8 min-w-8 justify-center p-0",
                   isDeleted ? "text-muted-foreground" : "text-rose-600 hover:text-rose-700"
                 )}
               >
-                <Icon icon={isDeleted ? Undo2 : Trash2} size="sm" className="mr-1" />
-                <span className="hidden sm:inline">{isDeleted ? "Restore" : "Remove"}</span>
-              </MorphyButton>
-              <MorphyButton
-                variant="none"
-                effect="fade"
-                size="sm"
-                disabled={isDeleted || !canAnalyze}
-                className="px-2 sm:px-3"
-                onClick={() => {
-                  if (!canAnalyze) return;
-                  onAnalyzeStock?.(holding.symbol);
-                }}
-              >
-                {canAnalyze ? (
-                  <>
-                    <span className="sm:hidden">Go</span>
-                    <span className="hidden sm:inline">Analyze</span>
-                  </>
-                ) : (
-                  "N/A"
-                )}
+                <Icon icon={isDeleted ? Undo2 : Trash2} size="sm" />
               </MorphyButton>
             </div>
           );
         },
       },
     ],
-    [handleEditHolding, handleToggleDeleteHolding, onAnalyzeStock]
+    [handleEditHolding, handleToggleDeleteHolding]
   );
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-8 px-5 pb-[calc(160px+var(--app-bottom-inset))] pt-4 sm:px-8">
+    <div className="mx-auto w-full max-w-5xl space-y-8 overflow-x-hidden px-5 pb-[calc(160px+var(--app-bottom-inset))] pt-4 sm:px-8">
       <Card
         variant="muted"
         effect="fill"
@@ -1419,31 +1386,47 @@ export function DashboardMasterView({
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <span className="font-semibold text-foreground">Bifurcation</span>
               <span className="rounded-full bg-background px-2 py-0.5">
-                Analyze Eligible: {holdingsBifurcation.analyzeEligible}
+                Equities: {holdingsBifurcation.analyzeEligible}
               </span>
               <span className="rounded-full bg-background px-2 py-0.5">
-                Non-Analyzable: {holdingsBifurcation.nonAnalyzable}
+                Other Assets: {holdingsBifurcation.nonAnalyzable}
               </span>
               <span className="rounded-full bg-background px-2 py-0.5">
-                Cash / Sweep: {holdingsBifurcation.cashSweep}
+                Cash: {holdingsBifurcation.cashSweep}
               </span>
             </div>
           </div>
 
           <Tabs defaultValue="all" className="space-y-3">
-            <div className="overflow-x-auto pb-1">
-              <TabsList className="inline-flex h-9 w-max min-w-full bg-background/80">
-                <TabsTrigger className="shrink-0" value="all">
+            <div className="pb-1">
+              <TabsList className="grid h-8 w-full grid-cols-4 gap-0.5 rounded-lg bg-background/80 p-0.5">
+                <TabsTrigger
+                  className="h-7 min-w-0 truncate px-1 text-[10px] leading-none sm:text-xs"
+                  value="all"
+                  title={`All holdings (${desktopHoldingTables.all.length})`}
+                >
                   All ({desktopHoldingTables.all.length})
                 </TabsTrigger>
-                <TabsTrigger className="shrink-0" value="analyze">
-                  Analyze Eligible ({desktopHoldingTables.analyzeEligible.length})
+                <TabsTrigger
+                  className="h-7 min-w-0 truncate px-1 text-[10px] leading-none sm:text-xs"
+                  value="analyze"
+                  title={`Equities (${desktopHoldingTables.analyzeEligible.length})`}
+                >
+                  Equity ({desktopHoldingTables.analyzeEligible.length})
                 </TabsTrigger>
-                <TabsTrigger className="shrink-0" value="non-analyze">
-                  Non-Analyzable ({desktopHoldingTables.nonAnalyzable.length})
+                <TabsTrigger
+                  className="h-7 min-w-0 truncate px-1 text-[10px] leading-none sm:text-xs"
+                  value="non-analyze"
+                  title={`Other assets (${desktopHoldingTables.nonAnalyzable.length})`}
+                >
+                  Other ({desktopHoldingTables.nonAnalyzable.length})
                 </TabsTrigger>
-                <TabsTrigger className="shrink-0" value="cash">
-                  Cash / Sweep ({desktopHoldingTables.cashSweep.length})
+                <TabsTrigger
+                  className="h-7 min-w-0 truncate px-1 text-[10px] leading-none sm:text-xs"
+                  value="cash"
+                  title={`Cash holdings (${desktopHoldingTables.cashSweep.length})`}
+                >
+                  Cash ({desktopHoldingTables.cashSweep.length})
                 </TabsTrigger>
               </TabsList>
             </div>
@@ -1469,7 +1452,7 @@ export function DashboardMasterView({
               <DataTable
                 columns={holdingsTableColumns}
                 data={desktopHoldingTables.analyzeEligible}
-                searchPlaceholder="Search analyzable holdings..."
+                searchPlaceholder="Search equities..."
                 initialPageSize={5}
                 pageSizeOptions={[5, 10, 20]}
                 rowClassName={(holding) =>
@@ -1486,7 +1469,7 @@ export function DashboardMasterView({
               <DataTable
                 columns={holdingsTableColumns}
                 data={desktopHoldingTables.nonAnalyzable}
-                searchPlaceholder="Search non-analyzable holdings..."
+                searchPlaceholder="Search other assets..."
                 initialPageSize={5}
                 pageSizeOptions={[5, 10, 20]}
                 rowClassName={(holding) =>
@@ -1503,7 +1486,7 @@ export function DashboardMasterView({
               <DataTable
                 columns={holdingsTableColumns}
                 data={desktopHoldingTables.cashSweep}
-                searchPlaceholder="Search cash / sweep holdings..."
+                searchPlaceholder="Search cash holdings..."
                 initialPageSize={5}
                 pageSizeOptions={[5, 10, 20]}
                 rowClassName={(holding) =>
@@ -1610,17 +1593,7 @@ export function DashboardMasterView({
 
       <Card variant="none" effect="glass" className="min-w-0 overflow-hidden rounded-[24px]">
         <CardHeader className="pb-2 px-5 pt-5 sm:px-6 sm:pt-6">
-          <div className="flex items-center justify-between gap-3">
-            <CardTitle className="text-sm">Recommendations</CardTitle>
-            <MorphyButton
-              variant="none"
-              effect="fade"
-              size="sm"
-              onClick={() => router.push(ROUTES.KAI_OPTIMIZE)}
-            >
-              Optimize
-            </MorphyButton>
-          </div>
+          <CardTitle className="text-sm">Recommendations</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3 px-5 pb-5 pt-0 sm:px-6 sm:pb-6">
           <p className="text-xs text-muted-foreground">
@@ -1636,22 +1609,24 @@ export function DashboardMasterView({
       </Card>
 
       <Card variant="none" effect="glass" className="rounded-[24px]">
-        <CardContent className="flex flex-wrap items-center justify-between gap-3 p-5 text-xs text-muted-foreground sm:p-6">
+        <CardContent className="flex flex-col gap-3 p-5 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:p-6">
           <p>Imported statement data is synced across dashboard and holdings views.</p>
-          <div className="flex items-center gap-2">
+          <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-2">
             <MorphyButton
               variant="none"
               effect="fade"
               size="sm"
+              fullWidth
               disabled={isDeletingImportedData}
               onClick={onReupload}
             >
-              Import New Statement
+              Import Portfolio
             </MorphyButton>
             <MorphyButton
               variant="none"
               effect="fade"
               size="sm"
+              fullWidth
               className="text-rose-600 hover:text-rose-700 dark:text-rose-400 dark:hover:text-rose-300"
               disabled={isDeletingImportedData}
               onClick={() => setDeleteImportedDialogOpen(true)}

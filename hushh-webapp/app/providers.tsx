@@ -44,10 +44,6 @@ export function Providers({ children }: ProvidersProps) {
   const hideGlobalChrome =
     pathname === ROUTES.HOME || pathname.startsWith(ROUTES.LOGIN);
   const isKaiOnboarding = isKaiOnboardingRoute(pathname);
-  const isKaiTabRoute =
-    pathname === ROUTES.KAI_HOME ||
-    pathname.startsWith(`${ROUTES.KAI_DASHBOARD}`) ||
-    pathname.startsWith(`${ROUTES.KAI_ANALYSIS}`);
   const pageRef = useRef<HTMLDivElement | null>(null);
   const pageAnimationKey = useMemo(
     () => (pathname.startsWith("/kai") ? "/kai-stable-shell" : pathname),
@@ -72,7 +68,7 @@ export function Providers({ children }: ProvidersProps) {
 
   // App-wide page enter fade.
   usePageEnterAnimation(pageRef, { enabled: true, key: pageAnimationKey });
-  useScrollReset(pathname, { enabled: !isKaiTabRoute, behavior: "auto" });
+  useScrollReset(pathname, { enabled: true, behavior: "auto" });
 
   useEffect(() => {
     resetKaiBottomChromeVisibility();
@@ -107,7 +103,7 @@ export function Providers({ children }: ProvidersProps) {
                           : isKaiOnboarding
                           ? // Keep /kai/onboarding single-screen; step components handle their own safe-area/footer inset.
                             "flex-1 overflow-hidden relative z-10 min-h-0 pt-[45px]"
-                          : "flex-1 overflow-y-auto pb-[var(--app-bottom-inset)] relative z-10 min-h-0 pt-[45px]"
+                          : "flex-1 overflow-y-auto overflow-x-hidden overscroll-x-none touch-pan-y pb-[var(--app-bottom-inset)] relative z-10 min-h-0 pt-[45px]"
                       }
                     >
                       <div

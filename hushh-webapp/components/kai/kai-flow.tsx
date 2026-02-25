@@ -40,6 +40,7 @@ import { setOnboardingFlowActiveCookie } from "@/lib/services/onboarding-route-c
 import { ROUTES } from "@/lib/navigation/routes";
 import { useScrollReset } from "@/lib/navigation/use-scroll-reset";
 import { KAI_PORTFOLIO_IMPORT_IDLE_TIMEOUT_MS } from "@/lib/services/kai-import-stream-config";
+import { fetchDemoPortfolioTemplateAsset } from "@/lib/services/demo-mode-template-service";
 import { useAuth } from "@/hooks/use-auth";
 import { VaultFlow } from "@/components/vault/vault-flow";
 import {
@@ -377,137 +378,28 @@ function normalizeHoldingsWithPct<T extends {
   });
 }
 
-function createPreloadedPortfolioTemplate(now?: Date): ReviewPortfolioData {
-  const base = now ?? new Date();
-  const nowIso = base.toISOString();
-  const statementStart = new Date(base.getFullYear(), base.getMonth(), 1)
-    .toISOString()
-    .slice(0, 10);
-  const statementEnd = nowIso.slice(0, 10);
+function isReviewPortfolioData(value: unknown): value is ReviewPortfolioData {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return Array.isArray(record.holdings);
+}
 
-  const holdings: ReviewPortfolioData["holdings"] = [
-    {
-      symbol: "NVDA",
-      name: "NVIDIA Corporation",
-      quantity: 12,
-      price: 850,
-      market_value: 10200,
-      instrument_kind: "equity",
-      is_cash_equivalent: false,
-      is_investable: true,
-      analyze_eligible: true,
-      debate_eligible: true,
-      optimize_eligible: true,
-    },
-    {
-      symbol: "MSFT",
-      name: "Microsoft Corporation",
-      quantity: 15,
-      price: 430,
-      market_value: 6450,
-      instrument_kind: "equity",
-      is_cash_equivalent: false,
-      is_investable: true,
-      analyze_eligible: true,
-      debate_eligible: true,
-      optimize_eligible: true,
-    },
-    {
-      symbol: "AMZN",
-      name: "Amazon.com Inc.",
-      quantity: 20,
-      price: 170,
-      market_value: 3400,
-      instrument_kind: "equity",
-      is_cash_equivalent: false,
-      is_investable: true,
-      analyze_eligible: true,
-      debate_eligible: true,
-      optimize_eligible: true,
-    },
-    {
-      symbol: "TSLA",
-      name: "Tesla Inc.",
-      quantity: 15,
-      price: 250,
-      market_value: 3750,
-      instrument_kind: "equity",
-      is_cash_equivalent: false,
-      is_investable: true,
-      analyze_eligible: true,
-      debate_eligible: true,
-      optimize_eligible: true,
-    },
-    {
-      symbol: "CASH",
-      name: "Cash Sweep",
-      quantity: 1,
-      price: 3750,
-      market_value: 3750,
-      instrument_kind: "cash_equivalent",
-      is_cash_equivalent: true,
-      is_investable: false,
-      analyze_eligible: false,
-      debate_eligible: false,
-      optimize_eligible: false,
-    },
-  ];
+async function fetchDemoModePortfolioTemplate(
+  _vaultOwnerToken?: string
+): Promise<ReviewPortfolioData> {
+  const payload = await fetchDemoPortfolioTemplateAsset();
+  if (!isReviewPortfolioData(payload)) {
+    throw new Error("Demo template is invalid.");
+  }
 
-  return {
-    account_info: {
-      holder_name: "Demo Investor",
-      brokerage: "Hushh Sandbox",
-      account_number: "XXXX-TEST",
-      account_type: "Individual Brokerage",
-      statement_period_start: statementStart,
-      statement_period_end: statementEnd,
-    },
-    account_summary: {
-      beginning_value: 25000,
-      ending_value: 27550,
-      change_in_value: 2550,
-      cash_balance: 3750,
-      equities_value: 23800,
-      investment_gain_loss: 2550,
-      total_income_period: 0,
-      total_income_ytd: 0,
-    },
-    asset_allocation: {
-      cash_pct: 13.61,
-      cash_value: 3750,
-      equities_pct: 86.39,
-      equities_value: 23800,
-      bonds_pct: 0,
-      bonds_value: 0,
-      other_pct: 0,
-      other_value: 0,
-    },
-    holdings,
-    income_summary: {
-      dividends_taxable: 0,
-      interest_income: 0,
-      total_income: 0,
-    },
-    realized_gain_loss: {
-      short_term_gain: 0,
-      long_term_gain: 0,
-      net_realized: 0,
-    },
-    cash_balance: 3750,
-    total_value: 27550,
-    parse_fallback: false,
-    domain_intent: {
-      primary: "financial",
-      source: "kai_schema_preload",
-      captured_sections: [
-        "account_info",
-        "account_summary",
-        "asset_allocation",
-        "holdings",
-      ],
-      updated_at: nowIso,
-    },
-  };
+  const normalized = normalizePortfolioData(payload as Record<string, unknown>);
+  if (!Array.isArray(normalized.holdings) || normalized.holdings.length === 0) {
+    throw new Error("Demo template has no holdings.");
+  }
+
+  return normalized;
 }
 
 // =============================================================================
@@ -578,11 +470,10 @@ export function KaiFlow({
 
         // Avoid resetting active import/review UI when vault state changes mid-flow.
         if (
-          mode === "import" &&
-          (vaultDialogOpen ||
-            stateRef.current === "importing" ||
-            stateRef.current === "import_complete" ||
-            stateRef.current === "reviewing")
+          vaultDialogOpen ||
+          stateRef.current === "importing" ||
+          stateRef.current === "import_complete" ||
+          stateRef.current === "reviewing"
         ) {
           return;
         }
@@ -630,7 +521,9 @@ export function KaiFlow({
           financialDomain && financialDomain.attributeCount > 0;
         if (hasFinancialData) {
           // Prefer CacheProvider (in-memory) for reuse with Manage page
-          let portfolioData: PortfolioData | undefined = cachedPortfolioData;
+          let portfolioData: PortfolioData | undefined = hasCachedPortfolioData
+            ? cachedPortfolioData
+            : undefined;
 
           if (!portfolioData && vaultKey) {
             // No cache - try to decrypt from World Model
@@ -689,10 +582,29 @@ export function KaiFlow({
             setPortfolioData(userId, portfolioData);
           }
 
+          const holdingsCount =
+            (Array.isArray(portfolioData?.holdings) && portfolioData?.holdings.length) || 0;
+
+          if (holdingsCount === 0) {
+            setFlowData({
+              hasFinancialData: false,
+              holdingsCount: 0,
+              portfolioData: undefined,
+              holdings: [],
+            });
+            if (isDashboardMode) {
+              setOnboardingFlowActiveCookie(false);
+              setState("dashboard");
+            } else {
+              setState("import_required");
+            }
+            return;
+          }
+
           // User has financial data - show dashboard
           setFlowData({
             hasFinancialData: true,
-            holdingsCount: financialDomain.attributeCount,
+            holdingsCount,
             portfolioData,
             holdings: portfolioData?.holdings?.map(h => h.symbol) || [],
           });
@@ -1683,141 +1595,43 @@ export function KaiFlow({
   const handlePreloadSchema = useCallback(async () => {
     if (isPreloadingSchema) return;
 
-    if (!vaultKey || !effectiveVaultOwnerToken) {
-      setPendingImportFile(null);
-      setResumeImportAfterVault(false);
-      setPendingSchemaPreload(true);
-      setVaultDialogOpen(true);
-      toast.info("Create or unlock vault to preload schema data.");
-      return;
-    }
-
     setIsPreloadingSchema(true);
     setError(null);
 
     try {
-      const nowIso = new Date().toISOString();
-      const template = createPreloadedPortfolioTemplate();
-      const baseFullBlob = await WorldModelService.loadFullBlob({
-        userId,
-        vaultKey,
-        vaultOwnerToken: effectiveVaultOwnerToken,
-      }).catch(() => ({} as Record<string, unknown>));
+      const template = await fetchDemoModePortfolioTemplate(effectiveVaultOwnerToken);
 
-      const existingFinancialRaw = baseFullBlob.financial;
-      const existingFinancial =
-        existingFinancialRaw &&
-        typeof existingFinancialRaw === "object" &&
-        !Array.isArray(existingFinancialRaw)
-          ? ({ ...(existingFinancialRaw as Record<string, unknown>) } as Record<string, unknown>)
-          : {};
-
-      const existingDocumentsRaw = existingFinancial.documents;
-      const documentsDomain =
-        existingDocumentsRaw &&
-        typeof existingDocumentsRaw === "object" &&
-        !Array.isArray(existingDocumentsRaw)
-          ? (existingDocumentsRaw as Record<string, unknown>)
-          : null;
-
-      const nextFinancialDomain = {
-        ...existingFinancial,
-        schema_version: 3,
-        domain_intent: {
-          primary: "financial",
-          source: "domain_registry_prepopulate",
-          contract_version: 2,
-          updated_at: nowIso,
-        },
-        portfolio: {
-          ...template,
-          domain_intent: {
-            primary: "financial",
-            secondary: "portfolio",
-            source: "kai_schema_preload",
-            captured_sections: ["account_info", "account_summary", "asset_allocation", "holdings"],
-            updated_at: nowIso,
-          },
-        },
-        documents:
-          documentsDomain ??
-          {
-            schema_version: 1,
-            statements: [],
-            domain_intent: {
-              primary: "financial",
-              secondary: "documents",
-              source: "kai_schema_preload",
-              captured_sections: ["account_info", "holdings"],
-              updated_at: nowIso,
-            },
-          },
-        updated_at: nowIso,
-      };
-
-      const investableCount =
-        template.holdings?.filter((holding) => holding.is_investable).length ?? 0;
-      const cashCount =
-        template.holdings?.filter((holding) => holding.is_cash_equivalent).length ?? 0;
-      const holdingsCount = template.holdings?.length ?? 0;
-
-      const result = await WorldModelService.storeMergedDomainWithPreparedBlob({
-        userId,
-        vaultKey,
-        domain: "financial",
-        domainData: nextFinancialDomain as Record<string, unknown>,
-        summary: {
-          intent_source: "kai_schema_preload",
-          has_portfolio: true,
-          holdings_count: holdingsCount,
-          attribute_count: holdingsCount,
-          item_count: holdingsCount,
-          investable_positions_count: investableCount,
-          cash_positions_count: cashCount,
-          allocation_coverage_pct: 1,
-          parser_quality_score: 1,
-          last_statement_total_value: template.total_value ?? 0,
-          parse_fallback_last_import: false,
-          domain_contract_version: 2,
-          intent_map: [
-            "portfolio",
-            "analytics",
-            "profile",
-            "documents",
-            "analysis_history",
-            "runtime",
-            "analysis.decisions",
-          ],
-          last_updated: nowIso,
-        },
-        baseFullBlob,
-        vaultOwnerToken: effectiveVaultOwnerToken,
-      });
-
-      if (!result.success) {
-        throw new Error("Failed to preload schema data.");
-      }
-
-      await handleSaveComplete(template);
-      toast.success("Schema data preloaded into your vault.");
+      setFlowData((previous) => ({
+        ...previous,
+        parsedPortfolio: template,
+      }));
+      setState("reviewing");
+      setError(null);
+      toast.success("Demo mode data loaded. Review and save to vault.");
     } catch (preloadError) {
       console.error("[KaiFlow] Failed to preload schema data:", preloadError);
-      toast.error(
-        preloadError instanceof Error
-          ? preloadError.message
-          : "Failed to preload schema data"
-      );
+      toast.error("Could not load demo data. Please retry.");
     } finally {
       setPendingSchemaPreload(false);
       setIsPreloadingSchema(false);
     }
   }, [
     effectiveVaultOwnerToken,
-    handleSaveComplete,
     isPreloadingSchema,
-    userId,
-    vaultKey,
   ]);
+
+  useEffect(() => {
+    if (mode !== "import" || state !== "reviewing") return;
+    if (flowData.parsedPortfolio) return;
+
+    const timer = window.setTimeout(() => {
+      if (stateRef.current !== "reviewing" || flowData.parsedPortfolio) return;
+      setError("Could not open review data. Please load demo data again.");
+      setState("import_required");
+    }, 250);
+
+    return () => window.clearTimeout(timer);
+  }, [mode, state, flowData.parsedPortfolio]);
 
   useEffect(() => {
     if (!resumePreloadAfterVault) return;
@@ -1882,7 +1696,7 @@ export function KaiFlow({
   }
 
   return (
-    <div className="w-full flex flex-col">
+    <div className="flex w-full flex-col overflow-x-hidden">
       {/* Error display */}
       {error && state !== "importing" && state !== "import_complete" && (
         <div className="mb-4 p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-600 dark:text-red-400">
@@ -1912,19 +1726,17 @@ export function KaiFlow({
       )}
 
       {/* State-based rendering */}
-      {mode === "import" && state === "import_required" && (
+      {state === "import_required" && (
         <PortfolioImportView
           onFileSelect={handleFileUpload}
           onSkip={handleSkipImport}
-          onPreloadSchema={
-            flowData.hasFinancialData ? undefined : () => void handlePreloadSchema()
-          }
+          onPreloadSchema={() => void handlePreloadSchema()}
           isUploading={false}
           isPreloadingSchema={isPreloadingSchema}
         />
       )}
 
-      {mode === "import" && state === "importing" && (
+      {state === "importing" && (
         <ImportProgressView
           stage={streaming.stage}
           stageTrail={streaming.stageTrail}
@@ -1950,7 +1762,7 @@ export function KaiFlow({
         />
       )}
 
-      {mode === "import" && state === "import_complete" && (
+      {state === "import_complete" && (
         <ImportProgressView
           stage="complete"
           stageTrail={streaming.stageTrail}
@@ -1968,7 +1780,7 @@ export function KaiFlow({
         />
       )}
 
-      {mode === "import" && state === "reviewing" && flowData.parsedPortfolio && (
+      {state === "reviewing" && flowData.parsedPortfolio && (
         <PortfolioReviewView
           portfolioData={flowData.parsedPortfolio}
           userId={userId}
@@ -1980,7 +1792,27 @@ export function KaiFlow({
         />
       )}
 
-      {isDashboardMode && state === "dashboard" && flowData.portfolioData && (
+      {state === "reviewing" && !flowData.parsedPortfolio && (
+        <div className="flex min-h-[360px] w-full flex-col items-center justify-center gap-3 px-6 text-center">
+          <HushhLoader variant="inline" label="Preparing review..." />
+          <p className="text-sm text-muted-foreground">
+            Demo data loaded, but review payload is not available yet.
+          </p>
+          <button
+            type="button"
+            onClick={() => setState("import_required")}
+            className="text-sm font-semibold text-primary underline underline-offset-4"
+          >
+            Back to import
+          </button>
+        </div>
+      )}
+
+      {isDashboardMode &&
+        state === "dashboard" &&
+        flowData.portfolioData &&
+        Array.isArray(flowData.portfolioData.holdings) &&
+        flowData.portfolioData.holdings.length > 0 && (
         <DashboardMasterView
           userId={userId}
           vaultOwnerToken={effectiveVaultOwnerToken ?? ""}
@@ -1990,34 +1822,18 @@ export function KaiFlow({
         />
       )}
 
-      {isDashboardMode && state === "dashboard" && !flowData.portfolioData && (
-        <div className="text-center py-12">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-primary/10 flex items-center justify-center">
-            <svg
-              className="w-8 h-8 text-primary"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
-              />
-            </svg>
-          </div>
-          <h2 className="text-xl font-bold mb-2">Welcome to Kai</h2>
-          <p className="text-muted-foreground mb-6">
-            Import your portfolio to get started with personalized investment insights.
-          </p>
-          <button
-            onClick={handleReimport}
-            className="px-6 py-3 bg-primary dark:bg-foreground text-white dark:text-black rounded-lg hover:opacity-90 transition-opacity"
-          >
-            Import Portfolio
-          </button>
-        </div>
+      {isDashboardMode &&
+        state === "dashboard" &&
+        (!flowData.portfolioData ||
+          !Array.isArray(flowData.portfolioData.holdings) ||
+          flowData.portfolioData.holdings.length === 0) && (
+        <PortfolioImportView
+          onFileSelect={handleFileUpload}
+          onSkip={handleSkipImport}
+          onPreloadSchema={() => void handlePreloadSchema()}
+          isUploading={false}
+          isPreloadingSchema={isPreloadingSchema}
+        />
       )}
 
       {isDashboardMode && state === "analysis" && flowData.analysisResult && (
@@ -2037,7 +1853,7 @@ export function KaiFlow({
         </div>
       )}
 
-      {mode === "import" && user && (
+      {user && (
         <Dialog
           open={vaultDialogOpen}
           onOpenChange={setVaultDialogOpen}
