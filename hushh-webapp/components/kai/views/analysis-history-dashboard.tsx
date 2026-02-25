@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import {
   TrendingUp,
   TrendingDown,
@@ -49,6 +49,7 @@ import { CacheService, CACHE_KEYS } from "@/lib/services/cache-service";
 import { mapPortfolioToDashboardViewModel } from "@/components/kai/views/dashboard-data-mapper";
 import type { PortfolioData } from "@/components/kai/types/portfolio";
 import { DebateReadinessChart } from "@/components/kai/charts/debate-readiness-chart";
+import { DebateRunManagerService } from "@/lib/services/debate-run-manager";
 
 // ============================================================================
 // Props
@@ -278,6 +279,50 @@ function extractEntryStreamId(entry: AnalysisHistoryEntry): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function extractEntryRunId(entry: AnalysisHistoryEntry): string | null {
+  const rawCard = entry.raw_card;
+  if (!rawCard || typeof rawCard !== "object") return extractEntryStreamId(entry);
+  const runId = (rawCard as Record<string, unknown>).debate_run_id;
+  if (typeof runId === "string" && runId.trim().length > 0) {
+    return runId.trim();
+  }
+  return extractEntryStreamId(entry);
+}
+
+function upsertEntryInHistoryMap(
+  historyMap: AnalysisHistoryMap,
+  entry: AnalysisHistoryEntry
+): AnalysisHistoryMap {
+  const nextMap = cloneHistoryMap(historyMap);
+  const canonicalTicker = String(entry.ticker || "").trim().toUpperCase();
+  if (!canonicalTicker || canonicalTicker === "UNDEFINED" || canonicalTicker === "NULL") {
+    return historyMap;
+  }
+  const tickerKey = normalizeTickerKey(nextMap, canonicalTicker) || canonicalTicker;
+  const current = nextMap[tickerKey] || [];
+  const incomingRunId = extractEntryRunId(entry);
+
+  const filtered = current.filter((candidate) => {
+    if (incomingRunId && extractEntryRunId(candidate) === incomingRunId) {
+      return false;
+    }
+    return !timestampsMatch(candidate.timestamp, entry.timestamp);
+  });
+
+  const nextEntries = [entry, ...filtered]
+    .sort((a, b) => {
+      const aMs = Date.parse(a.timestamp);
+      const bMs = Date.parse(b.timestamp);
+      const aSafe = Number.isFinite(aMs) ? aMs : 0;
+      const bSafe = Number.isFinite(bMs) ? bMs : 0;
+      return bSafe - aSafe;
+    })
+    .slice(0, 3);
+
+  nextMap[tickerKey] = nextEntries;
+  return nextMap;
+}
+
 function removeEntryFromHistoryMap(
   historyMap: AnalysisHistoryMap,
   entry: AnalysisHistoryEntry
@@ -496,10 +541,21 @@ export function AnalysisHistoryDashboard({
   const [debateSnapshotLoading, setDebateSnapshotLoading] = useState(true);
 
   const [historyMap, setHistoryMap] = useState<AnalysisHistoryMap>({});
+  const historyMapRef = useRef<AnalysisHistoryMap>({});
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [versionsTicker, setVersionsTicker] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<PendingDeleteAction>(null);
   const [deleteInFlight, setDeleteInFlight] = useState(false);
+
+  useEffect(() => {
+    historyMapRef.current = historyMap;
+  }, [historyMap]);
+
+  const applyHistoryMap = useCallback((nextMap: AnalysisHistoryMap) => {
+    historyMapRef.current = nextMap;
+    setHistoryMap(nextMap);
+    setEntries(processHistory(nextMap));
+  }, []);
 
   const fetchHistory = useCallback(async () => {
     try {
@@ -509,15 +565,14 @@ export function AnalysisHistoryDashboard({
         vaultKey,
         vaultOwnerToken,
       });
-      setHistoryMap(nextMap);
-      setEntries(processHistory(nextMap));
+      applyHistoryMap(nextMap);
     } catch (err) {
       console.error("[AnalysisHistoryDashboard] Failed to load history:", err);
       setEntries([]);
     } finally {
       setLoading(false);
     }
-  }, [userId, vaultKey, vaultOwnerToken]);
+  }, [applyHistoryMap, userId, vaultKey, vaultOwnerToken]);
 
   const fetchDebateSnapshot = useCallback(async () => {
     try {
@@ -578,8 +633,7 @@ export function AnalysisHistoryDashboard({
       return;
     }
     const previousMap = historyMap;
-    setHistoryMap(nextMap);
-    setEntries(processHistory(nextMap));
+    applyHistoryMap(nextMap);
 
     const toastId = toast.loading("Deleting analysis entry...");
     setDeleteInFlight(true);
@@ -599,10 +653,9 @@ export function AnalysisHistoryDashboard({
       return;
     }
 
-    setHistoryMap(previousMap);
-    setEntries(processHistory(previousMap));
+    applyHistoryMap(previousMap);
     toast.error("Failed to delete analysis", { id: toastId });
-  }, [historyMap, userId, vaultKey, vaultOwnerToken]);
+  }, [applyHistoryMap, historyMap, userId, vaultKey, vaultOwnerToken]);
 
   const executeDeleteTicker = useCallback(async (ticker: string) => {
     const canonicalTicker = String(ticker || "").trim().toUpperCase();
@@ -616,8 +669,7 @@ export function AnalysisHistoryDashboard({
       return;
     }
     const previousMap = historyMap;
-    setHistoryMap(nextMap);
-    setEntries(processHistory(nextMap));
+    applyHistoryMap(nextMap);
 
     const toastId = toast.loading(`Deleting history for ${canonicalTicker}...`);
     setDeleteInFlight(true);
@@ -632,11 +684,18 @@ export function AnalysisHistoryDashboard({
     if (success) {
       toast.success(`All history for ${canonicalTicker} deleted`, { id: toastId });
     } else {
-      setHistoryMap(previousMap);
-      setEntries(processHistory(previousMap));
+      applyHistoryMap(previousMap);
       toast.error(`Failed to delete history for ${canonicalTicker}`, { id: toastId });
     }
-  }, [historyMap, userId, vaultKey, vaultOwnerToken]);
+  }, [applyHistoryMap, historyMap, userId, vaultKey, vaultOwnerToken]);
+
+  useEffect(() => {
+    return DebateRunManagerService.subscribeHistory((entry, task) => {
+      if (task.userId !== userId) return;
+      const nextMap = upsertEntryInHistoryMap(historyMapRef.current, entry);
+      applyHistoryMap(nextMap);
+    });
+  }, [applyHistoryMap, userId]);
 
   const handleDeleteEntry = useCallback((entry: AnalysisHistoryEntry) => {
     setPendingDelete({ kind: "entry", entry });
@@ -789,7 +848,7 @@ export function AnalysisHistoryDashboard({
           if (!open) setVersionsTicker(null);
         }}
       >
-        <DialogContent className="max-w-md">
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-md sm:w-full">
           <DialogHeader>
             <DialogTitle>
               {versionsTicker ? `${versionsTicker} — Previous Versions` : "Previous Versions"}

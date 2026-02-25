@@ -2128,6 +2128,192 @@ export class ApiService {
       signal: data.signal,
     });
   }
+
+  static async startKaiDebateRun(data: {
+    userId: string;
+    debateSessionId: string;
+    ticker: string;
+    riskProfile: string;
+    userContext?: Record<string, unknown>;
+    vaultOwnerToken: string;
+  }): Promise<Response> {
+    return apiFetch("/api/kai/analyze/run/start", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${data.vaultOwnerToken}`,
+      },
+      body: JSON.stringify({
+        user_id: data.userId,
+        debate_session_id: data.debateSessionId,
+        ticker: data.ticker.toUpperCase(),
+        risk_profile: data.riskProfile,
+        context: data.userContext,
+      }),
+    });
+  }
+
+  static async getActiveKaiDebateRun(data: {
+    userId: string;
+    debateSessionId: string;
+    vaultOwnerToken: string;
+  }): Promise<Response> {
+    const query = new URLSearchParams({
+      user_id: data.userId,
+      debate_session_id: data.debateSessionId,
+    }).toString();
+    return apiFetch(`/api/kai/analyze/run/active?${query}`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${data.vaultOwnerToken}`,
+      },
+    });
+  }
+
+  static async cancelKaiDebateRun(data: {
+    runId: string;
+    userId: string;
+    vaultOwnerToken: string;
+  }): Promise<Response> {
+    const query = new URLSearchParams({ user_id: data.userId }).toString();
+    return apiFetch(`/api/kai/analyze/run/${encodeURIComponent(data.runId)}/cancel?${query}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${data.vaultOwnerToken}`,
+      },
+    });
+  }
+
+  static async streamKaiDebateRun(data: {
+    userId: string;
+    runId: string;
+    resumeCursor?: number;
+    vaultOwnerToken: string;
+    signal?: AbortSignal;
+  }): Promise<Response> {
+    const body = {
+      user_id: data.userId,
+      ticker: "RUN_RESUME",
+      risk_profile: "balanced",
+      run_id: data.runId,
+      resume_cursor: data.resumeCursor ?? 0,
+      context: {},
+    };
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const vaultOwnerToken = data.vaultOwnerToken;
+        if (!vaultOwnerToken) {
+          return new Response(
+            JSON.stringify({ error: "Vault must be unlocked" }),
+            { status: 401 }
+          );
+        }
+
+        const encoder = new TextEncoder();
+        const stream = new ReadableStream<Uint8Array>({
+          async start(controller) {
+            let sawTerminalEvent = false;
+            let closed = false;
+            let listener: { remove: () => void } | null = null;
+
+            const cleanup = () => {
+              if (listener) {
+                listener.remove();
+                listener = null;
+              }
+            };
+            const close = () => {
+              if (closed) return;
+              closed = true;
+              cleanup();
+              controller.close();
+            };
+            const fail = (error: unknown) => {
+              if (closed) return;
+              closed = true;
+              cleanup();
+              controller.error(
+                error instanceof Error ? error : new Error(String(error))
+              );
+            };
+            const handleAbort = () => {
+              fail(new DOMException("Aborted", "AbortError"));
+            };
+
+            try {
+              data.signal?.addEventListener("abort", handleAbort, { once: true });
+              listener = await Kai.addListener(
+                KAI_STREAM_EVENT,
+                (event: Record<string, unknown>) => {
+                  if (closed) return;
+                  const eventType =
+                    typeof event.event === "string" ? event.event : null;
+                  const envelopeCandidate = event.data;
+                  if (!eventType || !isKaiStreamEnvelope(envelopeCandidate)) {
+                    fail(new Error("Invalid native analyze stream event"));
+                    return;
+                  }
+
+                  const envelope = envelopeCandidate as KaiStreamEnvelope;
+                  if (envelope.event !== eventType) {
+                    fail(new Error("Native SSE event mismatch"));
+                    return;
+                  }
+
+                  if (envelope.terminal) {
+                    sawTerminalEvent = true;
+                  }
+
+                  controller.enqueue(
+                    encoder.encode(
+                      `event: ${eventType}\ndata: ${JSON.stringify(envelope)}\n\n`
+                    )
+                  );
+                }
+              );
+
+              await Kai.streamKaiAnalysis({
+                body: body as Record<string, unknown>,
+                vaultOwnerToken,
+              });
+
+              if (!sawTerminalEvent) {
+                fail(new Error("Native analyze stream ended without terminal event"));
+                return;
+              }
+              close();
+            } catch (error) {
+              fail(error);
+            } finally {
+              data.signal?.removeEventListener("abort", handleAbort);
+            }
+          },
+        });
+
+        return new Response(stream, {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        });
+      } catch (error) {
+        console.error("[ApiService] Native streamKaiDebateRun error:", error);
+        return new Response(JSON.stringify({ error: (error as Error).message }), {
+          status: 500,
+        });
+      }
+    }
+
+    const query = new URLSearchParams({
+      user_id: data.userId,
+      cursor: String(data.resumeCursor ?? 0),
+    }).toString();
+    return apiFetch(`/api/kai/analyze/run/${encodeURIComponent(data.runId)}/stream?${query}`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${data.vaultOwnerToken}`,
+      },
+      signal: data.signal,
+    });
+  }
 }
 
 // Re-export for convenience

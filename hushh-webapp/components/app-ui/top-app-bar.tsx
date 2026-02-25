@@ -50,9 +50,12 @@ import {
 import { CacheSyncService } from "@/lib/cache/cache-sync-service";
 import { getKaiChromeState } from "@/lib/navigation/kai-chrome-state";
 import { ROUTES } from "@/lib/navigation/routes";
+import { DebateTaskCenter } from "@/components/app-ui/debate-task-center";
 
 /** Shared style so Capacitor status bar area and top bar match (masked blur on all platforms) */
 const BAR_GLASS_CLASS = "bar-glass bar-glass-top";
+const DEBATE_TASK_CENTER_ENABLED =
+  String(process.env.NEXT_PUBLIC_DEBATE_TASK_CENTER || "").toLowerCase() === "true";
 
 /**
  * TopBarBackground - Single background layer for status bar and top app bar.
@@ -157,7 +160,15 @@ export function TopAppBar({ className }: TopAppBarProps) {
         )}
       </div>
 
-      {showOnboardingActions && <OnboardingRouteActions />}
+      <div className="flex items-center gap-2">
+        {showOnboardingActions ? (
+          <OnboardingRouteActions />
+        ) : isVaultUnlocked && DEBATE_TASK_CENTER_ENABLED ? (
+          <DebateTaskCenter />
+        ) : (
+          <div className="h-10 w-10" aria-hidden />
+        )}
+      </div>
     </div>
   );
 }

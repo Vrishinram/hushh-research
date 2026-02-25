@@ -168,10 +168,6 @@ export const Navbar = () => {
           : "translate3d(0, 0, 0)",
       }}
     >
-      <div
-        aria-hidden
-        className="pointer-events-none absolute bottom-0 left-1/2 h-[88px] w-screen -translate-x-1/2 bar-glass bar-glass-bottom"
-      />
       <SegmentedPill
         ref={pillRef}
         size="compact"

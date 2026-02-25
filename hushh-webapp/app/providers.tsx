@@ -44,6 +44,7 @@ export function Providers({ children }: ProvidersProps) {
   const hideGlobalChrome =
     pathname === ROUTES.HOME || pathname.startsWith(ROUTES.LOGIN);
   const isKaiOnboarding = isKaiOnboardingRoute(pathname);
+  const showSharedBottomChromeGlass = !hideGlobalChrome && !isKaiOnboarding;
   const pageRef = useRef<HTMLDivElement | null>(null);
   const pageAnimationKey = useMemo(
     () => (pathname.startsWith("/kai") ? "/kai-stable-shell" : pathname),
@@ -91,6 +92,14 @@ export function Providers({ children }: ProvidersProps) {
                     <StatusBarBlur />
                     <TopBarBackground />
                     <TopAppBar />
+                    {showSharedBottomChromeGlass ? (
+                      <div
+                        aria-hidden
+                        className="pointer-events-none fixed inset-x-0 bottom-0 z-[108]"
+                      >
+                        <div className="h-[calc(var(--app-bottom-inset)+var(--kai-command-fixed-ui)+36px)] w-full bar-glass bar-glass-bottom" />
+                      </div>
+                    ) : null}
                     <PostAuthOnboardingSyncBridge />
                     <KaiCommandBarGlobal />
                     {/* Main scroll container: extends under fixed bar so content can scroll behind it; padding clears bar height */}
@@ -103,7 +112,7 @@ export function Providers({ children }: ProvidersProps) {
                           : isKaiOnboarding
                           ? // Keep /kai/onboarding single-screen; step components handle their own safe-area/footer inset.
                             "flex-1 overflow-hidden relative z-10 min-h-0 pt-[45px]"
-                          : "flex-1 overflow-y-auto overflow-x-hidden overscroll-x-none touch-pan-y pb-[var(--app-bottom-inset)] relative z-10 min-h-0 pt-[45px]"
+                          : "flex-1 overflow-y-auto overflow-x-hidden overscroll-x-none touch-pan-y pb-[var(--app-bottom-inset)] relative z-10 min-h-0 pt-[calc(env(safe-area-inset-top,0px)+var(--app-top-safe-offset,0px)+var(--app-top-bar-height,72px))]"
                       }
                     >
                       <div

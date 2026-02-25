@@ -100,9 +100,13 @@ html body[data-scroll-locked] {
   --app-bottom-inset: calc(
     var(--app-bottom-fixed-ui) + var(--app-safe-area-bottom-effective) + var(--app-bottom-chrome-lift)
   );
+  --kai-command-fixed-ui: 82px;
   --kai-command-bottom-gap: 12px;
   --app-screen-footer-pad: calc(8px + var(--app-bottom-inset));
   --app-top-safe-offset: 0px;
+  --app-top-bar-height: 72px;
+  --kai-route-tabs-height: 36px;
+  --kai-route-tabs-content-gap: 8px;
 
   /* Motion tokens (GSAP + CSS). Change once to retune the whole app. */
   --motion-duration-xs: 120ms;
@@ -241,7 +245,7 @@ html body[data-scroll-locked] {
 }
 
 .native-ios {
-  --app-top-safe-offset: 6px;
+  --app-top-safe-offset: 2px;
 }
 
 /* Capacitor iOS uses `ios.contentInset = always`; don't double-count bottom safe area in app spacing. */

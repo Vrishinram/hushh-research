@@ -100,6 +100,8 @@ export function VaultFlow({
     vaultMode === "generated_default_native_passkey_prf";
   const hasActiveGeneratedWrapper =
     isGeneratedVaultMode && availableGeneratedMethod === vaultMode;
+  const shouldShowPassphraseUnlock =
+    !hasActiveGeneratedWrapper || unlockWithPassphraseFallback;
 
   const generatedUnlockLabel =
     vaultMode === "generated_default_web_prf" ||
@@ -631,7 +633,7 @@ export function VaultFlow({
                   </p>
                 ) : null}
               </div>
-              {(!isGeneratedVaultMode || unlockWithPassphraseFallback) && (
+              {shouldShowPassphraseUnlock && (
                 <div className="space-y-3">
                   <Label htmlFor="unlock-passphrase" className="text-sm sm:text-base">Passphrase</Label>
                   <Input
@@ -652,7 +654,7 @@ export function VaultFlow({
                 <p className="text-sm text-destructive">{error}</p>
               )}
               <div className="flex flex-col gap-3 pt-2">
-                {(!hasActiveGeneratedWrapper || unlockWithPassphraseFallback) && (
+                {shouldShowPassphraseUnlock && (
                   <Button
                     variant="gradient"
                     effect="glass"
