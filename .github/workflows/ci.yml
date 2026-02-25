@@ -34,6 +34,7 @@ env:
   WEB_AUDIT_HIGH_BUDGET: "21"
   WEB_AUDIT_CRITICAL_BUDGET: "0"
   GITLEAKS_VERSION: "8.24.2"
+  CLOUD_RUN_REVISION_RETENTION: "10"
 
 jobs:
   secret-scan:
@@ -327,6 +328,14 @@ jobs:
             --format='value(status.url)')
           echo "url=$FRONTEND_URL" >> "$GITHUB_OUTPUT"
           echo "Frontend URL: $FRONTEND_URL"
+
+      - name: Retain latest backend revisions
+        continue-on-error: true
+        run: bash scripts/ci/cloudrun-retention.sh "${{ env.BACKEND_SERVICE }}" "${{ env.GCP_REGION }}" "${{ env.CLOUD_RUN_REVISION_RETENTION }}"
+
+      - name: Retain latest frontend revisions
+        continue-on-error: true
+        run: bash scripts/ci/cloudrun-retention.sh "${{ env.FRONTEND_SERVICE }}" "${{ env.GCP_REGION }}" "${{ env.CLOUD_RUN_REVISION_RETENTION }}"
 
       - name: Deployment Summary
         if: always()
