@@ -50,33 +50,8 @@ class WorldModelPlugin : Plugin() {
         .callTimeout(180, TimeUnit.SECONDS)
         .build()
 
-    private val defaultBackendUrl = "https://consent-protocol-1006304528804.us-central1.run.app"
-
     private fun getBackendUrl(call: PluginCall? = null): String {
-        // 1) Allow override per-call
-        val callUrl = call?.getString("backendUrl")
-        if (!callUrl.isNullOrBlank()) {
-            return normalizeBackendUrl(callUrl)
-        }
-
-        // 2) Plugin-scoped config
-        val pluginConfigUrl = bridge.config.getString("plugins.WorldModel.backendUrl")
-        if (!pluginConfigUrl.isNullOrBlank()) {
-            return normalizeBackendUrl(pluginConfigUrl)
-        }
-
-        // 3) Environment fallback
-        val envUrl = System.getenv("NEXT_PUBLIC_BACKEND_URL")
-        if (!envUrl.isNullOrBlank()) {
-            return normalizeBackendUrl(envUrl)
-        }
-
-        // 4) Default to production
-        return normalizeBackendUrl(defaultBackendUrl)
-    }
-
-    private fun normalizeBackendUrl(raw: String): String {
-        return BackendUrl.normalize(raw)
+        return BackendUrl.resolve(bridge, call, "WorldModel")
     }
 
     private fun getAuthToken(call: PluginCall): String? {

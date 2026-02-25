@@ -25,31 +25,54 @@ enum HushhProxyError: Error, LocalizedError {
 }
 
 final class HushhProxyClient {
+    private static let sharedPluginConfigOrder = [
+        "HushhRuntime",
+        "HushhVault",
+        "HushhConsent",
+        "WorldModel",
+        "Kai",
+        "HushhNotifications",
+        "HushhAccount",
+        "HushhSync"
+    ]
+
+    private static func firstNonEmpty(_ values: [String?]) -> String? {
+        for value in values {
+            guard let raw = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !raw.isEmpty else {
+                continue
+            }
+            return raw
+        }
+        return nil
+    }
+
     static func resolveBackendUrl(
         call: CAPPluginCall,
         plugin: CAPPlugin,
-        jsName: String,
-        defaultBackendUrl: String
+        jsName: String
     ) -> String {
-        // 1) Per-call override
-        if let url = call.getString("backendUrl"), !url.isEmpty {
+        var candidates: [String?] = [
+            // 1) Per-call override
+            call.getString("backendUrl"),
+            // 2) Plugin config: plugins.<jsName>.backendUrl
+            plugin.bridge?.config.getPluginConfig(jsName).getString("backendUrl"),
+            // 3) Shared plugin config(s): first configured wins
+            ProcessInfo.processInfo.environment["NEXT_PUBLIC_BACKEND_URL"]
+        ]
+
+        for pluginName in sharedPluginConfigOrder where pluginName != jsName {
+            candidates.insert(
+                plugin.bridge?.config.getPluginConfig(pluginName).getString("backendUrl"),
+                at: candidates.count - 1
+            )
+        }
+
+        if let url = firstNonEmpty(candidates) {
             return normalizeBackendUrl(url)
         }
 
-        // 2) Capacitor plugin config: plugins.<jsName>.backendUrl
-        if let url = plugin.bridge?.config.getPluginConfig(jsName).getString("backendUrl"),
-           !url.isEmpty {
-            return normalizeBackendUrl(url)
-        }
-
-        // 3) Environment fallback (useful in CI/local dev)
-        if let envUrl = ProcessInfo.processInfo.environment["NEXT_PUBLIC_BACKEND_URL"],
-           !envUrl.isEmpty {
-            return normalizeBackendUrl(envUrl)
-        }
-
-        // 4) Default
-        return normalizeBackendUrl(defaultBackendUrl)
+        return ""
     }
 
     private static func normalizeBackendUrl(_ raw: String) -> String {
@@ -160,4 +183,3 @@ final class HushhProxyClient {
         throw HushhProxyError.invalidJson
     }
 }
-

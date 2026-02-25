@@ -52,7 +52,7 @@ import { getKaiChromeState } from "@/lib/navigation/kai-chrome-state";
 import { ROUTES } from "@/lib/navigation/routes";
 
 /** Shared style so Capacitor status bar area and top bar match (masked blur on all platforms) */
-const BAR_GLASS_CLASS = "top-bar-glass";
+const BAR_GLASS_CLASS = "bar-glass bar-glass-top";
 
 /**
  * TopBarBackground - Single background layer for status bar and top app bar.
@@ -74,7 +74,9 @@ export function TopBarBackground() {
       className={cn(
         "fixed top-0 left-0 right-0 z-40",
         BAR_GLASS_CLASS,
-        isNative ? "h-[calc(env(safe-area-inset-top)+72px)]" : "h-[64px]"
+        isNative
+          ? "h-[calc(env(safe-area-inset-top,0px)+var(--app-top-safe-offset)+72px)]"
+          : "h-[64px]"
       )}
       aria-hidden
     />
@@ -102,12 +104,15 @@ function getTopBarTitle(pathname: string): string | null {
 
 export function TopAppBar({ className }: TopAppBarProps) {
   const { handleBack } = useNavigation();
+  const { isVaultUnlocked } = useVault();
   const [isNative, setIsNative] = useState(false);
   const pathname = usePathname();
   const chromeState = useMemo(() => getKaiChromeState(pathname), [pathname]);
   const showOnboardingActions = chromeState.useOnboardingChrome;
   const hideChrome = pathname === ROUTES.HOME || pathname.startsWith(ROUTES.LOGIN);
   const centerTitle = useMemo(() => getTopBarTitle(pathname), [pathname]);
+  const hideBackButtonForVaultGuard =
+    pathname.startsWith(ROUTES.CONSENTS) && !isVaultUnlocked;
 
   useEffect(() => {
     // Check platform on mount to avoid hydration mismatch
@@ -123,7 +128,9 @@ export function TopAppBar({ className }: TopAppBarProps) {
     <div
       className={cn(
         "fixed left-0 right-0 z-50",
-        isNative ? "top-[env(safe-area-inset-top)] h-[72px]" : "top-0 h-[64px]",
+        isNative
+          ? "top-[calc(env(safe-area-inset-top,0px)+var(--app-top-safe-offset))] h-[72px]"
+          : "top-0 h-[64px]",
         // Flex container for back button
         "flex items-center justify-between pb-2 px-4",
         className,
@@ -137,13 +144,17 @@ export function TopAppBar({ className }: TopAppBarProps) {
         </div>
       ) : null}
       <div className="flex items-center gap-2">
-        <button
-          onClick={handleBack}
-          className="grid h-10 w-10 place-items-center rounded-full border border-border/60 bg-background/70 shadow-sm backdrop-blur-sm transition-colors hover:bg-muted/50 active:bg-muted/80"
-          aria-label="Go back"
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </button>
+        {hideBackButtonForVaultGuard ? (
+          <div className="h-10 w-10" aria-hidden />
+        ) : (
+          <button
+            onClick={handleBack}
+            className="grid h-10 w-10 place-items-center rounded-full border border-border/60 bg-background/70 shadow-sm backdrop-blur-sm transition-colors hover:bg-muted/50 active:bg-muted/80"
+            aria-label="Go back"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </button>
+        )}
       </div>
 
       {showOnboardingActions && <OnboardingRouteActions />}
@@ -285,7 +296,9 @@ export function TopAppBarSpacer() {
     <div
       className={cn(
         "w-full shrink-0 transition-[height]",
-        isNative ? "h-[calc(72px+env(safe-area-inset-top))]" : "h-[64px]",
+        isNative
+          ? "h-[calc(72px+env(safe-area-inset-top,0px)+var(--app-top-safe-offset))]"
+          : "h-[64px]",
       )}
     />
   );

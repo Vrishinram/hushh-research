@@ -7,6 +7,7 @@ import {
   ChartColumnIncreasing,
   Cpu,
   LineChart,
+  Loader2,
   Percent,
   TrendingDown,
   TrendingUp,
@@ -26,6 +27,7 @@ import { CacheService, CACHE_KEYS } from "@/lib/services/cache-service";
 import { ensureKaiVaultOwnerToken } from "@/lib/services/kai-token-guard";
 import { ApiService, type KaiHomeInsightsV2 } from "@/lib/services/api-service";
 import { UnlockWarmOrchestrator } from "@/lib/services/unlock-warm-orchestrator";
+import { getSessionItem, isNativePlatform, setSessionItem } from "@/lib/utils/session-storage";
 import { useVault } from "@/lib/vault/vault-context";
 
 function SectionLabel({ children }: { children: string }) {
@@ -40,6 +42,7 @@ const POLL_INTERVAL_MS = 600_000;
 const MIN_REQUEST_GAP_MS = 2_500;
 const MARKET_HOME_CACHE_TTL_MS = 600_000;
 const SESSION_KAI_HOME_TTL_MS = 600_000;
+const LAST_KNOWN_MARKET_HOME_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const TICKER_CANDIDATE_RE = /^[A-Z][A-Z0-9.-]{0,5}$/;
 const EXCLUDED_SYMBOLS = new Set([
   "CASH",
@@ -213,8 +216,8 @@ export function KaiMarketPreviewView() {
   } = useVault();
 
   const [payload, setPayload] = useState<KaiHomeInsightsV2 | null>(null);
-  const [, setLoadingInitial] = useState(true);
-  const [, setRefreshing] = useState(false);
+  const [loadingInitial, setLoadingInitial] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
@@ -273,6 +276,11 @@ export function KaiMarketPreviewView() {
     return `kai_market_home_session_${user.uid}`;
   }, [user?.uid]);
 
+  const persistentCacheKey = useMemo(() => {
+    if (!user?.uid) return null;
+    return `kai_market_home_last_known_${user.uid}`;
+  }, [user?.uid]);
+
   const loadInsights = useCallback(
     async ({ forceTokenRefresh = false, manual = false }: { forceTokenRefresh?: boolean; manual?: boolean } = {}) => {
       if (loading || !user?.uid) {
@@ -305,7 +313,7 @@ export function KaiMarketPreviewView() {
 
       if (!forceTokenRefresh && sessionCacheKey && typeof window !== "undefined") {
         try {
-          const raw = window.sessionStorage.getItem(sessionCacheKey);
+          const raw = getSessionItem(sessionCacheKey);
           if (raw) {
             const parsed = JSON.parse(raw) as {
               payload?: KaiHomeInsightsV2;
@@ -324,6 +332,36 @@ export function KaiMarketPreviewView() {
           }
         } catch {
           // Ignore malformed session cache.
+        }
+      }
+
+      if (
+        !forceTokenRefresh &&
+        isNativePlatform &&
+        persistentCacheKey &&
+        typeof window !== "undefined"
+      ) {
+        try {
+          const raw = getSessionItem(persistentCacheKey);
+          if (raw) {
+            const parsed = JSON.parse(raw) as {
+              payload?: KaiHomeInsightsV2;
+              savedAt?: number;
+            };
+            const savedAt = Number(parsed?.savedAt || 0);
+            const age = Date.now() - savedAt;
+            const canUsePersistent =
+              age >= 0 &&
+              age <= LAST_KNOWN_MARKET_HOME_TTL_MS &&
+              Boolean(parsed?.payload);
+            if (canUsePersistent) {
+              setPayload(parsed.payload as KaiHomeInsightsV2);
+              hasPayloadRef.current = true;
+              setLoadingInitial(false);
+            }
+          }
+        } catch {
+          // Ignore malformed persistent cache.
         }
       }
 
@@ -415,8 +453,14 @@ export function KaiMarketPreviewView() {
                     MARKET_HOME_CACHE_TTL_MS
                   );
                   if (sessionCacheKey && typeof window !== "undefined") {
-                    window.sessionStorage.setItem(
+                    setSessionItem(
                       sessionCacheKey,
+                      JSON.stringify({ payload: fallbackPayload, savedAt: Date.now() })
+                    );
+                  }
+                  if (persistentCacheKey && typeof window !== "undefined") {
+                    setSessionItem(
+                      persistentCacheKey,
                       JSON.stringify({ payload: fallbackPayload, savedAt: Date.now() })
                     );
                   }
@@ -445,8 +489,14 @@ export function KaiMarketPreviewView() {
             cache.set(CACHE_KEYS.KAI_MARKET_HOME(user.uid, "default", 7), nextPayload, MARKET_HOME_CACHE_TTL_MS);
           }
           if (sessionCacheKey && typeof window !== "undefined") {
-            window.sessionStorage.setItem(
+            setSessionItem(
               sessionCacheKey,
+              JSON.stringify({ payload: nextPayload, savedAt: Date.now() })
+            );
+          }
+          if (persistentCacheKey && typeof window !== "undefined") {
+            setSessionItem(
+              persistentCacheKey,
               JSON.stringify({ payload: nextPayload, savedAt: Date.now() })
             );
           }
@@ -471,7 +521,7 @@ export function KaiMarketPreviewView() {
         }
       }
     },
-    [loading, resolveToken, resolveTrackedSymbols, sessionCacheKey, user?.uid]
+    [loading, persistentCacheKey, resolveToken, resolveTrackedSymbols, sessionCacheKey, user?.uid]
   );
 
   useEffect(() => {
@@ -521,13 +571,32 @@ export function KaiMarketPreviewView() {
   }, [hasPayload, payload?.hero?.holdings_count]);
 
   return (
-    <div className="mx-auto w-full max-w-[390px] px-4 py-7 pb-[calc(148px+var(--app-bottom-inset))]">
+    <div className="mx-auto w-full max-w-[390px] overflow-x-hidden px-4 py-7 pb-[calc(148px+var(--app-bottom-inset))]">
       <header className="space-y-2 text-center">
         <h1 className="text-2xl font-black tracking-tight leading-tight">Explore the market with Kai</h1>
         <p className="mx-auto max-w-[22rem] text-sm text-muted-foreground">
           Structured insights, even before connecting your portfolio.
         </p>
+        {refreshing && hasPayload ? (
+          <p className="text-xs text-muted-foreground">Refreshing live market data...</p>
+        ) : null}
       </header>
+
+      {loadingInitial && !hasPayload ? (
+        <section className="mt-7">
+          <Card variant="muted" effect="fill" className="rounded-xl p-0">
+            <CardContent className="space-y-3 p-4 text-left">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <p className="text-sm font-semibold">Loading market snapshot...</p>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Restoring latest available market cache.
+              </p>
+            </CardContent>
+          </Card>
+        </section>
+      ) : null}
 
       {error ? (
         <section className="mt-7">

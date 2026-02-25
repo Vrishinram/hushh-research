@@ -20,30 +20,76 @@
  * - AuthService → HushhAuth plugin
  */
 
-import { Capacitor } from "@capacitor/core";
+import { Capacitor, CapacitorHttp } from "@capacitor/core";
 import { HushhVault, HushhAuth, HushhConsent, HushhNotifications } from "@/lib/capacitor";
 import { Kai, PORTFOLIO_STREAM_EVENT, KAI_STREAM_EVENT } from "@/lib/capacitor/kai";
 import { isKaiStreamEnvelope, type KaiStreamEnvelope } from "@/lib/streaming/kai-stream-types";
 import { AuthService } from "@/lib/services/auth-service";
 
+const getEnvBackendUrl = (): string => {
+  return (process.env.NEXT_PUBLIC_BACKEND_URL || "").trim().replace(/\/$/, "");
+};
+
+const LOCAL_NATIVE_HOSTS = new Set(["localhost", "127.0.0.1", "10.0.2.2"]);
+
+function hostFromUrl(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  try {
+    return new URL(raw).hostname.trim().toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+function isLocalNativeHost(host: string | null): boolean {
+  return Boolean(host && LOCAL_NATIVE_HOSTS.has(host));
+}
+
+function normalizeNativeBackendUrl(raw: string): string {
+  const trimmed = raw.trim().replace(/\/$/, "");
+  if (Capacitor.getPlatform() !== "android") {
+    return trimmed;
+  }
+  const backendHost = hostFromUrl(trimmed);
+  if (backendHost === "localhost") {
+    return trimmed.replace("localhost", "10.0.2.2");
+  }
+  if (backendHost === "127.0.0.1") {
+    return trimmed.replace("127.0.0.1", "10.0.2.2");
+  }
+  return trimmed;
+}
+
+function detectHostedToLocalMismatch(apiBase: string): string | null {
+  const backendHost = hostFromUrl(apiBase);
+  if (!isLocalNativeHost(backendHost)) return null;
+
+  if (typeof window === "undefined") return null;
+  const origin = window.location.origin;
+  const nativeServerOrigin =
+    typeof origin === "string" && /^https?:\/\//i.test(origin)
+      ? origin.replace(/\/$/, "")
+      : null;
+  const serverHost = hostFromUrl(nativeServerOrigin);
+  const hostedServer = Boolean(serverHost && !isLocalNativeHost(serverHost));
+  if (!hostedServer) return null;
+
+  return `Hosted WebView origin (${nativeServerOrigin}) cannot use local backend (${apiBase}). Set NEXT_PUBLIC_BACKEND_URL to hosted backend before native build.`;
+}
+
 // API Base URL configuration
 const getApiBaseUrl = (): string => {
   if (Capacitor.isNativePlatform()) {
-    // iOS/Android: Use backendUrl (Cloud Run in prod, localhost in local dev).
-    // IMPORTANT: Android emulator cannot reach host localhost; use 10.0.2.2.
-    const raw =
-      process.env.NEXT_PUBLIC_BACKEND_URL ||
-      "https://consent-protocol-1006304528804.us-central1.run.app";
-
-    const normalized =
-      Capacitor.getPlatform() === "android" && raw.includes("localhost")
-        ? raw.replace("localhost", "10.0.2.2")
-        : raw;
-
-    return normalized.replace(/\/$/, "");
+    // Native must target backend directly via env-configured URL.
+    // Never fall back to frontend/webview origin for API resolution.
+    const explicit = getEnvBackendUrl();
+    if (explicit) {
+      return normalizeNativeBackendUrl(explicit);
+    }
+    return "";
   }
 
-// Web: Use relative paths (local Next.js server)
+  // Web: Use relative paths (local Next.js server)
   return "";
 };
 
@@ -53,16 +99,8 @@ export const getDirectBackendUrl = (): string => {
     return getApiBaseUrl(); // Native already points to backend
   }
 
-  // Allow override via environment variable (works in both dev and prod builds)
-  if (process.env.NEXT_PUBLIC_BACKEND_URL) {
-    return process.env.NEXT_PUBLIC_BACKEND_URL.replace(/\/$/, "");
-  }
-
-  // Default to localhost for flexibility (user can override for prod)
-  return "http://localhost:8000";
+  return getEnvBackendUrl();
 };
-
-const API_BASE = getApiBaseUrl();
 
 /**
  * Platform-aware fetch wrapper
@@ -75,12 +113,30 @@ async function apiFetch(
   path: string,
   options: RequestInit = {}
 ): Promise<Response> {
-  const url = `${API_BASE}${path}`;
+  const apiBase = getApiBaseUrl();
+  const url = `${apiBase}${path}`;
 
-  const defaultHeaders: HeadersInit =
-    options.body instanceof FormData
-      ? {}
-      : { "Content-Type": "application/json" };
+  const mergedHeaders: Record<string, string> = {};
+  if (!(options.body instanceof FormData)) {
+    mergedHeaders["Content-Type"] = "application/json";
+  }
+
+  if (options.headers) {
+    if (options.headers instanceof Headers) {
+      options.headers.forEach((value, key) => {
+        mergedHeaders[key] = value;
+      });
+    } else if (Array.isArray(options.headers)) {
+      for (const [key, value] of options.headers) {
+        mergedHeaders[String(key)] = String(value);
+      }
+    } else {
+      for (const [key, value] of Object.entries(options.headers)) {
+        if (value === undefined || value === null) continue;
+        mergedHeaders[key] = String(value);
+      }
+    }
+  }
 
   // Dynamically import tracker to avoid creating a hard dependency for environments
   // that don't care about progress (e.g., certain server-side usage).
@@ -96,13 +152,89 @@ async function apiFetch(
 
   trackStart?.();
   try {
+    if (Capacitor.isNativePlatform()) {
+      if (!apiBase) {
+        throw new Error(
+          `Native API base URL is missing for route ${path}. Configure NEXT_PUBLIC_BACKEND_URL for native builds.`
+        );
+      }
+      const mismatchMessage = detectHostedToLocalMismatch(apiBase);
+      if (mismatchMessage) {
+        throw new Error(mismatchMessage);
+      }
+      if (options.signal?.aborted) {
+        throw new Error("Request aborted");
+      }
+
+      const method = (options.method || "GET").toUpperCase();
+      const request: {
+        url: string;
+        method: string;
+        headers?: Record<string, string>;
+        data?: unknown;
+      } = {
+        url,
+        method,
+        headers: mergedHeaders,
+      };
+
+        if (options.body !== undefined && options.body !== null && method !== "GET") {
+        if (options.body instanceof FormData) {
+          // Multipart uploads route through native plugins; keep fetch fallback for safety.
+          return fetch(url, {
+            ...options,
+            credentials: "include",
+            headers: mergedHeaders,
+          });
+        }
+        if (typeof options.body === "string") {
+          const contentType =
+            mergedHeaders["Content-Type"] ||
+            mergedHeaders["content-type"] ||
+            "";
+          if (contentType.includes("application/json")) {
+            try {
+              request.data = JSON.parse(options.body);
+            } catch {
+              request.data = options.body;
+            }
+          } else {
+            request.data = options.body;
+          }
+        } else if (options.body instanceof URLSearchParams) {
+          request.data = options.body.toString();
+        } else {
+          request.data = options.body as unknown;
+        }
+      }
+
+      const toResponse = (nativeResponse: Awaited<ReturnType<typeof CapacitorHttp.request>>) => {
+        const responseHeaders = new Headers();
+        Object.entries(nativeResponse.headers || {}).forEach(([key, value]) => {
+          if (Array.isArray(value)) {
+            responseHeaders.set(key, value.join(","));
+          } else if (value !== undefined && value !== null) {
+            responseHeaders.set(key, String(value));
+          }
+        });
+        const responseBody =
+          typeof nativeResponse.data === "string"
+            ? nativeResponse.data
+            : JSON.stringify(nativeResponse.data ?? null);
+        return new Response(responseBody, {
+          status: nativeResponse.status,
+          headers: responseHeaders,
+        });
+      };
+
+      const nativeResponse = await CapacitorHttp.request(request);
+      return toResponse(nativeResponse);
+    }
+
     const response = await fetch(url, {
       ...options,
       credentials: "include",
-      headers: {
-        ...defaultHeaders,
-        ...options.headers,
-      },
+      headers: mergedHeaders,
     });
     return response;
   } finally {
@@ -1064,7 +1196,7 @@ export class ApiService {
    * Get the configured API base URL
    */
   static getBaseUrl(): string {
-    return API_BASE;
+    return getApiBaseUrl();
   }
 
   static isNative(): boolean {
@@ -1449,32 +1581,6 @@ export class ApiService {
     userId: string;
     vaultOwnerToken: string;
   }): Promise<Response> {
-    if (Capacitor.isNativePlatform()) {
-      try {
-        const vaultOwnerToken = data.vaultOwnerToken;
-        if (!vaultOwnerToken) {
-          return new Response(
-            JSON.stringify({ error: "Vault must be unlocked" }),
-            { status: 401 }
-          );
-        }
-
-        const response = await fetch(`${API_BASE}/api/kai/portfolio/summary/${data.userId}`, {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${vaultOwnerToken}`,
-          },
-        });
-
-        return response;
-      } catch (error) {
-        console.error("[ApiService] Native getPortfolioSummary error:", error);
-        return new Response(JSON.stringify({ error: (error as Error).message }), {
-          status: 500,
-        });
-      }
-    }
-
     return apiFetch(`/api/kai/portfolio/summary/${data.userId}`, {
       method: "GET",
       headers: {
@@ -1502,20 +1608,6 @@ export class ApiService {
     }
     const suffix = query.toString() ? `?${query.toString()}` : "";
     const path = `/api/kai/market/insights/${data.userId}${suffix}`;
-
-    if (Capacitor.isNativePlatform()) {
-      const response = await fetch(`${API_BASE}${path}`, {
-        method: "GET",
-        signal: data.signal,
-        headers: {
-          Authorization: `Bearer ${data.vaultOwnerToken}`,
-        },
-      });
-      if (!response.ok) {
-        throw new Error(`Failed to load market insights: ${response.status}`);
-      }
-      return (await response.json()) as KaiHomeInsightsV2;
-    }
 
     const response = await apiFetch(path, {
       method: "GET",
@@ -1550,20 +1642,6 @@ export class ApiService {
     const suffix = query.toString() ? `?${query.toString()}` : "";
     const path = `/api/kai/dashboard/profile-picks/${data.userId}${suffix}`;
 
-    if (Capacitor.isNativePlatform()) {
-      const response = await fetch(`${API_BASE}${path}`, {
-        method: "GET",
-        signal: data.signal,
-        headers: {
-          Authorization: `Bearer ${data.vaultOwnerToken}`,
-        },
-      });
-      if (!response.ok) {
-        throw new Error(`Failed to load profile picks: ${response.status}`);
-      }
-      return (await response.json()) as KaiDashboardProfilePicksResponse;
-    }
-
     const response = await apiFetch(path, {
       method: "GET",
       signal: data.signal,
@@ -1591,34 +1669,6 @@ export class ApiService {
       symbol: data.symbol,
       conversation_id: data.conversationId,
     };
-
-    if (Capacitor.isNativePlatform()) {
-      try {
-        const vaultOwnerToken = data.vaultOwnerToken;
-        if (!vaultOwnerToken) {
-          return new Response(
-            JSON.stringify({ error: "Vault must be unlocked" }),
-            { status: 401 }
-          );
-        }
-
-        const response = await fetch(`${API_BASE}/api/kai/chat/analyze-loser`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${vaultOwnerToken}`,
-          },
-          body: JSON.stringify(body),
-        });
-
-        return response;
-      } catch (error) {
-        console.error("[ApiService] Native analyzeLoser error:", error);
-        return new Response(JSON.stringify({ error: (error as Error).message }), {
-          status: 500,
-        });
-      }
-    }
 
     return apiFetch("/api/kai/chat/analyze-loser", {
       method: "POST",

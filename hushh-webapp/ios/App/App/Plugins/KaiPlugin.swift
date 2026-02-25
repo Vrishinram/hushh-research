@@ -52,33 +52,13 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin, URLSessionDataDelegate {
     
     // MARK: - Configuration
     
-    private var defaultBackendUrl: String {
-        return (bridge?.config.getPluginConfig(jsName).getString("backendUrl")) 
-            ?? "https://consent-protocol-1006304528804.us-central1.run.app"
-    }
-
     private func getBackendUrl(_ call: CAPPluginCall) -> String {
-        // 1. Check call parameters (allows per-call override for testing)
-        if let url = call.getString("backendUrl"), !url.isEmpty {
-            print("[\(TAG)] 🌐 Using backendUrl from call params: \(url)")
-            return url
-        }
-
-        // 2. Check capacitor config (Plugin specific: plugins.Kai.backendUrl)
-        if let url = bridge?.config.getPluginConfig(jsName).getString("backendUrl"), !url.isEmpty {
-            print("[\(TAG)] 🌐 Using backendUrl from plugin config: \(url)")
-            return url
-        }
-
-        // 3. Check for environment variable (fallback for CI/local dev)
-        if let envUrl = ProcessInfo.processInfo.environment["NEXT_PUBLIC_BACKEND_URL"], !envUrl.isEmpty {
-            print("[\(TAG)] 🌐 Using backendUrl from Environment: \(envUrl)")
-            return envUrl
-        }
-
-        // 4. Default to production
-        let url = defaultBackendUrl
-        print("[\(TAG)] 🌐 Using default backendUrl: \(url)")
+        let url = HushhProxyClient.resolveBackendUrl(
+            call: call,
+            plugin: self,
+            jsName: jsName
+        )
+        print("[\(TAG)] 🌐 Resolved backendUrl: \(url)")
         return url
     }
     

@@ -37,23 +37,8 @@ class HushhNotificationsPlugin : Plugin() {
         .writeTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    private val defaultBackendUrl = "https://consent-protocol-1006304528804.us-central1.run.app"
-
-    private fun normalizeBackendUrl(raw: String): String {
-        return BackendUrl.normalize(raw)
-    }
-
     private fun getBackendUrl(call: PluginCall? = null): String {
-        val callUrl = call?.getString("backendUrl")
-        if (!callUrl.isNullOrBlank()) return normalizeBackendUrl(callUrl)
-
-        val pluginUrl = bridge.config.getString("plugins.HushhNotifications.backendUrl")
-        if (!pluginUrl.isNullOrBlank()) return normalizeBackendUrl(pluginUrl)
-
-        val envUrl = System.getenv("NEXT_PUBLIC_BACKEND_URL")
-        if (!envUrl.isNullOrBlank()) return normalizeBackendUrl(envUrl)
-
-        return normalizeBackendUrl(defaultBackendUrl)
+        return BackendUrl.resolve(bridge, call, "HushhNotifications")
     }
 
     @PluginMethod

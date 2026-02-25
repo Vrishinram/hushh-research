@@ -1,13 +1,6 @@
 name: Deploy to Production
 
 on:
-  workflow_run:
-    workflows:
-      - "Tri-Flow CI"
-    branches:
-      - deploy
-    types:
-      - completed
   workflow_dispatch:
     inputs:
       scope:
@@ -25,24 +18,17 @@ env:
   GCP_REGION: us-central1
   BACKEND_SERVICE: consent-protocol
   FRONTEND_SERVICE: hushh-webapp
+  CLOUD_RUN_REVISION_RETENTION: "10"
 
 jobs:
   deploy:
     name: Deploy Production Scope
     runs-on: ubuntu-latest
-    if: >
-      github.event_name == 'workflow_dispatch' ||
-      (
-        github.event_name == 'workflow_run' &&
-        github.event.workflow_run.conclusion == 'success' &&
-        github.event.workflow_run.head_branch == 'deploy'
-      )
+    if: github.event_name == 'workflow_dispatch'
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -98,6 +84,11 @@ jobs:
           echo "url=$BACKEND_URL" >> $GITHUB_OUTPUT
           echo "Backend URL: $BACKEND_URL"
 
+      - name: Retain latest backend revisions
+        if: steps.scope.outputs.deploy_backend == 'true'
+        continue-on-error: true
+        run: bash scripts/ci/cloudrun-retention.sh "${{ env.BACKEND_SERVICE }}" "${{ env.GCP_REGION }}" "${{ env.CLOUD_RUN_REVISION_RETENTION }}"
+
       - name: Deploy frontend using Cloud Build
         if: steps.scope.outputs.deploy_frontend == 'true'
         run: |
@@ -113,6 +104,11 @@ jobs:
             --format='value(status.url)')
           echo "url=$FRONTEND_URL" >> $GITHUB_OUTPUT
           echo "Frontend URL: $FRONTEND_URL"
+
+      - name: Retain latest frontend revisions
+        if: steps.scope.outputs.deploy_frontend == 'true'
+        continue-on-error: true
+        run: bash scripts/ci/cloudrun-retention.sh "${{ env.FRONTEND_SERVICE }}" "${{ env.GCP_REGION }}" "${{ env.CLOUD_RUN_REVISION_RETENTION }}"
 
       - name: Deployment Summary
         if: always()

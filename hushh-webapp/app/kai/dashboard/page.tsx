@@ -39,7 +39,7 @@ export default function KaiDashboardPage() {
   }
 
   return (
-    <div className="relative w-full">
+    <div className="relative w-full overflow-x-hidden">
       <div className="w-full pb-32">
         <KaiFlow
           userId={user.uid}

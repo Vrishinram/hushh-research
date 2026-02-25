@@ -52,6 +52,9 @@ Notes:
 - For dual-domain migration, keep both production hosts in `PASSKEY_ALLOWED_RP_IDS`.
 - Keep `NEXT_PUBLIC_PASSKEY_RP_ID` unset for dual-domain web behavior (host-based RP ID).
 - `localhost` is valid for web dev passkeys, but not for iOS associated domains.
+- Native PRF passkey status:
+  - iOS: implemented via `HushhVault.registerPasskeyPrf/authenticatePasskeyPrf` (requires iOS 18+).
+  - Android: PRF native passkey methods are still pending; biometric/passphrase fallback remains active.
 
 ### Firebase artifact safety (no secret leak in git)
 

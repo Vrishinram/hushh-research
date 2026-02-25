@@ -35,6 +35,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -232,32 +238,36 @@ export function DataTable<TData, TValue>({
       </div>
 
       {/* Pagination Controls */}
-      <div className="flex items-center justify-between">
-        <div className="text-sm text-muted-foreground">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="text-xs text-muted-foreground sm:text-sm">
           Showing {rangeStart}-{rangeEnd} of {filteredCount}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between gap-2 sm:justify-end">
           {/* Page Size Selector */}
-          <Select
-            value={table.getState().pagination.pageSize.toString()}
-            onValueChange={(value) => table.setPageSize(Number(value))}
-          >
-            <SelectTrigger className="w-[80px] cursor-pointer">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 min-w-[64px] justify-between px-2 text-xs sm:min-w-[80px] sm:px-3 sm:text-sm"
+                data-no-route-swipe
+              >
+                {table.getState().pagination.pageSize}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
               {normalizedPageSizeOptions.map((size) => (
-                <SelectItem
+                <DropdownMenuItem
                   key={size}
-                  value={size.toString()}
+                  onSelect={() => table.setPageSize(size)}
                   className="cursor-pointer"
                 >
                   {size}
-                </SelectItem>
+                </DropdownMenuItem>
               ))}
-            </SelectContent>
-          </Select>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           {/* Page Navigation */}
           <Button

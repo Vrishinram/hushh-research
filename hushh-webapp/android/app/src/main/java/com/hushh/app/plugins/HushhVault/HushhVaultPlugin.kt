@@ -46,29 +46,10 @@ class HushhVaultPlugin : Plugin() {
         Log.d(TAG, "⚡ [HushhVault] Plugin Loaded")
     }
 
-    // Default Cloud Run backend URL (fallback if not provided by JS layer)
-    private val defaultBackendUrl = "https://consent-protocol-1006304528804.us-central1.run.app"
     private val defaultClientVersion = "2.0.0"
 
-    private fun normalizeBackendUrl(raw: String): String {
-        return BackendUrl.normalize(raw)
-    }
-
     private fun getBackendUrl(call: PluginCall? = null): String {
-        // 1) Per-call override (useful for local testing)
-        val callUrl = call?.getString("backendUrl")
-        if (!callUrl.isNullOrBlank()) return normalizeBackendUrl(callUrl)
-
-        // 2) Plugin-scoped config from capacitor.config: plugins.HushhVault.backendUrl
-        val pluginUrl = bridge.config.getString("plugins.HushhVault.backendUrl")
-        if (!pluginUrl.isNullOrBlank()) return normalizeBackendUrl(pluginUrl)
-
-        // 3) Environment (rare on-device)
-        val envUrl = System.getenv("NEXT_PUBLIC_BACKEND_URL")
-        if (!envUrl.isNullOrBlank()) return normalizeBackendUrl(envUrl)
-
-        // 4) Final fallback
-        return normalizeBackendUrl(defaultBackendUrl)
+        return BackendUrl.resolve(bridge, call, "HushhVault")
     }
 
     private fun getClientVersion(call: PluginCall? = null): String {

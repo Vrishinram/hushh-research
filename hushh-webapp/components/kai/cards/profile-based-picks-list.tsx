@@ -143,7 +143,7 @@ export function ProfileBasedPicksList({
   return (
     <div className="space-y-2">
       <div className="space-y-0.5">
-        <h3 className="text-sm font-black">Based on your profile</h3>
+        <h3 className="text-sm font-black">Personalized picks</h3>
         <p className="text-[11px] text-muted-foreground">
           Source: Kai risk profile ({riskProfile}) + current holdings context.
         </p>

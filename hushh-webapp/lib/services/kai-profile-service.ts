@@ -298,6 +298,37 @@ function normalizeProfile(raw: unknown): KaiProfileV2 {
   return normalizeProfileV2(record);
 }
 
+function profileFromFinancialSummaryRoot(
+  financialRecord: Record<string, unknown>
+): KaiProfileV2 | null {
+  const summaryCompleted = financialRecord.profile_completed === true;
+  const summarySkipped = financialRecord.profile_skipped_preferences === true;
+  const legacyIntroSeen = financialRecord.intro_seen === true;
+
+  if (!summaryCompleted && !summarySkipped && !legacyIntroSeen) {
+    return null;
+  }
+
+  const base = normalizeProfileLegacy(financialRecord);
+  const completed = summaryCompleted || base.onboarding.completed;
+  const skipped = summarySkipped || base.onboarding.skipped_preferences;
+  const completedAt =
+    base.onboarding.completed_at ??
+    normalizeOptionalIso(financialRecord.last_updated) ??
+    normalizeOptionalIso(financialRecord.updated_at);
+
+  return {
+    ...base,
+    onboarding: {
+      ...base.onboarding,
+      completed,
+      skipped_preferences: skipped,
+      completed_at: completed ? completedAt : null,
+    },
+    updated_at: normalizeOptionalIso(financialRecord.updated_at) ?? base.updated_at,
+  };
+}
+
 async function getFullBlob(params: {
   userId: string;
   vaultKey: string;
@@ -320,8 +351,32 @@ function selectProfile(fullBlob: Record<string, unknown>): KaiProfileV2 {
       typeof canonicalProfile === "object" &&
       !Array.isArray(canonicalProfile)
     ) {
-      return normalizeProfile(canonicalProfile);
+      const normalized = normalizeProfile(canonicalProfile);
+      const legacySummary = profileFromFinancialSummaryRoot(financialRecord);
+      if (
+        legacySummary &&
+        legacySummary.onboarding.completed &&
+        !normalized.onboarding.completed
+      ) {
+        return {
+          ...normalized,
+          onboarding: {
+            ...normalized.onboarding,
+            completed: true,
+            skipped_preferences:
+              normalized.onboarding.skipped_preferences ||
+              legacySummary.onboarding.skipped_preferences,
+            completed_at:
+              normalized.onboarding.completed_at ??
+              legacySummary.onboarding.completed_at,
+          },
+        };
+      }
+      return normalized;
     }
+
+    const legacySummary = profileFromFinancialSummaryRoot(financialRecord);
+    if (legacySummary) return legacySummary;
   }
   return createDefaultProfile();
 }

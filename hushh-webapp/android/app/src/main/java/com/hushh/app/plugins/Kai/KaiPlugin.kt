@@ -38,34 +38,8 @@ class KaiPlugin : Plugin() {
         .callTimeout(170, TimeUnit.SECONDS)
         .build()
 
-    private val defaultBackendUrl = "https://consent-protocol-1006304528804.us-central1.run.app"
-
     private fun getBackendUrl(call: PluginCall? = null): String {
-        // 1) Allow override per-call (useful for local dev/testing)
-        val callUrl = call?.getString("backendUrl")
-        if (!callUrl.isNullOrBlank()) {
-            return normalizeBackendUrl(callUrl)
-        }
-
-        // 2) Prefer plugin-scoped config from capacitor.config.ts: plugins.Kai.backendUrl
-        // Capacitor Android config is exposed via bridge.config; dot-path access works for nested config.
-        val pluginConfigUrl = bridge.config.getString("plugins.Kai.backendUrl")
-        if (!pluginConfigUrl.isNullOrBlank()) {
-            return normalizeBackendUrl(pluginConfigUrl)
-        }
-
-        // 3) Environment fallback (rare on-device, but useful for CI/local)
-        val envUrl = System.getenv("NEXT_PUBLIC_BACKEND_URL")
-        if (!envUrl.isNullOrBlank()) {
-            return normalizeBackendUrl(envUrl)
-        }
-
-        // 4) Final fallback: production Cloud Run
-        return normalizeBackendUrl(defaultBackendUrl)
-    }
-
-    private fun normalizeBackendUrl(raw: String): String {
-        return BackendUrl.normalize(raw)
+        return BackendUrl.resolve(bridge, call, "Kai")
     }
     
     @PluginMethod

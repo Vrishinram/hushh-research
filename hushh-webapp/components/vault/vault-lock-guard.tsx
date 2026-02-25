@@ -160,6 +160,7 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
       <div className="w-full max-w-md">
         <VaultFlow
           user={user}
+          enableGeneratedDefault
           onSuccess={() => {
             // Force a router refresh to ensure state update is picked up
             // This handles potential race conditions on native

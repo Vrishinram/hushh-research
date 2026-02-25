@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { Mic, Search } from "lucide-react";
 
 import { KaiCommandPalette, type KaiCommandAction } from "@/components/kai/kai-command-palette";
@@ -32,6 +32,29 @@ export function KaiSearchBar({
 }: KaiSearchBarProps) {
   const [open, setOpen] = useState(false);
   const { hidden: hideBottomChrome } = useKaiBottomChromeVisibility(true);
+  const barRef = useRef<HTMLDivElement | null>(null);
+
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    const update = () => {
+      const barHeight = barRef.current?.getBoundingClientRect().height ?? 48;
+      const total = Math.round(barHeight + 34);
+      root.style.setProperty("--kai-command-fixed-ui", `${total}px`);
+    };
+    update();
+    const ro =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(() => update())
+        : null;
+    if (barRef.current && ro) {
+      ro.observe(barRef.current);
+    }
+    window.addEventListener("resize", update, { passive: true });
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, []);
 
   return (
     <>
@@ -49,17 +72,15 @@ export function KaiSearchBar({
             : "translate3d(0, 0, 0)",
         }}
       >
-        <div
-          aria-hidden
-          className="pointer-events-none absolute bottom-0 left-1/2 h-[72px] w-screen -translate-x-1/2 bottom-bar-glass"
-        />
-        <div className="pointer-events-auto w-full max-w-[420px]">
+        <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-[72px] bar-glass bar-glass-bottom" />
+        <div ref={barRef} className="pointer-events-auto w-full max-w-[420px]">
           <div className="relative">
             <Button
               variant="none"
               effect="fade"
               fullWidth
               size="default"
+              data-tour-id="kai-command-bar"
               className={cn(
                 "h-12 justify-start rounded-full px-4 pr-12 text-sm text-muted-foreground",
                 disabled && "pointer-events-none opacity-50"

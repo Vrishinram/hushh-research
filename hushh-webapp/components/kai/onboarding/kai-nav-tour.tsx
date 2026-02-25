@@ -1,7 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, ArrowRight, Compass, UserRound, Shield } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Compass,
+  UserRound,
+  Shield,
+  Command,
+  Layers3,
+} from "lucide-react";
 import { usePathname } from "next/navigation";
 
 import { Card, CardContent } from "@/lib/morphy-ux/card";
@@ -14,6 +22,19 @@ import { KaiProfileService } from "@/lib/services/kai-profile-service";
 import { getKaiChromeState } from "@/lib/navigation/kai-chrome-state";
 
 const TOUR_STEPS = [
+  {
+    id: "kai-route-tabs",
+    title: "Top Route Tabs",
+    description: "Swipe left or right to switch between Market, Dashboard, and Analysis.",
+    icon: Layers3,
+  },
+  {
+    id: "kai-command-bar",
+    title: "Command Bar",
+    description:
+      "Use this to analyze tickers, jump routes, and run Kai actions from one place.",
+    icon: Command,
+  },
   {
     id: "nav-kai",
     title: "Kai",
@@ -34,6 +55,15 @@ const TOUR_STEPS = [
   },
 ] as const;
 
+type TourAnchor = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  viewportWidth: number;
+  viewportHeight: number;
+};
+
 function isResolved(state: {
   completed_at: string | null;
   skipped_at: string | null;
@@ -48,18 +78,24 @@ export function KaiNavTour() {
 
   const [stepIndex, setStepIndex] = useState(0);
   const [open, setOpen] = useState(false);
+  const [anchor, setAnchor] = useState<TourAnchor | null>(null);
 
   const chromeState = useMemo(() => getKaiChromeState(pathname), [pathname]);
   const normalizedPath = pathname?.replace(/\/+$/, "") || "";
-  const isEligibleRoute =
-    normalizedPath === "/kai" || normalizedPath === "/kai/dashboard";
+  const isEligibleRoute = normalizedPath.startsWith("/kai");
   const activeStep = TOUR_STEPS[stepIndex] ?? TOUR_STEPS[0];
 
   useEffect(() => {
     let cancelled = false;
 
     async function evaluate() {
-      if (loading || !user?.uid || !isEligibleRoute || chromeState.useOnboardingChrome) {
+      if (
+        loading ||
+        !user?.uid ||
+        !isEligibleRoute ||
+        chromeState.useOnboardingChrome ||
+        chromeState.isImportRoute
+      ) {
         if (!cancelled) setOpen(false);
         return;
       }
@@ -69,7 +105,6 @@ export function KaiNavTour() {
 
       const localResolved = isResolved(local);
       const localSynced = Boolean(local?.synced_to_vault_at);
-      const localResolvedForGate = localResolved;
 
       if (isVaultUnlocked && vaultKey && vaultOwnerToken) {
         try {
@@ -95,8 +130,6 @@ export function KaiNavTour() {
             return;
           }
 
-          // If local state says resolved but never synced, and vault profile has
-          // no completion markers, treat local as stale and show tour again.
           if (localResolved && !localSynced) {
             setStepIndex(0);
             setOpen(true);
@@ -107,7 +140,7 @@ export function KaiNavTour() {
         }
       }
 
-      if (localResolvedForGate) {
+      if (localResolved) {
         setOpen(false);
         return;
       }
@@ -122,6 +155,7 @@ export function KaiNavTour() {
       cancelled = true;
     };
   }, [
+    chromeState.isImportRoute,
     chromeState.useOnboardingChrome,
     isEligibleRoute,
     isVaultUnlocked,
@@ -131,11 +165,19 @@ export function KaiNavTour() {
     vaultOwnerToken,
   ]);
 
-  // Highlight active nav item while the tour is open.
   useEffect(() => {
     const all = Array.from(document.querySelectorAll<HTMLElement>("[data-tour-id]"));
     all.forEach((el) => {
-      el.classList.remove("ring-2", "ring-primary", "ring-offset-2", "ring-offset-background", "shadow-lg", "z-50");
+      el.classList.remove(
+        "ring-2",
+        "ring-primary",
+        "ring-offset-2",
+        "ring-offset-background",
+        "shadow-lg",
+        "relative",
+        "!z-[355]",
+        "z-50"
+      );
     });
 
     if (!open || !activeStep) {
@@ -149,7 +191,8 @@ export function KaiNavTour() {
       "ring-offset-2",
       "ring-offset-background",
       "shadow-lg",
-      "z-50"
+      "relative",
+      "!z-[355]"
     );
 
     return () => {
@@ -159,8 +202,62 @@ export function KaiNavTour() {
         "ring-offset-2",
         "ring-offset-background",
         "shadow-lg",
-        "z-50"
+        "relative",
+        "!z-[355]"
       );
+    };
+  }, [activeStep, open]);
+
+  useEffect(() => {
+    if (!open || !activeStep) {
+      setAnchor(null);
+      return;
+    }
+
+    let frame: number | null = null;
+    let resizeObserver: ResizeObserver | null = null;
+
+    const updateAnchor = () => {
+      const target = document.querySelector<HTMLElement>(`[data-tour-id=\"${activeStep.id}\"]`);
+      if (!target) {
+        setAnchor(null);
+        return;
+      }
+
+      const rect = target.getBoundingClientRect();
+      setAnchor({
+        left: rect.left,
+        top: rect.top,
+        width: rect.width,
+        height: rect.height,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+      });
+
+      if (!resizeObserver && typeof ResizeObserver !== "undefined") {
+        resizeObserver = new ResizeObserver(() => scheduleAnchorUpdate());
+        resizeObserver.observe(target);
+      }
+    };
+
+    const scheduleAnchorUpdate = () => {
+      if (frame !== null) {
+        window.cancelAnimationFrame(frame);
+      }
+      frame = window.requestAnimationFrame(updateAnchor);
+    };
+
+    scheduleAnchorUpdate();
+    window.addEventListener("resize", scheduleAnchorUpdate, { passive: true });
+    window.addEventListener("scroll", scheduleAnchorUpdate, { passive: true });
+
+    return () => {
+      if (frame !== null) {
+        window.cancelAnimationFrame(frame);
+      }
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", scheduleAnchorUpdate);
+      window.removeEventListener("scroll", scheduleAnchorUpdate);
     };
   }, [activeStep, open]);
 
@@ -189,23 +286,31 @@ export function KaiNavTour() {
   }
 
   async function handleSkip() {
-    if (!user?.uid) return;
-    const local = await KaiNavTourLocalService.markSkipped(user.uid);
-    await syncToVaultIfAvailable({
-      completedAt: null,
-      skippedAt: local.skipped_at,
-    });
     setOpen(false);
+    if (!user?.uid) return;
+    try {
+      const local = await KaiNavTourLocalService.markSkipped(user.uid);
+      await syncToVaultIfAvailable({
+        completedAt: null,
+        skippedAt: local.skipped_at,
+      });
+    } catch (error) {
+      console.warn("[KaiNavTour] Failed to mark skipped:", error);
+    }
   }
 
   async function handleDone() {
-    if (!user?.uid) return;
-    const local = await KaiNavTourLocalService.markCompleted(user.uid);
-    await syncToVaultIfAvailable({
-      completedAt: local.completed_at,
-      skippedAt: null,
-    });
     setOpen(false);
+    if (!user?.uid) return;
+    try {
+      const local = await KaiNavTourLocalService.markCompleted(user.uid);
+      await syncToVaultIfAvailable({
+        completedAt: local.completed_at,
+        skippedAt: null,
+      });
+    } catch (error) {
+      console.warn("[KaiNavTour] Failed to mark completed:", error);
+    }
   }
 
   if (!open || !activeStep) return null;
@@ -213,10 +318,61 @@ export function KaiNavTour() {
   const isFirst = stepIndex === 0;
   const isLast = stepIndex === TOUR_STEPS.length - 1;
 
+  const cardStyle = (() => {
+    const isBottomNavStep = activeStep.id.startsWith("nav-");
+    const viewportWidth = anchor?.viewportWidth ?? (typeof window !== "undefined" ? window.innerWidth : 430);
+    const margin = 12;
+    const cardWidth = Math.min(480, viewportWidth - margin * 2);
+
+    if (isBottomNavStep) {
+      return {
+        width: `${cardWidth}px`,
+        left: "50%",
+        transform: "translateX(-50%)",
+        bottom: "calc(var(--app-bottom-inset) + var(--kai-command-fixed-ui, 90px) + 88px)",
+      };
+    }
+
+    if (!anchor) {
+      return {
+        width: `${cardWidth}px`,
+        left: "50%",
+        transform: "translateX(-50%)",
+        bottom: "calc(var(--app-bottom-inset) + var(--kai-command-fixed-ui, 90px) + 12px)",
+      };
+    }
+
+    const centerX = anchor.left + anchor.width / 2;
+    const left = Math.max(
+      margin,
+      Math.min(anchor.viewportWidth - cardWidth - margin, centerX - cardWidth / 2)
+    );
+
+    const spaceAbove = anchor.top - margin;
+    const spaceBelow = anchor.viewportHeight - (anchor.top + anchor.height) - margin;
+    const placeAbove = spaceAbove > spaceBelow;
+
+    if (placeAbove) {
+      return {
+        width: `${cardWidth}px`,
+        left: `${left}px`,
+        transform: "translateX(0)",
+        bottom: `${Math.max(margin, anchor.viewportHeight - anchor.top + 12)}px`,
+      };
+    }
+
+    return {
+      width: `${cardWidth}px`,
+      left: `${left}px`,
+      transform: "translateX(0)",
+      top: `${Math.max(margin, anchor.top + anchor.height + 12)}px`,
+    };
+  })();
+
   return (
-    <div className="pointer-events-none fixed inset-0 z-[140]">
-      <div className="pointer-events-auto absolute inset-0 bg-black/35 dark:bg-black/45" />
-      <div className="pointer-events-auto absolute inset-x-3 bottom-[calc(var(--app-bottom-inset)+16px)] sm:left-1/2 sm:right-auto sm:w-[min(30rem,calc(100vw-1.5rem))] sm:-translate-x-1/2">
+    <div className="pointer-events-none fixed inset-0 z-[320]" data-no-route-swipe>
+      <div className="pointer-events-auto absolute inset-0 bg-black/35 backdrop-blur-[2px] dark:bg-black/45" />
+      <div className="pointer-events-auto absolute" style={cardStyle} data-no-route-swipe>
         <Card
           variant="none"
           effect="glass"
@@ -226,7 +382,7 @@ export function KaiNavTour() {
             <div className="flex items-center justify-between">
               <div className="inline-flex min-w-0 items-center gap-2">
                 <Icon icon={activeStep.icon} size="sm" className="text-[var(--brand-600)]" />
-                <p className="truncate text-sm font-semibold">Bottom Navigation Tour</p>
+                <p className="truncate text-sm font-semibold">Kai Navigation Tour</p>
               </div>
               <p className="ml-2 shrink-0 text-xs text-muted-foreground tabular-nums">
                 {stepIndex + 1}/{TOUR_STEPS.length} · {progress}%
@@ -244,6 +400,7 @@ export function KaiNavTour() {
                 effect="fade"
                 size="default"
                 className="w-full"
+                data-no-route-swipe
                 onClick={() => void handleSkip()}
               >
                 Skip
@@ -255,6 +412,7 @@ export function KaiNavTour() {
                 size="default"
                 className="w-full"
                 disabled={isFirst}
+                data-no-route-swipe
                 onClick={() => setStepIndex((prev) => Math.max(0, prev - 1))}
               >
                 <ArrowLeft className="mr-1 h-4 w-4" />
@@ -264,6 +422,7 @@ export function KaiNavTour() {
               <Button
                 size="default"
                 className="w-full"
+                data-no-route-swipe
                 onClick={() => {
                   if (isLast) {
                     void handleDone();
