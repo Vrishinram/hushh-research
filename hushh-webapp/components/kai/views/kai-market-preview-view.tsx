@@ -26,6 +26,7 @@ import { CacheService, CACHE_KEYS } from "@/lib/services/cache-service";
 import { ensureKaiVaultOwnerToken } from "@/lib/services/kai-token-guard";
 import { ApiService, type KaiHomeInsightsV2 } from "@/lib/services/api-service";
 import { UnlockWarmOrchestrator } from "@/lib/services/unlock-warm-orchestrator";
+import { getSessionItem, setSessionItem } from "@/lib/utils/session-storage";
 import { useVault } from "@/lib/vault/vault-context";
 
 function SectionLabel({ children }: { children: string }) {
@@ -305,7 +306,7 @@ export function KaiMarketPreviewView() {
 
       if (!forceTokenRefresh && sessionCacheKey && typeof window !== "undefined") {
         try {
-          const raw = window.sessionStorage.getItem(sessionCacheKey);
+          const raw = getSessionItem(sessionCacheKey);
           if (raw) {
             const parsed = JSON.parse(raw) as {
               payload?: KaiHomeInsightsV2;
@@ -415,7 +416,7 @@ export function KaiMarketPreviewView() {
                     MARKET_HOME_CACHE_TTL_MS
                   );
                   if (sessionCacheKey && typeof window !== "undefined") {
-                    window.sessionStorage.setItem(
+                    setSessionItem(
                       sessionCacheKey,
                       JSON.stringify({ payload: fallbackPayload, savedAt: Date.now() })
                     );
@@ -445,7 +446,7 @@ export function KaiMarketPreviewView() {
             cache.set(CACHE_KEYS.KAI_MARKET_HOME(user.uid, "default", 7), nextPayload, MARKET_HOME_CACHE_TTL_MS);
           }
           if (sessionCacheKey && typeof window !== "undefined") {
-            window.sessionStorage.setItem(
+            setSessionItem(
               sessionCacheKey,
               JSON.stringify({ payload: nextPayload, savedAt: Date.now() })
             );
@@ -521,7 +522,7 @@ export function KaiMarketPreviewView() {
   }, [hasPayload, payload?.hero?.holdings_count]);
 
   return (
-    <div className="mx-auto w-full max-w-[390px] px-4 py-7 pb-[calc(148px+var(--app-bottom-inset))]">
+    <div className="mx-auto w-full max-w-[390px] overflow-x-hidden px-4 py-7 pb-[calc(148px+var(--app-bottom-inset))]">
       <header className="space-y-2 text-center">
         <h1 className="text-2xl font-black tracking-tight leading-tight">Explore the market with Kai</h1>
         <p className="mx-auto max-w-[22rem] text-sm text-muted-foreground">

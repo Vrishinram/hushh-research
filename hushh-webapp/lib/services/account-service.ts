@@ -24,8 +24,7 @@ export class AccountServiceImpl {
       if (Capacitor.isNativePlatform()) {
         // Native: Call Capacitor plugin directly to Python backend
         const result = await HushhAccount.deleteAccount({
-             authToken: vaultOwnerToken,
-             backendUrl: process.env.NEXT_PUBLIC_BACKEND_URL
+          authToken: vaultOwnerToken,
         });
         return result;
       } else {

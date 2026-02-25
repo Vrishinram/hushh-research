@@ -668,7 +668,9 @@ export function KaiFlow({
           financialDomain && financialDomain.attributeCount > 0;
         if (hasFinancialData) {
           // Prefer CacheProvider (in-memory) for reuse with Manage page
-          let portfolioData: PortfolioData | undefined = cachedPortfolioData;
+          let portfolioData: PortfolioData | undefined = hasCachedPortfolioData
+            ? cachedPortfolioData
+            : undefined;
 
           if (!portfolioData && vaultKey) {
             // No cache - try to decrypt from World Model
@@ -727,10 +729,29 @@ export function KaiFlow({
             setPortfolioData(userId, portfolioData);
           }
 
+          const holdingsCount =
+            (Array.isArray(portfolioData?.holdings) && portfolioData?.holdings.length) || 0;
+
+          if (holdingsCount === 0) {
+            setFlowData({
+              hasFinancialData: false,
+              holdingsCount: 0,
+              portfolioData: undefined,
+              holdings: [],
+            });
+            if (isDashboardMode) {
+              setOnboardingFlowActiveCookie(false);
+              setState("dashboard");
+            } else {
+              setState("import_required");
+            }
+            return;
+          }
+
           // User has financial data - show dashboard
           setFlowData({
             hasFinancialData: true,
-            holdingsCount: financialDomain.attributeCount,
+            holdingsCount,
             portfolioData,
             holdings: portfolioData?.holdings?.map(h => h.symbol) || [],
           });
@@ -1814,7 +1835,7 @@ export function KaiFlow({
   }
 
   return (
-    <div className="w-full flex flex-col">
+    <div className="flex w-full flex-col overflow-x-hidden">
       {/* Error display */}
       {error && state !== "importing" && state !== "import_complete" && (
         <div className="mb-4 p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-600 dark:text-red-400">
@@ -1848,9 +1869,7 @@ export function KaiFlow({
         <PortfolioImportView
           onFileSelect={handleFileUpload}
           onSkip={handleSkipImport}
-          onPreloadSchema={
-            flowData.hasFinancialData ? undefined : () => void handlePreloadSchema()
-          }
+          onPreloadSchema={() => void handlePreloadSchema()}
           isUploading={false}
           isPreloadingSchema={isPreloadingSchema}
         />
@@ -1912,7 +1931,11 @@ export function KaiFlow({
         />
       )}
 
-      {isDashboardMode && state === "dashboard" && flowData.portfolioData && (
+      {isDashboardMode &&
+        state === "dashboard" &&
+        flowData.portfolioData &&
+        Array.isArray(flowData.portfolioData.holdings) &&
+        flowData.portfolioData.holdings.length > 0 && (
         <DashboardMasterView
           userId={userId}
           vaultOwnerToken={effectiveVaultOwnerToken ?? ""}
@@ -1922,34 +1945,18 @@ export function KaiFlow({
         />
       )}
 
-      {isDashboardMode && state === "dashboard" && !flowData.portfolioData && (
-        <div className="text-center py-12">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-primary/10 flex items-center justify-center">
-            <svg
-              className="w-8 h-8 text-primary"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
-              />
-            </svg>
-          </div>
-          <h2 className="text-xl font-bold mb-2">Welcome to Kai</h2>
-          <p className="text-muted-foreground mb-6">
-            Import your portfolio to get started with personalized investment insights.
-          </p>
-          <button
-            onClick={handleReimport}
-            className="px-6 py-3 bg-primary dark:bg-foreground text-white dark:text-black rounded-lg hover:opacity-90 transition-opacity"
-          >
-            Import Portfolio
-          </button>
-        </div>
+      {isDashboardMode &&
+        state === "dashboard" &&
+        (!flowData.portfolioData ||
+          !Array.isArray(flowData.portfolioData.holdings) ||
+          flowData.portfolioData.holdings.length === 0) && (
+        <PortfolioImportView
+          onFileSelect={handleFileUpload}
+          onSkip={handleSkipImport}
+          onPreloadSchema={() => void handlePreloadSchema()}
+          isUploading={false}
+          isPreloadingSchema={isPreloadingSchema}
+        />
       )}
 
       {isDashboardMode && state === "analysis" && flowData.analysisResult && (

@@ -12,6 +12,7 @@ import {
 } from "@/lib/navigation/kai-route-tabs";
 import { ROUTES } from "@/lib/navigation/routes";
 import { cn } from "@/lib/utils";
+import { scrollAppToTop } from "@/lib/navigation/use-scroll-reset";
 
 const SWIPE_VERTICAL_LIMIT_PX = 48;
 const SWIPE_DIRECTION_RATIO = 1.35;
@@ -96,6 +97,7 @@ export function DashboardRouteTabs() {
     (nextTab: string) => {
       const target = KAI_ROUTE_TABS.find((tab) => tab.id === nextTab);
       if (!target || target.id === activeTab) return;
+      scrollAppToTop("auto");
       // Match bottom-navbar tap motion: rely on SegmentedPill native transition.
       const root = segmentedPillRef.current;
       const indicator = root?.querySelector<HTMLElement>("[data-segment-indicator]") ?? null;
@@ -112,6 +114,10 @@ export function DashboardRouteTabs() {
 
   useEffect(() => {
     if (!mounted || hideTabsForPath || typeof document === "undefined") {
+      return;
+    }
+    const tabRoot = segmentedPillRef.current;
+    if (!tabRoot) {
       return;
     }
 
@@ -258,6 +264,7 @@ export function DashboardRouteTabs() {
       const offset = clamp(-deltaX * SWIPE_DRAG_RESISTANCE, gestureMinOffset, gestureMaxOffset);
       currentOffsetPx = offset;
       setIndicatorOffset(offset, { immediate: true });
+      event.preventDefault();
     };
 
     const onTouchEnd = (event: TouchEvent) => {
@@ -304,6 +311,7 @@ export function DashboardRouteTabs() {
       const commitOffset = (targetIndex - activeIndex) * segmentWidth;
       setIndicatorOffset(commitOffset, { immediate: false, durationMs: 150 });
       routePushTimeout = window.setTimeout(() => {
+        scrollAppToTop("auto");
         router.push(targetHref);
       }, 110);
     };
@@ -313,19 +321,19 @@ export function DashboardRouteTabs() {
       resetGesture();
     };
 
-    document.addEventListener("touchstart", onTouchStart, { passive: true });
-    document.addEventListener("touchmove", onTouchMove, { passive: true });
-    document.addEventListener("touchend", onTouchEnd, { passive: true });
-    document.addEventListener("touchcancel", onTouchCancel, { passive: true });
+    tabRoot.addEventListener("touchstart", onTouchStart, { passive: true });
+    tabRoot.addEventListener("touchmove", onTouchMove, { passive: false });
+    tabRoot.addEventListener("touchend", onTouchEnd, { passive: true });
+    tabRoot.addEventListener("touchcancel", onTouchCancel, { passive: true });
 
     return () => {
       if (routePushTimeout) {
         window.clearTimeout(routePushTimeout);
       }
-      document.removeEventListener("touchstart", onTouchStart);
-      document.removeEventListener("touchmove", onTouchMove);
-      document.removeEventListener("touchend", onTouchEnd);
-      document.removeEventListener("touchcancel", onTouchCancel);
+      tabRoot.removeEventListener("touchstart", onTouchStart);
+      tabRoot.removeEventListener("touchmove", onTouchMove);
+      tabRoot.removeEventListener("touchend", onTouchEnd);
+      tabRoot.removeEventListener("touchcancel", onTouchCancel);
     };
   }, [mounted, hideTabsForPath, pathname, router]);
 
@@ -371,7 +379,7 @@ export function DashboardRouteTabs() {
             : "translate3d(0, 0, 0)",
         }}
       >
-        <div className="pointer-events-auto w-full max-w-[460px] touch-pan-x">
+        <div className="pointer-events-auto w-full max-w-[460px] touch-none">
           <SegmentedPill
             ref={segmentedPillRef}
             size="compact"

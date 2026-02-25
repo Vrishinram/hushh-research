@@ -1,5 +1,6 @@
 "use client";
 
+import { Capacitor } from "@capacitor/core";
 import { ApiService } from "@/lib/services/api-service";
 
 export type TickerUniverseRow = {
@@ -101,11 +102,31 @@ function isFresh(payload: CachePayload, ttlMs: number): boolean {
 
 async function fetchUniverse(forceRefresh = false): Promise<TickerUniverseRow[]> {
   const endpoint = forceRefresh ? "/api/tickers/all?refresh=1" : "/api/tickers/all";
-  const resp = await ApiService.apiFetch(endpoint, { method: "GET" });
-  if (!resp.ok) throw new Error("Failed to fetch ticker universe");
-  const json = (await resp.json()) as unknown;
-  if (!Array.isArray(json)) return [];
-  return (json as TickerUniverseRow[]).map(normalizeRow);
+  const parseRows = async (
+    resp: Response,
+    source: "primary"
+  ): Promise<TickerUniverseRow[]> => {
+    if (!resp.ok) {
+      throw new Error(
+        `Ticker universe request failed via ${source} (${endpoint}) with status ${resp.status}`
+      );
+    }
+    const json = (await resp.json()) as unknown;
+    if (!Array.isArray(json)) return [];
+    return (json as TickerUniverseRow[]).map(normalizeRow);
+  };
+
+  try {
+    const resp = await ApiService.apiFetch(endpoint, { method: "GET" });
+    return await parseRows(resp, "primary");
+  } catch (error) {
+    const primaryMessage =
+      error instanceof Error ? error.message : "Unknown ticker universe error";
+    if (Capacitor.isNativePlatform()) {
+      throw new Error(primaryMessage);
+    }
+    throw new Error(`${primaryMessage}. Request failed for ${endpoint}.`);
+  }
 }
 
 /**
@@ -189,11 +210,31 @@ export async function searchTickerUniverseRemote(
 
   const promise = (async () => {
     const endpoint = `/api/tickers/search?q=${encodeURIComponent(q)}&limit=${safeLimit}`;
-    const resp = await ApiService.apiFetch(endpoint, { method: "GET" });
-    if (!resp.ok) throw new Error("Failed to search ticker universe");
-    const json = (await resp.json()) as unknown;
-    if (!Array.isArray(json)) return [];
-    return (json as TickerUniverseRow[]).map(normalizeRow);
+    const parseRows = async (
+      resp: Response,
+      source: "primary"
+    ): Promise<TickerUniverseRow[]> => {
+      if (!resp.ok) {
+        throw new Error(
+          `Ticker search failed via ${source} (${endpoint}) with status ${resp.status}`
+        );
+      }
+      const json = (await resp.json()) as unknown;
+      if (!Array.isArray(json)) return [];
+      return (json as TickerUniverseRow[]).map(normalizeRow);
+    };
+
+    try {
+      const resp = await ApiService.apiFetch(endpoint, { method: "GET" });
+      return await parseRows(resp, "primary");
+    } catch (error) {
+      const primaryMessage =
+        error instanceof Error ? error.message : "Unknown ticker search error";
+      if (Capacitor.isNativePlatform()) {
+        throw new Error(primaryMessage);
+      }
+      throw new Error(`${primaryMessage}. Request failed for ${endpoint}.`);
+    }
   })().finally(() => {
     remoteSearchInFlight.delete(key);
   });

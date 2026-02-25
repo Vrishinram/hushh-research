@@ -2,31 +2,35 @@ import dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
 import type { CapacitorConfig } from "@capacitor/cli";
 
-// For development: set to true to use localhost:3000 hot reload
-// For production: set to false to use static build in /out
-const DEV_MODE = process.env.CAPACITOR_DEV === "true";
+const BACKEND_URL = (process.env.NEXT_PUBLIC_BACKEND_URL || "").trim();
 
-// When CAPACITOR_DEV=true, point the native WebView at a running Next.js dev server.
-// IMPORTANT: This does NOT change native plugin networking.
-// Native plugins must always hit the Python backend via BACKEND_URL for parity.
-// Android emulator cannot reach host localhost; use 10.0.2.2.
-const DEFAULT_DEV_APP_URL =
-  process.env.CAPACITOR_PLATFORM === "android"
-    ? "http://10.0.2.2:3000"
-    : "http://localhost:3000";
-
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || (DEV_MODE ? DEFAULT_DEV_APP_URL : undefined);
-
-const BACKEND_URL =
-  process.env.NEXT_PUBLIC_BACKEND_URL ||
-  "https://consent-protocol-1006304528804.us-central1.run.app";
+function hostFromUrl(raw: string | undefined): string | null {
+  if (!raw) return null;
+  try {
+    return new URL(raw).hostname.trim().toLowerCase();
+  } catch {
+    return null;
+  }
+}
 
 const NORMALIZED_BACKEND_URL = (() => {
-  if (process.env.CAPACITOR_PLATFORM !== "android") return BACKEND_URL;
+  if (!BACKEND_URL) {
+    throw new Error(
+      "NEXT_PUBLIC_BACKEND_URL is required in .env.local for Capacitor builds."
+    );
+  }
+  const normalized = BACKEND_URL.replace(/\/$/, "").trim();
+  const backendHost = hostFromUrl(normalized);
+
+  if (process.env.CAPACITOR_PLATFORM !== "android") return normalized;
   // Android emulator cannot reach host loopback; use 10.0.2.2
-  if (BACKEND_URL.includes("localhost")) return BACKEND_URL.replace("localhost", "10.0.2.2");
-  if (BACKEND_URL.includes("127.0.0.1")) return BACKEND_URL.replace("127.0.0.1", "10.0.2.2");
-  return BACKEND_URL;
+  if (backendHost === "localhost") {
+    return normalized.replace("localhost", "10.0.2.2");
+  }
+  if (backendHost === "127.0.0.1") {
+    return normalized.replace("127.0.0.1", "10.0.2.2");
+  }
+  return normalized;
 })();
 
 const config: CapacitorConfig = {
@@ -45,9 +49,8 @@ const config: CapacitorConfig = {
 
   // Server configuration
   server: {
-    // DEV: Use live server for hot reload
-    // PROD: Uses static export from webDir
-    url: APP_URL,
+    // Native runtime must use bundled web assets from webDir.
+    // Do not pin to hosted frontend URL; native data access should flow via plugins/backendUrl.
     cleartext: true, // Allow HTTP for localhost
     androidScheme: "https",
     iosScheme: "App",

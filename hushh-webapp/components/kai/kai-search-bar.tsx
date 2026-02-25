@@ -49,10 +49,7 @@ export function KaiSearchBar({
             : "translate3d(0, 0, 0)",
         }}
       >
-        <div
-          aria-hidden
-          className="pointer-events-none absolute bottom-0 left-1/2 h-[72px] w-screen -translate-x-1/2 bottom-bar-glass"
-        />
+        <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-[72px] bottom-bar-glass" />
         <div className="pointer-events-auto w-full max-w-[420px]">
           <div className="relative">
             <Button

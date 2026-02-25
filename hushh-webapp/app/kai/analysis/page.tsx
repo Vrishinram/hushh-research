@@ -337,7 +337,7 @@ export default function KaiAnalysisPage() {
   }
 
   return (
-    <div className="pt-4">
+    <div className="overflow-x-hidden pt-4">
       {showWorkspace ? (
         <div ref={workspaceTopRef} className="mx-auto w-full max-w-6xl space-y-4 px-4 sm:px-6">
           <div className="space-y-3">

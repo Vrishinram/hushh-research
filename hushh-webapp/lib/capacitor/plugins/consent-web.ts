@@ -20,8 +20,9 @@ import type {
   VerifyTrustLinkResult,
 } from "../types";
 
-const BACKEND_URL =
-  process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+const BACKEND_URL = (process.env.NEXT_PUBLIC_BACKEND_URL || "")
+  .trim()
+  .replace(/\/$/, "");
 
 export class HushhConsentWeb extends WebPlugin {
   async issueToken(options: IssueTokenOptions): Promise<IssueTokenResult> {

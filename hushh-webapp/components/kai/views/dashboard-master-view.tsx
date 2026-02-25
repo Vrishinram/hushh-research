@@ -999,8 +999,7 @@ export function DashboardMasterView({
         throw new Error("Failed to delete imported data");
       }
 
-      setCachePortfolioData(userId, clearedPortfolioData as CachedPortfolioData);
-      CacheSyncService.onPortfolioUpserted(userId, clearedPortfolioData as CachedPortfolioData);
+      CacheSyncService.onWorldModelDomainCleared(userId, "financial");
       baselineBySourceRef.current = new Map();
       setHoldingsDraft([]);
       setDeleteImportedDialogOpen(false);
@@ -1231,7 +1230,7 @@ export function DashboardMasterView({
   );
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-8 px-5 pb-[calc(160px+var(--app-bottom-inset))] pt-4 sm:px-8">
+    <div className="mx-auto w-full max-w-5xl space-y-8 overflow-x-hidden px-5 pb-[calc(160px+var(--app-bottom-inset))] pt-4 sm:px-8">
       <Card
         variant="muted"
         effect="fill"
@@ -1431,18 +1430,18 @@ export function DashboardMasterView({
           </div>
 
           <Tabs defaultValue="all" className="space-y-3">
-            <div className="overflow-x-auto pb-1">
-              <TabsList className="inline-flex h-9 w-max min-w-full bg-background/80">
-                <TabsTrigger className="shrink-0" value="all">
+            <div className="pb-1">
+              <TabsList className="grid h-auto w-full grid-cols-2 gap-1 bg-background/80 p-1">
+                <TabsTrigger className="h-8 min-w-0 px-2 text-[11px] sm:text-xs" value="all">
                   All ({desktopHoldingTables.all.length})
                 </TabsTrigger>
-                <TabsTrigger className="shrink-0" value="analyze">
+                <TabsTrigger className="h-8 min-w-0 px-2 text-[11px] sm:text-xs" value="analyze">
                   Analyze Eligible ({desktopHoldingTables.analyzeEligible.length})
                 </TabsTrigger>
-                <TabsTrigger className="shrink-0" value="non-analyze">
+                <TabsTrigger className="h-8 min-w-0 px-2 text-[11px] sm:text-xs" value="non-analyze">
                   Non-Analyzable ({desktopHoldingTables.nonAnalyzable.length})
                 </TabsTrigger>
-                <TabsTrigger className="shrink-0" value="cash">
+                <TabsTrigger className="h-8 min-w-0 px-2 text-[11px] sm:text-xs" value="cash">
                   Cash / Sweep ({desktopHoldingTables.cashSweep.length})
                 </TabsTrigger>
               </TabsList>

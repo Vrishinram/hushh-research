@@ -13,3 +13,21 @@ if [ -f scripts/verify-route-contracts.cjs ]; then
 else
   echo "⚠ WARNING: verify-route-contracts.cjs not found, skipping"
 fi
+
+if [ -f scripts/verify-native-parity.cjs ]; then
+  npm run verify:parity
+else
+  echo "⚠ WARNING: verify-native-parity.cjs not found, skipping"
+fi
+
+if [ -f scripts/verify-capacitor-runtime-config.cjs ]; then
+  npm run verify:capacitor:config
+else
+  echo "⚠ WARNING: verify-capacitor-runtime-config.cjs not found, skipping"
+fi
+
+if [ -f scripts/verify-capacitor-routes.cjs ]; then
+  npm run verify:capacitor:routes
+else
+  echo "⚠ WARNING: verify-capacitor-routes.cjs not found, skipping"
+fi

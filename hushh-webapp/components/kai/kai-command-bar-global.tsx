@@ -11,6 +11,7 @@ import { morphyToast as toast } from "@/lib/morphy-ux/morphy";
 import { ROUTES } from "@/lib/navigation/routes";
 import { useVault } from "@/lib/vault/vault-context";
 import { getKaiChromeState } from "@/lib/navigation/kai-chrome-state";
+import { WorldModelService } from "@/lib/services/world-model-service";
 
 function toBoolean(value: unknown): boolean | undefined {
   if (typeof value === "boolean") return value;
@@ -44,7 +45,7 @@ export function KaiCommandBarGlobal() {
   const router = useRouter();
   const pathname = usePathname();
   const { user, loading } = useAuth();
-  const { isVaultUnlocked } = useVault();
+  const { isVaultUnlocked, vaultOwnerToken } = useVault();
   const setAnalysisParams = useKaiSession((s) => s.setAnalysisParams);
   const busyOperations = useKaiSession((s) => s.busyOperations);
   const cache = useMemo(() => CacheService.getInstance(), []);
@@ -57,13 +58,12 @@ export function KaiCommandBarGlobal() {
       return;
     }
 
-    const computeHasPortfolio = () => {
+    const computeHasPortfolioFromCache = (): boolean | null => {
       const cachedPortfolio = cache.get<Record<string, unknown>>(
         CACHE_KEYS.PORTFOLIO_DATA(user.uid)
       );
       if (!cachedPortfolio || typeof cachedPortfolio !== "object") {
-        setHasPortfolioData(false);
-        return;
+        return null;
       }
       const nestedPortfolio =
         cachedPortfolio.portfolio &&
@@ -76,17 +76,56 @@ export function KaiCommandBarGlobal() {
         : Array.isArray(nestedPortfolio?.holdings)
           ? nestedPortfolio.holdings
         : []) as Array<Record<string, unknown>>;
-      setHasPortfolioData(holdings.length > 0);
+      return holdings.length > 0;
     };
 
-    computeHasPortfolio();
+    let cancelled = false;
+
+    const computeHasPortfolio = async () => {
+      const cachedHasPortfolio = computeHasPortfolioFromCache();
+      if (cachedHasPortfolio !== null) {
+        if (!cancelled) {
+          setHasPortfolioData(cachedHasPortfolio);
+        }
+        return;
+      }
+
+      if (!isVaultUnlocked || !vaultOwnerToken) {
+        if (!cancelled) {
+          setHasPortfolioData(false);
+        }
+        return;
+      }
+
+      try {
+        const metadata = await WorldModelService.getMetadata(
+          user.uid,
+          false,
+          vaultOwnerToken
+        );
+        if (cancelled) return;
+        const financialDomain = metadata.domains.find((domain) => domain.key === "financial");
+        setHasPortfolioData(
+          Boolean(financialDomain && Number(financialDomain.attributeCount || 0) > 0)
+        );
+      } catch {
+        if (!cancelled) {
+          setHasPortfolioData(false);
+        }
+      }
+    };
+
+    void computeHasPortfolio();
     const unsubscribe = cache.subscribe((event) => {
       if (event.type === "set" || event.type === "invalidate" || event.type === "invalidate_user" || event.type === "clear") {
-        computeHasPortfolio();
+        void computeHasPortfolio();
       }
     });
-    return unsubscribe;
-  }, [cache, user?.uid]);
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [cache, isVaultUnlocked, user?.uid, vaultOwnerToken]);
 
   const reviewScreenActive = Boolean(
     busyOperations["portfolio_review_active"] || busyOperations["portfolio_save"]
