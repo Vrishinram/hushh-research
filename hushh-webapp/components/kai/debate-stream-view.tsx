@@ -24,6 +24,7 @@ import { useKaiSession } from "@/lib/stores/kai-session-store";
 import { KaiProfileService } from "@/lib/services/kai-profile-service";
 import { WorldModelService } from "@/lib/services/world-model-service";
 import { cn } from "@/lib/utils";
+import { toInvestorMessage } from "@/lib/copy/investor-language";
 import {
   DebateRunManagerService,
   type DebateRunTask,
@@ -122,32 +123,32 @@ function getErrorDisplay(errorType: ErrorType, retryIn?: number): { icon: React.
     case "rate_limit":
       return {
         icon: <Icon icon={Clock} size={32} className="text-amber-500" />,
-        title: "Rate Limit Reached",
-        message: retryIn ? `Too many requests. Retrying in ${retryIn}s...` : "Too many requests. Please try again in a moment.",
+        title: "Analysis Queue Is Busy",
+        message: retryIn ? `We will retry in ${retryIn}s...` : "Please try again in a moment.",
       };
     case "auth_expired":
       return {
         icon: <Icon icon={ShieldAlert} size={32} className="text-red-500" />,
-        title: "Session Expired",
-        message: "Your session has expired. Please re-authenticate to continue.",
+        title: "Session Needs Refresh",
+        message: "Please sign in again to continue.",
       };
     case "server_error":
       return {
         icon: <Icon icon={AlertCircle} size={32} className="text-red-500" />,
-        title: "Server Error",
-        message: retryIn ? `Server encountered an error. Retrying in ${retryIn}s...` : "Server error. Please try again.",
+        title: "Service Unavailable",
+        message: retryIn ? `We will retry in ${retryIn}s...` : "Please try again shortly.",
       };
     case "connection_lost":
       return {
         icon: <Icon icon={WifiOff} size={32} className="text-orange-500" />,
         title: "Connection Lost",
-        message: "Lost connection to the analysis server.",
+        message: toInvestorMessage("NETWORK_RECOVERY"),
       };
     default:
       return {
         icon: <Icon icon={AlertCircle} size={32} className="text-red-500" />,
         title: "Analysis Interrupted",
-        message: "An unexpected error occurred.",
+        message: "Please try again.",
       };
   }
 }
@@ -1231,7 +1232,7 @@ export function DebateStreamView({
         );
       } catch (streamError) {
         if (cancelled) return;
-        setError((streamError as Error).message || "Unable to start analysis stream.");
+        setError((streamError as Error).message || "Unable to start analysis right now.");
         setErrorType("unknown");
       } finally {
         if (!cancelled) {
@@ -1284,7 +1285,7 @@ export function DebateStreamView({
             {retryCountdown !== null && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Icon icon={Loader2} size="sm" className="animate-spin" />
-                <span>Retrying in {retryCountdown}s...</span>
+                <span>Trying again in {retryCountdown}s...</span>
               </div>
             )}
             <div className="flex gap-2 pt-2">
@@ -1305,7 +1306,7 @@ export function DebateStreamView({
                     setReloadNonce((prev) => prev + 1);
                   }}
                 >
-                  <Icon icon={RefreshCw} size="sm" className="mr-2" /> Retry
+                  <Icon icon={RefreshCw} size="sm" className="mr-2" /> Try again
                 </MorphyButton>
               )}
               {errorType === "auth_expired" && (
@@ -1366,7 +1367,7 @@ export function DebateStreamView({
                 </Badge>
               ) : retryCountdown !== null ? (
                 <Badge variant="outline" className="text-[10px] bg-amber-500/10 text-amber-600 border-amber-500/30">
-                  Retry in {retryCountdown}s
+                  Try again in {retryCountdown}s
                 </Badge>
               ) : null}
             </div>
@@ -1398,7 +1399,7 @@ export function DebateStreamView({
             <MorphyCard>
               <MorphyCardContent className="p-0">
                 <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">
-                  Debate complete.
+                  Analysis complete.
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   Use Summary or Detailed View tabs to review the recommendation outputs.
@@ -1410,7 +1411,7 @@ export function DebateStreamView({
               <MorphyCardContent className="p-0">
                 <p className="text-sm font-medium">Final recommendation is building...</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Debate rounds stream here. Switch tabs anytime; this run continues in the background.
+                  Live analysis updates appear here. You can switch tabs anytime while this run continues.
                 </p>
               </MorphyCardContent>
             </MorphyCard>

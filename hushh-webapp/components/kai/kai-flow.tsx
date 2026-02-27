@@ -50,6 +50,7 @@ import {
   DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { toInvestorLoading } from "@/lib/copy/investor-language";
 
 // =============================================================================
 // TYPES
@@ -579,7 +580,7 @@ export function KaiFlow({
                 console.warn(
                   "[KaiFlow] Financial domain metadata exists but encrypted blob has no valid financial holdings shape."
                 );
-                toast.error("Portfolio data needs repair. Please re-import your statement.");
+                toast.error("Portfolio data is incomplete. Please import your latest statement.");
                 setFlowData({ hasFinancialData: false });
                 setState("import_required");
                 return;
@@ -597,7 +598,7 @@ export function KaiFlow({
               if (errorMessage.includes("decrypt") || errorMessage.includes("tag") || errorMessage.includes("authentication")) {
                 console.warn("[KaiFlow] Possible encryption key mismatch - clearing cache and prompting re-import");
                 invalidateDomain(userId, "financial");
-                toast.error("Unable to decrypt portfolio data. Please re-import your statement.");
+                toast.error("We could not read your saved portfolio. Please import your statement again.");
                 setFlowData({ hasFinancialData: false });
                 setState("import_required");
                 return;
@@ -801,7 +802,7 @@ export function KaiFlow({
         setResumeImportAfterVault(false);
         setVaultDialogOpen(true);
         setError(null);
-        toast.info("Create or unlock vault to import portfolio.");
+        toast.info("Create or unlock your Vault to import portfolio.");
         return;
       }
 
@@ -850,13 +851,13 @@ export function KaiFlow({
           if (fetchError instanceof Error && fetchError.name === "AbortError") {
             throw fetchError;
           }
-          throw new Error("Network error. Please check your connection and try again.");
+          throw new Error("Connection issue. Please check your network and try again.");
         }
 
         if (!response.ok) {
           const errorText = await response.text().catch(() => "Unknown error");
           if (response.status === 401) {
-            throw new Error("Session expired. Please refresh the page and try again.");
+            throw new Error("Your session needs refresh. Please sign in again.");
           } else if (response.status === 422) {
             let parsed: Record<string, unknown> | null = null;
             try {
@@ -875,7 +876,7 @@ export function KaiFlow({
           } else if (response.status === 413) {
             throw new Error("File too large for server. Please try a smaller file.");
           } else if (response.status >= 500) {
-            throw new Error("Server error. Please try again in a few moments.");
+            throw new Error("Service is temporarily unavailable. Please try again shortly.");
           }
           throw new Error(`Upload failed: ${response.status} - ${errorText}`);
         }
@@ -1308,7 +1309,7 @@ export function KaiFlow({
                 const message =
                   typeof payload.message === "string"
                     ? payload.message
-                    : "Import failed while parsing the statement";
+                    : "Import could not be completed for this statement.";
                 terminalStreamFailureMessage = message;
                 terminalStreamFailureDetails =
                   formatQualityGateDetails(payload.quality_gate) ??
@@ -1353,7 +1354,7 @@ export function KaiFlow({
 
         // Check if we got portfolio data
         if (!parsedPortfolio) {
-          throw new Error("No portfolio data received from parser");
+          throw new Error("No portfolio data was detected in this file.");
         }
         const parsedPortfolioData: ReviewPortfolioData = parsedPortfolio;
 
@@ -1370,9 +1371,9 @@ export function KaiFlow({
         // Persist completion state until user explicitly continues to review.
         setState("import_complete");
         if (parsedPortfolioData.parse_fallback) {
-          toast.warning("Portfolio recovered with partial parsing. Review carefully before saving.");
+          toast.warning("Portfolio loaded with partial coverage. Please review before saving.");
         } else {
-          toast.success("Portfolio parsed successfully. Review when ready.");
+          toast.success("Portfolio is ready for review.");
         }
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") {
@@ -1385,10 +1386,10 @@ export function KaiFlow({
         setError(
           err instanceof Error
             ? err.message
-            : "Failed to import portfolio. Please try again."
+            : "We could not import your portfolio. Please try again."
         );
         toast.error(
-          err instanceof Error ? err.message : "Failed to import portfolio. Please try again."
+          err instanceof Error ? err.message : "We could not import your portfolio. Please try again."
         );
         setStreaming((prev) => ({
           ...prev,
@@ -1601,7 +1602,18 @@ export function KaiFlow({
         vaultKey,
         vaultOwnerToken: effectiveVaultOwnerToken,
       })
-        .then(() => {
+        .then((result) => {
+          if (!result?.synced) {
+            if (result?.reason === "no_pending_state" || result?.reason === "already_synced") {
+              AppBackgroundTaskService.dismissTask(taskId);
+              return;
+            }
+            AppBackgroundTaskService.completeTask(
+              taskId,
+              "No additional profile sync needed."
+            );
+            return;
+          }
           AppBackgroundTaskService.completeTask(
             taskId,
             "Portfolio sync completed."
@@ -1668,10 +1680,10 @@ export function KaiFlow({
       }));
       setState("reviewing");
       setError(null);
-      toast.success("Demo mode data loaded. Review and save to vault.");
+      toast.success("Sample brokerage data loaded. Review and save to Vault.");
     } catch (preloadError) {
       console.error("[KaiFlow] Failed to preload schema data:", preloadError);
-      toast.error("Could not load demo data. Please retry.");
+      toast.error("Could not load sample data. Please try again.");
     } finally {
       setPendingSchemaPreload(false);
       setIsPreloadingSchema(false);
@@ -1687,7 +1699,7 @@ export function KaiFlow({
 
     const timer = window.setTimeout(() => {
       if (stateRef.current !== "reviewing" || flowData.parsedPortfolio) return;
-      setError("Could not open review data. Please load demo data again.");
+      setError("Could not open review data. Please load sample data again.");
       setState("import_required");
     }, 250);
 
@@ -1707,7 +1719,7 @@ export function KaiFlow({
     console.log("[KaiFlow] vaultOwnerToken present:", !!effectiveVaultOwnerToken);
     
     if (!symbol || !effectiveVaultOwnerToken) {
-      toast.error("Please unlock your vault first");
+      toast.error("Please unlock your Vault first.");
       return;
     }
     
@@ -1733,8 +1745,8 @@ export function KaiFlow({
       })
       .catch((error) => {
         console.error("[KaiFlow] Error getting context:", error);
-        toast.error("Failed to analyze stock", {
-          description: error instanceof Error ? error.message : "Unknown error",
+        toast.error("Could not start analysis", {
+          description: error instanceof Error ? error.message : "Please try again.",
         });
       });
   }, [effectiveVaultOwnerToken, userId, router]);
@@ -1751,7 +1763,7 @@ export function KaiFlow({
   if (state === "checking") {
     return (
       <div className="min-h-[400px] flex items-center justify-center">
-        <HushhLoader variant="inline" label="Checking your portfolio..." />
+        <HushhLoader variant="inline" label={toInvestorLoading("ACCOUNT_STATE")} />
       </div>
     );
   }
@@ -1855,9 +1867,9 @@ export function KaiFlow({
 
       {state === "reviewing" && !flowData.parsedPortfolio && (
         <div className="flex min-h-[360px] w-full flex-col items-center justify-center gap-3 px-6 text-center">
-          <HushhLoader variant="inline" label="Preparing review..." />
+          <HushhLoader variant="inline" label="Preparing your review..." />
           <p className="text-sm text-muted-foreground">
-            Demo data loaded, but review payload is not available yet.
+            Sample data loaded, but the review sheet is not ready yet.
           </p>
           <button
             type="button"
@@ -1907,9 +1919,9 @@ export function KaiFlow({
 
       {isDashboardMode && state === "analysis" && !flowData.analysisResult && (
         <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
-          <HushhLoader variant="inline" label="Analyzing..." />
+          <HushhLoader variant="inline" label={toInvestorLoading("ANALYSIS")} />
           <p className="text-sm text-muted-foreground">
-            Running debate engine analysis...
+            Building your recommendation...
           </p>
         </div>
       )}
@@ -1920,9 +1932,9 @@ export function KaiFlow({
           onOpenChange={setVaultDialogOpen}
         >
           <DialogContent className="z-[520] w-[calc(100%-1rem)] max-h-[calc(100svh-1rem)] p-0 border border-border/60 bg-background shadow-2xl overflow-hidden sm:max-w-md">
-            <DialogTitle className="sr-only">Create or unlock vault to import portfolio</DialogTitle>
+            <DialogTitle className="sr-only">Create or unlock Vault to import portfolio</DialogTitle>
             <DialogDescription className="sr-only">
-              You need to create or unlock your vault before parsing and importing your statement.
+              You need to create or unlock your Vault before importing your statement.
             </DialogDescription>
             <VaultFlow
               user={user}

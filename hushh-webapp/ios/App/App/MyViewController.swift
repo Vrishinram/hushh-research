@@ -20,7 +20,9 @@ class MyViewController: CAPBridgeViewController {
             webView.scrollView.bounces = false
             webView.scrollView.alwaysBounceVertical = false
             webView.scrollView.alwaysBounceHorizontal = false
-            webView.scrollView.contentInsetAdjustmentBehavior = .automatic
+            // Keep iOS inset ownership aligned with Capacitor config:
+            // ios.contentInset = "never" + app-level safe-area CSS contract.
+            webView.scrollView.contentInsetAdjustmentBehavior = .never
             print("🔧 [MyViewController] WebView bounce disabled for stable scrolling")
         }
     }

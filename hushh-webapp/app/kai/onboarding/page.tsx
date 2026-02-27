@@ -22,6 +22,7 @@ import {
   type PreVaultOnboardingAnswers,
   type PreVaultOnboardingState,
 } from "@/lib/services/pre-vault-onboarding-service";
+import { PreVaultUserStateService } from "@/lib/services/pre-vault-user-state-service";
 import { VaultService } from "@/lib/services/vault-service";
 import { useAuth } from "@/hooks/use-auth";
 import { useVault } from "@/lib/vault/vault-context";
@@ -69,8 +70,10 @@ export default function KaiOnboardingPage() {
   const [source, setSource] = useState<OnboardingSource | null>(null);
   const [stage, setStage] = useState<Stage>("loading");
   const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [profile, setProfile] = useState<KaiProfileV2 | null>(null);
   const [preVaultState, setPreVaultState] = useState<PreVaultOnboardingState | null>(null);
+  const [retryNonce, setRetryNonce] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -84,6 +87,7 @@ export default function KaiOnboardingPage() {
       }
 
       try {
+        setLoadError(null);
         setStage("loading");
 
         const hasVault = await VaultService.checkVault(user.uid);
@@ -91,10 +95,10 @@ export default function KaiOnboardingPage() {
 
         if (!hasVault) {
           setSource("pre_vault");
-          const pending = await PreVaultOnboardingService.load(user.uid);
+          const remoteState = await PreVaultUserStateService.bootstrapState(user.uid);
           if (cancelled) return;
 
-          if (pending?.completed) {
+          if (PreVaultUserStateService.isOnboardingResolved(remoteState)) {
             setOnboardingRequiredCookie(false);
             setOnboardingFlowActiveCookie(false);
             router.replace("/kai");
@@ -104,6 +108,8 @@ export default function KaiOnboardingPage() {
           setOnboardingRequiredCookie(true);
           setOnboardingFlowActiveCookie(false);
 
+          const pending = await PreVaultOnboardingService.load(user.uid);
+          if (cancelled) return;
           setPreVaultState(pending);
           // Always start from the questionnaire flow on reload until onboarding is completed.
           // We keep draft answers, but do not auto-jump to persona.
@@ -141,8 +147,8 @@ export default function KaiOnboardingPage() {
       } catch (error) {
         console.warn("[KaiOnboardingPage] Failed to load onboarding:", error);
         if (!cancelled) {
-          setSource("pre_vault");
-          setStage("wizard");
+          setLoadError("Couldn't load onboarding state. Please retry.");
+          setStage("loading");
         }
       }
     }
@@ -151,7 +157,7 @@ export default function KaiOnboardingPage() {
     return () => {
       cancelled = true;
     };
-  }, [authLoading, user?.uid, isVaultUnlocked, vaultKey, vaultOwnerToken, router]);
+  }, [authLoading, user, user?.uid, isVaultUnlocked, vaultKey, vaultOwnerToken, router, retryNonce]);
 
   const wizardAnswers: WizardAnswers = useMemo(() => {
     if (source === "vault") return profileToAnswers(profile);
@@ -165,12 +171,33 @@ export default function KaiOnboardingPage() {
     return computePersona(wizardAnswers, preVaultState?.risk_profile ?? null);
   }, [source, wizardAnswers, profile?.preferences.risk_profile, preVaultState?.risk_profile]);
 
-  if (authLoading || stage === "loading" || !source) {
+  if (authLoading) {
     return <HushhLoader label="Loading onboarding..." variant="fullscreen" />;
   }
 
   if (!user) {
     return <HushhLoader label="Redirecting..." variant="fullscreen" />;
+  }
+
+  if (loadError) {
+    return (
+      <div className="mx-auto flex min-h-[70vh] w-full max-w-md items-center px-5">
+        <div className="w-full rounded-2xl border border-border bg-card/80 p-5 text-center">
+          <p className="text-sm text-muted-foreground">{loadError}</p>
+          <button
+            type="button"
+            className="mt-3 inline-flex h-10 items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground"
+            onClick={() => setRetryNonce((value) => value + 1)}
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (stage === "loading" || !source) {
+    return <HushhLoader label="Loading onboarding..." variant="fullscreen" />;
   }
 
   if (stage === "persona") {
@@ -198,11 +225,25 @@ export default function KaiOnboardingPage() {
               });
               setProfile(nextProfile);
             } else {
+              const completedAt = Date.now();
+              await PreVaultUserStateService.updatePreVaultState(user.uid, {
+                preOnboardingCompleted: true,
+                preOnboardingSkipped: false,
+                preOnboardingCompletedAt: completedAt,
+              });
               await PreVaultOnboardingService.markCompleted(user.uid, {
                 skipped: false,
                 answers: wizardAnswers,
                 risk_score: riskScore,
                 risk_profile: persona,
+              }).catch(() => null);
+              setPreVaultState((current) => {
+                if (!current) return current;
+                return {
+                  ...current,
+                  completed: true,
+                  skipped: false,
+                };
               });
             }
 
@@ -257,6 +298,12 @@ export default function KaiOnboardingPage() {
             });
             setProfile(nextProfile);
           } else {
+            const completedAt = Date.now();
+            await PreVaultUserStateService.updatePreVaultState(user.uid, {
+              preOnboardingCompleted: true,
+              preOnboardingSkipped: true,
+              preOnboardingCompletedAt: completedAt,
+            });
             const nextState = await PreVaultOnboardingService.markCompleted(user.uid, {
               skipped: true,
               answers: wizardAnswers,

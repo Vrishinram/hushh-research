@@ -67,7 +67,14 @@ function appTaskStatusIcon(task: AppBackgroundTask) {
   return <Icon icon={XCircle} size="sm" className="text-rose-500" />;
 }
 
-export function DebateTaskCenter() {
+interface DebateTaskCenterProps {
+  triggerClassName?: string;
+}
+
+const DEFAULT_TRIGGER_CLASSNAME =
+  "relative grid h-10 w-10 place-items-center rounded-full border border-border/60 bg-background/70 shadow-sm backdrop-blur-sm transition-colors hover:bg-muted/50 active:bg-muted/80";
+
+export function DebateTaskCenter({ triggerClassName }: DebateTaskCenterProps = {}) {
   const router = useRouter();
   const { userId } = useAuth();
   const { vaultOwnerToken } = useVault();
@@ -140,7 +147,7 @@ export function DebateTaskCenter() {
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
         <button
-          className="relative grid h-10 w-10 place-items-center rounded-full border border-border/60 bg-background/70 shadow-sm backdrop-blur-sm transition-colors hover:bg-muted/50 active:bg-muted/80"
+          className={cn(DEFAULT_TRIGGER_CLASSNAME, triggerClassName)}
           aria-label="Background tasks"
         >
           {activeCount > 0 ? (

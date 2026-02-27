@@ -9,6 +9,8 @@ import { Icon } from "@/lib/morphy-ux/ui";
 import { Badge } from "@/components/ui/badge";
 import type { AnalysisHistoryEntry } from "@/lib/services/kai-history-service";
 import { cn } from "@/lib/utils";
+import { CacheService, CACHE_KEYS } from "@/lib/services/cache-service";
+import { toInvestorDecisionLabel } from "@/lib/copy/investor-language";
 import {
   fetchLatestMarketSnapshot,
   getLatestMarketSnapshotFromCache,
@@ -66,38 +68,38 @@ function formatTimestamp(value: string | undefined): string {
   });
 }
 
-function getDecisionPresentation(decision: string): {
-  label: string;
-  toneClass: string;
-  guidance: string;
-} {
-  const normalized = String(decision || "").trim().toLowerCase();
-  if (normalized === "buy") {
-    return {
-      label: "BUY",
-      toneClass: "bg-emerald-500/12 text-emerald-600 dark:text-emerald-400 border-emerald-500/30",
-      guidance: "Initiate or add exposure.",
-    };
+function resolveOwnsPosition(entry: AnalysisHistoryEntry, userId?: string): boolean | null {
+  const rawCard = (entry.raw_card || {}) as Record<string, unknown>;
+  const directFlags = [rawCard.owns_position, rawCard.is_position_owned, rawCard.in_portfolio];
+  for (const flag of directFlags) {
+    if (typeof flag === "boolean") return flag;
   }
-  if (normalized === "sell" || normalized === "reduce") {
-    return {
-      label: "REDUCE",
-      toneClass: "bg-rose-500/12 text-rose-600 dark:text-rose-400 border-rose-500/30",
-      guidance: "Trim exposure or exit based on risk limits.",
-    };
-  }
-  if (normalized === "hold") {
-    return {
-      label: "HOLD / WATCH",
-      toneClass: "bg-blue-500/12 text-blue-600 dark:text-blue-400 border-blue-500/30",
-      guidance: "Hold if owned; otherwise keep on watchlist.",
-    };
-  }
-  return {
-    label: String(decision || "HOLD / WATCH").toUpperCase(),
-    toneClass: "bg-muted text-muted-foreground border-border",
-    guidance: "Review conviction and position sizing before action.",
-  };
+  if (!userId) return null;
+
+  const cache = CacheService.getInstance();
+  const cachedPortfolio =
+    cache.get<Record<string, unknown>>(CACHE_KEYS.PORTFOLIO_DATA(userId)) ??
+    cache.get<Record<string, unknown>>(CACHE_KEYS.DOMAIN_DATA(userId, "financial"));
+  const holdingsRaw =
+    cachedPortfolio && Array.isArray(cachedPortfolio.holdings)
+      ? cachedPortfolio.holdings
+      : cachedPortfolio &&
+          cachedPortfolio.portfolio &&
+          typeof cachedPortfolio.portfolio === "object" &&
+          !Array.isArray(cachedPortfolio.portfolio) &&
+          Array.isArray((cachedPortfolio.portfolio as Record<string, unknown>).holdings)
+        ? ((cachedPortfolio.portfolio as Record<string, unknown>).holdings as unknown[])
+        : [];
+  const targetTicker = String(entry.ticker || "").trim().toUpperCase();
+  if (!targetTicker) return null;
+  const found = holdingsRaw.some((row) => {
+    if (!row || typeof row !== "object") return false;
+    const symbol = String((row as Record<string, unknown>).symbol || "")
+      .trim()
+      .toUpperCase();
+    return symbol === targetTicker;
+  });
+  return found;
 }
 
 function resolveCurrentPrice(rawCard: Record<string, unknown>): number | null {
@@ -336,7 +338,17 @@ export function AnalysisSummaryView({
     rawCard.short_recommendation || entry.final_statement || "Recommendation unavailable."
   );
   const updatedAt = formatTimestamp(String(rawCard.analysis_updated_at || entry.timestamp || ""));
-  const decisionPresentation = getDecisionPresentation(entry.decision);
+  const ownsPosition = useMemo(() => resolveOwnsPosition(entry, userId), [entry, userId]);
+  const decisionPresentation = useMemo(
+    () => toInvestorDecisionLabel(entry.decision, ownsPosition),
+    [entry.decision, ownsPosition]
+  );
+  const decisionToneClass =
+    decisionPresentation.tone === "positive"
+      ? "bg-emerald-500/12 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+      : decisionPresentation.tone === "negative"
+        ? "bg-rose-500/12 text-rose-600 dark:text-rose-400 border-rose-500/30"
+        : "bg-blue-500/12 text-blue-600 dark:text-blue-400 border-blue-500/30";
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-4 px-4 pb-safe pt-4">
@@ -405,7 +417,7 @@ export function AnalysisSummaryView({
               <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
                 Overall Decision
               </p>
-              <Badge variant="outline" className={decisionPresentation.toneClass}>
+              <Badge variant="outline" className={decisionToneClass}>
                 {decisionPresentation.label}
               </Badge>
             </div>

@@ -1,15 +1,47 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { StatusBar, Style } from "@capacitor/status-bar";
-import { Capacitor } from "@capacitor/core";
+import {
+  Capacitor,
+  SystemBars,
+  SystemBarsStyle,
+  SystemBarType,
+} from "@capacitor/core";
 import { useTheme } from "next-themes";
 
 /**
- * StatusBarManager - Native-only component that synchronizes the iOS/Android
- * status bar style (light/dark icons) with the Next.js theme.
+ * measureSafeAreaInsetTop
  *
- * This ensures status bar icons switch correctly on native when the app theme changes.
+ * Reads the real env(safe-area-inset-top) value via a probe element and
+ * writes it to --top-inset on <html>.  This sidesteps the WebKit bug where
+ * env() assigned to a CSS custom-property at :root level can evaluate to 0
+ * if the WKWebView hasn't committed its safe-area values by parse time.
+ *
+ * Called once on mount, and again after orientation changes.
+ */
+function measureSafeAreaInsetTop() {
+  if (typeof document === "undefined") return;
+  const probe = document.createElement("div");
+  probe.style.cssText =
+    "position:fixed;top:0;left:0;width:0;padding-top:env(safe-area-inset-top,0px);visibility:hidden;pointer-events:none;";
+  document.body.appendChild(probe);
+  // Force layout so the browser resolves env().
+  const px = probe.offsetHeight;
+  probe.remove();
+  document.documentElement.style.setProperty("--top-inset", `${px}px`);
+}
+
+/**
+ * StatusBarManager - Native-only runtime bridge that synchronizes
+ * Capacitor v8 SystemBars style with the app theme.
+ *
+ * Also measures and sets --top-inset at runtime so all top-shell
+ * layout tokens (--top-shell-h, --top-glass-h, --top-content-pad)
+ * resolve correctly on every platform.
+ *
+ * Migration note:
+ * - This component name is retained for import stability.
+ * - Runtime control now uses SystemBars for both StatusBar and NavigationBar.
  */
 export function StatusBarManager() {
   const { resolvedTheme, theme } = useTheme();
@@ -20,40 +52,50 @@ export function StatusBarManager() {
     setMounted(true);
   }, []);
 
+  // ── Measure env(safe-area-inset-top) and write --top-inset ──────────
+  useEffect(() => {
+    // Initial measurement (after a frame so WKWebView has committed insets).
+    const raf = requestAnimationFrame(() => measureSafeAreaInsetTop());
+
+    // Re-measure on orientation / resize changes.
+    const onResize = () => measureSafeAreaInsetTop();
+    window.addEventListener("resize", onResize, { passive: true });
+    window.addEventListener("orientationchange", onResize, { passive: true });
+
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("orientationchange", onResize);
+    };
+  }, []);
+
   useEffect(() => {
     if (!Capacitor.isNativePlatform() || !mounted) return;
 
-    const updateStatusBar = async () => {
+    async function updateSystemBars() {
       try {
-        console.log("[StatusBarManager] Updating status bar...");
-        console.log("[StatusBarManager] resolvedTheme:", resolvedTheme);
-        console.log("[StatusBarManager] theme:", theme);
-
-        // Overlay the webview so our custom blurred background can sit behind the status bar
-        await StatusBar.setOverlaysWebView({ overlay: true });
-        console.log("[StatusBarManager] Overlay enabled");
-
-        // Determine the effective theme (default to "dark" if undefined)
+        // Keep bars visible in immersive edge-to-edge mode.
+        await SystemBars.show({});
         const effectiveTheme = resolvedTheme || theme || "dark";
-        console.log("[StatusBarManager] effectiveTheme:", effectiveTheme);
+        const style =
+          effectiveTheme === "dark"
+            ? SystemBarsStyle.Dark
+            : SystemBarsStyle.Light;
 
-        // ACTUAL iOS BEHAVIOR (opposite of docs!):
-        // In practice, we need to match the theme:
-        // Dark theme -> Style.Dark (so icons match and iOS inverts them)
-        // Light theme -> Style.Light (so icons match and iOS inverts them)
-        if (effectiveTheme === "dark") {
-          await StatusBar.setStyle({ style: Style.Dark });
-          console.log("[StatusBarManager] ✅ Set to Style.Dark for dark theme");
-        } else {
-          await StatusBar.setStyle({ style: Style.Light });
-          console.log("[StatusBarManager] ✅ Set to Style.Light for light theme");
-        }
+        await SystemBars.setStyle({
+          bar: SystemBarType.StatusBar,
+          style,
+        });
+        await SystemBars.setStyle({
+          bar: SystemBarType.NavigationBar,
+          style,
+        });
       } catch (err) {
-        console.error("[StatusBarManager] ❌ Failed to set status bar style:", err);
+        console.error("[StatusBarManager] Failed to update system bars:", err);
       }
-    };
+    }
 
-    updateStatusBar();
+    void updateSystemBars();
   }, [resolvedTheme, theme, mounted]);
 
   return null;

@@ -29,6 +29,7 @@ import {
 } from "@/lib/kai/market-snapshot";
 import { cn } from "@/lib/utils";
 import { openKaiCommandBar } from "@/lib/navigation/kai-command-bar-events";
+import { toInvestorLoading, toInvestorMessage } from "@/lib/copy/investor-language";
 
 const ANALYSIS_INTENT_FRESH_MS = 15_000;
 type WorkspaceTab = "debate" | "summary" | "detailed";
@@ -412,7 +413,7 @@ export default function KaiAnalysisPage() {
   if (!user || !userId) {
     return (
       <div className="flex min-h-96 items-center justify-center">
-        <HushhLoader variant="inline" label="Preparing analysis hub…" />
+        <HushhLoader variant="inline" label={toInvestorLoading("ANALYSIS")} />
       </div>
     );
   }
@@ -421,20 +422,20 @@ export default function KaiAnalysisPage() {
     return (
       <div className="mx-auto w-full max-w-xl px-4 pt-[var(--kai-view-top-gap,16px)]">
         <div className="rounded-2xl border border-border/60 bg-background/80 p-5 text-center">
-          <h2 className="text-lg font-semibold">Set up your portfolio first</h2>
+          <h2 className="text-lg font-semibold">Connect your portfolio first</h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            Analysis is available after vault setup and portfolio import.
+            Stock analysis is available after your portfolio is saved in Vault.
           </p>
           <div className="mt-4 grid gap-2 sm:grid-cols-2">
             <MorphyButton onClick={() => router.push("/kai/import")}>
-              Import Portfolio
+              Open Import
             </MorphyButton>
             <MorphyButton
               variant="none"
               effect="fade"
               onClick={() => router.push("/kai/dashboard")}
             >
-              Go to Dashboard
+              Open Dashboard
             </MorphyButton>
           </div>
         </div>
@@ -486,7 +487,7 @@ export default function KaiAnalysisPage() {
                       {headerChangePct.toFixed(2)}%
                     </span>
                   ) : (
-                    <span className="text-xs text-muted-foreground">Today N/A</span>
+                    <span className="text-xs text-muted-foreground">Today --</span>
                   )}
                 </div>
               </div>
@@ -539,7 +540,7 @@ export default function KaiAnalysisPage() {
                   <HistoryDebateReplay entry={activeEntry} />
                 ) : (
                   <div className="rounded-2xl border border-dashed border-border/60 bg-background/80 p-4 text-sm text-muted-foreground">
-                    Debate stream unavailable for this selection.
+                    {toInvestorMessage("ANALYSIS_UNAVAILABLE", { ticker: activeTicker })}
                   </div>
                 )}
               </TabsContent>
@@ -555,7 +556,7 @@ export default function KaiAnalysisPage() {
                   />
                 ) : (
                   <div className="rounded-2xl border border-dashed border-border/60 bg-background/80 p-4 text-sm text-muted-foreground">
-                    Summary will appear after the first decision is produced.
+                    Your summary will appear as soon as the first recommendation is ready.
                   </div>
                 )}
               </TabsContent>
@@ -571,7 +572,7 @@ export default function KaiAnalysisPage() {
                   />
                 ) : (
                   <div className="rounded-2xl border border-dashed border-border/60 bg-background/80 p-4 text-sm text-muted-foreground">
-                    Detailed view will appear after the first decision is produced.
+                    Detailed analysis will appear once the first recommendation is complete.
                   </div>
                 )}
               </TabsContent>
@@ -582,8 +583,8 @@ export default function KaiAnalysisPage() {
         <div className="space-y-3 pt-3">
           {activeRunTask ? (
             <div className="mx-auto w-full max-w-4xl rounded-xl border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs text-sky-700 dark:text-sky-300">
-              Debate for <span className="font-semibold">{activeRunTask.ticker}</span> is still
-              running in background.
+              Analysis for <span className="font-semibold">{activeRunTask.ticker}</span> is still
+              running in the background.
               <MorphyButton
                 variant="none"
                 effect="fade"
@@ -597,7 +598,7 @@ export default function KaiAnalysisPage() {
                   });
                 }}
               >
-                Open active debate
+                Open active analysis
               </MorphyButton>
             </div>
           ) : null}
@@ -613,7 +614,7 @@ export default function KaiAnalysisPage() {
 
       {resolvingEntry ? (
         <div className="flex min-h-64 items-center justify-center">
-          <HushhLoader variant="inline" label="Loading analysis record…" />
+          <HushhLoader variant="inline" label="Loading saved analysis..." />
         </div>
       ) : null}
     </div>

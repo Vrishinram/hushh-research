@@ -19,6 +19,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useVault } from "@/lib/vault/vault-context";
 import { KaiNavTourLocalService } from "@/lib/services/kai-nav-tour-local-service";
 import { KaiProfileService } from "@/lib/services/kai-profile-service";
+import { PreVaultUserStateService } from "@/lib/services/pre-vault-user-state-service";
 import { getKaiChromeState } from "@/lib/navigation/kai-chrome-state";
 
 const TOUR_STEPS = [
@@ -64,13 +65,6 @@ type TourAnchor = {
   viewportHeight: number;
 };
 
-function isResolved(state: {
-  completed_at: string | null;
-  skipped_at: string | null;
-} | null): boolean {
-  return Boolean(state?.completed_at || state?.skipped_at);
-}
-
 function toDateOrNow(value: string | null | undefined): Date {
   if (!value) return new Date();
   const parsed = new Date(value);
@@ -106,16 +100,17 @@ export function KaiNavTour() {
         return;
       }
 
-      const local = await KaiNavTourLocalService.load(user.uid);
-      if (cancelled) return;
+      if (!isVaultUnlocked || !vaultKey || !vaultOwnerToken) {
+        const remoteState = await PreVaultUserStateService.bootstrapState(user.uid).catch(
+          () => null
+        );
+        if (cancelled) return;
 
-      const localResolved = isResolved(local);
-      if (localResolved) {
-        setOpen(false);
-        return;
-      }
-
-      if (isVaultUnlocked && vaultKey && vaultOwnerToken) {
+        if (PreVaultUserStateService.isNavTourResolved(remoteState)) {
+          setOpen(false);
+          return;
+        }
+      } else {
         try {
           const profile = await KaiProfileService.getProfile({
             userId: user.uid,
@@ -280,18 +275,31 @@ export function KaiNavTour() {
     completedAt?: string | null;
     skippedAt?: string | null;
   }) {
-    if (!user?.uid || !isVaultUnlocked || !vaultKey) return;
+    if (!user?.uid) return;
+    if (isVaultUnlocked && vaultKey) {
+      try {
+        await KaiProfileService.setNavTourState({
+          userId: user.uid,
+          vaultKey,
+          vaultOwnerToken: vaultOwnerToken ?? undefined,
+          completedAt: payload.completedAt,
+          skippedAt: payload.skippedAt,
+        });
+        await KaiNavTourLocalService.markSynced(user.uid);
+      } catch (error) {
+        console.warn("[KaiNavTour] Failed to sync nav tour state:", error);
+      }
+      return;
+    }
+
     try {
-      await KaiProfileService.setNavTourState({
-        userId: user.uid,
-        vaultKey,
-        vaultOwnerToken: vaultOwnerToken ?? undefined,
-        completedAt: payload.completedAt,
-        skippedAt: payload.skippedAt,
+      await PreVaultUserStateService.updatePreVaultState(user.uid, {
+        preNavTourCompletedAt: payload.completedAt ? Date.parse(payload.completedAt) : null,
+        preNavTourSkippedAt: payload.skippedAt ? Date.parse(payload.skippedAt) : null,
       });
       await KaiNavTourLocalService.markSynced(user.uid);
     } catch (error) {
-      console.warn("[KaiNavTour] Failed to sync nav tour state:", error);
+      console.warn("[KaiNavTour] Failed to sync pre-vault nav tour state:", error);
     }
   }
 

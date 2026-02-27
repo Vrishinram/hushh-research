@@ -107,6 +107,17 @@ html body[data-scroll-locked] {
   --app-top-bar-height: 72px;
   --kai-route-tabs-height: 36px;
   --kai-route-tabs-content-gap: 8px;
+  /* Global top-shell geometry contract (consumed by providers + top-app-bar).
+   * Keep these tokens defined at root so web and native share deterministic spacing. */
+  --top-inset: env(safe-area-inset-top, 0px);
+  --top-bar-h: 44px;
+  --top-tabs-h: var(--kai-route-tabs-height);
+  --top-tabs-gap: var(--kai-route-tabs-content-gap);
+  --top-tabs-total: 0px;
+  --top-fade-active: 14px;
+  --top-shell-h: calc(var(--top-inset) + var(--top-bar-h) + var(--top-tabs-total));
+  --top-glass-h: calc(var(--top-shell-h) + var(--top-fade-active));
+  --top-content-pad: var(--top-glass-h);
 
   /* Motion tokens (GSAP + CSS). Change once to retune the whole app. */
   --motion-duration-xs: 120ms;

@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { createPortal } from "react-dom";
 
 import { useKaiBottomChromeVisibility } from "@/lib/navigation/kai-bottom-chrome-visibility";
 import {
@@ -65,7 +64,11 @@ function shouldIgnoreGlobalSwipeTarget(target: EventTarget | null): boolean {
   return false;
 }
 
-export function DashboardRouteTabs() {
+interface DashboardRouteTabsProps {
+  embedded?: boolean;
+}
+
+export function DashboardRouteTabs({ embedded = false }: DashboardRouteTabsProps) {
   const router = useRouter();
   const pathname = usePathname();
   const hideTabsForPath =
@@ -259,7 +262,7 @@ export function DashboardRouteTabs() {
     };
   }, [mounted, hideTabsForPath, activeTab, busyOperations, router]);
 
-  if (!mounted || typeof document === "undefined" || hideTabsForPath) {
+  if (!mounted || hideTabsForPath) {
     return null;
   }
 
@@ -268,69 +271,74 @@ export function DashboardRouteTabs() {
     KAI_ROUTE_TABS.findIndex((tab) => tab.id === activeTab)
   );
 
-  return createPortal(
-    <div
-      className="pointer-events-none fixed inset-x-0 z-[45]"
-      style={{
-        top: "calc(env(safe-area-inset-top, 0px) + var(--app-top-safe-offset, 0px) + var(--app-top-bar-height, 72px))",
-      }}
-    >
+  const tabsBody = (
+    <>
+      <div className="relative grid grid-cols-3 items-center border-b border-border/70 px-1">
+        {KAI_ROUTE_TABS.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => handleTabChange(tab.id)}
+            className={cn(
+              "relative z-[1] h-9 text-sm font-semibold transition-colors duration-200",
+              tab.id === activeTab
+                ? "text-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+            aria-current={tab.id === activeTab ? "page" : undefined}
+          >
+            {tab.label}
+          </button>
+        ))}
+        <span
+          data-testid="kai-route-tabs-indicator"
+          aria-hidden
+          className="pointer-events-none absolute bottom-0 left-0 h-[3px] rounded-full bg-linear-to-r from-sky-500 via-primary to-sky-400 shadow-[0_0_0_1px_rgba(56,189,248,0.35),0_0_22px_rgba(56,189,248,0.62)] transition-transform duration-250 ease-out"
+          style={{
+            width: `calc(100% / ${KAI_ROUTE_TABS.length})`,
+            transform: `translate3d(${activeTabIndex * 100}%, 0, 0)`,
+          }}
+        />
+      </div>
+    </>
+  );
+
+  if (embedded) {
+    return (
       <div
-        aria-hidden
         className={cn(
-          "pointer-events-none absolute inset-x-0 -top-10 h-[126px] bar-glass bar-glass-top transform-gpu transition-all duration-300 ease-out will-change-transform",
-          hideRouteTabs ? "opacity-0" : "opacity-100"
-        )}
-        style={{
-          transform: hideRouteTabs
-            ? "translate3d(0, calc(-100% - 10px), 0)"
-            : "translate3d(0, 0, 0)",
-        }}
-      />
-      <div
-        className={cn(
-          "relative mx-auto flex w-full max-w-6xl justify-center px-4 transform-gpu transition-all duration-300 ease-out will-change-transform sm:px-6",
+          "relative flex w-full justify-center transform-gpu transition-all duration-300 ease-out will-change-transform",
           hideRouteTabs ? "pointer-events-none opacity-0" : "pointer-events-auto opacity-100"
         )}
-        style={{
-          transform: hideRouteTabs
-            ? "translate3d(0, calc(-100% - 10px), 0)"
-            : "translate3d(0, 0, 0)",
-        }}
       >
         <div
           data-tour-id="kai-route-tabs"
           className="pointer-events-auto w-full max-w-[460px] overflow-hidden"
         >
-          <div className="relative grid grid-cols-3 items-center border-b border-border/65 px-1">
-            {KAI_ROUTE_TABS.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => handleTabChange(tab.id)}
-                className={cn(
-                  "relative z-[1] h-9 text-sm font-semibold transition-colors duration-200",
-                  tab.id === activeTab
-                    ? "text-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-                aria-current={tab.id === activeTab ? "page" : undefined}
-              >
-                {tab.label}
-              </button>
-            ))}
-            <span
-              aria-hidden
-              className="pointer-events-none absolute -bottom-px left-0 h-[2px] bg-primary transition-transform duration-250 ease-out"
-              style={{
-                width: `calc(100% / ${KAI_ROUTE_TABS.length})`,
-                transform: `translate3d(${activeTabIndex * 100}%, 0, 0)`,
-              }}
-            />
-          </div>
+          {tabsBody}
         </div>
       </div>
-    </div>,
-    document.body
+    );
+  }
+
+  return (
+    <div
+      className={cn(
+        "relative mx-auto flex w-full max-w-6xl justify-center px-4 sm:px-6",
+        hideRouteTabs ? "pointer-events-none opacity-0" : "pointer-events-auto opacity-100"
+      )}
+      style={{
+        transform: hideRouteTabs
+          ? "translate3d(0, calc(-100% - 10px), 0)"
+          : "translate3d(0, 0, 0)",
+      }}
+    >
+      <div
+        data-tour-id="kai-route-tabs"
+        className="pointer-events-auto w-full max-w-[460px] overflow-hidden"
+      >
+        {tabsBody}
+      </div>
+    </div>
   );
 }

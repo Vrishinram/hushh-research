@@ -50,6 +50,7 @@ import { mapPortfolioToDashboardViewModel } from "@/components/kai/views/dashboa
 import type { PortfolioData } from "@/components/kai/types/portfolio";
 import { DebateReadinessChart } from "@/components/kai/charts/debate-readiness-chart";
 import { DebateRunManagerService } from "@/lib/services/debate-run-manager";
+import { toInvestorDecisionLabel } from "@/lib/copy/investor-language";
 
 // ============================================================================
 // Props
@@ -84,35 +85,47 @@ interface DebateInputsSnapshot {
 // ============================================================================
 
 /** Map decision string to display color classes */
-function decisionStyles(decision: string): {
+function decisionStyles(decision: string, ownsPosition?: boolean | null): {
   bg: string;
   text: string;
   border: string;
   icon: React.ReactNode;
+  label: string;
 } {
-  const d = decision.toLowerCase();
-  if (d === "buy") {
+  const presentation = toInvestorDecisionLabel(decision, ownsPosition);
+  if (presentation.tone === "positive") {
     return {
       bg: "bg-emerald-500/10",
       text: "text-emerald-600 dark:text-emerald-400",
       border: "border-emerald-500/30",
       icon: <Icon icon={TrendingUp} size={12} />,
+      label: presentation.label,
     };
   }
-  if (d === "reduce" || d === "sell") {
+  if (presentation.tone === "negative") {
     return {
       bg: "bg-red-500/10",
       text: "text-red-600 dark:text-red-400",
       border: "border-red-500/30",
       icon: <Icon icon={TrendingDown} size={12} />,
+      label: presentation.label,
     };
   }
-  // hold / other
   return {
-    bg: "bg-amber-500/10",
-    text: "text-amber-600 dark:text-amber-400",
-    border: "border-amber-500/30",
+    bg:
+      presentation.label === "WATCH"
+        ? "bg-blue-500/10"
+        : "bg-amber-500/10",
+    text:
+      presentation.label === "WATCH"
+        ? "text-blue-600 dark:text-blue-400"
+        : "text-amber-600 dark:text-amber-400",
+    border:
+      presentation.label === "WATCH"
+        ? "border-blue-500/30"
+        : "border-amber-500/30",
     icon: <Icon icon={Minus} size={12} />,
+    label: presentation.label,
   };
 }
 
@@ -825,7 +838,7 @@ export function AnalysisHistoryDashboard({
           filterKey="decision"
           filterOptions={[
             { label: "Buy", value: "buy" },
-            { label: "Hold", value: "hold" },
+            { label: "Hold / Watch", value: "hold" },
             { label: "Reduce", value: "reduce" },
           ]}
         />
@@ -860,7 +873,17 @@ export function AnalysisHistoryDashboard({
           ) : (
             <div className="space-y-2">
               {versionsForTicker.map((entry) => {
-                const styles = decisionStyles(entry.decision);
+                const rawCard =
+                  entry.raw_card && typeof entry.raw_card === "object"
+                    ? (entry.raw_card as Record<string, unknown>)
+                    : null;
+                const ownsPosition =
+                  typeof rawCard?.owns_position === "boolean"
+                    ? rawCard.owns_position
+                    : typeof rawCard?.is_position_owned === "boolean"
+                      ? rawCard.is_position_owned
+                      : null;
+                const styles = decisionStyles(entry.decision, ownsPosition);
                 const ts = entry.timestamp ? new Date(entry.timestamp) : null;
 
                 return (
@@ -893,7 +916,7 @@ export function AnalysisHistoryDashboard({
                             )}
                           >
                             {styles.icon}
-                            {entry.decision}
+                            {styles.label}
                           </span>
                         </div>
                         <span className="truncate text-xs text-muted-foreground">

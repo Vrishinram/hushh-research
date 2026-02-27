@@ -72,6 +72,7 @@ import {
 } from "@/lib/morphy-ux/card";
 import { EditHoldingModal } from "@/components/kai/modals/edit-holding-modal";
 import { scrollAppToTop } from "@/lib/navigation/use-scroll-reset";
+import { toInvestorMessage } from "@/lib/copy/investor-language";
 
 
 
@@ -1267,8 +1268,8 @@ export function PortfolioReviewView({
       setVaultDialogOpen(true);
       toast.info(
         resolvedHasVault === false
-          ? "Create your vault to save your portfolio."
-          : "Unlock your vault to save your portfolio."
+          ? "Create your Vault to save your portfolio."
+          : "Unlock your Vault to save your portfolio."
       );
       return;
     }
@@ -1285,7 +1286,7 @@ export function PortfolioReviewView({
 
       if (!resolvedVaultOwnerToken) {
         throw new Error(
-          "Could not issue vault access token. Unlock your vault once and retry."
+          "We could not complete Vault access. Unlock once and try again."
         );
       }
 
@@ -1709,12 +1710,12 @@ export function PortfolioReviewView({
 
       if (createdVaultCopyRef.current) {
         if (createdVaultModeRef.current === "generated_default_native_biometric" || createdVaultModeRef.current === "generated_default_web_prf") {
-          toast.success("Vault created. Portfolio encrypted and saved. Finalizing profile sync in background.");
+          toast.success("Vault created. Portfolio saved. Finalizing profile sync in background.");
         } else {
-          toast.success("Vault created. Portfolio encrypted and saved. Finalizing profile sync in background.");
+          toast.success("Vault created. Portfolio saved. Finalizing profile sync in background.");
         }
       } else {
-        toast.success("Portfolio encrypted and saved. Finalizing profile sync in background.");
+        toast.success("Portfolio saved. Finalizing profile sync in background.");
       }
       baselineSnapshotRef.current = serializeEditableState(accountInfo, holdings);
       setHasUnsavedChanges(false);
@@ -1776,8 +1777,8 @@ export function PortfolioReviewView({
 	            <h1 className="text-xl font-bold tracking-tight">Review Portfolio</h1>
 	            <p className="text-sm text-muted-foreground whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px] sm:max-w-none">
 	              {hasVault === false
-	                ? "Review your portfolio, then create your vault to save it."
-	                : "Verify before saving to vault"}
+	                ? "Review your portfolio, then create your Vault to save it."
+	                : "Review before saving to Vault"}
 	            </p>
 	          </div>
 	        </div>
@@ -1791,7 +1792,7 @@ export function PortfolioReviewView({
           }}
         >
           <span className="hidden sm:inline ml-2 font-bold">Re-import</span>
-          <span className="sm:hidden font-bold">Retry</span>
+          <span className="sm:hidden font-bold">Try again</span>
         </MorphyButton>
 
 
@@ -2237,11 +2238,11 @@ export function PortfolioReviewView({
                   )}
                   {isSaving
                     ? hasVault === false
-                      ? "Encrypting portfolio and creating vault..."
-                      : "Encrypting portfolio and saving to vault..."
+                      ? "Creating Vault and securing portfolio..."
+                      : "Securing portfolio in Vault..."
                     : hasVault === false
-                    ? "Create vault"
-                    : "Save to vault"}
+                    ? "Create Vault"
+                    : "Save to Vault"}
                 </MorphyButton>
               </div>
             </CardContent>
@@ -2270,11 +2271,11 @@ export function PortfolioReviewView({
           <DialogContent className="z-[520] w-[calc(100%-1rem)] max-h-[calc(100svh-1rem)] p-0 border border-border/60 bg-background shadow-2xl overflow-hidden sm:max-w-md">
             <DialogTitle className="sr-only">
               {hasVault === false
-                ? "Create vault to save portfolio"
-                : "Unlock vault to save portfolio"}
+                ? "Create Vault to save portfolio"
+                : "Unlock Vault to save portfolio"}
             </DialogTitle>
             <DialogDescription className="sr-only">
-              Create or unlock your vault to securely save this portfolio to your world model.
+              Create or unlock your Vault to save this portfolio securely.
             </DialogDescription>
             <VaultFlow
               user={user}
@@ -2304,10 +2305,10 @@ export function PortfolioReviewView({
           <div className="mx-4 w-full max-w-sm rounded-2xl border border-border/70 bg-background/95 p-5 shadow-2xl">
             <div className="flex items-center gap-3">
               <Loader2 className="h-5 w-5 animate-spin text-primary" />
-              <p className="text-sm font-semibold">Encrypting and saving to vault</p>
+              <p className="text-sm font-semibold">Securing and saving to Vault</p>
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
-              Please wait. Navigation is temporarily locked until secure save completes.
+              {toInvestorMessage("SAVE_IN_PROGRESS")}
             </p>
           </div>
         </div>

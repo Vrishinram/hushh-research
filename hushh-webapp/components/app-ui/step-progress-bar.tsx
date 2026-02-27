@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Progress } from "@/components/ui/progress";
 import { useStepProgress } from "@/lib/progress/step-progress-context";
-import { Capacitor } from "@capacitor/core";
 import { cn } from "@/lib/utils";
 
 /**
@@ -18,12 +17,7 @@ export function StepProgressBar() {
   const { progress, isLoading } = useStepProgress();
   const [visible, setVisible] = useState(false);
   const [displayProgress, setDisplayProgress] = useState(0);
-  const [isNative, setIsNative] = useState(false);
   const hideTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  useEffect(() => {
-    setIsNative(Capacitor.isNativePlatform());
-  }, []);
 
   useEffect(() => {
     // Clear any pending hide timeout
@@ -64,20 +58,14 @@ export function StepProgressBar() {
   return (
     <div
       className={cn(
-        "fixed left-0 right-0 z-100 flex justify-center pointer-events-none transform-gpu transition-[top] duration-200",
-        isNative 
-          ? "top-[env(safe-area-inset-top)]" 
-          : "top-0"
+        "fixed left-0 right-0 z-100 top-[var(--top-inset,0px)] flex justify-center pointer-events-none transform-gpu transition-[top] duration-200"
       )}
       style={{
         opacity: visible ? 1 : 0,
         transition: "opacity 300ms ease-in-out",
       }}
     >
-      <Progress 
-        value={displayProgress} 
-        className="h-1 rounded-none bg-transparent"
-      />
+      <Progress value={displayProgress} className="h-1 rounded-none bg-transparent" />
     </div>
   );
 }

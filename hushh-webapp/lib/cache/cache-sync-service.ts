@@ -135,18 +135,20 @@ export class CacheSyncService {
     const cache = CacheService.getInstance();
     const writeThroughMetadata = options?.writeThroughMetadata !== false;
 
-    if (domain === "financial" && options?.portfolioData) {
-      cache.set(CACHE_KEYS.PORTFOLIO_DATA(userId), options.portfolioData, CACHE_TTL.SESSION);
-      cache.set(
-        CACHE_KEYS.DOMAIN_DATA(userId, "financial"),
-        options.portfolioData,
-        CACHE_TTL.SESSION
-      );
+    if (domain === "financial") {
+      if (options?.portfolioData) {
+        cache.set(CACHE_KEYS.PORTFOLIO_DATA(userId), options.portfolioData, CACHE_TTL.SESSION);
+        cache.set(
+          CACHE_KEYS.DOMAIN_DATA(userId, "financial"),
+          options.portfolioData,
+          CACHE_TTL.SESSION
+        );
+      }
+      // IMPORTANT: Preserve existing financial portfolio cache on profile-only
+      // writes (e.g. onboarding/nav-tour sync). Invalidating here causes
+      // transient "import portfolio" gating despite a successful save.
     } else {
       cache.invalidate(CACHE_KEYS.DOMAIN_DATA(userId, domain));
-      if (domain === "financial") {
-        cache.invalidate(CACHE_KEYS.PORTFOLIO_DATA(userId));
-      }
     }
 
     if (options?.encryptedBlob) {

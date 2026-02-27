@@ -1,10 +1,48 @@
 # Kai Analysis Layout + Review Mode Notes
 
-## Analysis History Top Spacing
-- Keep global layout unchanged (`providers.tsx` keeps `pt-[45px]`).
-- Apply additional top offset only on Analysis History page state:
-  - `app/kai/dashboard/analysis/page.tsx` wraps `AnalysisHistoryDashboard` with `pt-4`.
-- This avoids shifting all other pages while fixing history-header overlap.
+## Global Top Spacing
+- Root shell owns top spacing at layout level for all routes via `resolveTopShellMetrics(...)`.
+- Effective top inset token is `--app-safe-area-top-effective`:
+  - `max(var(--app-safe-area-top), env(safe-area-max-inset-top, 0px))`
+  - `--app-safe-area-top` resolves to `var(--safe-area-inset-top, env(safe-area-inset-top, 0px))` so Android `SystemBars.insetsHandling = "css"` injected values are consumed first.
+  - `.native-ios` forces `--app-safe-area-top/bottom` to WebKit `env(...)` values to avoid iOS underlap drift from injected var differences.
+  - `--app-safe-area-top-offset` is derived from effective inset + top offset nudge.
+- Scroll root contract uses route inputs from provider:
+  - `--app-top-shell-visible` (`0/1`)
+  - `--app-top-has-tabs` (`0/1`)
+  - `--app-top-mask-tail-clearance` (visual fade tail clearance)
+- Derived CSS geometry tokens:
+  - `--app-top-tabs-shell-height`
+  - `--app-top-shell-height`
+  - `--app-top-content-offset`
+- Route profile groups:
+  - hidden shell: `/`, `/login`, `/logout`
+  - visible shell with tabs: `/kai` family (except onboarding/import)
+  - visible shell without tabs: remaining app routes by default
+  - fullscreen-flow spacer exemption: `/kai/onboarding`, `/kai/import`
+- Main scroll root inserts a structural spacer with `height: var(--app-top-content-offset)` so page content starts below top chrome even when nested layouts use full-height wrappers.
+- Result:
+  - Shell-visible routes (`/kai`, `/consents`, `/profile`, `/chat`, `/api-docs`, `/agent-nav`, etc.) start below masked top chrome by default.
+  - Page-level top padding hacks should not be added for shell overlap fixes.
+  - Onboarding/import keep fullscreen-flow route behavior (spacer suppressed).
+
+## Top Shell + Tabs
+- Top chrome is split into two visual layers:
+  - `bar-glass-top-head` for status + header row (masked fade)
+  - `bar-glass-top-tabs` for route tabs (minimal fade)
+- Mask/frost styling is centralized in shared CSS tokens and consumed by `.bar-glass` base class:
+  - blur tokens: `--app-mask-blur-*`
+  - tint tokens: `--app-mask-tint-*`
+  - mask gradient tokens: `--app-mask-gradient-*`
+  - variant classes (`top-head`, `top-tabs`, `bottom`) only set active token values.
+- Tail clearance is route-aware in `resolveTopShellMetrics(...)`:
+  - compact clearance for non-tab routes
+  - larger clearance for tab routes to avoid title/subtitle collision below tabs
+- This keeps the swipe-tab active underline readable while preserving the masked top style.
+- Header row is symmetric (`back | title | action`) using equal-width icon slots for Kai/Consents/Profile.
+- Top and bottom masked areas intentionally use moderate blur (reduced from prior heavier values) for better readability while preserving the branded glass effect.
+- System bars are managed via Capacitor `SystemBars` runtime control (theme-synced status + navigation bars) with `ios.contentInset = "never"` and `SystemBars.insetsHandling = "css"`.
+- Native iOS bridge (`MyViewController`) keeps `webView.scrollView.contentInsetAdjustmentBehavior = .never` so UIKit does not reintroduce automatic top inset math that conflicts with the root shell contract.
 
 ## Analysis History Mobile Actions
 - The 3-dot actions menu is the first table column:

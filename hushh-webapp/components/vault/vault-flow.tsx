@@ -38,6 +38,7 @@ import type { GeneratedVaultKeyMode } from "@/lib/services/vault-bootstrap-servi
 import { VaultMethodService, type VaultMethod } from "@/lib/services/vault-method-service";
 import { VaultMethodPromptLocalService } from "@/lib/services/vault-method-prompt-local-service";
 import { resolvePasskeyRpId } from "@/lib/vault/passkey-rp";
+import { toInvestorLoading, toInvestorMessage } from "@/lib/copy/investor-language";
 
 type VaultStep =
   | "checking"
@@ -121,7 +122,7 @@ export function VaultFlow({
       return true;
     } catch (tokenError) {
       console.error("Failed to issue VAULT_OWNER token:", tokenError);
-      toast.error("Vault unlocked but failed to issue access token. Please try again.");
+      toast.error("Vault opened, but we could not complete access setup. Please try again.");
       return false;
     }
   }, [onSuccess, unlockVault, user.uid, vaultMode]);
@@ -165,7 +166,7 @@ export function VaultFlow({
             setUnlockWithPassphraseFallback(true);
             if (Capacitor.isNativePlatform()) {
               setUnlockHint(
-                "Use passphrase once and enroll passkey for this device/domain."
+                toInvestorMessage("VAULT_PASSKEY_ENROLL_REQUIRED")
               );
             }
           } else if (
@@ -189,7 +190,7 @@ export function VaultFlow({
         setStep("unlock");
       } catch (err) {
         console.error("Vault status check failed:", err);
-        setError("Failed to check vault status. Please retry.");
+        setError(toInvestorMessage("VAULT_STATUS_UNAVAILABLE"));
       }
     };
     checkStatus();
@@ -197,11 +198,11 @@ export function VaultFlow({
 
   const handleCreatePassphrase = async () => {
     if (passphrase.length < 8) {
-      toast.error("Passphrase must be at least 8 characters");
+      toast.error("Use at least 8 characters.");
       return;
     }
     if (passphrase !== confirmPassphrase) {
-      toast.error("Passphrases do not match");
+      toast.error("Passphrases do not match.");
       return;
     }
 
@@ -245,7 +246,7 @@ export function VaultFlow({
       setStep("recovery"); // Show recovery key dialog
     } catch (err: any) {
       console.error("Create vault error:", err);
-      toast.error(err.message || "Failed to create vault");
+      toast.error(err.message || "We could not create your Vault. Please try again.");
     } finally {
       setIsUnlocking(false);
     }
@@ -283,13 +284,13 @@ export function VaultFlow({
         }
         await finalizeUnlock(decryptedKey);
       } else {
-        const message = "Invalid passphrase. Please try again.";
+        const message = "That passphrase did not match. Please try again.";
         setError(message);
         toast.error(message);
       }
     } catch (err: any) {
       console.error("Unlock error:", err);
-      const message = "Failed to unlock vault. Please try again.";
+      const message = toInvestorMessage("VAULT_UNLOCK_FAILED");
       setError(message);
       toast.error(message);
     } finally {
@@ -306,7 +307,7 @@ export function VaultFlow({
         vaultMode === "generated_default_web_prf"
       ) {
         throw new Error(
-          "Use passphrase once and enroll passkey for this device/domain."
+          toInvestorMessage("VAULT_PASSKEY_ENROLL_REQUIRED")
         );
       }
       const vaultData = await VaultService.getVaultState(user.uid);
@@ -317,7 +318,7 @@ export function VaultFlow({
             : undefined,
       });
       if (!generatedWrapper) {
-        throw new Error("Quick unlock wrapper not enrolled.");
+        throw new Error("Quick unlock is not enabled on this device yet.");
       }
       const decryptedKey = await VaultService.unlockGeneratedDefaultVault({
         userId: user.uid,
@@ -331,7 +332,7 @@ export function VaultFlow({
       });
 
       if (!decryptedKey) {
-        throw new Error("Generated vault mode unavailable. Use passphrase.");
+        throw new Error("Quick unlock is not ready. Use your passphrase.");
       }
 
       await VaultService.assertVaultKeyMatchesState(vaultData, decryptedKey);
@@ -343,7 +344,7 @@ export function VaultFlow({
         typeof rawMessage === "string" &&
         (rawMessage.includes("VAULT_PASSKEY_RP_MISMATCH") ||
           rawMessage.toLowerCase().includes("rp id is not allowed"))
-          ? "Use passphrase once and enroll passkey for this device/domain."
+          ? toInvestorMessage("VAULT_PASSKEY_ENROLL_REQUIRED")
           : rawMessage;
       setError(message);
       toast.error(message);
@@ -368,13 +369,13 @@ export function VaultFlow({
         await VaultService.assertVaultKeyMatchesState(vaultData, decryptedKey);
         await finalizeUnlock(decryptedKey);
       } else {
-        const message = "Invalid recovery key. Please try again.";
+        const message = "That recovery key did not match. Please try again.";
         setError(message);
         toast.error(message);
       }
     } catch (err: unknown) {
       console.error("Recovery key unlock failed:", err);
-      const message = "Failed to unlock with recovery key. Please try again.";
+      const message = "We could not unlock with that recovery key. Please try again.";
       setError(message);
       toast.error(message);
     } finally {
@@ -436,8 +437,8 @@ export function VaultFlow({
       // If auto-unlock fails, send user to unlock screen to try manually.
       toast.error(
         vaultMode === "passphrase"
-          ? "Auto-unlock failed. Please enter your passphrase."
-          : "Auto-unlock failed. Try secure unlock or recovery key."
+          ? "Quick unlock was not available. Enter your passphrase."
+          : "Quick unlock was not available. Try passphrase or recovery key."
       );
       setStep("unlock");
       return;
@@ -478,7 +479,7 @@ export function VaultFlow({
                 variant="none"
                 className="border border-input bg-background hover:bg-accent hover:text-accent-foreground"
               >
-                Retry
+                Try again
               </Button>
             </div>
           </CardContent>
@@ -486,7 +487,7 @@ export function VaultFlow({
       );
     }
 
-    return <HushhLoader label="Checking vault status..." />;
+    return <HushhLoader label={toInvestorLoading("VAULT")} />;
   }
 
   return (
@@ -510,7 +511,7 @@ export function VaultFlow({
                 <h3 className="text-2xl font-bold tracking-tight">Secure Your Digital Vault</h3>
                 <p className="text-muted-foreground text-balance max-w-sm mx-auto">
                   Hushh uses end-to-end encryption to protect your personal data.
-                  Create a passphrase first, then optionally enable faster device unlock.
+                  Create your passphrase first, then optionally enable faster sign-in.
                 </p>
               </div>
 
@@ -525,7 +526,7 @@ export function VaultFlow({
                    <div className="mt-0.5 min-w-[1.25rem] text-primary">
                      <Icon icon={Check} size="md" />
                   </div>
-                  <p><span className="font-semibold block text-foreground">Encrypted by default</span> There is no plaintext-at-rest path.</p>
+                  <p><span className="font-semibold block text-foreground">Protected by default</span> Your data stays private and secure.</p>
                 </div>
               </div>
 
@@ -540,7 +541,7 @@ export function VaultFlow({
                     setStep("create");
                   }}
                 >
-                  I Understand, Create Vault
+                  Continue to Vault Setup
                   <Icon
                     icon={ArrowRight}
                     size="md"
@@ -559,7 +560,7 @@ export function VaultFlow({
                 <Icon icon={Lock} size={36} className="mx-auto text-primary mb-3" />
                 <h3 className="text-lg font-semibold sm:text-xl">Create Your Vault Passphrase</h3>
                 <p className="mt-1.5 text-sm text-muted-foreground sm:text-base">
-                  This passphrase encrypts your data. We never see it.
+                  This passphrase protects your Vault. Keep it private.
                 </p>
               </div>
               <div className="space-y-2">
@@ -567,7 +568,7 @@ export function VaultFlow({
                 <Input
                   id="passphrase"
                   type="password"
-                  placeholder="Enter a strong passphrase"
+                  placeholder="Enter your passphrase"
                   value={passphrase}
                   onChange={(e) => setPassphrase(e.target.value)}
                   autoFocus
@@ -579,7 +580,7 @@ export function VaultFlow({
                 <Input
                   id="confirm"
                   type="password"
-                  placeholder="Re-enter passphrase"
+                  placeholder="Confirm your passphrase"
                   value={confirmPassphrase}
                   onChange={(e) => setConfirmPassphrase(e.target.value)}
                   className="h-11 px-3 text-base sm:h-12 sm:px-4 sm:text-lg"
@@ -593,7 +594,7 @@ export function VaultFlow({
                   <li>Avoid reused passwords from other apps</li>
                 </ul>
                 <p className="mt-1.5 text-[10px] text-muted-foreground sm:mt-2 sm:text-xs">
-                  You can enable passkey or biometric later from Profile.
+                  You can enable passkey or device unlock later from Profile.
                 </p>
               </div>
               <Button
@@ -607,7 +608,7 @@ export function VaultFlow({
               >
                 {isUnlocking ? (
                   <>
-                    <Icon icon={Loader2} size="md" className="mr-2 animate-spin" /> Creating...
+                    <Icon icon={Loader2} size="md" className="mr-2 animate-spin" /> Creating Vault...
                   </>
                 ) : (
                   "Create Vault"
@@ -628,8 +629,8 @@ export function VaultFlow({
                 <h3 className="text-lg font-semibold sm:text-xl">Unlock Your Vault</h3>
                 <p className="mt-1.5 text-sm text-muted-foreground sm:text-base">
                   {isGeneratedVaultMode
-                    ? "Use your device security to decrypt your vault key"
-                    : "Enter your passphrase to decrypt your data"}
+                    ? "Confirm with your device to open Vault"
+                    : "Enter your passphrase to open Vault"}
                 </p>
                 {unlockHint ? (
                   <p className="mt-1.5 text-xs font-medium text-amber-500">
@@ -670,7 +671,7 @@ export function VaultFlow({
                   >
                     {isUnlocking ? (
                       <>
-                        <Icon icon={Loader2} size="md" className="mr-2 animate-spin" /> Unlocking...
+                        <Icon icon={Loader2} size="md" className="mr-2 animate-spin" /> Unlocking Vault...
                       </>
                     ) : unlockWithPassphraseFallback ? (
                       "Unlock with passphrase"
@@ -719,7 +720,7 @@ export function VaultFlow({
                     }}
                     disabled={isUnlocking}
                   >
-                    Use passphrase fallback
+                    Use passphrase instead
                   </Button>
                 )}
                 {hasActiveGeneratedWrapper && unlockWithPassphraseFallback && (
@@ -786,7 +787,7 @@ export function VaultFlow({
                 <Icon icon={Key} size={36} className="mx-auto mb-3 text-primary" />
                 <h3 className="text-lg font-semibold sm:text-xl">Enter Recovery Key</h3>
                 <p className="mt-1.5 text-sm text-muted-foreground sm:text-base">
-                  Enter your recovery key to unlock your vault
+                  Enter your recovery key to open Vault
                 </p>
               </div>
               <div className="space-y-2">
@@ -816,7 +817,7 @@ export function VaultFlow({
                 >
                   {isUnlocking ? (
                     <>
-                      <Icon icon={Loader2} size="md" className="mr-2 animate-spin" /> Unlocking...
+                      <Icon icon={Loader2} size="md" className="mr-2 animate-spin" /> Unlocking Vault...
                     </>
                   ) : (
                     "Unlock"
@@ -845,7 +846,7 @@ export function VaultFlow({
             <div className="text-center py-4">
               <div className="text-4xl mb-4">✅</div>
               <p className="text-muted-foreground">
-                Vault unlocked, redirecting...
+                Vault unlocked. Redirecting...
               </p>
             </div>
           )}
@@ -870,7 +871,7 @@ export function VaultFlow({
                   recommendedQuickMethod === "generated_default_native_passkey_prf"
                     ? "passkey"
                     : "device biometric"}{" "}
-                  and still retain passphrase + recovery-key fallback.
+                  and still retain passphrase and recovery-key backup.
                 </p>
               </div>
 

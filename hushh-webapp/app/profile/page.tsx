@@ -32,6 +32,9 @@ import {
   Fingerprint,
   KeyRound,
   Shield, 
+  Cloud,
+  HardDrive,
+  RefreshCw,
   Wallet, 
   CreditCard, 
   Heart, 
@@ -82,6 +85,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { Icon } from "@/lib/morphy-ux/ui";
 import { ROUTES } from "@/lib/navigation/routes";
+import { toInvestorMessage } from "@/lib/copy/investor-language";
 
 // Icon mapping for domains
 const DOMAIN_ICONS: Record<string, LucideIcon> = {
@@ -373,8 +377,8 @@ export default function ProfilePage() {
 
   const readableMethod = (method: VaultMethod | null): string => {
     if (method === "generated_default_native_biometric") return "Device biometric";
-    if (method === "generated_default_native_passkey_prf") return "Passkey (Native PRF)";
-    if (method === "generated_default_web_prf") return "Passkey (PRF)";
+    if (method === "generated_default_native_passkey_prf") return "Passkey";
+    if (method === "generated_default_web_prf") return "Passkey";
     if (method === "passphrase") return "Passphrase";
     return "Unknown";
   };
@@ -430,7 +434,7 @@ export default function ProfilePage() {
       toast.error(
         error instanceof Error
           ? error.message
-          : "Failed to switch vault security method."
+          : "We could not update your unlock preference."
       );
     } finally {
       setSwitchingVaultMethod(false);
@@ -457,7 +461,7 @@ export default function ProfilePage() {
       toast.error(
         error instanceof Error
           ? error.message
-          : "Failed to update preferred unlock method."
+          : "We could not update your preferred unlock method."
       );
     } finally {
       setSwitchingVaultMethod(false);
@@ -492,7 +496,7 @@ export default function ProfilePage() {
       toast.error(
         error instanceof Error
           ? error.message
-          : "Failed to update passphrase."
+          : "We could not update your passphrase."
       );
     } finally {
       setSwitchingVaultMethod(false);
@@ -605,7 +609,7 @@ export default function ProfilePage() {
               </div>
               {hasVault === false ? (
                 <>
-                  <p className="text-sm text-muted-foreground mb-3">
+              <p className="text-sm text-muted-foreground mb-3">
                     Create your vault from import to start building your data profile.
                   </p>
                   <Button variant="gradient" size="sm" onClick={() => router.push(ROUTES.KAI_IMPORT)}>
@@ -615,7 +619,7 @@ export default function ProfilePage() {
               ) : hasVault === true && !vaultOwnerToken ? (
                 <>
                   <p className="text-sm text-muted-foreground mb-3">
-                    Unlock your vault to view your data profile.
+                    Unlock your Vault to view your data profile.
                   </p>
                   <Button
                     variant="none"
@@ -632,7 +636,7 @@ export default function ProfilePage() {
               ) : (
                 <>
                   <p className="text-sm text-muted-foreground mb-3">
-                    No data yet. Chat with Kai to build your profile.
+                    No data yet. Chat with Kai to personalize your profile.
                   </p>
                   <Button
                     variant="gradient"
@@ -720,6 +724,42 @@ export default function ProfilePage() {
         </CardContent>
       </Card>
 
+      {/* Sync to Cloud (Coming Soon) */}
+      <Card variant="none" effect="glass">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
+              <Icon icon={Cloud} size="md" className="text-primary" />
+            </div>
+            <div className="flex items-center gap-2">
+              <span>Sync to Cloud</span>
+              <Badge variant="secondary">Coming Soon</Badge>
+            </div>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 pt-4">
+          <p className="text-sm text-muted-foreground">
+            Today, your data is securely managed in the cloud for a seamless experience
+            across your devices.
+          </p>
+          <div className="rounded-xl border border-border/60 bg-muted/30 p-3 space-y-2">
+            <div className="flex items-start gap-2">
+              <Icon icon={HardDrive} size="sm" className="text-muted-foreground mt-0.5" />
+              <p className="text-sm">
+                Coming soon: optional on-device storage.
+              </p>
+            </div>
+            <div className="flex items-start gap-2">
+              <Icon icon={RefreshCw} size="sm" className="text-muted-foreground mt-0.5" />
+              <p className="text-sm">
+                You will get a <span className="font-semibold">Sync to Cloud</span> toggle to control when
+                local updates sync across your devices.
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Vault Security Methods */}
       <Card variant="none" effect="glass">
         <CardHeader className="pb-2">
@@ -753,12 +793,12 @@ export default function ProfilePage() {
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-sm font-semibold">{readableMethod(vaultMethod)}</p>
                   <Badge variant="secondary">
-                    {vaultMethod === "passphrase" ? "Manual unlock" : "Quick unlock"}
+                    {vaultMethod === "passphrase" ? "Passphrase unlock" : "Quick unlock"}
                   </Badge>
                 </div>
                 {!isVaultUnlocked && (
                   <p className="text-xs text-muted-foreground">
-                    Unlock your vault to update security methods.
+                    Unlock your Vault to update security methods.
                   </p>
                 )}
               </div>
@@ -769,20 +809,22 @@ export default function ProfilePage() {
                 </p>
                 <div className="space-y-1 text-sm">
                   <p>
-                    Native biometric:{" "}
+                    Device biometric:{" "}
                     <span className="font-semibold">
-                      {capabilityMatrix?.generatedNativeBiometric ? "Available" : "Unavailable"}
+                      {capabilityMatrix?.generatedNativeBiometric ? "Ready" : "Not ready"}
                     </span>
                   </p>
                   <p>
-                    Web passkey (PRF):{" "}
+                    Passkey:{" "}
                     <span className="font-semibold">
-                      {capabilityMatrix?.generatedWebPrf ? "Available" : "Unavailable"}
+                      {capabilityMatrix?.generatedWebPrf ? "Ready" : "Not ready"}
                     </span>
                   </p>
                 </div>
                 {capabilityMatrix?.reason && (
-                  <p className="text-xs text-muted-foreground">{capabilityMatrix.reason}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {toInvestorMessage("VAULT_PASSKEY_ENROLL_REQUIRED")}
+                  </p>
                 )}
               </div>
 
@@ -919,7 +961,7 @@ export default function ProfilePage() {
         <DialogContent className="sm:max-w-md">
           <DialogTitle>Change passphrase</DialogTitle>
           <DialogDescription>
-            Set a new passphrase for vault unlock. Your passkey/biometric wrappers remain active.
+            Set a new passphrase for Vault unlock. Your passkey and biometric methods stay active.
           </DialogDescription>
           <div className="space-y-3 pt-2">
             <Input
@@ -1002,8 +1044,7 @@ export default function ProfilePage() {
 
       {/* Security Footer */}
       <p className="text-center text-xs text-muted-foreground">
-        Your data is encrypted before storage and access is controlled by your
-        vault credentials.
+        Your data is protected before storage, and only your Vault credentials can unlock it.
       </p>
       
     </div>

@@ -20,6 +20,7 @@ Route-level and feature-level parity contract for Kai on Web, iOS, and Android.
 | Analysis stream + decision terminal payload | `/api/kai/analyze/stream` via web fetch | Kai plugin stream methods | Must emit terminal `decision`/`error`; decision includes degraded metadata |
 | Token guard + one retry on 401/403 | `ensureKaiVaultOwnerToken` | same service-layer guard before plugin/network call | Strict VAULT_OWNER policy applies uniformly |
 | Cache-first market home refresh | in-memory + session cache in `KaiMarketPreviewView` | same JS service path in Capacitor runtime | No forced provider hit while cache fresh |
+| Top-shell no-underlap contract | root scroll offset from `resolveTopShellMetrics` + CSS vars | same React runtime in Capacitor | Non-onboarding routes must start below masked top shell; no page-level overlap hacks |
 | Bottom chrome behavior | navbar + command bar hide/reveal on scroll | same React runtime behavior | Route- and onboarding-state aware visibility gating |
 | Onboarding chrome gating | route + cookie state helper | same logic in shared JS | command bar hidden during active onboarding/import flow |
 
