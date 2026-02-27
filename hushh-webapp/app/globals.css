@@ -115,7 +115,10 @@ html body[data-scroll-locked] {
   --top-tabs-gap: var(--kai-route-tabs-content-gap);
   --top-tabs-total: 0px;
   --top-fade-active: 14px;
-  --top-shell-h: calc(var(--top-inset) + var(--top-bar-h) + var(--top-tabs-total));
+  --top-systembar-row-gap: 4px;
+  --top-shell-h: calc(
+    var(--top-inset) + var(--top-systembar-row-gap) + var(--top-bar-h) + var(--top-tabs-total)
+  );
   --top-glass-h: calc(var(--top-shell-h) + var(--top-fade-active));
   --top-content-pad: var(--top-glass-h);
 

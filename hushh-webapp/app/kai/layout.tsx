@@ -27,6 +27,7 @@ export default function KaiLayout({
   const onOnboardingRoute = pathname.startsWith("/kai/onboarding");
   const onImportRoute = pathname.startsWith("/kai/import");
   const shouldEnableMethodPrompt = !onOnboardingRoute && !onImportRoute;
+  const applyTopRouteGap = !onOnboardingRoute && !onImportRoute;
 
   useEffect(() => {
     if (onOnboardingRoute || onImportRoute) return;
@@ -46,7 +47,14 @@ export default function KaiLayout({
     <VaultLockGuard>
       <KaiOnboardingGuard>
         <div className="flex min-h-screen flex-col [--morphy-glass-accent-a:rgba(148,163,184,0.08)] [--morphy-glass-accent-b:rgba(226,232,240,0.08)] dark:[--morphy-glass-accent-a:rgba(63,63,70,0.16)] dark:[--morphy-glass-accent-b:rgba(82,82,91,0.14)]">
-          <main className="flex-1 pb-32 [--kai-view-top-gap:16px] sm:[--kai-view-top-gap:18px]">
+          <main
+            className={[
+              "flex-1 pb-32 [--kai-view-top-gap:28px] sm:[--kai-view-top-gap:34px]",
+              applyTopRouteGap ? "pt-[var(--kai-route-content-gap,26px)] sm:pt-[var(--kai-route-content-gap-sm,32px)]" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          >
             {children}
           </main>
           <VaultMethodPrompt enabled={shouldEnableMethodPrompt} />

@@ -131,7 +131,7 @@ export function TopAppBar({ className }: TopAppBarProps) {
       {/* ── Interactive content layer ──────────────────────────────── */}
       <div
         className="relative mx-auto w-full max-w-6xl px-4 sm:px-6"
-        style={{ paddingTop: "var(--top-inset)" }}
+        style={{ paddingTop: "calc(var(--top-inset) + var(--top-systembar-row-gap, 0px))" }}
       >
         {/* Header row: back · title · actions */}
         <div

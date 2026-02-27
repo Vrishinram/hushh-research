@@ -45,15 +45,18 @@ interface ProvidersProps {
 
 export function Providers({ children }: ProvidersProps) {
   const pathname = usePathname();
+  const isImportRoute = pathname.startsWith("/kai/import");
   const topShellMetrics = useMemo(() => resolveTopShellMetrics(pathname), [pathname]);
   const hideGlobalChrome = !topShellMetrics.shellVisible;
   const isFullscreenTopFlow = topShellMetrics.contentOffsetMode === "fullscreen-flow";
-  const shouldRenderTopSpacer = topShellMetrics.shellVisible && !isFullscreenTopFlow;
+  const shouldLockFullscreenRoot = isFullscreenTopFlow && !isImportRoute;
+  const shouldRenderTopSpacer =
+    topShellMetrics.shellVisible && (!isFullscreenTopFlow || isImportRoute);
   const topShellRouteStyle = useMemo(
     () =>
       ({
         "--top-tabs-total": topShellMetrics.hasTabs ? "44px" : "0px",
-        "--top-fade-active": topShellMetrics.hasTabs ? "38px" : "14px",
+        "--top-fade-active": topShellMetrics.hasTabs ? "48px" : "14px",
       } as CSSProperties),
     [topShellMetrics.hasTabs]
   );
@@ -133,8 +136,8 @@ export function Providers({ children }: ProvidersProps) {
                         hideGlobalChrome
                           ? // Landing is a full-screen onboarding flow: no page scroll, no extra top inset.
                             "flex-1 overflow-hidden relative z-10 min-h-0"
-                          : isFullscreenTopFlow
-                          ? // Keep fullscreen onboarding/import routes single-screen; step components handle their own safe area/footer inset.
+                          : shouldLockFullscreenRoot
+                          ? // Keep onboarding fullscreen routes single-screen; import stays scrollable.
                             "flex-1 overflow-hidden relative z-10 min-h-0"
                           : "flex-1 overflow-y-auto overflow-x-hidden overscroll-x-none touch-pan-y pb-[var(--app-bottom-inset)] relative z-10 min-h-0"
                       }
@@ -148,7 +151,7 @@ export function Providers({ children }: ProvidersProps) {
                       ) : null}
                       <div
                         ref={pageRef}
-                        className={isFullscreenTopFlow ? "min-h-0 h-full" : "min-h-0"}
+                        className={shouldLockFullscreenRoot ? "min-h-0 h-full" : "min-h-0"}
                       >
                         {children}
                       </div>
