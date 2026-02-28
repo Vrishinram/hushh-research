@@ -21,7 +21,7 @@ import { StepProgressProvider } from "@/lib/progress/step-progress-context";
 import { StepProgressBar } from "@/components/app-ui/step-progress-bar";
 import { CacheProvider } from "@/lib/cache/cache-context";
 import { ConsentNotificationProvider } from "@/components/consent/notification-provider";
-import { resolveTopShellMetrics } from "@/components/app-ui/top-shell-metrics";
+import { resolveTopShellRouteProfile } from "@/components/app-ui/top-shell-metrics";
 import { TopAppBar } from "@/components/app-ui/top-app-bar";
 import { Navbar } from "@/components/navbar";
 import { Toaster } from "@/components/ui/sonner";
@@ -37,6 +37,7 @@ import {
   resetKaiBottomChromeVisibility,
   useKaiBottomChromeVisibility,
 } from "@/lib/navigation/kai-bottom-chrome-visibility";
+import { getKaiChromeState } from "@/lib/navigation/kai-chrome-state";
 import { cn } from "@/lib/utils";
 
 interface ProvidersProps {
@@ -46,7 +47,12 @@ interface ProvidersProps {
 export function Providers({ children }: ProvidersProps) {
   const pathname = usePathname();
   const isImportRoute = pathname.startsWith("/kai/import");
-  const topShellMetrics = useMemo(() => resolveTopShellMetrics(pathname), [pathname]);
+  const chromeState = useMemo(() => getKaiChromeState(pathname), [pathname]);
+  const topShellRouteProfile = useMemo(
+    () => resolveTopShellRouteProfile(pathname),
+    [pathname]
+  );
+  const topShellMetrics = topShellRouteProfile.metrics;
   const hideGlobalChrome = !topShellMetrics.shellVisible;
   const isFullscreenTopFlow = topShellMetrics.contentOffsetMode === "fullscreen-flow";
   const shouldLockFullscreenRoot = isFullscreenTopFlow && !isImportRoute;
@@ -55,10 +61,27 @@ export function Providers({ children }: ProvidersProps) {
   const topShellRouteStyle = useMemo(
     () =>
       ({
-        "--top-tabs-total": topShellMetrics.hasTabs ? "44px" : "0px",
-        "--top-fade-active": topShellMetrics.hasTabs ? "48px" : "14px",
+        "--top-tabs-gap": topShellMetrics.hasTabs ? "2px" : "0px",
+        "--top-tabs-total": topShellMetrics.hasTabs
+          ? "calc(var(--top-tabs-h) + var(--top-tabs-gap))"
+          : "0px",
+        "--top-fade-active": topShellMetrics.hasTabs ? "28px" : "14px",
+        "--kai-route-content-gap": topShellMetrics.hasTabs ? "12px" : "8px",
+        "--kai-route-content-gap-sm": topShellMetrics.hasTabs ? "16px" : "12px",
+        "--app-top-shell-visible": topShellMetrics.shellVisible ? "1" : "0",
+        "--app-top-has-tabs": topShellMetrics.hasTabs ? "1" : "0",
+        "--app-top-offset-mode":
+          topShellMetrics.contentOffsetMode === "fullscreen-flow" ? "fullscreen-flow" : "normal",
+        "--app-scroll-bottom-pad": chromeState.hideCommandBar
+          ? "var(--app-bottom-inset)"
+          : "calc(var(--app-bottom-inset) + var(--kai-command-fixed-ui) + var(--kai-command-bottom-gap, 12px) + 10px)",
       } as CSSProperties),
-    [topShellMetrics.hasTabs]
+    [
+      chromeState.hideCommandBar,
+      topShellMetrics.contentOffsetMode,
+      topShellMetrics.hasTabs,
+      topShellMetrics.shellVisible,
+    ]
   );
   const showSharedBottomChromeGlass = topShellMetrics.shellVisible && !isFullscreenTopFlow;
   const { hidden: hideBottomChromeGlass } = useKaiBottomChromeVisibility(
@@ -108,6 +131,7 @@ export function Providers({ children }: ProvidersProps) {
                   <div
                     className="flex flex-col flex-1 min-h-0"
                     style={topShellRouteStyle}
+                    data-top-shell-profile={topShellRouteProfile.id}
                   >
                     <Navbar />
                     <TopAppBar />
@@ -139,7 +163,7 @@ export function Providers({ children }: ProvidersProps) {
                           : shouldLockFullscreenRoot
                           ? // Keep onboarding fullscreen routes single-screen; import stays scrollable.
                             "flex-1 overflow-hidden relative z-10 min-h-0"
-                          : "flex-1 overflow-y-auto overflow-x-hidden overscroll-x-none touch-pan-y pb-[var(--app-bottom-inset)] relative z-10 min-h-0"
+                          : "flex-1 overflow-y-auto overflow-x-hidden overscroll-x-none touch-pan-y pb-[var(--app-scroll-bottom-pad,var(--app-bottom-inset))] relative z-10 min-h-0"
                       }
                     >
                       {shouldRenderTopSpacer ? (

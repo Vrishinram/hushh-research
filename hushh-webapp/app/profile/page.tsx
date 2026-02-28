@@ -881,10 +881,10 @@ export default function ProfilePage() {
       {/* Sign Out Button */}
       <div className="w-full">
         <Button
-          variant="destructive"
+          variant="none"
           effect="fade"
           size="default"
-          className="w-full justify-center"
+          className="w-full justify-center app-critical-action"
           onClick={handleSignOut}
         >
           <Icon icon={LogOut} size="md" className="mr-2" />
@@ -893,9 +893,9 @@ export default function ProfilePage() {
       </div>
 
       {/* Danger Zone */}
-      <Card variant="none" className="border-destructive/20 bg-destructive/5 dark:bg-destructive/10">
+      <Card variant="none" className="app-critical-card">
         <CardHeader className="pb-2">
-          <CardTitle className="text-lg flex items-center gap-3 text-destructive">
+          <CardTitle className="text-lg flex items-center gap-3 app-critical-title">
             <Icon icon={AlertTriangle} size="md" />
             <span>Danger Zone</span>
           </CardTitle>
@@ -905,12 +905,12 @@ export default function ProfilePage() {
             Deleting your account is permanent. All your data, including your vault and identity, will be erased.
           </p>
           <Button
-             variant="destructive"
+             variant="none"
              effect="fade"
              size="default"
              onClick={handleDeleteClick}
              disabled={isDeleting}
-             className="w-full sm:w-auto"
+             className="w-full sm:w-auto app-critical-action"
           >
             {isDeleting ? (
               <>
@@ -1006,7 +1006,7 @@ export default function ProfilePage() {
       <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-destructive flex items-center gap-2">
+            <AlertDialogTitle className="app-critical-title flex items-center gap-2">
               <Icon icon={AlertTriangle} size="md" />
               Delete Account?
             </AlertDialogTitle>
@@ -1018,8 +1018,8 @@ export default function ProfilePage() {
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              variant="destructive"
-              className="opacity-90 transition-opacity hover:opacity-100"
+              variant="default"
+              className="app-critical-action opacity-90 transition-opacity hover:opacity-100"
               onClick={(e) => {
                 e.preventDefault(); // Prevent auto-closing
                 handleDeleteAccount();

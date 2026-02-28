@@ -127,7 +127,7 @@ export function TopAppBar({ className }: TopAppBarProps) {
 
   return (
     <div
-      className={cn("fixed inset-x-0 top-0 z-50 pointer-events-none", className)}
+      className={cn("fixed inset-x-0 top-0 z-50 overflow-hidden pointer-events-none", className)}
     >
       {/* ── Unified glass backdrop ─────────────────────────────────── */}
       <div

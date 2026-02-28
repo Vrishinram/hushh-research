@@ -1,5 +1,6 @@
 "use client";
 
+import { Capacitor } from "@capacitor/core";
 import { apiJson } from "@/lib/services/api-client";
 import { AuthService } from "@/lib/services/auth-service";
 
@@ -66,6 +67,15 @@ function normalizeResponse(userId: string, payload: BootstrapStateResponse): Pre
   };
 }
 
+function resolvePreVaultPath(path: "bootstrap-state" | "pre-vault-state"): string {
+  // Native builds call backend directly via ApiService.apiFetch, so these routes
+  // must use backend paths instead of Next.js proxy paths.
+  if (Capacitor.isNativePlatform()) {
+    return `/db/vault/${path}`;
+  }
+  return `/api/vault/${path}`;
+}
+
 async function getAuthHeader(): Promise<string> {
   const token = await AuthService.getIdToken();
   if (!token) {
@@ -77,7 +87,7 @@ async function getAuthHeader(): Promise<string> {
 export class PreVaultUserStateService {
   static async bootstrapState(userId: string): Promise<PreVaultUserState> {
     const authorization = await getAuthHeader();
-    const payload = await apiJson<BootstrapStateResponse>("/api/vault/bootstrap-state", {
+    const payload = await apiJson<BootstrapStateResponse>(resolvePreVaultPath("bootstrap-state"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -93,7 +103,7 @@ export class PreVaultUserStateService {
     updates: PreVaultStateUpdatePayload
   ): Promise<PreVaultUserState> {
     const authorization = await getAuthHeader();
-    const payload = await apiJson<BootstrapStateResponse>("/api/vault/pre-vault-state", {
+    const payload = await apiJson<BootstrapStateResponse>(resolvePreVaultPath("pre-vault-state"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

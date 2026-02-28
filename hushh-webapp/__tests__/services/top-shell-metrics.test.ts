@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import { ROUTES } from "@/lib/navigation/routes";
-import { resolveTopShellMetrics } from "@/components/app-ui/top-shell-metrics";
+import {
+  resolveTopShellMetrics,
+  resolveTopShellRouteProfile,
+} from "@/components/app-ui/top-shell-metrics";
 
 describe("top shell metrics route profile", () => {
   it("hides shell on home/login/logout routes", () => {
@@ -29,7 +32,7 @@ describe("top shell metrics route profile", () => {
     expect(kaiAnalysis.hasTabs).toBe(true);
   });
 
-  it("uses fullscreen-flow mode for kai onboarding/import", () => {
+  it("uses fullscreen-flow mode only for kai onboarding", () => {
     const onboarding = resolveTopShellMetrics(ROUTES.KAI_ONBOARDING);
     const kaiImport = resolveTopShellMetrics(ROUTES.KAI_IMPORT);
 
@@ -38,8 +41,8 @@ describe("top shell metrics route profile", () => {
     expect(onboarding.contentOffsetMode).toBe("fullscreen-flow");
 
     expect(kaiImport.shellVisible).toBe(true);
-    expect(kaiImport.hasTabs).toBe(false);
-    expect(kaiImport.contentOffsetMode).toBe("fullscreen-flow");
+    expect(kaiImport.hasTabs).toBe(true);
+    expect(kaiImport.contentOffsetMode).toBe("normal");
   });
 
   it("keeps shell visible without tabs on non-kai app routes", () => {
@@ -64,5 +67,15 @@ describe("top shell metrics route profile", () => {
 
     expect(agentNav.shellVisible).toBe(true);
     expect(agentNav.hasTabs).toBe(false);
+  });
+
+  it("defaults unknown routes to shell-visible compact spacing", () => {
+    const unknown = resolveTopShellMetrics("/new-product-page");
+    const unknownProfile = resolveTopShellRouteProfile("/new-product-page");
+
+    expect(unknownProfile.id).toBe("default-no-tabs");
+    expect(unknown.shellVisible).toBe(true);
+    expect(unknown.hasTabs).toBe(false);
+    expect(unknown.contentOffsetMode).toBe("normal");
   });
 });

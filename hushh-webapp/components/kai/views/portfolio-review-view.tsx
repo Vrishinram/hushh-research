@@ -1847,7 +1847,7 @@ export function PortfolioReviewView({
     <div className={cn("relative w-full", className)}>
 
 
-      <div className="mx-auto w-full max-w-6xl space-y-8 px-4 pb-56 transition-all duration-500 ease-in-out md:px-6">
+      <div className="mx-auto w-full max-w-6xl space-y-8 px-4 pb-6 transition-all duration-500 ease-in-out md:px-6">
 
 
 
@@ -1925,14 +1925,15 @@ export function PortfolioReviewView({
                 </div>
                 <div className="min-w-0 flex flex-col items-center justify-center">
                   <Badge
-                    variant={
-                      riskBucket === "conservative"
-                        ? "secondary"
+                    variant="outline"
+                    className={cn(
+                      "font-black text-[10px] uppercase tracking-widest px-2",
+                      riskBucket === "aggressive"
+                        ? "app-critical-badge"
                         : riskBucket === "moderate"
-                          ? "default"
-                          : "destructive"
-                    }
-                    className="font-black text-[10px] uppercase tracking-widest px-2"
+                          ? "border-primary/30 bg-primary/10 text-primary"
+                          : "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                    )}
                   >
                     {riskBucket}
                   </Badge>

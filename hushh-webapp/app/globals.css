@@ -164,6 +164,11 @@ html body[data-scroll-locked] {
   --accent-foreground: oklch(1 0 0);
   --destructive: oklch(0.58 0.22 27);
   --destructive-foreground: oklch(1 0 0);
+  --critical-solid: oklch(0.58 0.22 27);
+  --critical-foreground: oklch(0.98 0 0);
+  --critical-soft-bg: oklch(0.95 0.03 26);
+  --critical-soft-border: oklch(0.73 0.12 26);
+  --critical-soft-text: oklch(0.48 0.16 26);
   --border: oklch(0.92 0.004 264);
   --input: oklch(0.87 0.006 264);
   --ring: oklch(0.55 0.18 250);
@@ -326,6 +331,11 @@ html.native-ios {
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.7 0.19 22);
   --destructive-foreground: oklch(0.15 0 0);
+  --critical-solid: oklch(0.68 0.2 24);
+  --critical-foreground: oklch(0.14 0 0);
+  --critical-soft-bg: oklch(0.31 0.06 24);
+  --critical-soft-border: oklch(0.6 0.15 24);
+  --critical-soft-text: oklch(0.79 0.13 24);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.7 0.18 250);
@@ -418,6 +428,54 @@ html.native-ios {
 .dark .glass-interactive:hover {
   background-color: var(--glass2) !important;
   box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+}
+
+/* Shared critical palette (use for delete/revoke/expire sections; avoids destructive variants). */
+.app-critical-card {
+  border: 1px solid color-mix(in oklab, hsl(var(--critical-soft-border)) 55%, transparent);
+  background:
+    linear-gradient(
+      155deg,
+      color-mix(in oklab, hsl(var(--critical-soft-bg)) 70%, transparent),
+      color-mix(in oklab, hsl(var(--critical-soft-bg)) 28%, transparent)
+    );
+}
+
+.app-critical-title {
+  color: hsl(var(--critical-soft-text));
+}
+
+.app-critical-alert {
+  border-color: color-mix(in oklab, hsl(var(--critical-soft-border)) 62%, transparent);
+  background: color-mix(in oklab, hsl(var(--critical-soft-bg)) 72%, transparent);
+  color: hsl(var(--critical-soft-text));
+}
+
+.app-critical-badge {
+  border-color: color-mix(in oklab, hsl(var(--critical-soft-border)) 62%, transparent);
+  background: color-mix(in oklab, hsl(var(--critical-soft-bg)) 68%, transparent);
+  color: hsl(var(--critical-soft-text));
+}
+
+.app-critical-action {
+  border-color: color-mix(in oklab, hsl(var(--critical-solid)) 78%, transparent);
+  background: hsl(var(--critical-solid));
+  color: hsl(var(--critical-foreground));
+  box-shadow: 0 10px 24px color-mix(in oklab, hsl(var(--critical-solid)) 28%, transparent);
+}
+
+.app-critical-action:hover {
+  background: color-mix(in oklab, hsl(var(--critical-solid)) 92%, black);
+}
+
+.app-critical-action-outline {
+  border-color: color-mix(in oklab, hsl(var(--critical-soft-border)) 68%, transparent);
+  background: color-mix(in oklab, hsl(var(--critical-soft-bg)) 64%, transparent);
+  color: hsl(var(--critical-soft-text));
+}
+
+.app-critical-action-outline:hover {
+  background: color-mix(in oklab, hsl(var(--critical-soft-bg)) 84%, transparent);
 }
 
 @layer base {
@@ -570,20 +628,22 @@ md-ripple.morphy-md-ripple {
 }
 
 /* Shared masked glass for top/bottom app chrome. */
-.bar-glass,
-.top-bar-glass,
-.bottom-bar-glass {
+.bar-glass {
   background-color: color-mix(in oklch, lab(100 0 0 / 0.72) 26%, transparent);
   -webkit-backdrop-filter: blur(3px);
   backdrop-filter: blur(3px);
   transform: translate3d(0, 0, 0);
   will-change: transform;
+  backface-visibility: hidden;
+  contain: paint;
+  overflow: clip;
   mask-size: 100% 100%;
   -webkit-mask-size: 100% 100%;
+  mask-repeat: no-repeat;
+  -webkit-mask-repeat: no-repeat;
 }
 
-.bar-glass-top,
-.top-bar-glass {
+.bar-glass-top {
   mask-image: linear-gradient(
     to bottom,
     black 0%,
@@ -604,8 +664,7 @@ md-ripple.morphy-md-ripple {
   );
 }
 
-.bar-glass-bottom,
-.bottom-bar-glass {
+.bar-glass-bottom {
   mask-image: linear-gradient(
     to top,
     black 0%,
@@ -626,9 +685,7 @@ md-ripple.morphy-md-ripple {
   );
 }
 
-.dark .bar-glass,
-.dark .top-bar-glass,
-.dark .bottom-bar-glass {
+.dark .bar-glass {
   background-color: color-mix(in oklch, lab(0 0 0 / 0.72) 46%, transparent);
 }
 

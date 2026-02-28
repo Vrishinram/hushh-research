@@ -28,6 +28,8 @@ import {
   AppBackgroundTaskService,
   type AppBackgroundTask,
 } from "@/lib/services/app-background-task-service";
+import { ApiService } from "@/lib/services/api-service";
+import { getSessionItem, removeSessionItem } from "@/lib/utils/session-storage";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { useVault } from "@/lib/vault/vault-context";
 
@@ -73,6 +75,14 @@ interface DebateTaskCenterProps {
 
 const DEFAULT_TRIGGER_CLASSNAME =
   "relative grid h-10 w-10 place-items-center rounded-full border border-border/60 bg-background/70 shadow-sm backdrop-blur-sm transition-colors hover:bg-muted/50 active:bg-muted/80";
+const IMPORT_BACKGROUND_SNAPSHOT_KEY = "kai_portfolio_import_background_v1";
+
+interface ImportBackgroundSnapshot {
+  taskId?: string | null;
+  runId?: string | null;
+  status?: string;
+  userId?: string;
+}
 
 export function DebateTaskCenter({ triggerClassName }: DebateTaskCenterProps = {}) {
   const router = useRouter();
@@ -139,6 +149,36 @@ export function DebateTaskCenter({ triggerClassName }: DebateTaskCenterProps = {
     } finally {
       setIsBusy((prev) => ({ ...prev, [taskId]: false }));
     }
+  };
+
+  const readImportSnapshot = (): ImportBackgroundSnapshot | null => {
+    const raw = getSessionItem(IMPORT_BACKGROUND_SNAPSHOT_KEY);
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw) as ImportBackgroundSnapshot;
+    } catch {
+      return null;
+    }
+  };
+
+  const cancelPortfolioImportTask = async (task: AppBackgroundTask) => {
+    const snapshot = readImportSnapshot();
+    if (
+      snapshot &&
+      snapshot.userId === task.userId &&
+      snapshot.taskId === task.taskId &&
+      typeof snapshot.runId === "string" &&
+      snapshot.runId.trim().length > 0 &&
+      vaultOwnerToken
+    ) {
+      await ApiService.cancelPortfolioImportRun({
+        runId: snapshot.runId.trim(),
+        userId: task.userId,
+        vaultOwnerToken,
+      });
+    }
+    removeSessionItem(IMPORT_BACKGROUND_SNAPSHOT_KEY);
+    AppBackgroundTaskService.dismissTask(task.taskId);
   };
 
   if (!userId) return null;
@@ -301,6 +341,23 @@ export function DebateTaskCenter({ triggerClassName }: DebateTaskCenterProps = {
                           aria-label="Open related screen"
                         >
                           <Icon icon={ExternalLink} size="xs" />
+                        </Button>
+                      ) : null}
+                      {task.status === "running" && task.kind === "portfolio_import_stream" ? (
+                        <Button
+                          variant="none"
+                          effect="fade"
+                          size="icon"
+                          className="h-8 w-8"
+                          disabled={!vaultOwnerToken || Boolean(isBusy[task.taskId])}
+                          onClick={() =>
+                            runAction(task.taskId, async () => {
+                              await cancelPortfolioImportTask(task);
+                            })
+                          }
+                          aria-label="Cancel import"
+                        >
+                          <Icon icon={X} size="xs" />
                         </Button>
                       ) : null}
                       {task.status !== "running" ? (

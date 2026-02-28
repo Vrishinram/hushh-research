@@ -333,11 +333,23 @@ function normalizeRawStreamLine(input: string): string {
     .replace(/\s+/g, " ")
     .trim();
   if (!stripped) return "";
+  const looksStructuredPayload =
+    /^\s*[\[{]/.test(stripped) ||
+    /"[^"]+"\s*:/.test(stripped) ||
+    /(?:portfolio_data_v2|raw_extract_v2|analytics_v2|quality_report_v2|holdings_preview|progress_pct|chunk_count|total_chars|run_id|cursor|seq)\b/i.test(
+      stripped
+    );
   const tagged = stripped.match(/^\[([^\]]+)\]\s*(.*)$/);
   if (tagged) {
     const tag = (tagged[1] || "").trim();
-    const message = toInvestorStreamText((tagged[2] || "").trim());
+    const cleaned = (tagged[2] || "").trim();
+    const message = looksStructuredPayload
+      ? "Analyzing statement details..."
+      : toInvestorStreamText(cleaned);
     return message ? `[${tag}] ${message}` : `[${tag}]`;
+  }
+  if (looksStructuredPayload) {
+    return "Analyzing statement details...";
   }
   return toInvestorStreamText(stripped);
 }
@@ -409,6 +421,14 @@ function dedupeLiveHoldingPreviewRows(rows: LiveHoldingPreview[]): LiveHoldingPr
     });
   }
   return unique;
+}
+
+function mergeLiveHoldingPreviewRows(
+  current: LiveHoldingPreview[],
+  incoming: LiveHoldingPreview[]
+): LiveHoldingPreview[] {
+  if (!incoming.length) return current;
+  return dedupeLiveHoldingPreviewRows([...current, ...incoming]);
 }
 
 function normalizePortfolioData(backendData: Record<string, unknown>): ReviewPortfolioData {
@@ -715,23 +735,6 @@ export function KaiFlow({
       typeof value === "number" && Number.isFinite(value) ? value : undefined;
     const readString = (value: unknown): string | undefined =>
       typeof value === "string" && value.trim().length > 0 ? value : undefined;
-    const readHoldingsPreview = (value: unknown): LiveHoldingPreview[] | undefined => {
-      if (!Array.isArray(value)) return undefined;
-      const preview: LiveHoldingPreview[] = [];
-      for (const row of value) {
-        if (!row || typeof row !== "object" || Array.isArray(row)) continue;
-        const item = row as Record<string, unknown>;
-        preview.push({
-          symbol: typeof item.symbol === "string" ? item.symbol : undefined,
-          name: typeof item.name === "string" ? item.name : undefined,
-          market_value: readNumber(item.market_value),
-          quantity: readNumber(item.quantity),
-          asset_type: typeof item.asset_type === "string" ? item.asset_type : undefined,
-        });
-      }
-      return dedupeLiveHoldingPreviewRows(preview);
-    };
-
     let snapshot = initialSnapshot;
     let streamShadow: StreamingState = snapshot.streaming;
     const persistSnapshot = (
@@ -866,7 +869,6 @@ export function KaiFlow({
                 break;
               }
               case "progress": {
-                const preview = readHoldingsPreview(payload.holdings_preview);
                 const statusMessage = sanitizeInvestorCopy(readString(payload.message), "");
                 applyStreaming((prev) => ({
                   ...prev,
@@ -875,7 +877,6 @@ export function KaiFlow({
                   holdingsExtracted:
                     readNumber(payload.holdings_extracted) ?? prev.holdingsExtracted,
                   holdingsTotal: readNumber(payload.holdings_total) ?? prev.holdingsTotal,
-                  liveHoldings: preview && preview.length > 0 ? preview : prev.liveHoldings,
                 }));
                 break;
               }
@@ -1801,12 +1802,29 @@ export function KaiFlow({
           for (const row of value) {
             if (!row || typeof row !== "object" || Array.isArray(row)) continue;
             const item = row as Record<string, unknown>;
-            preview.push({
-              symbol: typeof item.symbol === "string" ? item.symbol : undefined,
+            const symbol = normalizeTickerSymbol(item.symbol, {
               name: typeof item.name === "string" ? item.name : undefined,
-              market_value: readNumber(item.market_value),
-              quantity: readNumber(item.quantity),
-              asset_type: typeof item.asset_type === "string" ? item.asset_type : undefined,
+              assetType: typeof item.asset_type === "string" ? item.asset_type : undefined,
+            });
+            const name =
+              typeof item.name === "string" && item.name.trim().length > 0
+                ? item.name.trim()
+                : undefined;
+            const marketValue = readNumber(item.market_value);
+            const quantity = readNumber(item.quantity);
+            const assetType =
+              typeof item.asset_type === "string" && item.asset_type.trim().length > 0
+                ? item.asset_type.trim()
+                : undefined;
+            // Confirmed preview rows must have a stable symbol and at least one meaningful field.
+            if (!symbol) continue;
+            if (marketValue === undefined && quantity === undefined && !name && !assetType) continue;
+            preview.push({
+              symbol,
+              name,
+              market_value: marketValue,
+              quantity,
+              asset_type: assetType,
             });
           }
           return dedupeLiveHoldingPreviewRows(preview);
@@ -2020,9 +2038,9 @@ export function KaiFlow({
                 break;
               }
               case "progress": {
-                const preview = readHoldingsPreview(payload.holdings_preview);
                 const phase = readString(payload.phase);
                 const message = sanitizeInvestorCopy(readString(payload.message), "");
+                const preview = readHoldingsPreview(payload.holdings_preview) ?? [];
                 applyStreaming((prev) => ({
                   ...prev,
                   stageTrail: appendTrailLine(
@@ -2046,7 +2064,7 @@ export function KaiFlow({
                   holdingsExtracted:
                     readNumber(payload.holdings_extracted) ?? prev.holdingsExtracted,
                   holdingsTotal: readNumber(payload.holdings_total) ?? prev.holdingsTotal,
-                  liveHoldings: preview && preview.length > 0 ? preview : prev.liveHoldings,
+                  liveHoldings: mergeLiveHoldingPreviewRows(prev.liveHoldings, preview),
                 }));
                 break;
               }

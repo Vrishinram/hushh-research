@@ -1223,7 +1223,7 @@ export function DashboardMasterView({
   );
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-8 overflow-x-hidden px-5 pb-[calc(160px+var(--app-bottom-inset))] pt-[var(--kai-view-top-gap,16px)] sm:px-8">
+    <div className="mx-auto w-full max-w-5xl space-y-8 overflow-x-hidden px-5 pb-6 pt-[var(--kai-view-top-gap,16px)] sm:px-8">
       <Card
         variant="muted"
         effect="fill"

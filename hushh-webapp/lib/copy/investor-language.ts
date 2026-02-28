@@ -144,6 +144,17 @@ const STREAM_TECHNICAL_SUBSTITUTIONS: Array<{ pattern: RegExp; replacement: stri
   { pattern: /\b429\b/gi, replacement: "temporary capacity limit" },
   { pattern: /\btoo many requests\b/gi, replacement: "capacity limit reached" },
   { pattern: /\bresource exhausted\b/gi, replacement: "service capacity temporarily unavailable" },
+  { pattern: /\bportfolio_data_v2\b/gi, replacement: "portfolio details" },
+  { pattern: /\braw_extract_v2\b/gi, replacement: "statement details" },
+  { pattern: /\banalytics_v2\b/gi, replacement: "analysis details" },
+  { pattern: /\bquality_report_v2\b/gi, replacement: "quality check" },
+  { pattern: /\bholdings_preview\b/gi, replacement: "confirmed holdings" },
+  { pattern: /\bprogress_pct\b/gi, replacement: "progress" },
+  { pattern: /\bchunk_count\b/gi, replacement: "update count" },
+  { pattern: /\btotal_chars\b/gi, replacement: "response size" },
+  { pattern: /\brun_id\b/gi, replacement: "session id" },
+  { pattern: /\bcursor\b/gi, replacement: "position" },
+  { pattern: /\bseq\b/gi, replacement: "step" },
   { pattern: /https?:\/\/[^\s)]+/gi, replacement: "" },
 ];
 
@@ -159,6 +170,9 @@ export function toInvestorStreamText(value: unknown): string {
     .replace(/&#39;/gi, "'");
   // Remove XML/HTML-ish wrappers that leak from streamed model output.
   next = next.replace(/<\/?[\w:-]+(?:\s[^>]*)?>/g, " ");
+  if (/^\s*[\[{]/.test(next) || /"[^"]+"\s*:/.test(next)) {
+    return "Analyzing statement details...";
+  }
   for (const rule of STREAM_TECHNICAL_SUBSTITUTIONS) {
     next = next.replace(rule.pattern, rule.replacement);
   }
