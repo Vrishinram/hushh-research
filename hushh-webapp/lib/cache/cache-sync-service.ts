@@ -126,6 +126,8 @@ export class CacheSyncService {
         iv: string;
         tag: string;
         algorithm?: string;
+        dataVersion?: number;
+        updatedAt?: string;
       };
       domainSummary?: DomainSummaryPatch;
       metadataTimestamp?: string;
@@ -134,19 +136,22 @@ export class CacheSyncService {
   ): void {
     const cache = CacheService.getInstance();
     const writeThroughMetadata = options?.writeThroughMetadata !== false;
+    cache.invalidate(CACHE_KEYS.WORLD_MODEL_DECRYPTED_BLOB(userId));
 
-    if (domain === "financial" && options?.portfolioData) {
-      cache.set(CACHE_KEYS.PORTFOLIO_DATA(userId), options.portfolioData, CACHE_TTL.SESSION);
-      cache.set(
-        CACHE_KEYS.DOMAIN_DATA(userId, "financial"),
-        options.portfolioData,
-        CACHE_TTL.SESSION
-      );
+    if (domain === "financial") {
+      if (options?.portfolioData) {
+        cache.set(CACHE_KEYS.PORTFOLIO_DATA(userId), options.portfolioData, CACHE_TTL.SESSION);
+        cache.set(
+          CACHE_KEYS.DOMAIN_DATA(userId, "financial"),
+          options.portfolioData,
+          CACHE_TTL.SESSION
+        );
+      }
+      // IMPORTANT: Preserve existing financial portfolio cache on profile-only
+      // writes (e.g. onboarding/nav-tour sync). Invalidating here causes
+      // transient "import portfolio" gating despite a successful save.
     } else {
       cache.invalidate(CACHE_KEYS.DOMAIN_DATA(userId, domain));
-      if (domain === "financial") {
-        cache.invalidate(CACHE_KEYS.PORTFOLIO_DATA(userId));
-      }
     }
 
     if (options?.encryptedBlob) {
@@ -184,6 +189,7 @@ export class CacheSyncService {
     cache.invalidate(CACHE_KEYS.DOMAIN_DATA(userId, domain));
     cache.invalidate(CACHE_KEYS.ENCRYPTED_DOMAIN_BLOB(userId, domain));
     cache.invalidate(CACHE_KEYS.WORLD_MODEL_BLOB(userId));
+    cache.invalidate(CACHE_KEYS.WORLD_MODEL_DECRYPTED_BLOB(userId));
     cache.invalidate(CACHE_KEYS.WORLD_MODEL_METADATA(userId));
     if (domain === "financial") {
       cache.invalidate(CACHE_KEYS.PORTFOLIO_DATA(userId));
@@ -242,6 +248,7 @@ export class CacheSyncService {
       cache.invalidate(CACHE_KEYS.ANALYSIS_HISTORY(userId));
     }
     cache.invalidate(CACHE_KEYS.WORLD_MODEL_BLOB(userId));
+    cache.invalidate(CACHE_KEYS.WORLD_MODEL_DECRYPTED_BLOB(userId));
     cache.invalidate(CACHE_KEYS.ENCRYPTED_DOMAIN_BLOB(userId, "financial"));
     cache.invalidate(CACHE_KEYS.DOMAIN_DATA(userId, "financial"));
     cache.invalidate(CACHE_KEYS.WORLD_MODEL_METADATA(userId));

@@ -48,6 +48,7 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import { Icon } from "@/lib/morphy-ux/ui";
+import { toInvestorDecisionLabel } from "@/lib/copy/investor-language";
 
 // ============================================================================
 // Types
@@ -234,22 +235,18 @@ function SourceLink({ source }: { source: string }) {
   );
 }
 
-function getDecisionPresentation(decision: string): {
-  label: string;
-  tone: "positive" | "negative" | "neutral";
-} {
-  const normalized = String(decision || "").trim().toLowerCase();
-  if (normalized === "buy") return { label: "BUY", tone: "positive" };
-  if (normalized === "sell" || normalized === "reduce") {
-    return { label: "REDUCE", tone: "negative" };
+function inferOwnedPosition(result: DecisionResult): boolean | null {
+  const rawCard = result.raw_card;
+  if (!rawCard || typeof rawCard !== "object") return null;
+  const candidateFlags = [
+    (rawCard as Record<string, unknown>).owns_position,
+    (rawCard as Record<string, unknown>).is_position_owned,
+    (rawCard as Record<string, unknown>).in_portfolio,
+  ];
+  for (const value of candidateFlags) {
+    if (typeof value === "boolean") return value;
   }
-  if (normalized === "hold") {
-    return { label: "HOLD / WATCH", tone: "neutral" };
-  }
-  return {
-    label: String(decision || "HOLD / WATCH").trim().toUpperCase(),
-    tone: "neutral",
-  };
+  return null;
 }
 
 // ============================================================================
@@ -706,9 +703,10 @@ function RenaissanceBadge({ tier, score }: { tier: "ACE" | "KING" | "QUEEN" | "J
 // ============================================================================
 
 export function DecisionCard({ result }: { result: DecisionResult }) {
+  const ownsPosition = useMemo(() => inferOwnedPosition(result), [result]);
   const decisionPresentation = useMemo(
-    () => getDecisionPresentation(result.decision),
-    [result.decision]
+    () => toInvestorDecisionLabel(result.decision, ownsPosition),
+    [ownsPosition, result.decision]
   );
   const isBuy = decisionPresentation.tone === "positive";
   const isReduce = decisionPresentation.tone === "negative";
@@ -746,7 +744,7 @@ export function DecisionCard({ result }: { result: DecisionResult }) {
   ).length > 0;
 
   // Fallback for empty/missing decision to prevent layout shift
-  const safeDecision = decisionPresentation.label || "HOLD / WATCH";
+  const safeDecision = decisionPresentation.label || "REVIEW";
   const safeConfidence = result.confidence || 0;
   const llmSynthesis = rawCard?.llm_synthesis;
   const synthesisDrivers = (llmSynthesis?.key_drivers || []).filter(Boolean).slice(0, 6);

@@ -16,6 +16,7 @@ import { MoreHorizontal, ArrowRight, Trash2, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format, isValid, parseISO } from "date-fns";
 import { Icon } from "@/lib/morphy-ux/ui";
+import { toInvestorDecisionLabel } from "@/lib/copy/investor-language";
 
 // Extended type to include version number computed at runtime
 export type HistoryEntryWithVersion = AnalysisHistoryEntry & {
@@ -140,23 +141,35 @@ export const getColumns = ({
     accessorKey: "decision",
     header: "Decision",
     cell: ({ row }) => {
-      const decisionValue =
-        typeof row.original.decision === "string" && row.original.decision.trim().length > 0
-          ? row.original.decision.trim().toLowerCase()
-          : "unknown";
+      const rawCard =
+        row.original.raw_card && typeof row.original.raw_card === "object"
+          ? (row.original.raw_card as Record<string, unknown>)
+          : null;
+      const ownsPosition =
+        typeof rawCard?.owns_position === "boolean"
+          ? rawCard.owns_position
+          : typeof rawCard?.is_position_owned === "boolean"
+            ? rawCard.is_position_owned
+            : null;
+      const decisionPresentation = toInvestorDecisionLabel(
+        row.original.decision,
+        ownsPosition
+      );
       let colorClass = "bg-muted text-muted-foreground border-border";
       
-      if (decisionValue === "buy") {
+      if (decisionPresentation.tone === "positive") {
         colorClass = "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30";
-      } else if (decisionValue === "sell" || decisionValue === "reduce") {
+      } else if (decisionPresentation.tone === "negative") {
         colorClass = "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/30";
-      } else if (decisionValue === "hold") {
+      } else if (decisionPresentation.label === "HOLD") {
         colorClass = "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30";
+      } else if (decisionPresentation.label === "WATCH") {
+        colorClass = "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30";
       }
 
       return (
-        <Badge variant="outline" className={cn("capitalize font-bold", colorClass)}>
-          {decisionValue === "unknown" ? "n/a" : decisionValue}
+        <Badge variant="outline" className={cn("font-bold", colorClass)}>
+          {decisionPresentation.label}
         </Badge>
       );
     },

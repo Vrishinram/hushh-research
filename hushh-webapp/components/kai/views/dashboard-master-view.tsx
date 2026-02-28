@@ -381,7 +381,7 @@ export function DashboardMasterView({
     let cancelled = false;
     void (async () => {
       try {
-        const rows = await preloadTickerUniverse({ forceRefresh: true });
+        const rows = await preloadTickerUniverse();
         if (cancelled) return;
         const map = new Map<string, { sector?: string; industry?: string }>();
         for (const row of rows) {
@@ -770,7 +770,7 @@ export function DashboardMasterView({
 
   const persistHoldingsChanges = useCallback(async () => {
     if (!userId || !vaultKey) {
-      toast.error("Unlock your vault to save holdings.");
+      toast.error("Unlock your Vault to save holdings.");
       return;
     }
 
@@ -897,7 +897,7 @@ export function DashboardMasterView({
       toast.success("Holdings updated");
     } catch (error) {
       console.error("[DashboardMasterView] Failed to save holdings:", error);
-      toast.error("Failed to save holdings");
+      toast.error("We could not save your holdings. Please try again.");
     } finally {
       setIsSavingHoldings(false);
     }
@@ -905,7 +905,7 @@ export function DashboardMasterView({
 
   const handleDeleteImportedData = useCallback(async () => {
     if (!userId || !vaultKey) {
-      toast.error("Unlock your vault to delete imported data.");
+      toast.error("Unlock your Vault to delete imported data.");
       return;
     }
 
@@ -1052,7 +1052,7 @@ export function DashboardMasterView({
       }
     } catch (error) {
       console.error("[DashboardMasterView] Failed to delete imported data:", error);
-      toast.error("Failed to delete imported data");
+      toast.error("We could not delete imported data. Please try again.");
     } finally {
       setIsDeletingImportedData(false);
     }
@@ -1249,7 +1249,7 @@ export function DashboardMasterView({
   );
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-8 overflow-x-hidden px-5 pb-[calc(160px+var(--app-bottom-inset))] pt-[var(--kai-view-top-gap,16px)] sm:px-8">
+    <div className="mx-auto w-full max-w-5xl space-y-8 overflow-x-hidden px-5 pb-6 pt-[var(--kai-view-top-gap,16px)] sm:px-8">
       <Card
         variant="muted"
         effect="fill"
@@ -1715,7 +1715,7 @@ export function DashboardMasterView({
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Imported Portfolio Data?</AlertDialogTitle>
             <AlertDialogDescription>
-              This removes the imported holdings and statement snapshots from your vault. Profile
+              This removes imported holdings and statement snapshots from your Vault. Profile
               and consent data are kept.
             </AlertDialogDescription>
           </AlertDialogHeader>

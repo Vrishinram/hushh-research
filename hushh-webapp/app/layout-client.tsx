@@ -1,7 +1,6 @@
 "use client";
 
 import { ReactNode } from "react";
-import { useStatusBar } from "@/lib/hooks/use-status-bar";
 import { Providers } from "./providers";
 
 interface RootLayoutClientProps {
@@ -23,8 +22,6 @@ export function RootLayoutClient({
   children,
   fontClasses,
 }: RootLayoutClientProps) {
-  useStatusBar();
-
   return (
     <body
       suppressHydrationWarning

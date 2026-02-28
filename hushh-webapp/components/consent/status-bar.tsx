@@ -83,8 +83,8 @@ export function ConsentStatusBar({ className = "" }: ConsentStatusBarProps) {
     >
       {/* Session Status Badge */}
       <Badge
-        variant={session.isActive ? "default" : "destructive"}
-        className="flex items-center gap-1.5 text-xs"
+        variant={session.isActive ? "default" : "outline"}
+        className={`flex items-center gap-1.5 text-xs ${session.isActive ? "" : "app-critical-badge"}`}
       >
         <Icon icon={Shield} size={12} />
         <span className="hidden sm:inline">

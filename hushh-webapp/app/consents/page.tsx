@@ -1032,8 +1032,8 @@ export default function ConsentsPage() {
             Pending
             {pending.length > 0 && (
               <Badge
-                variant="destructive"
-                className="ml-1 h-5 w-5 p-0 flex items-center justify-center text-xs"
+                variant="outline"
+                className="app-critical-badge ml-1 h-5 w-5 p-0 flex items-center justify-center text-xs"
               >
                 {pending.length}
               </Badge>
@@ -1127,7 +1127,7 @@ export default function ConsentsPage() {
                     <Button
                       onClick={() => handleDeny(request.id)}
                       variant="none"
-                      className="flex-1 border border-destructive text-destructive hover:bg-destructive/10"
+                      className="app-critical-action-outline flex-1"
                       disabled={actionLoading === request.id}
                     >
                       <Icon icon={X} size="sm" className="mr-2" />
@@ -1196,7 +1196,7 @@ export default function ConsentsPage() {
                   variant="none"
                   onClick={() => handleRevoke(ownerScope)}
                   disabled={actionLoading === `revoke-${ownerScope}`}
-                  className="w-full border border-destructive text-destructive hover:bg-destructive/10 cursor-pointer"
+                  className="app-critical-action-outline w-full cursor-pointer"
                 >
                   <Icon icon={Ban} size="sm" className="mr-2" />
                   {actionLoading === `revoke-${ownerScope}`
@@ -1278,7 +1278,7 @@ export default function ConsentsPage() {
                         variant="none"
                         onClick={() => handleRevoke(consent.scope)}
                         disabled={actionLoading === `revoke-${consent.scope}`}
-                        className="w-full border border-destructive text-destructive hover:bg-destructive/10 cursor-pointer"
+                        className="app-critical-action-outline w-full cursor-pointer"
                       >
                         <Icon icon={Ban} size="sm" className="mr-2" />
                         {actionLoading === `revoke-${consent.scope}`

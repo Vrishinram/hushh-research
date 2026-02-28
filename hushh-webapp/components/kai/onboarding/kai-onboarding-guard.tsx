@@ -4,9 +4,11 @@ import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
 import { HushhLoader } from "@/components/app-ui/hushh-loader";
+import { Button } from "@/lib/morphy-ux/button";
 import { KaiProfileService } from "@/lib/services/kai-profile-service";
 import { KaiProfileSyncService } from "@/lib/services/kai-profile-sync-service";
 import { PreVaultOnboardingService } from "@/lib/services/pre-vault-onboarding-service";
+import { PreVaultUserStateService } from "@/lib/services/pre-vault-user-state-service";
 import { VaultService } from "@/lib/services/vault-service";
 import { useAuth } from "@/hooks/use-auth";
 import { useVault } from "@/lib/vault/vault-context";
@@ -25,6 +27,8 @@ export function KaiOnboardingGuard({ children }: { children: React.ReactNode }) 
   const { vaultKey, vaultOwnerToken, isVaultUnlocked } = useVault();
 
   const [checking, setChecking] = useState(true);
+  const [guardError, setGuardError] = useState<string | null>(null);
+  const [retryNonce, setRetryNonce] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -42,14 +46,46 @@ export function KaiOnboardingGuard({ children }: { children: React.ReactNode }) 
       }
 
       try {
+        setGuardError(null);
         const hasVault = await VaultService.checkVault(user.uid);
         if (cancelled) return;
 
         if (!hasVault) {
-          const pending = await PreVaultOnboardingService.load(user.uid);
+          const remoteState = await PreVaultUserStateService.bootstrapState(user.uid);
           if (cancelled) return;
 
-          const onboardingIncomplete = !pending?.completed;
+          let onboardingIncomplete = !PreVaultUserStateService.isOnboardingResolved(remoteState);
+          if (onboardingIncomplete) {
+            const remoteUnset =
+              remoteState.preOnboardingCompleted === null &&
+              remoteState.preOnboardingSkipped === null &&
+              remoteState.preOnboardingCompletedAt === null;
+            if (remoteUnset) {
+              const pending = await PreVaultOnboardingService.load(user.uid).catch(
+                () => null
+              );
+              if (cancelled) return;
+              if (pending?.completed) {
+                const completedAtMs =
+                  pending.completed_at && !Number.isNaN(Date.parse(pending.completed_at))
+                    ? Date.parse(pending.completed_at)
+                    : Date.now();
+                try {
+                  await PreVaultUserStateService.updatePreVaultState(user.uid, {
+                    preOnboardingCompleted: true,
+                    preOnboardingSkipped: pending.skipped,
+                    preOnboardingCompletedAt: completedAtMs,
+                  });
+                  onboardingIncomplete = false;
+                } catch (bridgeError) {
+                  console.warn(
+                    "[KaiOnboardingGuard] Failed local->remote pre-vault bridge:",
+                    bridgeError
+                  );
+                }
+              }
+            }
+          }
           setOnboardingRequiredCookie(onboardingIncomplete);
 
           if (onboardingIncomplete && !onOnboardingRoute) {
@@ -129,7 +165,9 @@ export function KaiOnboardingGuard({ children }: { children: React.ReactNode }) 
         }
       } catch (error) {
         console.warn("[KaiOnboardingGuard] Failed to check onboarding state:", error);
-        // Fail open (don't block access) if the world-model read fails.
+        if (!cancelled) {
+          setGuardError("Unable to load onboarding state. Please retry.");
+        }
       } finally {
         if (!cancelled) setChecking(false);
       }
@@ -149,10 +187,31 @@ export function KaiOnboardingGuard({ children }: { children: React.ReactNode }) 
     vaultOwnerToken,
     pathname,
     router,
+    retryNonce,
   ]);
 
   if (checking) {
     return <HushhLoader label="Loading Kai..." />;
+  }
+
+  if (guardError) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center px-4">
+        <div className="w-full max-w-sm rounded-xl border border-border bg-card/70 p-4 text-center">
+          <p className="text-sm text-foreground">{guardError}</p>
+          <Button
+            size="sm"
+            className="mt-3"
+            onClick={() => {
+              setChecking(true);
+              setRetryNonce((value) => value + 1);
+            }}
+          >
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
   }
 
   return <>{children}</>;

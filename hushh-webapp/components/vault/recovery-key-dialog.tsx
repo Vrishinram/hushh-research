@@ -64,7 +64,7 @@ export function RecoveryKeyDialog({
         </DialogHeader>
 
         <div className="space-y-4 py-4">
-          <Alert variant="destructive">
+          <Alert className="app-critical-alert">
             <Icon icon={AlertTriangle} size="sm" />
             <AlertDescription>
               <strong>Warning:</strong> This recovery key will only be shown once. 

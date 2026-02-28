@@ -7,11 +7,14 @@ import {
   KaiHistoryService,
   type AnalysisHistoryEntry,
 } from "@/lib/services/kai-history-service";
+import { AppBackgroundTaskService } from "@/lib/services/app-background-task-service";
 import { getSessionItem, setSessionItem } from "@/lib/utils/session-storage";
 
 const RUN_MANAGER_STORAGE_KEY = "kai_debate_run_manager_v1";
 const RUN_MANAGER_SESSION_KEY = "kai_debate_session_id_v1";
 const RETRY_DELAYS_MS = [750, 2000, 4500];
+const FINANCIAL_WRITE_WAIT_TIMEOUT_MS = 20_000;
+const FINANCIAL_WRITE_POLL_MS = 400;
 
 export type DebateRunStatus = "running" | "completed" | "failed" | "canceled";
 export type DebateTaskPersistenceState = "none" | "pending" | "saved" | "failed";
@@ -463,6 +466,39 @@ class DebateRunManager {
     return active[0] || null;
   }
 
+  private markMissingActiveRun(userId: string): void {
+    const staleRunning = Array.from(this.tasks.values()).filter(
+      (task) => task.userId === userId && task.status === "running" && !task.dismissedAt
+    );
+    for (const stale of staleRunning) {
+      this.upsertTask({
+        ...stale,
+        status: "failed",
+        completedAt: stale.completedAt || nowIso(),
+        updatedAt: nowIso(),
+        persistenceError: stale.persistenceError || "Active debate run is no longer available.",
+      });
+    }
+  }
+
+  private async waitForFinancialWritesToSettle(userId: string): Promise<void> {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < FINANCIAL_WRITE_WAIT_TIMEOUT_MS) {
+      const portfolioSaveRunning = AppBackgroundTaskService.hasRunningTask(
+        userId,
+        "portfolio_save"
+      );
+      const profileSyncRunning = AppBackgroundTaskService.hasRunningTask(
+        userId,
+        "portfolio_postsave_sync"
+      );
+      if (!portfolioSaveRunning && !profileSyncRunning) {
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, FINANCIAL_WRITE_POLL_MS));
+    }
+  }
+
   async resumeActiveRun(params: {
     userId: string;
     vaultOwnerToken: string;
@@ -476,27 +512,16 @@ class DebateRunManager {
     });
     if (!response.ok) {
       if (response.status === 404) {
-        const staleRunning = Array.from(this.tasks.values()).filter(
-          (task) =>
-            task.userId === userId &&
-            task.status === "running" &&
-            !task.dismissedAt
-        );
-        for (const stale of staleRunning) {
-          this.upsertTask({
-            ...stale,
-            status: "failed",
-            completedAt: stale.completedAt || nowIso(),
-            updatedAt: nowIso(),
-            persistenceError: stale.persistenceError || "Active debate run is no longer available.",
-          });
-        }
+        this.markMissingActiveRun(userId);
         return null;
       }
       throw new Error(`Failed to check active run: HTTP ${response.status}`);
     }
     const payload = (await response.json()) as { run?: Record<string, unknown> };
-    if (!payload.run) return null;
+    if (!payload.run) {
+      this.markMissingActiveRun(userId);
+      return null;
+    }
     const task = this.upsertTask(this.makeTaskFromServer(payload.run));
     this.runSecrets.set(task.runId, { vaultOwnerToken, vaultKey });
     if (task.status === "running") {
@@ -762,6 +787,8 @@ class DebateRunManager {
     for (const listener of this.historyListeners) {
       listener(entry, pendingTask);
     }
+
+    await this.waitForFinancialWritesToSettle(task.userId);
 
     let success = false;
     let lastError: unknown = null;

@@ -93,6 +93,10 @@ export function ProfileBasedPicksList({
       setPicks((cached.picks || []).filter((pick) => Boolean(pick?.symbol)));
       setLoading(false);
       setError(null);
+      return () => {
+        isMounted = false;
+        controller.abort();
+      };
     }
 
     async function load() {
@@ -103,9 +107,15 @@ export function ProfileBasedPicksList({
         }
         return;
       }
-      if (!cached) {
-        setLoading(true);
+      if (normalizedSymbols.length === 0) {
+        if (isMounted) {
+          setPicks([]);
+          setLoading(false);
+          setError(null);
+        }
+        return;
       }
+      setLoading(true);
       setError(null);
       try {
         const response = await ApiService.getDashboardProfilePicks({

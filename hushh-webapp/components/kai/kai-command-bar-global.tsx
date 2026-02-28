@@ -105,9 +105,11 @@ export function KaiCommandBarGlobal() {
         );
         if (cancelled) return;
         const financialDomain = metadata.domains.find((domain) => domain.key === "financial");
-        setHasPortfolioData(
-          Boolean(financialDomain && Number(financialDomain.attributeCount || 0) > 0)
+        const hasPortfolioFromMetadata = Boolean(
+          financialDomain && Number(financialDomain.attributeCount || 0) > 0
         );
+
+        setHasPortfolioData(hasPortfolioFromMetadata);
       } catch {
         if (!cancelled) {
           setHasPortfolioData(false);
