@@ -117,6 +117,27 @@ function formatPercent(value: number): string {
   return `${value.toFixed(1)}%`;
 }
 
+function compareHoldingsByNameAsc<T extends { name?: string; symbol?: string }>(
+  left: T,
+  right: T
+): number {
+  const leftName = String(left.name || "").trim();
+  const rightName = String(right.name || "").trim();
+  const leftSymbol = String(left.symbol || "").trim();
+  const rightSymbol = String(right.symbol || "").trim();
+  const leftKey = leftName || leftSymbol;
+  const rightKey = rightName || rightSymbol;
+
+  if (!leftKey && !rightKey) return 0;
+  if (!leftKey) return 1;
+  if (!rightKey) return -1;
+
+  return leftKey.localeCompare(rightKey, undefined, {
+    sensitivity: "base",
+    numeric: true,
+  });
+}
+
 function DataQualityFallback({ title, detail }: { title: string; detail: string }) {
   return (
     <Card variant="none" effect="glass" className="h-full min-w-0 rounded-2xl">
@@ -489,16 +510,21 @@ export function DashboardMasterView({
     [model.canonicalModel.debateContext.eligibleSymbols]
   );
 
+  const sortedHoldingsDraft = useMemo(
+    () => [...holdingsDraft].sort(compareHoldingsByNameAsc),
+    [holdingsDraft]
+  );
+
   const desktopHoldingTables = useMemo(
     () => ({
-      all: holdingsDraft,
-      analyzeEligible: holdingsDraft.filter((holding) => isHoldingAnalyzeEligible(holding)),
-      nonAnalyzable: holdingsDraft.filter(
+      all: sortedHoldingsDraft,
+      analyzeEligible: sortedHoldingsDraft.filter((holding) => isHoldingAnalyzeEligible(holding)),
+      nonAnalyzable: sortedHoldingsDraft.filter(
         (holding) => !holding.is_cash_equivalent && !isHoldingAnalyzeEligible(holding)
       ),
-      cashSweep: holdingsDraft.filter((holding) => holding.is_cash_equivalent === true),
+      cashSweep: sortedHoldingsDraft.filter((holding) => holding.is_cash_equivalent === true),
     }),
-    [holdingsDraft]
+    [sortedHoldingsDraft]
   );
   const _mobileHoldingsData = useMemo(() => {
     if (mobileHoldingsTab === "analyze") return desktopHoldingTables.analyzeEligible;
