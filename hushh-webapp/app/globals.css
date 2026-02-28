@@ -432,13 +432,18 @@ html.native-ios {
 
 /* Shared critical palette (use for delete/revoke/expire sections; avoids destructive variants). */
 .app-critical-card {
-  border: 1px solid color-mix(in oklab, hsl(var(--critical-soft-border)) 55%, transparent);
+  border: 1px solid color-mix(in oklab, hsl(var(--critical-soft-border)) 55%, transparent) !important;
   background:
     linear-gradient(
       155deg,
       color-mix(in oklab, hsl(var(--critical-soft-bg)) 70%, transparent),
       color-mix(in oklab, hsl(var(--critical-soft-bg)) 28%, transparent)
-    );
+    ) !important;
+  box-shadow:
+    0 8px 26px color-mix(in oklab, hsl(var(--critical-solid)) 16%, transparent),
+    inset 0 1px 0 color-mix(in oklab, hsl(var(--critical-foreground)) 22%, transparent);
+  backdrop-filter: blur(10px) saturate(140%);
+  -webkit-backdrop-filter: blur(10px) saturate(140%);
 }
 
 .app-critical-title {
