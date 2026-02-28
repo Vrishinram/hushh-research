@@ -104,12 +104,19 @@ html body[data-scroll-locked] {
   --kai-command-bottom-gap: 12px;
   --app-screen-footer-pad: calc(8px + var(--app-bottom-inset));
   --app-top-safe-offset: 0px;
+  --app-safe-area-top-probe: 0px;
+  --app-safe-area-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --app-safe-area-top-effective: max(
+    var(--app-safe-area-top),
+    env(safe-area-max-inset-top, 0px),
+    var(--app-safe-area-top-probe)
+  );
   --app-top-bar-height: 72px;
   --kai-route-tabs-height: 36px;
   --kai-route-tabs-content-gap: 8px;
   /* Global top-shell geometry contract (consumed by providers + top-app-bar).
    * Keep these tokens defined at root so web and native share deterministic spacing. */
-  --top-inset: env(safe-area-inset-top, 0px);
+  --top-inset: var(--app-safe-area-top-effective);
   --top-bar-h: 44px;
   --top-tabs-h: var(--kai-route-tabs-height);
   --top-tabs-gap: var(--kai-route-tabs-content-gap);
