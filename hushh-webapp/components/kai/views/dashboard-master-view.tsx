@@ -360,7 +360,7 @@ export function DashboardMasterView({
     let cancelled = false;
     void (async () => {
       try {
-        const rows = await preloadTickerUniverse({ forceRefresh: true });
+        const rows = await preloadTickerUniverse();
         if (cancelled) return;
         const map = new Map<string, { sector?: string; industry?: string }>();
         for (const row of rows) {
@@ -744,7 +744,27 @@ export function DashboardMasterView({
 
   const persistHoldingsChanges = useCallback(async () => {
     if (!userId || !vaultKey) {
-      toast.error("Unlock your vault to save holdings.");
+      toast.error("Unlock your Vault to save holdings.");
+      return;
+    }
+
+    const invalidHolding = activeHoldings.find((holding) => {
+      const quantity = Number(holding.quantity);
+      const price = Number(holding.price);
+      const marketValue = Number(holding.market_value);
+      return (
+        !Number.isFinite(quantity) ||
+        !Number.isFinite(price) ||
+        !Number.isFinite(marketValue) ||
+        quantity <= 0 ||
+        price <= 0 ||
+        marketValue <= 0
+      );
+    });
+    if (invalidHolding) {
+      toast.error(
+        `Holding ${invalidHolding.symbol || invalidHolding.name || "entry"} has invalid values. Quantity, price, and market value must be greater than 0.`
+      );
       return;
     }
 
@@ -851,7 +871,7 @@ export function DashboardMasterView({
       toast.success("Holdings updated");
     } catch (error) {
       console.error("[DashboardMasterView] Failed to save holdings:", error);
-      toast.error("Failed to save holdings");
+      toast.error("We could not save your holdings. Please try again.");
     } finally {
       setIsSavingHoldings(false);
     }
@@ -859,7 +879,7 @@ export function DashboardMasterView({
 
   const handleDeleteImportedData = useCallback(async () => {
     if (!userId || !vaultKey) {
-      toast.error("Unlock your vault to delete imported data.");
+      toast.error("Unlock your Vault to delete imported data.");
       return;
     }
 
@@ -1006,7 +1026,7 @@ export function DashboardMasterView({
       }
     } catch (error) {
       console.error("[DashboardMasterView] Failed to delete imported data:", error);
-      toast.error("Failed to delete imported data");
+      toast.error("We could not delete imported data. Please try again.");
     } finally {
       setIsDeletingImportedData(false);
     }
@@ -1029,6 +1049,29 @@ export function DashboardMasterView({
 
   const handleSaveHolding = useCallback(
     (updatedHolding: PortfolioHolding) => {
+      const quantity = Number(updatedHolding.quantity);
+      const price = Number(updatedHolding.price);
+      const marketValue = Number(updatedHolding.market_value);
+
+      if (
+        !Number.isFinite(quantity) ||
+        !Number.isFinite(price) ||
+        !Number.isFinite(marketValue) ||
+        quantity <= 0 ||
+        price <= 0 ||
+        marketValue <= 0
+      ) {
+        toast.error("Quantity, price, and market value must all be greater than 0.");
+        return;
+      }
+
+      const normalizedHolding: PortfolioHolding = {
+        ...updatedHolding,
+        quantity,
+        price,
+        market_value: marketValue,
+      };
+
       setHoldingsDraft((prev) => {
         const next = [...prev];
         const targetIndex = editingHoldingId
@@ -1040,14 +1083,14 @@ export function DashboardMasterView({
           if (!existing) return next;
           next[targetIndex] = {
             ...existing,
-            ...updatedHolding,
+            ...normalizedHolding,
             pending_delete: false,
             client_id: existing.client_id,
             source_key: existing.source_key,
           };
         } else {
           next.push({
-            ...updatedHolding,
+            ...normalizedHolding,
             pending_delete: false,
             client_id: createLocalHoldingId(),
           });
@@ -1180,7 +1223,7 @@ export function DashboardMasterView({
   );
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-8 overflow-x-hidden px-5 pb-[calc(160px+var(--app-bottom-inset))] pt-[var(--kai-view-top-gap,16px)] sm:px-8">
+    <div className="mx-auto w-full max-w-5xl space-y-8 overflow-x-hidden px-5 pb-6 pt-[var(--kai-view-top-gap,16px)] sm:px-8">
       <Card
         variant="muted"
         effect="fill"
@@ -1417,6 +1460,7 @@ export function DashboardMasterView({
               <DataTable
                 columns={holdingsTableColumns}
                 data={desktopHoldingTables.all}
+                globalSearchKeys={["symbol", "name"]}
                 searchPlaceholder="Search holdings by symbol or name..."
                 initialPageSize={5}
                 pageSizeOptions={[5, 10, 20]}
@@ -1434,6 +1478,7 @@ export function DashboardMasterView({
               <DataTable
                 columns={holdingsTableColumns}
                 data={desktopHoldingTables.analyzeEligible}
+                globalSearchKeys={["symbol", "name"]}
                 searchPlaceholder="Search equities..."
                 initialPageSize={5}
                 pageSizeOptions={[5, 10, 20]}
@@ -1451,6 +1496,7 @@ export function DashboardMasterView({
               <DataTable
                 columns={holdingsTableColumns}
                 data={desktopHoldingTables.nonAnalyzable}
+                globalSearchKeys={["symbol", "name"]}
                 searchPlaceholder="Search other assets..."
                 initialPageSize={5}
                 pageSizeOptions={[5, 10, 20]}
@@ -1468,6 +1514,7 @@ export function DashboardMasterView({
               <DataTable
                 columns={holdingsTableColumns}
                 data={desktopHoldingTables.cashSweep}
+                globalSearchKeys={["symbol", "name"]}
                 searchPlaceholder="Search cash holdings..."
                 initialPageSize={5}
                 pageSizeOptions={[5, 10, 20]}
@@ -1642,7 +1689,7 @@ export function DashboardMasterView({
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Imported Portfolio Data?</AlertDialogTitle>
             <AlertDialogDescription>
-              This removes the imported holdings and statement snapshots from your vault. Profile
+              This removes imported holdings and statement snapshots from your Vault. Profile
               and consent data are kept.
             </AlertDialogDescription>
           </AlertDialogHeader>

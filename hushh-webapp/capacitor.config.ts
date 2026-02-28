@@ -40,7 +40,8 @@ const config: CapacitorConfig = {
 
   // iOS-specific configuration
   ios: {
-    contentInset: "always", // "always" for stable layout (prevents bounce)
+    // SystemBars immersive mode: let app/CSS safe-area handling own spacing.
+    contentInset: "never",
     allowsLinkPreview: true,
     scrollEnabled: true,
     backgroundColor: "#0a0a0a",
@@ -86,10 +87,13 @@ const config: CapacitorConfig = {
     CapacitorHttp: {
       enabled: true,
     },
-    StatusBar: {
-      overlaysWebView: true, // transparent status bar; blur strip in app
-      style: "DARK",
-      backgroundColor: "#00000000",
+    SystemBars: {
+      // Full immersive edge-to-edge bars with CSS inset fallback.
+      // iOS overlay behavior is controlled via ios.contentInset = "never".
+      insetsHandling: "css",
+      style: "DEFAULT",
+      hidden: false,
+      animation: "NONE",
     },
   },
 };

@@ -68,6 +68,19 @@ export interface EncryptedUserBlob extends EncryptedValue {
   updatedAt?: string;
 }
 
+export interface StoreDomainDataResult {
+  success: boolean;
+  conflict?: boolean;
+  message?: string;
+  dataVersion?: number;
+  updatedAt?: string;
+}
+
+type DecryptedFullBlobCacheEntry = {
+  marker: string;
+  blob: Record<string, unknown>;
+};
+
 export interface EncryptedAttribute extends EncryptedValue {
   domain: string;
   attributeKey: string;
@@ -120,6 +133,83 @@ export class WorldModelService {
     keyParts: Array<string | number | boolean | undefined | null>
   ): string {
     return keyParts.map((part) => (part ?? "null").toString()).join(":");
+  }
+
+  private static cloneRecord<T extends Record<string, unknown>>(value: T): T {
+    if (typeof globalThis.structuredClone === "function") {
+      try {
+        return globalThis.structuredClone(value) as T;
+      } catch {
+        // Fall through to JSON clone.
+      }
+    }
+    return JSON.parse(JSON.stringify(value)) as T;
+  }
+
+  private static buildEncryptedBlobMarker(blob: EncryptedUserBlob | EncryptedValue): string {
+    const updatedAt =
+      "updatedAt" in blob && typeof blob.updatedAt === "string" ? blob.updatedAt : "na";
+    const dataVersion =
+      "dataVersion" in blob && typeof blob.dataVersion === "number" ? blob.dataVersion : "na";
+    const ciphertext = blob.ciphertext || "";
+    const ciphertextSignature = `${ciphertext.length}:${ciphertext.slice(0, 24)}:${ciphertext.slice(-24)}`;
+    return [
+      blob.algorithm || "aes-256-gcm",
+      dataVersion,
+      updatedAt,
+      blob.iv,
+      blob.tag,
+      ciphertextSignature,
+    ].join("|");
+  }
+
+  private static cacheDecryptedBlob(params: {
+    userId: string;
+    encryptedBlob: EncryptedUserBlob | EncryptedValue;
+    fullBlob: Record<string, unknown>;
+  }): void {
+    const cache = CacheService.getInstance();
+    const cacheKey = CACHE_KEYS.WORLD_MODEL_DECRYPTED_BLOB(params.userId);
+    const entry: DecryptedFullBlobCacheEntry = {
+      marker: this.buildEncryptedBlobMarker(params.encryptedBlob),
+      blob: this.cloneRecord(params.fullBlob),
+    };
+    cache.set(cacheKey, entry, CACHE_TTL.SESSION);
+  }
+
+  static peekCachedEncryptedBlob(userId: string): EncryptedUserBlob | null {
+    const cache = CacheService.getInstance();
+    const cacheKey = CACHE_KEYS.WORLD_MODEL_BLOB(userId);
+    const cached = cache.get<EncryptedUserBlob>(cacheKey);
+    if (!cached) return null;
+    return { ...cached };
+  }
+
+  static peekCachedFullBlob(userId: string): {
+    blob: Record<string, unknown>;
+    dataVersion?: number;
+    updatedAt?: string;
+  } | null {
+    const cache = CacheService.getInstance();
+    const decryptedCacheKey = CACHE_KEYS.WORLD_MODEL_DECRYPTED_BLOB(userId);
+    const cachedDecrypted = cache.get<DecryptedFullBlobCacheEntry>(decryptedCacheKey);
+    if (!cachedDecrypted?.blob) {
+      return null;
+    }
+
+    const cachedEncrypted = this.peekCachedEncryptedBlob(userId);
+    if (cachedEncrypted) {
+      const marker = this.buildEncryptedBlobMarker(cachedEncrypted);
+      if (cachedDecrypted.marker !== marker) {
+        return null;
+      }
+    }
+
+    return {
+      blob: this.cloneRecord(cachedDecrypted.blob),
+      dataVersion: cachedEncrypted?.dataVersion,
+      updatedAt: cachedEncrypted?.updatedAt,
+    };
   }
 
   private static isLikelyPortfolioData(value: unknown): value is CachedPortfolioData {
@@ -641,8 +731,9 @@ export class WorldModelService {
     encryptedBlob: EncryptedValue;
     summary: Record<string, unknown>;
     portfolioData?: CachedPortfolioData;
+    expectedDataVersion?: number;
     vaultOwnerToken?: string;
-  }): Promise<{ success: boolean }> {
+  }): Promise<StoreDomainDataResult> {
     if (Capacitor.isNativePlatform()) {
       const result = await HushhWorldModel.storeDomainData({
         userId: params.userId,
@@ -667,7 +758,24 @@ export class WorldModelService {
         });
       }
 
-      return result;
+      return {
+        success: result.success,
+      };
+    }
+
+    const payload: Record<string, unknown> = {
+      user_id: params.userId,
+      domain: params.domain,
+      encrypted_blob: {
+        ciphertext: params.encryptedBlob.ciphertext,
+        iv: params.encryptedBlob.iv,
+        tag: params.encryptedBlob.tag,
+        algorithm: params.encryptedBlob.algorithm || "aes-256-gcm",
+      },
+      summary: params.summary,
+    };
+    if (Number.isFinite(params.expectedDataVersion)) {
+      payload.expected_data_version = Math.max(0, Number(params.expectedDataVersion));
     }
 
     // Web: Use ApiService.apiFetch() for tri-flow compliance
@@ -677,35 +785,72 @@ export class WorldModelService {
         "Content-Type": "application/json",
         ...this.getAuthHeaders(params.vaultOwnerToken),
       },
-      body: JSON.stringify({
-        user_id: params.userId,
-        domain: params.domain,
-        encrypted_blob: {
-          ciphertext: params.encryptedBlob.ciphertext,
-          iv: params.encryptedBlob.iv,
-          tag: params.encryptedBlob.tag,
-          algorithm: params.encryptedBlob.algorithm || "aes-256-gcm",
-        },
-        summary: params.summary,
-      }),
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
+      if (response.status === 409) {
+        let conflictPayload: unknown = null;
+        try {
+          conflictPayload = await response.json();
+        } catch {
+          // Ignore JSON parse errors and use a default conflict payload.
+        }
+        const detail =
+          conflictPayload &&
+          typeof conflictPayload === "object" &&
+          "detail" in conflictPayload
+            ? (conflictPayload as { detail?: unknown }).detail
+            : conflictPayload;
+        const detailRecord =
+          detail && typeof detail === "object" ? (detail as Record<string, unknown>) : null;
+        return {
+          success: false,
+          conflict: true,
+          message:
+            (detailRecord && typeof detailRecord.message === "string"
+              ? detailRecord.message
+              : null) ?? "World model version conflict.",
+          dataVersion:
+            detailRecord && typeof detailRecord.current_data_version === "number"
+              ? detailRecord.current_data_version
+              : undefined,
+          updatedAt:
+            detailRecord && typeof detailRecord.updated_at === "string"
+              ? detailRecord.updated_at
+              : undefined,
+        };
+      }
       const errorText = await response.text();
       throw new Error(`Failed to store domain data: ${response.status} - ${errorText}`);
     }
 
-    const data = await response.json();
+    const data = (await response.json()) as Record<string, unknown>;
+    const resolvedDataVersion =
+      typeof data.data_version === "number" ? data.data_version : undefined;
+    const resolvedUpdatedAt = typeof data.updated_at === "string" ? data.updated_at : undefined;
+    const resolvedMessage = typeof data.message === "string" ? data.message : undefined;
+    const enrichedEncryptedBlob: EncryptedUserBlob = {
+      ...params.encryptedBlob,
+      dataVersion: resolvedDataVersion,
+      updatedAt: resolvedUpdatedAt,
+    };
 
     // Invalidate caches after successful store
     CacheSyncService.onWorldModelDomainStored(params.userId, params.domain, {
       portfolioData: params.portfolioData,
-      encryptedBlob: params.encryptedBlob,
+      encryptedBlob: enrichedEncryptedBlob,
       domainSummary: params.summary,
       metadataTimestamp: new Date().toISOString(),
     });
 
-    return data;
+    return {
+      success: data.success !== false,
+      conflict: data.conflict === true,
+      message: resolvedMessage,
+      dataVersion: resolvedDataVersion,
+      updatedAt: resolvedUpdatedAt,
+    };
   }
 
   /**
@@ -963,6 +1108,10 @@ export class WorldModelService {
       }
     );
 
+    if (response.status === 404) {
+      return null;
+    }
+
     if (!response.ok) {
       throw new Error(`Failed to get portfolio: ${response.status}`);
     }
@@ -1136,9 +1285,18 @@ export class WorldModelService {
     vaultKey: string;
     vaultOwnerToken?: string;
   }): Promise<Record<string, unknown>> {
+    const cache = CacheService.getInstance();
     const encrypted = await this.getEncryptedData(params.userId, params.vaultOwnerToken);
     if (!encrypted) {
+      cache.invalidate(CACHE_KEYS.WORLD_MODEL_DECRYPTED_BLOB(params.userId));
       return {};
+    }
+
+    const marker = this.buildEncryptedBlobMarker(encrypted);
+    const decryptedCacheKey = CACHE_KEYS.WORLD_MODEL_DECRYPTED_BLOB(params.userId);
+    const cachedDecrypted = cache.get<DecryptedFullBlobCacheEntry>(decryptedCacheKey);
+    if (cachedDecrypted?.marker === marker && cachedDecrypted.blob) {
+      return this.cloneRecord(cachedDecrypted.blob);
     }
 
     const { decryptData } = await import("@/lib/vault/encrypt");
@@ -1158,12 +1316,17 @@ export class WorldModelService {
       return {};
     }
     const parsedBlob = parsed as Record<string, unknown>;
+    this.cacheDecryptedBlob({
+      userId: params.userId,
+      encryptedBlob: encrypted,
+      fullBlob: parsedBlob,
+    });
     void this.maybeSyncTickersFromFinancialBlob({
       userId: params.userId,
       fullBlob: parsedBlob,
       vaultOwnerToken: params.vaultOwnerToken,
     });
-    return parsedBlob;
+    return this.cloneRecord(parsedBlob);
   }
 
   /**
@@ -1233,9 +1396,14 @@ export class WorldModelService {
     domain: string;
     domainData: Record<string, unknown>;
     summary: Record<string, unknown>;
+    expectedDataVersion?: number;
     vaultOwnerToken?: string;
   }): Promise<{
     success: boolean;
+    conflict?: boolean;
+    message?: string;
+    dataVersion?: number;
+    updatedAt?: string;
     fullBlob: Record<string, unknown>;
   }> {
     const baseFullBlob = await this.loadFullBlob({
@@ -1261,9 +1429,14 @@ export class WorldModelService {
     domainData: Record<string, unknown>;
     summary: Record<string, unknown>;
     baseFullBlob: Record<string, unknown>;
+    expectedDataVersion?: number;
     vaultOwnerToken?: string;
   }): Promise<{
     success: boolean;
+    conflict?: boolean;
+    message?: string;
+    dataVersion?: number;
+    updatedAt?: string;
     fullBlob: Record<string, unknown>;
   }> {
     const merged = await this.mergeAndEncryptPreparedBlob({
@@ -1288,6 +1461,7 @@ export class WorldModelService {
       encryptedBlob: merged.encryptedBlob,
       summary: summaryWithIntent,
       portfolioData,
+      expectedDataVersion: params.expectedDataVersion,
       vaultOwnerToken: params.vaultOwnerToken,
     });
 
@@ -1298,9 +1472,25 @@ export class WorldModelService {
         vaultOwnerToken: params.vaultOwnerToken,
       });
     }
+    if (result.success) {
+      const encryptedBlobForCache: EncryptedUserBlob = {
+        ...merged.encryptedBlob,
+        dataVersion: result.dataVersion,
+        updatedAt: result.updatedAt,
+      };
+      this.cacheDecryptedBlob({
+        userId: params.userId,
+        encryptedBlob: encryptedBlobForCache,
+        fullBlob: merged.fullBlob,
+      });
+    }
 
     return {
       success: result.success,
+      conflict: result.conflict,
+      message: result.message,
+      dataVersion: result.dataVersion,
+      updatedAt: result.updatedAt,
       fullBlob: merged.fullBlob,
     };
   }

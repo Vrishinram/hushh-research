@@ -1,24 +1,27 @@
 "use client";
 
 /**
- * TopAppBar - Smart Mobile Navigation Header
+ * Unified Top Shell
  *
- * Shows back button on all pages except the landing page ("/").
- * On root-level pages (/kai, /consents, /profile), triggers exit dialog.
- * On sub-pages (Level 2+), navigates to parent route.
+ * Single fixed component that owns the entire top chrome:
+ *   1. Capacitor safe-area inset (notch / Dynamic Island)
+ *   2. Header row  –  back · title · actions
+ *   3. Swipeable route tabs (when the route enables them, e.g. /kai)
  *
- * On native: StatusBarBlur (safe-area strip) and TopAppBar share
- * the same transparent blur style so the Capacitor status bar area and top
- * bar match (one continuous frosted look).
+ * One continuous frosted-glass backdrop + mask-image fade covers all
+ * three layers so that page content scrolls seamlessly underneath.
  *
- * Place this at the layout level for seamless integration.
+ * All sizing uses CSS custom properties from globals.css
+ * (--top-inset, --top-bar-h, --top-tabs-total, --top-glass-h, etc.)
+ * so the layout works identically on web and native with zero
+ * Capacitor.isNativePlatform() checks — env(safe-area-inset-top)
+ * evaluates correctly in both environments.
  */
 
-import { useState, useEffect, useMemo } from "react";
+import { useMemo, useState } from "react";
 import { ArrowLeft, LogOut, MoreHorizontal, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useNavigation } from "@/lib/navigation/navigation-context";
-import { Capacitor } from "@capacitor/core";
 import { usePathname, useRouter } from "next/navigation";
 import { Button } from "@/lib/morphy-ux/button";
 import {
@@ -51,51 +54,29 @@ import { getKaiChromeState } from "@/lib/navigation/kai-chrome-state";
 import { ROUTES } from "@/lib/navigation/routes";
 import { DebateTaskCenter } from "@/components/app-ui/debate-task-center";
 import { UserLocalStateService } from "@/lib/services/user-local-state-service";
+import { DashboardRouteTabs } from "@/components/kai/layout/dashboard-route-tabs";
+import { resolveTopShellMetrics } from "@/components/app-ui/top-shell-metrics";
+import { useKaiBottomChromeVisibility } from "@/lib/navigation/kai-bottom-chrome-visibility";
 
-/** Shared style so Capacitor status bar area and top bar match (masked blur on all platforms) */
-const BAR_GLASS_CLASS = "bar-glass bar-glass-top";
+/* ── Re-exports (backward compat) ─────────────────────────────────── */
+export {
+  resolveTopShellHeight,
+  resolveTopShellMetrics,
+  shouldHideTopShell,
+  shouldShowKaiTabsInTopShell,
+  type TopShellMetrics,
+} from "@/components/app-ui/top-shell-metrics";
 
-/**
- * TopBarBackground - Single background layer for status bar and top app bar.
- * Ensures a continuous frosted look with a single smooth fade mask.
- */
-export function TopBarBackground() {
-  const [isNative, setIsNative] = useState(false);
-  const pathname = usePathname();
-  const hideChrome = pathname === ROUTES.HOME || pathname.startsWith(ROUTES.LOGIN);
+/* ── Constants ─────────────────────────────────────────────────────── */
+export const TOP_SHELL_ICON_BUTTON_CLASSNAME =
+  "grid h-11 w-11 place-items-center rounded-full border border-border/60 bg-background/70 shadow-sm backdrop-blur-sm transition-colors hover:bg-muted/50 active:bg-muted/80";
 
-  useEffect(() => {
-    setIsNative(Capacitor.isNativePlatform());
-  }, []);
+/* ── Stubs (kept for import stability) ─────────────────────────────── */
+export function TopBarBackground() { return null; }
+export function StatusBarBlur() { return null; }
+export function TopAppBarSpacer() { return null; }
 
-  if (hideChrome) return null;
-
-  return (
-    <div
-      className={cn(
-        "fixed top-0 left-0 right-0 z-40",
-        BAR_GLASS_CLASS,
-        isNative
-          ? "h-[calc(env(safe-area-inset-top,0px)+var(--app-top-safe-offset)+72px)]"
-          : "h-[64px]"
-      )}
-      aria-hidden
-    />
-  );
-}
-
-/**
- * StatusBarBlur - No longer renders its own glass, now handled by TopBarBackground.
- * But we keep it as a spacer/logic holder if needed, or just return null.
- */
-export function StatusBarBlur() {
-  return null;
-}
-
-interface TopAppBarProps {
-  className?: string;
-}
-
+/* ── Helpers ───────────────────────────────────────────────────────── */
 function getTopBarTitle(pathname: string): string | null {
   if (pathname.startsWith(ROUTES.KAI_HOME)) return "Kai";
   if (pathname.startsWith(ROUTES.CONSENTS)) return "Consents";
@@ -103,74 +84,126 @@ function getTopBarTitle(pathname: string): string | null {
   return null;
 }
 
+/* ── TopAppBar ─────────────────────────────────────────────────────── */
+interface TopAppBarProps {
+  className?: string;
+}
+
 export function TopAppBar({ className }: TopAppBarProps) {
   const { handleBack } = useNavigation();
   const { isVaultUnlocked } = useVault();
-  const [isNative, setIsNative] = useState(false);
   const pathname = usePathname();
+  const topShellMetrics = useMemo(() => resolveTopShellMetrics(pathname), [pathname]);
   const chromeState = useMemo(() => getKaiChromeState(pathname), [pathname]);
   const showOnboardingActions = chromeState.useOnboardingChrome;
-  const hideChrome = pathname === ROUTES.HOME || pathname.startsWith(ROUTES.LOGIN);
+  const hideChrome = !topShellMetrics.shellVisible;
   const centerTitle = useMemo(() => getTopBarTitle(pathname), [pathname]);
+  const showKaiTabs = topShellMetrics.hasTabs;
   const hideBackButtonForVaultGuard =
     pathname.startsWith(ROUTES.CONSENTS) && !isVaultUnlocked;
 
-  useEffect(() => {
-    // Check platform on mount to avoid hydration mismatch
-    setIsNative(Capacitor.isNativePlatform());
-  }, []);
+  // Subscribe to scroll-direction store so the glass shrinks when tabs hide.
+  const { hidden: tabsScrollHidden } = useKaiBottomChromeVisibility(showKaiTabs);
 
-  // Don't show TopAppBar on landing page
-  if (hideChrome) {
-    return null;
-  }
+  const headerGlassStyle = useMemo<React.CSSProperties>(
+    () => ({
+      height: "calc(var(--top-inset) + var(--top-systembar-row-gap, 0px) + var(--top-bar-h) + var(--top-fade-active))",
+    }),
+    []
+  );
+
+  const tabsGlassStyle = useMemo<React.CSSProperties>(
+    () => ({
+      top: "calc(var(--top-inset) + var(--top-systembar-row-gap, 0px) + var(--top-bar-h))",
+      height: "calc(var(--top-tabs-h) + var(--top-tabs-gap) + var(--top-fade-active))",
+      transform: tabsScrollHidden
+        ? "translate3d(0, calc(-100% - 10px), 0)"
+        : "translate3d(0, 0, 0)",
+    }),
+    [tabsScrollHidden]
+  );
+
+  if (hideChrome) return null;
 
   return (
     <div
-      className={cn(
-        "fixed left-0 right-0 z-50",
-        isNative
-          ? "top-[calc(env(safe-area-inset-top,0px)+var(--app-top-safe-offset))] h-[72px]"
-          : "top-0 h-[64px]",
-        // Flex container for back button
-        "flex items-center justify-between pb-2 px-4",
-        className,
-      )}
+      className={cn("fixed inset-x-0 top-0 z-50 overflow-hidden pointer-events-none", className)}
     >
-      {centerTitle ? (
-        <div className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 pb-1 text-center">
-          <span className="text-base sm:text-lg font-semibold tracking-tight text-foreground">
-            {centerTitle}
-          </span>
-        </div>
+      {/* ── Unified glass backdrop ─────────────────────────────────── */}
+      <div
+        aria-hidden
+        className="absolute inset-x-0 top-0 bar-glass bar-glass-top"
+        style={headerGlassStyle}
+      />
+      {showKaiTabs ? (
+        <div
+          aria-hidden
+          className={cn(
+            "absolute inset-x-0 bar-glass bar-glass-top transform-gpu transition-all duration-300 ease-out will-change-transform",
+            tabsScrollHidden ? "opacity-0" : "opacity-100"
+          )}
+          style={tabsGlassStyle}
+        />
       ) : null}
-      <div className="flex items-center gap-2">
-        {hideBackButtonForVaultGuard ? (
-          <div className="h-10 w-10" aria-hidden />
-        ) : (
-          <button
-            onClick={handleBack}
-            className="grid h-10 w-10 place-items-center rounded-full border border-border/60 bg-background/70 shadow-sm backdrop-blur-sm transition-colors hover:bg-muted/50 active:bg-muted/80"
-            aria-label="Go back"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </button>
-        )}
-      </div>
 
-      <div className="flex items-center gap-2">
-        {showOnboardingActions ? (
-          <OnboardingRouteActions />
-        ) : isVaultUnlocked ? (
-          <DebateTaskCenter />
-        ) : (
-          <div className="h-10 w-10" aria-hidden />
-        )}
+      {/* ── Interactive content layer ──────────────────────────────── */}
+      <div
+        className="relative mx-auto w-full max-w-6xl px-4 sm:px-6"
+        style={{ paddingTop: "calc(var(--top-inset) + var(--top-systembar-row-gap, 0px))" }}
+      >
+        {/* Header row: back · title · actions */}
+        <div
+          data-testid="top-app-bar-row"
+          className="grid h-11 shrink-0 grid-cols-[44px_1fr_44px] items-center pointer-events-auto"
+        >
+          <div className="flex h-11 w-11 items-center justify-center">
+            {hideBackButtonForVaultGuard ? (
+              <div className="h-11 w-11" aria-hidden />
+            ) : (
+              <button
+                onClick={handleBack}
+                className={TOP_SHELL_ICON_BUTTON_CLASSNAME}
+                aria-label="Go back"
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </button>
+            )}
+          </div>
+
+          <div className="flex min-w-0 items-center justify-center px-2">
+            {centerTitle ? (
+              <span className="truncate text-base font-semibold tracking-tight text-foreground sm:text-lg">
+                {centerTitle}
+              </span>
+            ) : null}
+          </div>
+
+          <div className="flex h-11 w-11 items-center justify-center">
+            {showOnboardingActions ? (
+              <OnboardingRouteActions />
+            ) : isVaultUnlocked ? (
+              <DebateTaskCenter triggerClassName={TOP_SHELL_ICON_BUTTON_CLASSNAME} />
+            ) : (
+              <div className="h-11 w-11" aria-hidden />
+            )}
+          </div>
+        </div>
+
+        {/* Tabs row (only on routes that enable them) */}
+        {showKaiTabs ? (
+          <div
+            className="flex shrink-0 items-end pointer-events-auto"
+            style={{ height: "calc(var(--top-tabs-h) + var(--top-tabs-gap))" }}
+          >
+            <DashboardRouteTabs embedded />
+          </div>
+        ) : null}
       </div>
     </div>
   );
 }
 
+/* ── OnboardingRouteActions ────────────────────────────────────────── */
 function OnboardingRouteActions() {
   const router = useRouter();
   const { user, signOut } = useAuth();
@@ -277,38 +310,5 @@ function OnboardingRouteActions() {
         </AlertDialogContent>
       </AlertDialog>
     </>
-  );
-}
-
-/**
- * TopAppBarSpacer - Smart spacer that handles top content padding
- * - Landing Page: No spacer needed (body padding handles safe area)
- * - Sub Pages: Adds padding for TopAppBar only (body handles safe area)
- * - Native with overlay: spacer = 64px + safe-area so content clears blurred bar
- */
-export function TopAppBarSpacer() {
-  const pathname = usePathname();
-  const [isNative, setIsNative] = useState(false);
-  const hideChrome = pathname === ROUTES.HOME || pathname.startsWith(ROUTES.LOGIN);
-
-  useEffect(() => {
-    setIsNative(Capacitor.isNativePlatform());
-  }, []);
-
-  // Landing page: no spacer needed (body padding handles safe area)
-  if (hideChrome) {
-    return null;
-  }
-
-  // Sub-pages: clear the fixed TopAppBar; on native bar extends into safe area
-  return (
-    <div
-      className={cn(
-        "w-full shrink-0 transition-[height]",
-        isNative
-          ? "h-[calc(72px+env(safe-area-inset-top,0px)+var(--app-top-safe-offset))]"
-          : "h-[64px]",
-      )}
-    />
   );
 }

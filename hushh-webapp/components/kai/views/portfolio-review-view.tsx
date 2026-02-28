@@ -72,6 +72,9 @@ import {
 } from "@/lib/morphy-ux/card";
 import { EditHoldingModal } from "@/components/kai/modals/edit-holding-modal";
 import { scrollAppToTop } from "@/lib/navigation/use-scroll-reset";
+import { toInvestorMessage } from "@/lib/copy/investor-language";
+import { AppBackgroundTaskService } from "@/lib/services/app-background-task-service";
+import { ROUTES } from "@/lib/navigation/routes";
 
 
 
@@ -765,6 +768,7 @@ export function PortfolioReviewView({
   );
 
   const [isSaving, setIsSaving] = useState(false);
+  const [isBackgroundSaveRunning, setIsBackgroundSaveRunning] = useState(false);
   const setBusyOperation = useKaiSession((s) => s.setBusyOperation);
   const [vaultDialogOpen, setVaultDialogOpen] = useState(false);
   const [pendingVaultSave, setPendingVaultSave] = useState(false);
@@ -773,6 +777,8 @@ export function PortfolioReviewView({
   const createdVaultCopyRef = useRef(false);
   const createdVaultModeRef = useRef<string | null>(null);
   const continuationInFlightRef = useRef(false);
+  const saveInFlightRef = useRef(false);
+  const isMountedRef = useRef(true);
   const [editingHolding, setEditingHolding] = useState<Holding | null>(null);
   const [editingHoldingIndex, setEditingHoldingIndex] = useState<number>(-1);
   const [holdingsTab, setHoldingsTab] = useState<"all" | "analyze" | "non-analyze" | "cash">(
@@ -817,6 +823,14 @@ export function PortfolioReviewView({
   }, [currentEditableSnapshot]);
 
   useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  const isBusySaving = isSaving || isBackgroundSaveRunning;
+
+  useEffect(() => {
     setBusyOperation("portfolio_save", isSaving);
     return () => {
       setBusyOperation("portfolio_save", false);
@@ -831,15 +845,15 @@ export function PortfolioReviewView({
   }, [setBusyOperation]);
 
   useEffect(() => {
-    setBusyOperation("portfolio_review_dirty", hasUnsavedChanges);
+    setBusyOperation("portfolio_review_dirty", hasUnsavedChanges && !isBackgroundSaveRunning);
     return () => {
       setBusyOperation("portfolio_review_dirty", false);
     };
-  }, [hasUnsavedChanges, setBusyOperation]);
+  }, [hasUnsavedChanges, isBackgroundSaveRunning, setBusyOperation]);
 
   useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (!hasUnsavedChanges || isSaving) return;
+      if (!hasUnsavedChanges || isBusySaving) return;
       event.preventDefault();
       event.returnValue = "";
     };
@@ -848,7 +862,7 @@ export function PortfolioReviewView({
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
-  }, [hasUnsavedChanges, isSaving]);
+  }, [hasUnsavedChanges, isBusySaving]);
 
   useEffect(() => {
     let cancelled = false;
@@ -979,6 +993,29 @@ export function PortfolioReviewView({
 
   const handleSaveHolding = useCallback(
     (updatedHolding: Holding) => {
+      const quantity = Number(updatedHolding.quantity);
+      const price = Number(updatedHolding.price);
+      const marketValue = Number(updatedHolding.market_value);
+
+      if (
+        !Number.isFinite(quantity) ||
+        !Number.isFinite(price) ||
+        !Number.isFinite(marketValue) ||
+        quantity <= 0 ||
+        price <= 0 ||
+        marketValue <= 0
+      ) {
+        toast.error("Quantity, price, and market value must all be greater than 0.");
+        return;
+      }
+
+      const normalizedHolding: Holding = {
+        ...updatedHolding,
+        quantity,
+        price,
+        market_value: marketValue,
+      };
+
       setHoldings((prev) => {
         const next = [...prev];
         if (editingHoldingIndex >= 0 && editingHoldingIndex < next.length) {
@@ -986,13 +1023,13 @@ export function PortfolioReviewView({
           if (!existing) return next;
           next[editingHoldingIndex] = {
             ...existing,
-            ...updatedHolding,
+            ...normalizedHolding,
             pending_delete: false,
           };
           return next;
         }
         next.push({
-          ...updatedHolding,
+          ...normalizedHolding,
           pending_delete: false,
         });
         return next;
@@ -1187,7 +1224,31 @@ export function PortfolioReviewView({
   );
 
   const handleSave = async () => {
+    if (saveInFlightRef.current) {
+      toast.info("Portfolio save already in progress.");
+      return;
+    }
     if (!userId) return;
+
+    const invalidHolding = activeHoldings.find((holding) => {
+      const quantity = Number(holding.quantity);
+      const price = Number(holding.price);
+      const marketValue = Number(holding.market_value);
+      return (
+        !Number.isFinite(quantity) ||
+        !Number.isFinite(price) ||
+        !Number.isFinite(marketValue) ||
+        quantity <= 0 ||
+        price <= 0 ||
+        marketValue <= 0
+      );
+    });
+    if (invalidHolding) {
+      toast.error(
+        `Holding ${invalidHolding.symbol || invalidHolding.name || "entry"} has invalid values. Quantity, price, and market value must be greater than 0.`
+      );
+      return;
+    }
 
     const shouldVerifySave = process.env.NEXT_PUBLIC_WORLD_MODEL_VERIFY_SAVE === "true";
     const enableSaveProfiling = process.env.NEXT_PUBLIC_KAI_SAVE_PROFILING === "true";
@@ -1224,13 +1285,15 @@ export function PortfolioReviewView({
       setVaultDialogOpen(true);
       toast.info(
         resolvedHasVault === false
-          ? "Create your vault to save your portfolio."
-          : "Unlock your vault to save your portfolio."
+          ? "Create your Vault to save your portfolio."
+          : "Unlock your Vault to save your portfolio."
       );
       return;
     }
 
+    saveInFlightRef.current = true;
     setIsSaving(true);
+    let saveTaskId: string | null = null;
 
     try {
       let resolvedVaultOwnerToken = effectiveVaultOwnerToken;
@@ -1242,7 +1305,7 @@ export function PortfolioReviewView({
 
       if (!resolvedVaultOwnerToken) {
         throw new Error(
-          "Could not issue vault access token. Unlock your vault once and retry."
+          "We could not complete Vault access. Unlock once and try again."
         );
       }
 
@@ -1262,14 +1325,53 @@ export function PortfolioReviewView({
       const normalizedActiveHoldings = activeHoldings.map((holding) =>
         normalizeHoldingForStorage(holding)
       );
+      const savePayload: PortfolioData = {
+        account_info: accountInfo,
+        account_summary: accountSummary,
+        asset_allocation: assetAllocation,
+        holdings: normalizedActiveHoldings,
+        income_summary: incomeSummary,
+        realized_gain_loss: realizedGainLoss,
+        cash_balance: toFiniteNumber(initialData.cash_balance),
+        total_value: toFiniteNumber(initialData.total_value),
+        parse_fallback: initialData.parse_fallback === true,
+      };
+
+      saveTaskId = AppBackgroundTaskService.startTask({
+        userId,
+        kind: "portfolio_save",
+        title: "Portfolio save",
+        description: "Securing and storing your portfolio in Vault.",
+        routeHref: ROUTES.KAI_DASHBOARD,
+      });
+      setIsBackgroundSaveRunning(true);
+      toast.success("Portfolio save started in background.");
+      setIsSaving(false);
+      baselineSnapshotRef.current = serializeEditableState(accountInfo, holdings);
+      if (isMountedRef.current) {
+        setHasUnsavedChanges(false);
+        Promise.resolve(onSaveComplete(savePayload)).catch((saveCompleteError) => {
+          console.error("[PortfolioReview] onSaveComplete failed:", saveCompleteError);
+        });
+      }
 
       const nowIso = new Date().toISOString();
       const blobLoadStartedAt = nowMs();
-      const fullBlob = await WorldModelService.loadFullBlob({
-        userId,
-        vaultKey: effectiveVaultKey,
-        vaultOwnerToken: resolvedVaultOwnerToken,
-      }).catch(() => ({} as Record<string, unknown>));
+      const cachedBlob = WorldModelService.peekCachedFullBlob(userId);
+      let fullBlob: Record<string, unknown>;
+      let expectedDataVersion = cachedBlob?.dataVersion;
+      if (cachedBlob?.blob) {
+        fullBlob = cachedBlob.blob;
+      } else {
+        fullBlob = await WorldModelService.loadFullBlob({
+          userId,
+          vaultKey: effectiveVaultKey,
+          vaultOwnerToken: resolvedVaultOwnerToken,
+        }).catch(() => ({} as Record<string, unknown>));
+      }
+      if (expectedDataVersion === undefined) {
+        expectedDataVersion = WorldModelService.peekCachedEncryptedBlob(userId)?.dataVersion;
+      }
       logSavePhase("blob load", blobLoadStartedAt);
       const mergeBuildStartedAt = nowMs();
       const existingFinancialValue = fullBlob.financial;
@@ -1611,6 +1713,7 @@ export function PortfolioReviewView({
           domainData: nextFinancialDomain as unknown as Record<string, unknown>,
           summary: financialSummary,
           baseFullBlob: fullBlob,
+          expectedDataVersion,
           vaultOwnerToken: vaultOwnerTokenToUse,
         });
 
@@ -1636,6 +1739,12 @@ export function PortfolioReviewView({
       logSavePhase("encrypt/store", encryptStoreStartedAt);
 
       if (!financialResult.success) {
+        if (financialResult.conflict) {
+          throw new Error(
+            financialResult.message ||
+              "Vault changed on another device. Refresh and save again."
+          );
+        }
         throw new Error("Backend returned failure on store");
       }
 
@@ -1654,6 +1763,15 @@ export function PortfolioReviewView({
         userId,
         cachePortfolioData
       );
+
+      if (saveTaskId) {
+        AppBackgroundTaskService.completeTask(
+          saveTaskId,
+          createdVaultCopyRef.current
+            ? "Vault created and portfolio saved."
+            : "Portfolio saved to Vault."
+        );
+      }
       if (typeof window !== "undefined") {
         window.dispatchEvent(
           new CustomEvent("kai:portfolio-saved", {
@@ -1663,21 +1781,7 @@ export function PortfolioReviewView({
           })
         );
       }
-
-      if (createdVaultCopyRef.current) {
-        if (createdVaultModeRef.current === "generated_default_native_biometric" || createdVaultModeRef.current === "generated_default_web_prf") {
-          toast.success("Vault created. Portfolio encrypted and saved. Finalizing profile sync in background.");
-        } else {
-          toast.success("Vault created. Portfolio encrypted and saved. Finalizing profile sync in background.");
-        }
-      } else {
-        toast.success("Portfolio encrypted and saved. Finalizing profile sync in background.");
-      }
-      baselineSnapshotRef.current = serializeEditableState(accountInfo, holdings);
-      setHasUnsavedChanges(false);
-      Promise.resolve(onSaveComplete(portfolioToSave)).catch((saveCompleteError) => {
-        console.error("[PortfolioReview] onSaveComplete failed:", saveCompleteError);
-      });
+      toast.success("Portfolio saved to Vault.");
       if (shouldVerifySave) {
         void (async () => {
           try {
@@ -1698,20 +1802,41 @@ export function PortfolioReviewView({
       logSavePhase("total", saveStartedAt);
     } catch (error) {
       console.error("Save error:", error);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("kai:portfolio-save-failed", {
+            detail: {
+              userId,
+              error: extractSaveErrorMessage(error, "Failed to save portfolio"),
+            },
+          })
+        );
+      }
+      if (saveTaskId) {
+        AppBackgroundTaskService.failTask(
+          saveTaskId,
+          extractSaveErrorMessage(error, "Failed to save portfolio"),
+          "Portfolio save failed. Reopen review and try again."
+        );
+      }
       toast.error(extractSaveErrorMessage(error, "Failed to save portfolio"));
     } finally {
-      setIsSaving(false);
+      if (isMountedRef.current) {
+        setIsSaving(false);
+        setIsBackgroundSaveRunning(false);
+      }
+      saveInFlightRef.current = false;
       createdVaultCopyRef.current = false;
       createdVaultModeRef.current = null;
     }
   };
 
   const confirmDiscardChanges = useCallback((): boolean => {
-    if (!hasUnsavedChanges || isSaving) return true;
+    if (!hasUnsavedChanges || isBusySaving) return true;
     return window.confirm(
       "You have unsaved portfolio changes. Leaving now will discard them."
     );
-  }, [hasUnsavedChanges, isSaving]);
+  }, [hasUnsavedChanges, isBusySaving]);
 
   const handleReimportAttempt = useCallback(() => {
     if (!confirmDiscardChanges()) return;
@@ -1722,7 +1847,7 @@ export function PortfolioReviewView({
     <div className={cn("relative w-full", className)}>
 
 
-      <div className="mx-auto w-full max-w-6xl space-y-8 px-4 pb-56 transition-all duration-500 ease-in-out md:px-6">
+      <div className="mx-auto w-full max-w-6xl space-y-8 px-4 pb-6 transition-all duration-500 ease-in-out md:px-6">
 
 
 
@@ -1733,8 +1858,8 @@ export function PortfolioReviewView({
 	            <h1 className="text-xl font-bold tracking-tight">Review Portfolio</h1>
 	            <p className="text-sm text-muted-foreground whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px] sm:max-w-none">
 	              {hasVault === false
-	                ? "Review your portfolio, then create your vault to save it."
-	                : "Verify before saving to vault"}
+	                ? "Review your portfolio, then create your Vault to save it."
+	                : "Review before saving to Vault"}
 	            </p>
 	          </div>
 	        </div>
@@ -1748,7 +1873,7 @@ export function PortfolioReviewView({
           }}
         >
           <span className="hidden sm:inline ml-2 font-bold">Re-import</span>
-          <span className="sm:hidden font-bold">Retry</span>
+          <span className="sm:hidden font-bold">Try again</span>
         </MorphyButton>
 
 
@@ -1768,7 +1893,7 @@ export function PortfolioReviewView({
                 <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-1">
                   Total Portfolio Value
                 </p>
-                <p className="text-4xl sm:text-5xl font-black tracking-tight bg-linear-to-br from-foreground to-foreground/70 bg-clip-text text-transparent px-2 break-all">
+                <p className="max-w-full overflow-hidden text-ellipsis whitespace-nowrap px-2 text-3xl font-black leading-none tracking-tight tabular-nums bg-linear-to-br from-foreground to-foreground/70 bg-clip-text text-transparent sm:text-4xl">
                   {formatCurrency(totalValue)}
                 </p>
 
@@ -1800,21 +1925,22 @@ export function PortfolioReviewView({
                 </div>
                 <div className="min-w-0 flex flex-col items-center justify-center">
                   <Badge
-                    variant={
-                      riskBucket === "conservative"
-                        ? "secondary"
+                    variant="outline"
+                    className={cn(
+                      "font-black text-[10px] uppercase tracking-widest px-2",
+                      riskBucket === "aggressive"
+                        ? "app-critical-badge"
                         : riskBucket === "moderate"
-                          ? "default"
-                          : "destructive"
-                    }
-                    className="font-black text-[10px] uppercase tracking-widest px-2"
+                          ? "border-primary/30 bg-primary/10 text-primary"
+                          : "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                    )}
                   >
                     {riskBucket}
                   </Badge>
                   <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mt-2">Portfolio Risk</p>
                 </div>
                 <div className="min-w-0 text-center sm:text-right sm:pr-4">
-                  <p className="text-2xl font-black break-all">
+                  <p className="max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-xl font-black leading-none tabular-nums sm:text-2xl">
                     {formatCurrency(liveCashBalance)}
                   </p>
                   <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Cash</p>
@@ -2114,6 +2240,7 @@ export function PortfolioReviewView({
                   <DataTable
                     columns={holdingsTableColumns}
                     data={holdingTables.all}
+                    globalSearchKeys={["symbol", "name"]}
                     searchPlaceholder="Search holdings by symbol or name..."
                     initialPageSize={5}
                     pageSizeOptions={[5, 10, 20]}
@@ -2129,6 +2256,7 @@ export function PortfolioReviewView({
                   <DataTable
                     columns={holdingsTableColumns}
                     data={holdingTables.analyzeEligible}
+                    globalSearchKeys={["symbol", "name"]}
                     searchPlaceholder="Search equities..."
                     initialPageSize={5}
                     pageSizeOptions={[5, 10, 20]}
@@ -2144,6 +2272,7 @@ export function PortfolioReviewView({
                   <DataTable
                     columns={holdingsTableColumns}
                     data={holdingTables.nonAnalyzable}
+                    globalSearchKeys={["symbol", "name"]}
                     searchPlaceholder="Search other assets..."
                     initialPageSize={5}
                     pageSizeOptions={[5, 10, 20]}
@@ -2159,6 +2288,7 @@ export function PortfolioReviewView({
                   <DataTable
                     columns={holdingsTableColumns}
                     data={holdingTables.cashSweep}
+                    globalSearchKeys={["symbol", "name"]}
                     searchPlaceholder="Search cash holdings..."
                     initialPageSize={5}
                     pageSizeOptions={[5, 10, 20]}
@@ -2180,21 +2310,23 @@ export function PortfolioReviewView({
                     createdVaultCopyRef.current = hasVault === false;
                     void handleSave();
                   }}
-                  disabled={isSaving || activeHoldings.length === 0}
+                  disabled={isBusySaving || activeHoldings.length === 0}
                   className="bg-black text-white hover:bg-black/90 dark:bg-white dark:text-black dark:hover:bg-white/90"
                 >
-                  {isSaving ? (
+                  {isBusySaving ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   ) : (
                     <Icon icon={Save} size="sm" className="mr-2" />
                   )}
-                  {isSaving
+                  {isBusySaving
                     ? hasVault === false
-                      ? "Encrypting portfolio and creating vault..."
-                      : "Encrypting portfolio and saving to vault..."
+                      ? "Creating Vault and saving portfolio..."
+                      : isSaving
+                        ? "Securing portfolio in Vault..."
+                        : "Saving portfolio in background..."
                     : hasVault === false
-                    ? "Create vault"
-                    : "Save to vault"}
+                    ? "Create Vault"
+                    : "Save to Vault"}
                 </MorphyButton>
               </div>
             </CardContent>
@@ -2215,7 +2347,7 @@ export function PortfolioReviewView({
         <Dialog
           open={vaultDialogOpen}
           onOpenChange={(open) => {
-            if (isSaving) return;
+            if (isBusySaving) return;
             setVaultDialogOpen(open);
             if (!open) setPendingVaultSave(false);
           }}
@@ -2223,11 +2355,11 @@ export function PortfolioReviewView({
           <DialogContent className="z-[520] w-[calc(100%-1rem)] max-h-[calc(100svh-1rem)] p-0 border border-border/60 bg-background shadow-2xl overflow-hidden sm:max-w-md">
             <DialogTitle className="sr-only">
               {hasVault === false
-                ? "Create vault to save portfolio"
-                : "Unlock vault to save portfolio"}
+                ? "Create Vault to save portfolio"
+                : "Unlock Vault to save portfolio"}
             </DialogTitle>
             <DialogDescription className="sr-only">
-              Create or unlock your vault to securely save this portfolio to your world model.
+              Create or unlock your Vault to save this portfolio securely.
             </DialogDescription>
             <VaultFlow
               user={user}
@@ -2257,10 +2389,10 @@ export function PortfolioReviewView({
           <div className="mx-4 w-full max-w-sm rounded-2xl border border-border/70 bg-background/95 p-5 shadow-2xl">
             <div className="flex items-center gap-3">
               <Loader2 className="h-5 w-5 animate-spin text-primary" />
-              <p className="text-sm font-semibold">Encrypting and saving to vault</p>
+              <p className="text-sm font-semibold">Securing and saving to Vault</p>
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
-              Please wait. Navigation is temporarily locked until secure save completes.
+              {toInvestorMessage("SAVE_IN_PROGRESS")}
             </p>
           </div>
         </div>

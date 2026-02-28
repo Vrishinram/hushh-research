@@ -44,12 +44,19 @@ import { KAI_PORTFOLIO_IMPORT_IDLE_TIMEOUT_MS } from "@/lib/services/kai-import-
 import { fetchDemoPortfolioTemplateAsset } from "@/lib/services/demo-mode-template-service";
 import { useAuth } from "@/hooks/use-auth";
 import { VaultFlow } from "@/components/vault/vault-flow";
+import { Capacitor } from "@capacitor/core";
+import {
+  getSessionItem,
+  removeSessionItem,
+  setSessionItem,
+} from "@/lib/utils/session-storage";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { toInvestorLoading, toInvestorStreamText } from "@/lib/copy/investor-language";
 
 // =============================================================================
 // TYPES
@@ -132,6 +139,109 @@ interface StreamingState {
   holdingsExtracted: number;
   holdingsTotal?: number;
   errorMessage?: string;
+}
+
+type ImportBackgroundStatus = "running" | "completed" | "failed" | "canceled";
+
+interface PersistedImportBackgroundSnapshot {
+  version: 1;
+  userId: string;
+  taskId: string | null;
+  runId: string | null;
+  latestCursor: number;
+  status: ImportBackgroundStatus;
+  startedAt: string;
+  updatedAt: string;
+  errorMessage: string | null;
+  streaming: StreamingState;
+  parsedPortfolio?: ReviewPortfolioData;
+}
+
+const KAI_IMPORT_BACKGROUND_KEY = "kai_portfolio_import_background_v1";
+
+function createInitialStreamingState(): StreamingState {
+  return {
+    stage: "idle",
+    stageTrail: [],
+    rawStreamLines: [],
+    streamedText: "",
+    totalChars: 0,
+    chunkCount: 0,
+    progressPct: undefined,
+    statusMessage: "Ready to import",
+    thoughts: [],
+    thoughtCount: 0,
+    qualityReport: undefined,
+    liveHoldings: [],
+    holdingsExtracted: 0,
+    holdingsTotal: undefined,
+    errorMessage: undefined,
+  };
+}
+
+function loadImportBackgroundSnapshot(userId: string): PersistedImportBackgroundSnapshot | null {
+  const raw = getSessionItem(KAI_IMPORT_BACKGROUND_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<PersistedImportBackgroundSnapshot>;
+    if (parsed.version !== 1) return null;
+    if (!parsed.userId || parsed.userId !== userId) return null;
+    if (!parsed.streaming || typeof parsed.streaming !== "object") return null;
+    return {
+      version: 1,
+      userId,
+      taskId:
+        typeof parsed.taskId === "string" && parsed.taskId.trim().length > 0
+          ? parsed.taskId.trim()
+          : null,
+      runId:
+        typeof parsed.runId === "string" && parsed.runId.trim().length > 0
+          ? parsed.runId.trim()
+          : null,
+      latestCursor:
+        typeof parsed.latestCursor === "number" && Number.isFinite(parsed.latestCursor)
+          ? Math.max(0, Math.floor(parsed.latestCursor))
+          : 0,
+      status:
+        parsed.status === "completed" ||
+        parsed.status === "failed" ||
+        parsed.status === "canceled"
+          ? parsed.status
+          : "running",
+      startedAt:
+        typeof parsed.startedAt === "string" && parsed.startedAt.trim().length > 0
+          ? parsed.startedAt
+          : new Date().toISOString(),
+      updatedAt:
+        typeof parsed.updatedAt === "string" && parsed.updatedAt.trim().length > 0
+          ? parsed.updatedAt
+          : new Date().toISOString(),
+      errorMessage:
+        typeof parsed.errorMessage === "string" && parsed.errorMessage.trim().length > 0
+          ? parsed.errorMessage
+          : null,
+      streaming: {
+        ...createInitialStreamingState(),
+        ...(parsed.streaming as StreamingState),
+      },
+      parsedPortfolio:
+        parsed.parsedPortfolio && typeof parsed.parsedPortfolio === "object"
+          ? (parsed.parsedPortfolio as ReviewPortfolioData)
+          : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function saveImportBackgroundSnapshot(snapshot: PersistedImportBackgroundSnapshot): void {
+  setSessionItem(KAI_IMPORT_BACKGROUND_KEY, JSON.stringify(snapshot));
+}
+
+function clearImportBackgroundSnapshot(userId: string): void {
+  const snapshot = loadImportBackgroundSnapshot(userId);
+  if (!snapshot) return;
+  removeSessionItem(KAI_IMPORT_BACKGROUND_KEY);
 }
 
 // =============================================================================
@@ -222,7 +332,26 @@ function normalizeRawStreamLine(input: string): string {
     .replace(/```/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  return stripped;
+  if (!stripped) return "";
+  const looksStructuredPayload =
+    /^\s*[\[{]/.test(stripped) ||
+    /"[^"]+"\s*:/.test(stripped) ||
+    /(?:portfolio_data_v2|raw_extract_v2|analytics_v2|quality_report_v2|holdings_preview|progress_pct|chunk_count|total_chars|run_id|cursor|seq)\b/i.test(
+      stripped
+    );
+  const tagged = stripped.match(/^\[([^\]]+)\]\s*(.*)$/);
+  if (tagged) {
+    const tag = (tagged[1] || "").trim();
+    const cleaned = (tagged[2] || "").trim();
+    const message = looksStructuredPayload
+      ? "Analyzing statement details..."
+      : toInvestorStreamText(cleaned);
+    return message ? `[${tag}] ${message}` : `[${tag}]`;
+  }
+  if (looksStructuredPayload) {
+    return "Analyzing statement details...";
+  }
+  return toInvestorStreamText(stripped);
 }
 
 function rawStreamLineKey(line: string): string {
@@ -255,6 +384,51 @@ function appendRawStreamLines(
     }
   }
   return next;
+}
+
+function sanitizeInvestorCopy(value: unknown, fallback = ""): string {
+  const next = toInvestorStreamText(value);
+  if (next) return next;
+  return fallback;
+}
+
+function dedupeLiveHoldingPreviewRows(rows: LiveHoldingPreview[]): LiveHoldingPreview[] {
+  if (rows.length <= 1) return rows;
+  const seen = new Set<string>();
+  const unique: LiveHoldingPreview[] = [];
+  for (const row of rows) {
+    const symbol = normalizeTickerSymbol(row.symbol, {
+      name: row.name,
+      assetType: row.asset_type,
+    });
+    const name = String(row.name || "").trim().toLowerCase();
+    const qty =
+      typeof row.quantity === "number" && Number.isFinite(row.quantity)
+        ? row.quantity.toFixed(6)
+        : "";
+    const value =
+      typeof row.market_value === "number" && Number.isFinite(row.market_value)
+        ? row.market_value.toFixed(2)
+        : "";
+    const assetType = String(row.asset_type || "").trim().toLowerCase();
+    const key = [symbol, name, qty, value, assetType].join("|");
+    if (!key.replace(/\|/g, "").trim()) continue;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push({
+      ...row,
+      symbol: symbol || row.symbol,
+    });
+  }
+  return unique;
+}
+
+function mergeLiveHoldingPreviewRows(
+  current: LiveHoldingPreview[],
+  incoming: LiveHoldingPreview[]
+): LiveHoldingPreview[] {
+  if (!incoming.length) return current;
+  return dedupeLiveHoldingPreviewRows([...current, ...incoming]);
 }
 
 function normalizePortfolioData(backendData: Record<string, unknown>): ReviewPortfolioData {
@@ -436,21 +610,14 @@ export function KaiFlow({
   const [isPreloadingSchema, setIsPreloadingSchema] = useState(false);
   
   // Streaming state for real-time progress
-  const [streaming, setStreaming] = useState<StreamingState>({
-    stage: "idle",
-    stageTrail: [],
-    rawStreamLines: [],
-    streamedText: "",
-    totalChars: 0,
-    chunkCount: 0,
-    progressPct: undefined,
-    statusMessage: "Ready to import",
-    thoughts: [],
-    thoughtCount: 0,
-    liveHoldings: [],
-    holdingsExtracted: 0,
-  });
+  const [streaming, setStreaming] = useState<StreamingState>(createInitialStreamingState);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const importResumeAppliedRef = useRef(false);
+  const importSnapshotUpdatedAtRef = useRef<string | null>(null);
+  const activeImportTaskIdRef = useRef<string | null>(null);
+  const activeImportRunIdRef = useRef<string | null>(null);
+  const activeImportCursorRef = useRef<number>(0);
+  const resumeImportStreamInFlightRef = useRef(false);
   const setBusyOperation = useKaiSession((s) => s.setBusyOperation);
 
   useEffect(() => {
@@ -458,6 +625,457 @@ export function KaiFlow({
   }, [state]);
 
   useScrollReset(`${mode}:${state}`, { enabled: true, behavior: "auto" });
+
+  useEffect(() => {
+    if (mode !== "import") return;
+    const snapshot = loadImportBackgroundSnapshot(userId);
+    if (!snapshot) {
+      importResumeAppliedRef.current = false;
+      importSnapshotUpdatedAtRef.current = null;
+      activeImportTaskIdRef.current = null;
+      activeImportRunIdRef.current = null;
+      activeImportCursorRef.current = 0;
+      return;
+    }
+
+    importResumeAppliedRef.current =
+      snapshot.status === "running" || snapshot.status === "completed";
+    importSnapshotUpdatedAtRef.current = snapshot.updatedAt;
+    activeImportTaskIdRef.current = snapshot.taskId;
+    activeImportRunIdRef.current = snapshot.runId;
+    activeImportCursorRef.current = snapshot.latestCursor;
+    setStreaming(snapshot.streaming);
+
+    if (snapshot.status === "running") {
+      setError(null);
+      setState("importing");
+      return;
+    }
+
+    if (snapshot.status === "completed" && snapshot.parsedPortfolio) {
+      setFlowData((prev) => ({
+        ...prev,
+        parsedPortfolio: snapshot.parsedPortfolio,
+      }));
+      setError(null);
+      setState("import_complete");
+      return;
+    }
+
+    if (snapshot.status === "failed" && snapshot.errorMessage) {
+      setError(snapshot.errorMessage);
+      setState("import_required");
+    }
+  }, [mode, userId]);
+
+  useEffect(() => {
+    if (mode !== "import") return;
+    const interval = window.setInterval(() => {
+      const snapshot = loadImportBackgroundSnapshot(userId);
+      if (!snapshot) return;
+      if (snapshot.updatedAt === importSnapshotUpdatedAtRef.current) return;
+
+      importSnapshotUpdatedAtRef.current = snapshot.updatedAt;
+      activeImportTaskIdRef.current = snapshot.taskId;
+      activeImportRunIdRef.current = snapshot.runId;
+      activeImportCursorRef.current = snapshot.latestCursor;
+      setStreaming(snapshot.streaming);
+
+      if (snapshot.status === "completed" && snapshot.parsedPortfolio) {
+        setFlowData((prev) => ({
+          ...prev,
+          parsedPortfolio: snapshot.parsedPortfolio,
+        }));
+        setError(null);
+        setState("import_complete");
+        return;
+      }
+
+      if (snapshot.status === "failed") {
+        setError(snapshot.errorMessage || "Import failed. Please try again.");
+        setState("import_required");
+        return;
+      }
+
+      if (snapshot.status === "running") {
+        setState("importing");
+      }
+    }, 700);
+
+    return () => window.clearInterval(interval);
+  }, [mode, userId]);
+
+  useEffect(() => {
+    if (mode !== "import") return;
+    if (Capacitor.isNativePlatform()) return;
+    if (!effectiveVaultOwnerToken) return;
+    if (resumeImportStreamInFlightRef.current) return;
+
+    const initialSnapshot = loadImportBackgroundSnapshot(userId);
+    if (!initialSnapshot) return;
+    if (initialSnapshot.status !== "running") return;
+
+    resumeImportStreamInFlightRef.current = true;
+    setBusyOperation("portfolio_import_stream", true);
+    abortControllerRef.current = new AbortController();
+
+    const validStages = new Set<ImportStage>([
+      "idle",
+      "uploading",
+      "indexing",
+      "scanning",
+      "thinking",
+      "extracting",
+      "normalizing",
+      "validating",
+      "complete",
+      "error",
+    ]);
+    const readNumber = (value: unknown): number | undefined =>
+      typeof value === "number" && Number.isFinite(value) ? value : undefined;
+    const readString = (value: unknown): string | undefined =>
+      typeof value === "string" && value.trim().length > 0 ? value : undefined;
+    let snapshot = initialSnapshot;
+    let streamShadow: StreamingState = snapshot.streaming;
+    const persistSnapshot = (
+      status: ImportBackgroundStatus,
+      options?: { errorMessage?: string | null; parsedPortfolio?: ReviewPortfolioData }
+    ) => {
+      saveImportBackgroundSnapshot({
+        version: 1,
+        userId,
+        taskId: activeImportTaskIdRef.current,
+        runId: activeImportRunIdRef.current,
+        latestCursor: activeImportCursorRef.current,
+        status,
+        startedAt: snapshot.startedAt,
+        updatedAt: new Date().toISOString(),
+        errorMessage: options?.errorMessage ?? null,
+        streaming: streamShadow,
+        parsedPortfolio: options?.parsedPortfolio,
+      });
+    };
+    const applyStreaming = (mutate: (prev: StreamingState) => StreamingState) => {
+      streamShadow = mutate(streamShadow);
+      setStreaming(streamShadow);
+      persistSnapshot("running");
+      if (activeImportTaskIdRef.current) {
+        AppBackgroundTaskService.updateTask(activeImportTaskIdRef.current, {
+          description: streamShadow.statusMessage || `Import ${streamShadow.stage}`,
+          routeHref: ROUTES.KAI_IMPORT,
+        });
+      }
+    };
+
+    void (async () => {
+      try {
+        if (!snapshot.runId) {
+          const activeRunResponse = await ApiService.getActivePortfolioImportRun({
+            userId,
+            vaultOwnerToken: effectiveVaultOwnerToken,
+          });
+          if (activeRunResponse.ok) {
+            const activePayload = (await activeRunResponse.json()) as {
+              run?: { run_id?: unknown; latest_cursor?: unknown };
+            };
+            const activeRunId =
+              typeof activePayload?.run?.run_id === "string"
+                ? activePayload.run.run_id.trim()
+                : "";
+            const activeCursor =
+              typeof activePayload?.run?.latest_cursor === "number" &&
+              Number.isFinite(activePayload.run.latest_cursor)
+                ? Math.max(0, Math.floor(activePayload.run.latest_cursor))
+                : snapshot.latestCursor;
+            if (activeRunId) {
+              snapshot = {
+                ...snapshot,
+                runId: activeRunId,
+                latestCursor: activeCursor,
+              };
+              activeImportRunIdRef.current = activeRunId;
+              activeImportCursorRef.current = activeCursor;
+              persistSnapshot("running");
+            }
+          }
+        }
+
+        if (!snapshot.runId) {
+          resumeImportStreamInFlightRef.current = false;
+          setBusyOperation("portfolio_import_stream", false);
+          return;
+        }
+
+        const response = await ApiService.streamPortfolioImportRun({
+          runId: snapshot.runId,
+          userId,
+          vaultOwnerToken: effectiveVaultOwnerToken,
+          cursor: snapshot.latestCursor,
+          signal: abortControllerRef.current?.signal,
+        });
+        if (!response.ok) {
+          if (response.status === 404 || response.status === 410) {
+            clearImportBackgroundSnapshot(userId);
+            importResumeAppliedRef.current = false;
+            importSnapshotUpdatedAtRef.current = null;
+            activeImportTaskIdRef.current = null;
+            activeImportRunIdRef.current = null;
+            activeImportCursorRef.current = 0;
+            setStreaming(createInitialStreamingState());
+            setState("import_required");
+            return;
+          }
+          throw new Error(`Failed to resume import stream: HTTP ${response.status}`);
+        }
+
+        await consumeCanonicalKaiStream(
+          response,
+          (envelope: KaiStreamEnvelope) => {
+            const payload = envelope.payload as Record<string, unknown>;
+            const runIdFromPayload =
+              typeof payload.run_id === "string" && payload.run_id.trim().length > 0
+                ? payload.run_id.trim()
+                : null;
+            if (runIdFromPayload) {
+              activeImportRunIdRef.current = runIdFromPayload;
+            }
+            if (typeof envelope.seq === "number" && Number.isFinite(envelope.seq)) {
+              activeImportCursorRef.current = Math.max(
+                activeImportCursorRef.current,
+                Math.floor(envelope.seq)
+              );
+            }
+
+            switch (envelope.event) {
+              case "stage": {
+                const stageValue = typeof payload.stage === "string" ? payload.stage : undefined;
+                const normalizedStageValue =
+                  stageValue === "analyzing"
+                    ? "scanning"
+                    : stageValue === "parsing"
+                      ? "normalizing"
+                      : stageValue;
+                const stage =
+                  normalizedStageValue && validStages.has(normalizedStageValue as ImportStage)
+                    ? (normalizedStageValue as ImportStage)
+                    : undefined;
+                const statusMessage = sanitizeInvestorCopy(readString(payload.message), "");
+                applyStreaming((prev) => ({
+                  ...prev,
+                  stage: stage ?? prev.stage,
+                  statusMessage: statusMessage || prev.statusMessage,
+                  progressPct: readNumber(payload.progress_pct) ?? prev.progressPct,
+                }));
+                break;
+              }
+              case "progress": {
+                const statusMessage = sanitizeInvestorCopy(readString(payload.message), "");
+                applyStreaming((prev) => ({
+                  ...prev,
+                  statusMessage: statusMessage || prev.statusMessage,
+                  progressPct: readNumber(payload.progress_pct) ?? prev.progressPct,
+                  holdingsExtracted:
+                    readNumber(payload.holdings_extracted) ?? prev.holdingsExtracted,
+                  holdingsTotal: readNumber(payload.holdings_total) ?? prev.holdingsTotal,
+                }));
+                break;
+              }
+              case "chunk": {
+                const text = typeof payload.text === "string" ? payload.text : "";
+                applyStreaming((prev) => ({
+                  ...prev,
+                  stage: "extracting",
+                  rawStreamLines: appendRawStreamLines(
+                    prev.rawStreamLines,
+                    text ? [text] : undefined
+                  ),
+                  totalChars: readNumber(payload.total_chars) ?? prev.totalChars,
+                  chunkCount: readNumber(payload.chunk_count) ?? prev.chunkCount,
+                  progressPct: readNumber(payload.progress_pct) ?? prev.progressPct,
+                }));
+                break;
+              }
+              case "thinking": {
+                const thought = sanitizeInvestorCopy(readString(payload.thought), "");
+                applyStreaming((prev) => ({
+                  ...prev,
+                  stage: "thinking",
+                  thoughtCount: readNumber(payload.count) ?? prev.thoughtCount,
+                  thoughts: thought ? [...prev.thoughts, thought] : prev.thoughts,
+                  progressPct: readNumber(payload.progress_pct) ?? prev.progressPct,
+                }));
+                break;
+              }
+              case "warning": {
+                const message = sanitizeInvestorCopy(readString(payload.message), "");
+                if (!message) break;
+                applyStreaming((prev) => ({
+                  ...prev,
+                  statusMessage: message,
+                  stageTrail: [...prev.stageTrail, `[WARNING] ${message}`].slice(-120),
+                  rawStreamLines: appendRawStreamLines(prev.rawStreamLines, [`[WARNING] ${message}`]),
+                }));
+                break;
+              }
+              case "complete": {
+                const rawPortfolioData = payload.portfolio_data_v2 as
+                  | Record<string, unknown>
+                  | undefined;
+                if (
+                  !rawPortfolioData ||
+                  typeof rawPortfolioData !== "object" ||
+                  Array.isArray(rawPortfolioData)
+                ) {
+                  break;
+                }
+                const parsedPortfolio = normalizePortfolioData({
+                  ...(rawPortfolioData as Record<string, unknown>),
+                  raw_extract_v2:
+                    payload.raw_extract_v2 &&
+                    typeof payload.raw_extract_v2 === "object" &&
+                    !Array.isArray(payload.raw_extract_v2)
+                      ? (payload.raw_extract_v2 as Record<string, unknown>)
+                      : undefined,
+                  analytics_v2:
+                    payload.analytics_v2 &&
+                    typeof payload.analytics_v2 === "object" &&
+                    !Array.isArray(payload.analytics_v2)
+                      ? (payload.analytics_v2 as Record<string, unknown>)
+                      : undefined,
+                  quality_report_v2:
+                    payload.quality_report_v2 &&
+                    typeof payload.quality_report_v2 === "object" &&
+                    !Array.isArray(payload.quality_report_v2)
+                      ? (payload.quality_report_v2 as Record<string, unknown>)
+                      : undefined,
+                });
+                setFlowData((prev) => ({
+                  ...prev,
+                  parsedPortfolio,
+                }));
+                applyStreaming((prev) => ({
+                  ...prev,
+                  stage: "complete",
+                  statusMessage: "Portfolio is ready for review.",
+                  progressPct: 100,
+                }));
+                persistSnapshot("completed", {
+                  parsedPortfolio,
+                });
+                if (activeImportTaskIdRef.current) {
+                  AppBackgroundTaskService.completeTask(
+                    activeImportTaskIdRef.current,
+                    "Import complete. Review and save when ready."
+                  );
+                }
+                setError(null);
+                setState("import_complete");
+                break;
+              }
+              case "aborted":
+              case "error": {
+                const message = sanitizeInvestorCopy(
+                  readString(payload.message),
+                  "Import could not be completed."
+                );
+                applyStreaming((prev) => ({
+                  ...prev,
+                  stage: "error",
+                  errorMessage: message,
+                  statusMessage: message,
+                  rawStreamLines: appendRawStreamLines(prev.rawStreamLines, [`[ERROR] ${message}`]),
+                }));
+                persistSnapshot("failed", {
+                  errorMessage: message,
+                });
+                if (activeImportTaskIdRef.current) {
+                  AppBackgroundTaskService.failTask(
+                    activeImportTaskIdRef.current,
+                    message,
+                    "Portfolio import failed. Please retry."
+                  );
+                }
+                setError(message);
+                setState("importing");
+                break;
+              }
+              default:
+                break;
+            }
+          },
+          {
+            signal: abortControllerRef.current?.signal,
+            idleTimeoutMs: KAI_PORTFOLIO_IMPORT_IDLE_TIMEOUT_MS,
+            requireTerminal: true,
+          }
+        );
+      } catch (resumeError) {
+        if (resumeError instanceof Error && resumeError.name === "AbortError") {
+          return;
+        }
+        console.warn("[KaiFlow] Failed to resume import stream:", resumeError);
+      } finally {
+        abortControllerRef.current = null;
+        resumeImportStreamInFlightRef.current = false;
+        setBusyOperation("portfolio_import_stream", false);
+      }
+    })();
+  }, [effectiveVaultOwnerToken, mode, setBusyOperation, userId]);
+
+  const runDeferredPostSaveSync = useCallback(() => {
+    if (!effectiveVaultOwnerToken || !vaultKey) return;
+    void KaiProfileSyncService.getPendingSyncState(userId)
+      .then((pendingState) => {
+        if (!pendingState.hasPending) return;
+
+        const taskId = AppBackgroundTaskService.startTask({
+          userId,
+          kind: "portfolio_postsave_sync",
+          title: "Profile sync",
+          description: "Finishing onboarding/profile updates in the background.",
+          routeHref: ROUTES.KAI_DASHBOARD,
+        });
+
+        return KaiProfileSyncService.syncPendingToVault({
+          userId,
+          vaultKey,
+          vaultOwnerToken: effectiveVaultOwnerToken,
+          pendingState,
+        })
+          .then((result) => {
+            if (!result?.synced) {
+              if (
+                result?.reason === "no_pending_state" ||
+                result?.reason === "already_synced" ||
+                result?.reason === "portfolio_save_inflight"
+              ) {
+                AppBackgroundTaskService.dismissTask(taskId);
+                return;
+              }
+              AppBackgroundTaskService.completeTask(
+                taskId,
+                "No additional profile sync needed."
+              );
+              return;
+            }
+            AppBackgroundTaskService.completeTask(
+              taskId,
+              "Portfolio sync completed."
+            );
+          })
+          .catch((syncError) => {
+            console.warn("[KaiFlow] Deferred onboarding sync failed after save:", syncError);
+            AppBackgroundTaskService.failTask(
+              taskId,
+              syncError instanceof Error ? syncError.message : "Sync failed",
+              "Portfolio sync failed. You can continue using dashboard."
+            );
+          });
+      })
+      .catch((pendingError) => {
+        console.warn("[KaiFlow] Failed to preflight profile sync state:", pendingError);
+      });
+  }, [effectiveVaultOwnerToken, userId, vaultKey]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -490,13 +1108,24 @@ export function KaiFlow({
         holdings: normalizedCachedPortfolio.holdings?.map((h) => h.symbol) || [],
       });
       setState("dashboard");
+      runDeferredPostSaveSync();
+    };
+
+    const handlePortfolioSaveFailed = (event: Event) => {
+      const detail = (event as CustomEvent<{ userId?: string; error?: string }>).detail;
+      if (!detail || detail.userId !== userId) return;
+      toast.error("Background portfolio save failed.", {
+        description: detail.error || "Reopen import and try saving again.",
+      });
     };
 
     window.addEventListener("kai:portfolio-saved", handlePortfolioSaved);
+    window.addEventListener("kai:portfolio-save-failed", handlePortfolioSaveFailed);
     return () => {
       window.removeEventListener("kai:portfolio-saved", handlePortfolioSaved);
+      window.removeEventListener("kai:portfolio-save-failed", handlePortfolioSaveFailed);
     };
-  }, [getPortfolioData, isDashboardMode, setPortfolioData, userId]);
+  }, [getPortfolioData, isDashboardMode, runDeferredPostSaveSync, setPortfolioData, userId]);
 
   // Check World Model for financial data on mount
   useEffect(() => {
@@ -504,6 +1133,9 @@ export function KaiFlow({
       try {
         // Import route should only perform this check during initial bootstrap.
         // Re-running on vault token/key transitions can reset active import progress.
+        if (mode === "import" && importResumeAppliedRef.current) {
+          return;
+        }
         if (mode === "import" && stateRef.current !== "checking") {
           return;
         }
@@ -579,7 +1211,7 @@ export function KaiFlow({
                 console.warn(
                   "[KaiFlow] Financial domain metadata exists but encrypted blob has no valid financial holdings shape."
                 );
-                toast.error("Portfolio data needs repair. Please re-import your statement.");
+                toast.error("Portfolio data is incomplete. Please import your latest statement.");
                 setFlowData({ hasFinancialData: false });
                 setState("import_required");
                 return;
@@ -597,7 +1229,7 @@ export function KaiFlow({
               if (errorMessage.includes("decrypt") || errorMessage.includes("tag") || errorMessage.includes("authentication")) {
                 console.warn("[KaiFlow] Possible encryption key mismatch - clearing cache and prompting re-import");
                 invalidateDomain(userId, "financial");
-                toast.error("Unable to decrypt portfolio data. Please re-import your statement.");
+                toast.error("We could not read your saved portfolio. Please import your statement again.");
                 setFlowData({ hasFinancialData: false });
                 setState("import_required");
                 return;
@@ -767,17 +1399,6 @@ export function KaiFlow({
     }
   }, [flowData.holdings, onHoldingsLoaded]);
 
-  // Keep import stream alive when app/tab is backgrounded; only abort on explicit unload.
-  useEffect(() => {
-    const abortStream = () => abortControllerRef.current?.abort();
-    window.addEventListener('beforeunload', abortStream);
-
-    return () => {
-      abortStream();
-      window.removeEventListener('beforeunload', abortStream);
-    };
-  }, []);
-
   // Handle file upload with SSE streaming
   const handleFileUpload = useCallback(
     async (file: File) => {
@@ -801,19 +1422,183 @@ export function KaiFlow({
         setResumeImportAfterVault(false);
         setVaultDialogOpen(true);
         setError(null);
-        toast.info("Create or unlock vault to import portfolio.");
+        toast.info("Create or unlock your Vault to import portfolio.");
         return;
       }
 
       const tokenForImport = effectiveVaultOwnerToken;
+      let importTaskId: string | null = null;
+      const startedAt = new Date().toISOString();
+      let streamShadow: StreamingState = createInitialStreamingState();
+      const persistBackgroundSnapshot = (
+        status: ImportBackgroundStatus,
+        options?: {
+          errorMessage?: string | null;
+          parsedPortfolio?: ReviewPortfolioData;
+        }
+      ) => {
+        const snapshot: PersistedImportBackgroundSnapshot = {
+          version: 1,
+          userId,
+          taskId: importTaskId,
+          runId: activeImportRunIdRef.current,
+          latestCursor: activeImportCursorRef.current,
+          status,
+          startedAt,
+          updatedAt: new Date().toISOString(),
+          errorMessage: options?.errorMessage ?? null,
+          streaming: streamShadow,
+          parsedPortfolio: options?.parsedPortfolio,
+        };
+        saveImportBackgroundSnapshot(snapshot);
+        importSnapshotUpdatedAtRef.current = snapshot.updatedAt;
+      };
+      const applyStreaming = (
+        mutate: (prev: StreamingState) => StreamingState
+      ): void => {
+        streamShadow = mutate(streamShadow);
+        setStreaming(streamShadow);
+        persistBackgroundSnapshot("running");
+        if (importTaskId) {
+          AppBackgroundTaskService.updateTask(importTaskId, {
+            description:
+              streamShadow.statusMessage ||
+              `Import ${streamShadow.stage}`,
+            routeHref: ROUTES.KAI_IMPORT,
+          });
+        }
+      };
+
+      const runningImportExists = AppBackgroundTaskService.hasRunningTask(
+        userId,
+        "portfolio_import_stream"
+      );
+      if (runningImportExists) {
+        const snapshot = loadImportBackgroundSnapshot(userId);
+        if (snapshot && snapshot.status === "running") {
+          importResumeAppliedRef.current = true;
+          importSnapshotUpdatedAtRef.current = snapshot.updatedAt;
+          activeImportTaskIdRef.current = snapshot.taskId;
+          activeImportRunIdRef.current = snapshot.runId;
+          activeImportCursorRef.current = snapshot.latestCursor;
+          setStreaming(snapshot.streaming);
+          setError(null);
+          setState("importing");
+          toast.message("Portfolio import is already running.", {
+            description: "You can continue now or review it later from background tasks.",
+          });
+          return;
+        }
+        if (snapshot && snapshot.status === "completed" && snapshot.parsedPortfolio) {
+          if (snapshot.taskId) {
+            AppBackgroundTaskService.completeTask(
+              snapshot.taskId,
+              "Import complete. Review and save when ready."
+            );
+          }
+          importResumeAppliedRef.current = true;
+          importSnapshotUpdatedAtRef.current = snapshot.updatedAt;
+          activeImportTaskIdRef.current = snapshot.taskId;
+          activeImportRunIdRef.current = snapshot.runId;
+          activeImportCursorRef.current = snapshot.latestCursor;
+          setStreaming(snapshot.streaming);
+          setFlowData((prev) => ({
+            ...prev,
+            parsedPortfolio: snapshot.parsedPortfolio,
+          }));
+          setError(null);
+          setState("import_complete");
+          toast.message("Portfolio import already finished.", {
+            description: "Review the extracted data before saving.",
+          });
+          return;
+        }
+        if (snapshot?.taskId) {
+          AppBackgroundTaskService.dismissTask(snapshot.taskId);
+        }
+        if (snapshot) {
+          clearImportBackgroundSnapshot(userId);
+          importResumeAppliedRef.current = false;
+          importSnapshotUpdatedAtRef.current = null;
+          activeImportTaskIdRef.current = null;
+          activeImportRunIdRef.current = null;
+          activeImportCursorRef.current = 0;
+        }
+        toast.message("Recovered a stale import lock.", {
+          description: "Starting a fresh import now.",
+        });
+      } else {
+        const snapshot = loadImportBackgroundSnapshot(userId);
+        if (snapshot?.status === "running") {
+          importResumeAppliedRef.current = true;
+          importSnapshotUpdatedAtRef.current = snapshot.updatedAt;
+          activeImportTaskIdRef.current = snapshot.taskId;
+          activeImportRunIdRef.current = snapshot.runId;
+          activeImportCursorRef.current = snapshot.latestCursor;
+          setStreaming(snapshot.streaming);
+          setError(null);
+          setState("importing");
+          toast.message("Portfolio import is already running.", {
+            description: "You can continue now or review it later from background tasks.",
+          });
+          return;
+        }
+        if (snapshot?.status === "completed" && snapshot.parsedPortfolio) {
+          importResumeAppliedRef.current = true;
+          importSnapshotUpdatedAtRef.current = snapshot.updatedAt;
+          activeImportTaskIdRef.current = snapshot.taskId;
+          activeImportRunIdRef.current = snapshot.runId;
+          activeImportCursorRef.current = snapshot.latestCursor;
+          setStreaming(snapshot.streaming);
+          setFlowData((prev) => ({
+            ...prev,
+            parsedPortfolio: snapshot.parsedPortfolio,
+          }));
+          setError(null);
+          setState("import_complete");
+          toast.message("Portfolio import already finished.", {
+            description: "Review the extracted data before saving.",
+          });
+          return;
+        }
+        if (snapshot?.status === "failed") {
+          clearImportBackgroundSnapshot(userId);
+          importResumeAppliedRef.current = false;
+          importSnapshotUpdatedAtRef.current = null;
+          activeImportTaskIdRef.current = null;
+          activeImportRunIdRef.current = null;
+          activeImportCursorRef.current = 0;
+          setStreaming(createInitialStreamingState());
+        }
+      }
+      if (
+        runningImportExists &&
+        AppBackgroundTaskService.hasRunningTask(userId, "portfolio_import_stream")
+      ) {
+        toast.message("Another portfolio import is already running.", {
+          description: "Please wait for it to finish before starting a new one.",
+        });
+        return;
+      }
 
       try {
         setState("importing");
         setError(null);
         setBusyOperation("portfolio_import_stream", true);
-        
-        // Reset streaming state
-        setStreaming({
+        activeImportRunIdRef.current = null;
+        activeImportCursorRef.current = 0;
+
+        importTaskId = AppBackgroundTaskService.startTask({
+          userId,
+          kind: "portfolio_import_stream",
+          title: "Portfolio import",
+          description: "Parsing your statement in the background.",
+          routeHref: ROUTES.KAI_IMPORT,
+        });
+        activeImportTaskIdRef.current = importTaskId;
+        importResumeAppliedRef.current = true;
+
+        streamShadow = {
           stage: "uploading",
           stageTrail: ["[UPLOADING] Processing uploaded file..."],
           rawStreamLines: ["[UPLOADING] Processing uploaded file..."],
@@ -829,7 +1614,9 @@ export function KaiFlow({
           holdingsExtracted: 0,
           holdingsTotal: undefined,
           errorMessage: undefined,
-        });
+        };
+        setStreaming(streamShadow);
+        persistBackgroundSnapshot("running");
 
         // Create abort controller for cancellation
         abortControllerRef.current = new AbortController();
@@ -841,22 +1628,85 @@ export function KaiFlow({
 
         let response: Response;
         try {
-          response = await ApiService.importPortfolioStream({
-            formData,
-            vaultOwnerToken: tokenForImport,
-            signal: abortControllerRef.current.signal,
-          });
+          if (Capacitor.isNativePlatform()) {
+            response = await ApiService.importPortfolioStream({
+              formData,
+              vaultOwnerToken: tokenForImport,
+              signal: abortControllerRef.current.signal,
+            });
+          } else {
+            const startResponse = await ApiService.startPortfolioImportRun({
+              formData,
+              vaultOwnerToken: tokenForImport,
+              signal: abortControllerRef.current.signal,
+            });
+            if (startResponse.status === 409) {
+              const conflict = (await startResponse.json().catch(() => null)) as
+                | {
+                    detail?: {
+                      active_run?: { run_id?: unknown; latest_cursor?: unknown };
+                    };
+                  }
+                | null;
+              const runIdFromConflict =
+                typeof conflict?.detail?.active_run?.run_id === "string"
+                  ? conflict.detail.active_run.run_id.trim()
+                  : "";
+              if (!runIdFromConflict) {
+                throw new Error(
+                  "Another import is running, but its run id could not be resolved."
+                );
+              }
+              activeImportRunIdRef.current = runIdFromConflict;
+              activeImportCursorRef.current =
+                typeof conflict?.detail?.active_run?.latest_cursor === "number" &&
+                Number.isFinite(conflict.detail.active_run.latest_cursor)
+                  ? Math.max(0, Math.floor(conflict.detail.active_run.latest_cursor))
+                  : 0;
+              persistBackgroundSnapshot("running");
+              response = await ApiService.streamPortfolioImportRun({
+                runId: runIdFromConflict,
+                userId,
+                vaultOwnerToken: tokenForImport,
+                cursor: activeImportCursorRef.current,
+                signal: abortControllerRef.current.signal,
+              });
+            } else if (!startResponse.ok) {
+              response = startResponse;
+            } else {
+              const startedPayload = (await startResponse.json()) as {
+                run?: { run_id?: unknown };
+              };
+              const runId =
+                typeof startedPayload?.run?.run_id === "string"
+                  ? startedPayload.run.run_id.trim()
+                  : "";
+              if (!runId) {
+                throw new Error("Import run started but no run id was returned.");
+              }
+              activeImportRunIdRef.current = runId;
+              activeImportCursorRef.current = 0;
+              persistBackgroundSnapshot("running");
+              response = await ApiService.streamPortfolioImportRun({
+                runId,
+                userId,
+                vaultOwnerToken: tokenForImport,
+                cursor: 0,
+                signal: abortControllerRef.current.signal,
+              });
+            }
+          }
         } catch (fetchError) {
           if (fetchError instanceof Error && fetchError.name === "AbortError") {
             throw fetchError;
           }
-          throw new Error("Network error. Please check your connection and try again.");
+          throw new Error("Connection issue. Please check your network and try again.");
         }
 
         if (!response.ok) {
           const errorText = await response.text().catch(() => "Unknown error");
           if (response.status === 401) {
-            throw new Error("Session expired. Please refresh the page and try again.");
+            throw new Error("Your session needs refresh. Please sign in again.");
           } else if (response.status === 422) {
             let parsed: Record<string, unknown> | null = null;
             try {
@@ -875,7 +1725,7 @@ export function KaiFlow({
           } else if (response.status === 413) {
             throw new Error("File too large for server. Please try a smaller file.");
           } else if (response.status >= 500) {
-            throw new Error("Server error. Please try again in a few moments.");
+            throw new Error("Service is temporarily unavailable. Please try again shortly.");
           }
           throw new Error(`Upload failed: ${response.status} - ${errorText}`);
         }
@@ -952,15 +1802,32 @@ export function KaiFlow({
           for (const row of value) {
             if (!row || typeof row !== "object" || Array.isArray(row)) continue;
             const item = row as Record<string, unknown>;
-            preview.push({
-              symbol: typeof item.symbol === "string" ? item.symbol : undefined,
+            const symbol = normalizeTickerSymbol(item.symbol, {
               name: typeof item.name === "string" ? item.name : undefined,
-              market_value: readNumber(item.market_value),
-              quantity: readNumber(item.quantity),
-              asset_type: typeof item.asset_type === "string" ? item.asset_type : undefined,
+              assetType: typeof item.asset_type === "string" ? item.asset_type : undefined,
+            });
+            const name =
+              typeof item.name === "string" && item.name.trim().length > 0
+                ? item.name.trim()
+                : undefined;
+            const marketValue = readNumber(item.market_value);
+            const quantity = readNumber(item.quantity);
+            const assetType =
+              typeof item.asset_type === "string" && item.asset_type.trim().length > 0
+                ? item.asset_type.trim()
+                : undefined;
+            // Confirmed preview rows must have a stable symbol and at least one meaningful field.
+            if (!symbol) continue;
+            if (marketValue === undefined && quantity === undefined && !name && !assetType) continue;
+            preview.push({
+              symbol,
+              name,
+              market_value: marketValue,
+              quantity,
+              asset_type: assetType,
             });
           }
-          return preview;
+          return dedupeLiveHoldingPreviewRows(preview);
         };
         const normalizeTrailLine = (next: string): string => {
           const line = next.trim().replace(/\s+/g, " ");
@@ -1067,6 +1934,19 @@ export function KaiFlow({
           response,
           (envelope: KaiStreamEnvelope) => {
             const payload = envelope.payload as Record<string, unknown>;
+            const runIdFromPayload =
+              typeof payload.run_id === "string" && payload.run_id.trim().length > 0
+                ? payload.run_id.trim()
+                : null;
+            if (runIdFromPayload) {
+              activeImportRunIdRef.current = runIdFromPayload;
+            }
+            if (typeof envelope.seq === "number" && Number.isFinite(envelope.seq)) {
+              activeImportCursorRef.current = Math.max(
+                activeImportCursorRef.current,
+                Math.floor(envelope.seq)
+              );
+            }
 
             switch (envelope.event) {
               case "stage": {
@@ -1082,29 +1962,35 @@ export function KaiFlow({
                     ? (normalizedStageValue as ImportStage)
                     : undefined;
                 if (!stage) return;
+                const rawStageMessage = readString(payload.message) ?? stage;
+                const stageMessage = sanitizeInvestorCopy(rawStageMessage, stage);
 
-                setStreaming((prev) => ({
+                applyStreaming((prev) => ({
                   ...prev,
                   stageTrail: appendTrailLine(
                     prev.stageTrail,
-                    `[${stage.toUpperCase()}] ${readString(payload.message) ?? stage}`
+                    `[${stage.toUpperCase()}] ${stageMessage}`
                   ),
                   rawStreamLines: appendRawStreamLines(prev.rawStreamLines, [
-                    `[STAGE/${stage.toUpperCase()}] ${readString(payload.message) ?? stage}`,
+                    `[STAGE/${stage.toUpperCase()}] ${stageMessage}`,
                   ]),
                   stage,
                   totalChars: readNumber(payload.total_chars) ?? prev.totalChars,
                   chunkCount: readNumber(payload.chunk_count) ?? prev.chunkCount,
                   thoughtCount: readNumber(payload.thought_count) ?? prev.thoughtCount,
                   progressPct: readNumber(payload.progress_pct) ?? prev.progressPct,
-                  statusMessage: readString(payload.message) ?? prev.statusMessage,
+                  statusMessage: stageMessage || prev.statusMessage,
                 }));
                 break;
               }
               case "thinking": {
-                const thought = typeof payload.thought === "string" ? payload.thought : undefined;
+                const thought = sanitizeInvestorCopy(
+                  typeof payload.thought === "string" ? payload.thought : "",
+                  ""
+                );
                 const phase = readString(payload.phase);
-                setStreaming((prev) => {
+                const statusMessage = sanitizeInvestorCopy(readString(payload.message), "");
+                applyStreaming((prev) => {
                   const thoughtLine = thought
                     ? `[${(phase || "thinking").toUpperCase()}] ${thought}`
                     : undefined;
@@ -1125,7 +2011,7 @@ export function KaiFlow({
                     ),
                     thoughtCount: readNumber(payload.count) ?? thoughts.length,
                     progressPct: readNumber(payload.progress_pct) ?? prev.progressPct,
-                    statusMessage: readString(payload.message) ?? prev.statusMessage,
+                    statusMessage: statusMessage || prev.statusMessage,
                     streamedText: fullModelTokenText || prev.streamedText,
                   };
                 });
@@ -1133,12 +2019,13 @@ export function KaiFlow({
               }
               case "chunk": {
                 const text = typeof payload.text === "string" ? payload.text : "";
+                const chunkStatusMessage = sanitizeInvestorCopy(readString(payload.message), "");
                 if (text) {
                   fullStreamedText += text;
                   fullModelTokenText += text;
                 }
                 const chunkLines = splitChunkTextIntoLines(text);
-                setStreaming((prev) => ({
+                applyStreaming((prev) => ({
                   ...prev,
                   stage: "extracting",
                   rawStreamLines: appendRawStreamLines(prev.rawStreamLines, chunkLines),
@@ -1146,15 +2033,15 @@ export function KaiFlow({
                   totalChars: readNumber(payload.total_chars) ?? fullStreamedText.length,
                   chunkCount: readNumber(payload.chunk_count) ?? prev.chunkCount,
                   progressPct: readNumber(payload.progress_pct) ?? prev.progressPct,
-                  statusMessage: readString(payload.message) ?? prev.statusMessage,
+                  statusMessage: chunkStatusMessage || prev.statusMessage,
                 }));
                 break;
               }
               case "progress": {
-                const preview = readHoldingsPreview(payload.holdings_preview);
                 const phase = readString(payload.phase);
-                const message = readString(payload.message);
-                setStreaming((prev) => ({
+                const message = sanitizeInvestorCopy(readString(payload.message), "");
+                const preview = readHoldingsPreview(payload.holdings_preview) ?? [];
+                applyStreaming((prev) => ({
                   ...prev,
                   stageTrail: appendTrailLine(
                     prev.stageTrail,
@@ -1177,14 +2064,14 @@ export function KaiFlow({
                   holdingsExtracted:
                     readNumber(payload.holdings_extracted) ?? prev.holdingsExtracted,
                   holdingsTotal: readNumber(payload.holdings_total) ?? prev.holdingsTotal,
-                  liveHoldings: preview && preview.length > 0 ? preview : prev.liveHoldings,
+                  liveHoldings: mergeLiveHoldingPreviewRows(prev.liveHoldings, preview),
                 }));
                 break;
               }
               case "warning": {
-                const message = readString(payload.message);
+                const message = sanitizeInvestorCopy(readString(payload.message), "");
                 if (!message) break;
-                setStreaming((prev) => ({
+                applyStreaming((prev) => ({
                   ...prev,
                   stageTrail: appendTrailLine(prev.stageTrail, `[WARNING] ${message}`),
                   rawStreamLines: appendRawStreamLines(prev.rawStreamLines, [
@@ -1248,9 +2135,12 @@ export function KaiFlow({
                 const trailingChunkLines = splitChunkTextIntoLines("", { flush: true }).map(
                   (line) => line
                 );
-                const completionMessage = readString(payload.message) ?? "Import complete!";
+                const completionMessage = sanitizeInvestorCopy(
+                  readString(payload.message),
+                  "Import complete!"
+                );
 
-                setStreaming((prev) => ({
+                applyStreaming((prev) => ({
                   ...prev,
                   stage: "complete",
                   stageTrail: appendTrailLine(
@@ -1281,17 +2171,19 @@ export function KaiFlow({
                 break;
               }
               case "aborted": {
-                const message =
+                const message = sanitizeInvestorCopy(
                   typeof payload.message === "string"
                     ? payload.message
-                    : "Import was stopped before completion";
+                    : "Import was stopped before completion",
+                  "Import was stopped before completion"
+                );
                 terminalStreamFailureMessage = message;
                 terminalStreamFailureDetails =
                   formatQualityGateDetails(payload.quality_gate) ??
                   readDetails(payload.detail) ??
                   readDetails(payload.diagnostics) ??
                   readString(payload.code);
-                setStreaming((prev) => ({
+                applyStreaming((prev) => ({
                   ...prev,
                   stage: "error",
                   stageTrail: appendTrailLine(prev.stageTrail, `[ERROR] ${message}`),
@@ -1305,17 +2197,19 @@ export function KaiFlow({
                 break;
               }
               case "error": {
-                const message =
+                const message = sanitizeInvestorCopy(
                   typeof payload.message === "string"
                     ? payload.message
-                    : "Import failed while parsing the statement";
+                    : "Import could not be completed for this statement.",
+                  "Import could not be completed for this statement."
+                );
                 terminalStreamFailureMessage = message;
                 terminalStreamFailureDetails =
                   formatQualityGateDetails(payload.quality_gate) ??
                   readDetails(payload.detail) ??
                   readDetails(payload.diagnostics) ??
                   readString(payload.code);
-                setStreaming((prev) => ({
+                applyStreaming((prev) => ({
                   ...prev,
                   stage: "error",
                   stageTrail: appendTrailLine(prev.stageTrail, `[ERROR] ${message}`),
@@ -1340,6 +2234,16 @@ export function KaiFlow({
         );
 
         if (terminalStreamFailureMessage) {
+          persistBackgroundSnapshot("failed", {
+            errorMessage: terminalStreamFailureMessage,
+          });
+          if (importTaskId) {
+            AppBackgroundTaskService.failTask(
+              importTaskId,
+              terminalStreamFailureMessage,
+              "Portfolio import failed. Please retry."
+            );
+          }
           setError(terminalStreamFailureMessage);
           toast.error(
             terminalStreamFailureMessage,
@@ -1353,7 +2257,7 @@ export function KaiFlow({
 
         // Check if we got portfolio data
         if (!parsedPortfolio) {
-          throw new Error("No portfolio data received from parser");
+          throw new Error("No portfolio data was detected in this file.");
         }
         const parsedPortfolioData: ReviewPortfolioData = parsedPortfolio;
 
@@ -1366,47 +2270,80 @@ export function KaiFlow({
           ...prev,
           parsedPortfolio: parsedPortfolioData,
         }));
+        persistBackgroundSnapshot("completed", {
+          parsedPortfolio: parsedPortfolioData,
+        });
+        if (importTaskId) {
+          AppBackgroundTaskService.completeTask(
+            importTaskId,
+            "Import complete. Review and save when ready."
+          );
+        }
 
         // Persist completion state until user explicitly continues to review.
         setState("import_complete");
         if (parsedPortfolioData.parse_fallback) {
-          toast.warning("Portfolio recovered with partial parsing. Review carefully before saving.");
+          toast.warning("Portfolio loaded with partial coverage. Please review before saving.");
         } else {
-          toast.success("Portfolio parsed successfully. Review when ready.");
+          toast.success("Portfolio is ready for review.");
         }
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") {
           console.log("[KaiFlow] Import cancelled by user");
+          persistBackgroundSnapshot("canceled");
+          clearImportBackgroundSnapshot(userId);
+          importResumeAppliedRef.current = false;
+          importSnapshotUpdatedAtRef.current = null;
+          if (importTaskId) {
+            AppBackgroundTaskService.dismissTask(importTaskId);
+          }
+          activeImportTaskIdRef.current = null;
+          activeImportRunIdRef.current = null;
+          activeImportCursorRef.current = 0;
+          setStreaming(createInitialStreamingState());
           setState("import_required");
           return;
         }
 
         console.error("[KaiFlow] Import error:", err);
-        setError(
+        const safeError =
           err instanceof Error
-            ? err.message
-            : "Failed to import portfolio. Please try again."
-        );
+            ? sanitizeInvestorCopy(err.message, err.message)
+            : "We could not import your portfolio. Please try again.";
+        setError(safeError);
         toast.error(
-          err instanceof Error ? err.message : "Failed to import portfolio. Please try again."
+          safeError
         );
-        setStreaming((prev) => ({
+        applyStreaming((prev) => ({
           ...prev,
           stage: "error",
           stageTrail: (() => {
-            const nextLine = `[ERROR] ${err instanceof Error ? err.message : "Unknown error"}`;
+            const nextLine = `[ERROR] ${safeError}`;
             return prev.stageTrail.includes(nextLine)
               ? prev.stageTrail
               : [...prev.stageTrail, nextLine];
           })(),
           rawStreamLines: appendRawStreamLines(prev.rawStreamLines, [
-            `[ERROR] ${err instanceof Error ? err.message : "Unknown error"}`,
+            `[ERROR] ${
+              safeError
+            }`,
           ]),
-          errorMessage: err instanceof Error ? err.message : "Unknown error",
-          statusMessage: err instanceof Error ? err.message : "Import failed",
+          errorMessage: safeError,
+          statusMessage: safeError || "Import failed",
         }));
+        persistBackgroundSnapshot("failed", {
+          errorMessage: safeError,
+        });
+        if (importTaskId) {
+          AppBackgroundTaskService.failTask(
+            importTaskId,
+            safeError,
+            "Portfolio import failed. Please retry."
+          );
+        }
         setState("importing");
       } finally {
+        abortControllerRef.current = null;
         setBusyOperation("portfolio_import_stream", false);
       }
     },
@@ -1458,56 +2395,50 @@ export function KaiFlow({
 
   // Handle cancel import
   const handleCancelImport = useCallback(() => {
+    const runId = activeImportRunIdRef.current;
+    if (runId && effectiveVaultOwnerToken) {
+      void ApiService.cancelPortfolioImportRun({
+        runId,
+        userId,
+        vaultOwnerToken: effectiveVaultOwnerToken,
+      }).catch((cancelError) => {
+        console.warn("[KaiFlow] Failed to cancel import run on backend:", cancelError);
+      });
+    }
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
+    const taskId = activeImportTaskIdRef.current;
+    if (taskId) {
+      AppBackgroundTaskService.dismissTask(taskId);
+    }
+    activeImportTaskIdRef.current = null;
+    activeImportRunIdRef.current = null;
+    activeImportCursorRef.current = 0;
+    importResumeAppliedRef.current = false;
+    importSnapshotUpdatedAtRef.current = null;
+    clearImportBackgroundSnapshot(userId);
     setBusyOperation("portfolio_import_stream", false);
     setState(flowData.portfolioData ? "dashboard" : "import_required");
-    setStreaming({
-      stage: "idle",
-      stageTrail: [],
-      rawStreamLines: [],
-      streamedText: "",
-      totalChars: 0,
-      chunkCount: 0,
-      progressPct: undefined,
-      statusMessage: "Ready to import",
-      thoughts: [],
-      thoughtCount: 0,
-      qualityReport: undefined,
-      liveHoldings: [],
-      holdingsExtracted: 0,
-      holdingsTotal: undefined,
-      errorMessage: undefined,
-    });
+    setStreaming(createInitialStreamingState());
     if (mode === "import" && flowData.portfolioData) {
       router.push(ROUTES.KAI_DASHBOARD);
       return;
     }
-  }, [flowData.portfolioData, mode, router, setBusyOperation]);
+  }, [effectiveVaultOwnerToken, flowData.portfolioData, mode, router, setBusyOperation, userId]);
 
   // Handle retry import after error
   const _handleRetryImport = useCallback(() => {
+    importResumeAppliedRef.current = false;
+    importSnapshotUpdatedAtRef.current = null;
+    activeImportTaskIdRef.current = null;
+    activeImportRunIdRef.current = null;
+    activeImportCursorRef.current = 0;
+    clearImportBackgroundSnapshot(userId);
     setError(null);
-    setStreaming({
-      stage: "idle",
-      stageTrail: [],
-      rawStreamLines: [],
-      streamedText: "",
-      totalChars: 0,
-      chunkCount: 0,
-      progressPct: undefined,
-      statusMessage: "Ready to import",
-      thoughts: [],
-      thoughtCount: 0,
-      qualityReport: undefined,
-      liveHoldings: [],
-      holdingsExtracted: 0,
-      holdingsTotal: undefined,
-      errorMessage: undefined,
-    });
+    setStreaming(createInitialStreamingState());
     setState("import_required");
-  }, []);
+  }, [userId]);
 
   const handleReviewParsedPortfolio = useCallback(() => {
     if (!flowData.parsedPortfolio) {
@@ -1585,48 +2516,24 @@ export function KaiFlow({
       portfolioData,
       parsedPortfolio: undefined, // Clear parsed data
     });
-
-    const runPostSaveSync = () => {
-      if (!effectiveVaultOwnerToken || !vaultKey) return;
-      const taskId = AppBackgroundTaskService.startTask({
-        userId,
-        kind: "portfolio_postsave_sync",
-        title: "Profile sync",
-        description: "Finishing onboarding/profile updates in the background.",
-        routeHref: ROUTES.KAI_DASHBOARD,
-      });
-
-      void KaiProfileSyncService.syncPendingToVault({
-        userId,
-        vaultKey,
-        vaultOwnerToken: effectiveVaultOwnerToken,
-      })
-        .then(() => {
-          AppBackgroundTaskService.completeTask(
-            taskId,
-            "Portfolio sync completed."
-          );
-        })
-        .catch((syncError) => {
-          console.warn("[KaiFlow] Deferred onboarding sync failed after save:", syncError);
-          AppBackgroundTaskService.failTask(
-            taskId,
-            syncError instanceof Error ? syncError.message : "Sync failed",
-            "Portfolio sync failed. You can continue using dashboard."
-          );
-        });
-    };
+    clearImportBackgroundSnapshot(userId);
+    importResumeAppliedRef.current = false;
+    importSnapshotUpdatedAtRef.current = null;
+    activeImportRunIdRef.current = null;
+    activeImportCursorRef.current = 0;
+    if (activeImportTaskIdRef.current) {
+      AppBackgroundTaskService.dismissTask(activeImportTaskIdRef.current);
+      activeImportTaskIdRef.current = null;
+    }
 
     if (mode === "import") {
-      runPostSaveSync();
       setOnboardingFlowActiveCookie(false);
       router.push(ROUTES.KAI_DASHBOARD);
       return;
     }
 
     setState("dashboard");
-    runPostSaveSync();
-  }, [mode, router, userId, setPortfolioData, effectiveVaultOwnerToken, vaultKey]);
+  }, [mode, router, userId, setPortfolioData]);
 
   // Handle skip import - preserve existing data if available
   const handleSkipImport = useCallback(() => {
@@ -1668,10 +2575,10 @@ export function KaiFlow({
       }));
       setState("reviewing");
       setError(null);
-      toast.success("Demo mode data loaded. Review and save to vault.");
+      toast.success("Sample brokerage data loaded. Review and save to Vault.");
     } catch (preloadError) {
       console.error("[KaiFlow] Failed to preload schema data:", preloadError);
-      toast.error("Could not load demo data. Please retry.");
+      toast.error("Could not load sample data. Please try again.");
     } finally {
       setPendingSchemaPreload(false);
       setIsPreloadingSchema(false);
@@ -1687,7 +2594,7 @@ export function KaiFlow({
 
     const timer = window.setTimeout(() => {
       if (stateRef.current !== "reviewing" || flowData.parsedPortfolio) return;
-      setError("Could not open review data. Please load demo data again.");
+      setError("Could not open review data. Please load sample data again.");
       setState("import_required");
     }, 250);
 
@@ -1707,7 +2614,7 @@ export function KaiFlow({
     console.log("[KaiFlow] vaultOwnerToken present:", !!effectiveVaultOwnerToken);
     
     if (!symbol || !effectiveVaultOwnerToken) {
-      toast.error("Please unlock your vault first");
+      toast.error("Please unlock your Vault first.");
       return;
     }
     
@@ -1733,8 +2640,8 @@ export function KaiFlow({
       })
       .catch((error) => {
         console.error("[KaiFlow] Error getting context:", error);
-        toast.error("Failed to analyze stock", {
-          description: error instanceof Error ? error.message : "Unknown error",
+        toast.error("Could not start analysis", {
+          description: error instanceof Error ? error.message : "Please try again.",
         });
       });
   }, [effectiveVaultOwnerToken, userId, router]);
@@ -1751,7 +2658,7 @@ export function KaiFlow({
   if (state === "checking") {
     return (
       <div className="min-h-[400px] flex items-center justify-center">
-        <HushhLoader variant="inline" label="Checking your portfolio..." />
+        <HushhLoader variant="inline" label={toInvestorLoading("ACCOUNT_STATE")} />
       </div>
     );
   }
@@ -1855,9 +2762,9 @@ export function KaiFlow({
 
       {state === "reviewing" && !flowData.parsedPortfolio && (
         <div className="flex min-h-[360px] w-full flex-col items-center justify-center gap-3 px-6 text-center">
-          <HushhLoader variant="inline" label="Preparing review..." />
+          <HushhLoader variant="inline" label="Preparing your review..." />
           <p className="text-sm text-muted-foreground">
-            Demo data loaded, but review payload is not available yet.
+            Sample data loaded, but the review sheet is not ready yet.
           </p>
           <button
             type="button"
@@ -1907,9 +2814,9 @@ export function KaiFlow({
 
       {isDashboardMode && state === "analysis" && !flowData.analysisResult && (
         <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
-          <HushhLoader variant="inline" label="Analyzing..." />
+          <HushhLoader variant="inline" label={toInvestorLoading("ANALYSIS")} />
           <p className="text-sm text-muted-foreground">
-            Running debate engine analysis...
+            Building your recommendation...
           </p>
         </div>
       )}
@@ -1920,9 +2827,9 @@ export function KaiFlow({
           onOpenChange={setVaultDialogOpen}
         >
           <DialogContent className="z-[520] w-[calc(100%-1rem)] max-h-[calc(100svh-1rem)] p-0 border border-border/60 bg-background shadow-2xl overflow-hidden sm:max-w-md">
-            <DialogTitle className="sr-only">Create or unlock vault to import portfolio</DialogTitle>
+            <DialogTitle className="sr-only">Create or unlock Vault to import portfolio</DialogTitle>
             <DialogDescription className="sr-only">
-              You need to create or unlock your vault before parsing and importing your statement.
+              You need to create or unlock your Vault before importing your statement.
             </DialogDescription>
             <VaultFlow
               user={user}

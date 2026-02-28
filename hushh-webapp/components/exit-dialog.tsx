@@ -106,10 +106,10 @@ export function ExitDialog({
             Cancel
           </Button>
           <Button
-            variant="destructive"
+            variant="none"
             effect="fade"
             onClick={() => void handleExit()}
-            className="shadow-md"
+            className="app-critical-action shadow-md"
           >
             <Icon icon={LogOut} size="sm" className="mr-2" />
             {actionLabel}

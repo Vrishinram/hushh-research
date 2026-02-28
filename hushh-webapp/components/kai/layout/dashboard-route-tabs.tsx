@@ -1,8 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { createPortal } from "react-dom";
 
 import { useKaiBottomChromeVisibility } from "@/lib/navigation/kai-bottom-chrome-visibility";
 import {
@@ -15,9 +14,14 @@ import { cn } from "@/lib/utils";
 import { scrollAppToTop } from "@/lib/navigation/use-scroll-reset";
 import { morphyToast as toast } from "@/lib/morphy-ux/morphy";
 
-const SWIPE_MIN_DISTANCE_PX = 54;
-const SWIPE_VERTICAL_LIMIT_PX = 56;
-const SWIPE_DIRECTION_RATIO = 1.2;
+const SWIPE_AXIS_LOCK_THRESHOLD_PX = 6;
+const SWIPE_VERTICAL_LIMIT_PX = 64;
+const SWIPE_DIRECTION_RATIO = 1.12;
+const SWIPE_COMMIT_DISTANCE_RATIO = 0.12;
+const SWIPE_COMMIT_DISTANCE_MIN_PX = 36;
+const SWIPE_COMMIT_DISTANCE_MAX_PX = 84;
+const SWIPE_COMMIT_VELOCITY_PX_PER_MS = 0.5;
+const SWIPE_MAX_DRAG_TABS = 1.15;
 
 function hasHorizontalScrollParent(target: HTMLElement | null): boolean {
   if (!target || typeof window === "undefined") return false;
@@ -65,12 +69,19 @@ function shouldIgnoreGlobalSwipeTarget(target: EventTarget | null): boolean {
   return false;
 }
 
-export function DashboardRouteTabs() {
+interface DashboardRouteTabsProps {
+  embedded?: boolean;
+}
+
+export function DashboardRouteTabs({ embedded = false }: DashboardRouteTabsProps) {
   const router = useRouter();
   const pathname = usePathname();
   const hideTabsForPath =
     pathname.startsWith(ROUTES.KAI_ONBOARDING) || pathname.startsWith(ROUTES.KAI_IMPORT);
   const [mounted, setMounted] = useState(false);
+  const tabsRootRef = useRef<HTMLDivElement | null>(null);
+  const [dragOffsetTabs, setDragOffsetTabs] = useState(0);
+  const [isDraggingIndicator, setIsDraggingIndicator] = useState(false);
   const { hidden: hideRouteTabs } = useKaiBottomChromeVisibility(!hideTabsForPath);
   const busyOperations = useKaiSession((s) => s.busyOperations);
 
@@ -99,6 +110,8 @@ export function DashboardRouteTabs() {
       }
       const target = KAI_ROUTE_TABS.find((tab) => tab.id === nextTab);
       if (!target || target.id === activeTab) return;
+      setDragOffsetTabs(0);
+      setIsDraggingIndicator(false);
       scrollAppToTop("auto");
       router.push(target.href);
     },
@@ -118,6 +131,29 @@ export function DashboardRouteTabs() {
     let tracking = false;
     let gestureAxis: "undecided" | "horizontal" | "vertical" = "undecided";
     let ignoredTarget = false;
+    let startTimestamp = 0;
+    let activeTabIndexAtGestureStart = 0;
+    let tabSlotWidthPx = 0;
+    let indicatorDragging = false;
+    let dragOffsetRef = 0;
+    let rafHandle: number | null = null;
+
+    const setDragOffsetRaf = (nextOffset: number) => {
+      dragOffsetRef = nextOffset;
+      if (rafHandle !== null) return;
+      rafHandle = window.requestAnimationFrame(() => {
+        rafHandle = null;
+        setDragOffsetTabs(dragOffsetRef);
+      });
+    };
+
+    const stopIndicatorDrag = () => {
+      if (indicatorDragging) {
+        indicatorDragging = false;
+        setIsDraggingIndicator(false);
+      }
+      setDragOffsetRaf(0);
+    };
 
     const resetGesture = () => {
       startX = null;
@@ -125,30 +161,46 @@ export function DashboardRouteTabs() {
       tracking = false;
       gestureAxis = "undecided";
       ignoredTarget = false;
+      startTimestamp = 0;
+      activeTabIndexAtGestureStart = 0;
+      tabSlotWidthPx = 0;
     };
 
     const onTouchStart = (event: TouchEvent) => {
       if (event.touches.length !== 1) {
+        stopIndicatorDrag();
         resetGesture();
         return;
       }
 
       ignoredTarget = shouldIgnoreGlobalSwipeTarget(event.target);
       if (ignoredTarget) {
+        stopIndicatorDrag();
         resetGesture();
         return;
       }
 
       const touch = event.touches[0];
       if (!touch) {
+        stopIndicatorDrag();
         resetGesture();
         return;
       }
 
+      const tabsWidth =
+        tabsRootRef.current?.getBoundingClientRect().width ??
+        (typeof window !== "undefined" ? window.innerWidth : 0);
+      tabSlotWidthPx = Math.max(1, tabsWidth / KAI_ROUTE_TABS.length);
+      activeTabIndexAtGestureStart = Math.max(
+        0,
+        KAI_ROUTE_TABS.findIndex((tab) => tab.id === activeTab)
+      );
+      startTimestamp = event.timeStamp || performance.now();
       startX = touch.clientX;
       startY = touch.clientY;
       tracking = true;
       gestureAxis = "undecided";
+      stopIndicatorDrag();
     };
 
     const onTouchMove = (event: TouchEvent) => {
@@ -167,13 +219,14 @@ export function DashboardRouteTabs() {
       const absY = Math.abs(deltaY);
 
       if (gestureAxis === "undecided") {
-        if (absX < 6 && absY < 6) {
+        if (absX < SWIPE_AXIS_LOCK_THRESHOLD_PX && absY < SWIPE_AXIS_LOCK_THRESHOLD_PX) {
           return;
         }
 
         if (absY > absX * 1.1) {
           gestureAxis = "vertical";
           tracking = false;
+          stopIndicatorDrag();
           return;
         }
 
@@ -189,20 +242,39 @@ export function DashboardRouteTabs() {
         absY > Math.max(20, absX * SWIPE_DIRECTION_RATIO)
       ) {
         tracking = false;
+        stopIndicatorDrag();
         return;
       }
 
+      if (!indicatorDragging) {
+        indicatorDragging = true;
+        setIsDraggingIndicator(true);
+      }
+      const rawOffsetTabs = -deltaX / Math.max(1, tabSlotWidthPx);
+      const boundedOffsetTabs = Math.max(
+        -SWIPE_MAX_DRAG_TABS,
+        Math.min(SWIPE_MAX_DRAG_TABS, rawOffsetTabs)
+      );
+      const maxOffsetRight = KAI_ROUTE_TABS.length - 1 - activeTabIndexAtGestureStart;
+      const maxOffsetLeft = -activeTabIndexAtGestureStart;
+      const constrainedOffsetTabs = Math.max(
+        maxOffsetLeft,
+        Math.min(maxOffsetRight, boundedOffsetTabs)
+      );
+      setDragOffsetRaf(constrainedOffsetTabs);
       event.preventDefault();
     };
 
     const onTouchEnd = (event: TouchEvent) => {
       if (!tracking || ignoredTarget || event.changedTouches.length === 0) {
+        stopIndicatorDrag();
         resetGesture();
         return;
       }
 
       const touch = event.changedTouches[0];
       if (!touch || startX === null || startY === null) {
+        stopIndicatorDrag();
         resetGesture();
         return;
       }
@@ -212,14 +284,25 @@ export function DashboardRouteTabs() {
       const absX = Math.abs(deltaX);
       const absY = Math.abs(deltaY);
       const finalAxis = gestureAxis;
+      const durationMs = Math.max(1, (event.timeStamp || performance.now()) - startTimestamp);
+      const swipeVelocity = absX / durationMs;
+      const viewportWidth = typeof window !== "undefined" ? window.innerWidth : 390;
+      const commitDistancePx = Math.max(
+        SWIPE_COMMIT_DISTANCE_MIN_PX,
+        Math.min(SWIPE_COMMIT_DISTANCE_MAX_PX, viewportWidth * SWIPE_COMMIT_DISTANCE_RATIO)
+      );
+      stopIndicatorDrag();
       resetGesture();
 
       if (
         finalAxis !== "horizontal" ||
         absY > SWIPE_VERTICAL_LIMIT_PX ||
-        absX < SWIPE_MIN_DISTANCE_PX ||
         absX < absY * SWIPE_DIRECTION_RATIO
       ) {
+        return;
+      }
+
+      if (absX < commitDistancePx && swipeVelocity < SWIPE_COMMIT_VELOCITY_PX_PER_MS) {
         return;
       }
 
@@ -239,7 +322,10 @@ export function DashboardRouteTabs() {
       router.push(target.href);
     };
 
-    const onTouchCancel = () => resetGesture();
+    const onTouchCancel = () => {
+      stopIndicatorDrag();
+      resetGesture();
+    };
 
     const touchStartListener: EventListener = (event) => onTouchStart(event as TouchEvent);
     const touchMoveListener: EventListener = (event) => onTouchMove(event as TouchEvent);
@@ -252,6 +338,9 @@ export function DashboardRouteTabs() {
     swipeSurface.addEventListener("touchcancel", touchCancelListener, { passive: true });
 
     return () => {
+      if (rafHandle !== null) {
+        window.cancelAnimationFrame(rafHandle);
+      }
       swipeSurface.removeEventListener("touchstart", touchStartListener);
       swipeSurface.removeEventListener("touchmove", touchMoveListener);
       swipeSurface.removeEventListener("touchend", touchEndListener);
@@ -259,7 +348,7 @@ export function DashboardRouteTabs() {
     };
   }, [mounted, hideTabsForPath, activeTab, busyOperations, router]);
 
-  if (!mounted || typeof document === "undefined" || hideTabsForPath) {
+  if (!mounted || hideTabsForPath) {
     return null;
   }
 
@@ -267,70 +356,85 @@ export function DashboardRouteTabs() {
     0,
     KAI_ROUTE_TABS.findIndex((tab) => tab.id === activeTab)
   );
+  const maxTabIndex = KAI_ROUTE_TABS.length - 1;
+  const indicatorIndex = Math.max(
+    0,
+    Math.min(maxTabIndex, activeTabIndex + dragOffsetTabs)
+  );
 
-  return createPortal(
-    <div
-      className="pointer-events-none fixed inset-x-0 z-[45]"
-      style={{
-        top: "calc(env(safe-area-inset-top, 0px) + var(--app-top-safe-offset, 0px) + var(--app-top-bar-height, 72px))",
-      }}
-    >
+  const tabsBody = (
+    <>
+      <div className="relative grid grid-cols-3 items-center border-b border-border/70 px-1">
+        {KAI_ROUTE_TABS.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => handleTabChange(tab.id)}
+            className={cn(
+              "relative z-[1] h-9 text-sm font-semibold transition-colors duration-200",
+              tab.id === activeTab
+                ? "text-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+            aria-current={tab.id === activeTab ? "page" : undefined}
+          >
+            {tab.label}
+          </button>
+        ))}
+        <span
+          data-testid="kai-route-tabs-indicator"
+          aria-hidden
+          className={cn(
+            "pointer-events-none absolute bottom-0 left-0 h-[3px] rounded-full bg-linear-to-r from-sky-500 via-primary to-sky-400 shadow-[0_0_0_1px_rgba(56,189,248,0.35),0_0_22px_rgba(56,189,248,0.62)]",
+            isDraggingIndicator ? "transition-none" : "transition-transform duration-250 ease-out"
+          )}
+          style={{
+            width: `calc(100% / ${KAI_ROUTE_TABS.length})`,
+            transform: `translate3d(${indicatorIndex * 100}%, 0, 0)`,
+          }}
+        />
+      </div>
+    </>
+  );
+
+  if (embedded) {
+    return (
       <div
-        aria-hidden
         className={cn(
-          "pointer-events-none absolute inset-x-0 -top-10 h-[126px] bar-glass bar-glass-top transform-gpu transition-all duration-300 ease-out will-change-transform",
-          hideRouteTabs ? "opacity-0" : "opacity-100"
-        )}
-        style={{
-          transform: hideRouteTabs
-            ? "translate3d(0, calc(-100% - 10px), 0)"
-            : "translate3d(0, 0, 0)",
-        }}
-      />
-      <div
-        className={cn(
-          "relative mx-auto flex w-full max-w-6xl justify-center px-4 transform-gpu transition-all duration-300 ease-out will-change-transform sm:px-6",
+          "relative flex w-full justify-center transform-gpu transition-all duration-300 ease-out will-change-transform",
           hideRouteTabs ? "pointer-events-none opacity-0" : "pointer-events-auto opacity-100"
         )}
-        style={{
-          transform: hideRouteTabs
-            ? "translate3d(0, calc(-100% - 10px), 0)"
-            : "translate3d(0, 0, 0)",
-        }}
       >
         <div
+          ref={tabsRootRef}
           data-tour-id="kai-route-tabs"
           className="pointer-events-auto w-full max-w-[460px] overflow-hidden"
         >
-          <div className="relative grid grid-cols-3 items-center border-b border-border/65 px-1">
-            {KAI_ROUTE_TABS.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => handleTabChange(tab.id)}
-                className={cn(
-                  "relative z-[1] h-9 text-sm font-semibold transition-colors duration-200",
-                  tab.id === activeTab
-                    ? "text-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-                aria-current={tab.id === activeTab ? "page" : undefined}
-              >
-                {tab.label}
-              </button>
-            ))}
-            <span
-              aria-hidden
-              className="pointer-events-none absolute -bottom-px left-0 h-[2px] bg-primary transition-transform duration-250 ease-out"
-              style={{
-                width: `calc(100% / ${KAI_ROUTE_TABS.length})`,
-                transform: `translate3d(${activeTabIndex * 100}%, 0, 0)`,
-              }}
-            />
-          </div>
+          {tabsBody}
         </div>
       </div>
-    </div>,
-    document.body
+    );
+  }
+
+  return (
+    <div
+      className={cn(
+        "relative mx-auto flex w-full max-w-6xl justify-center px-4 sm:px-6",
+        hideRouteTabs ? "pointer-events-none opacity-0" : "pointer-events-auto opacity-100"
+      )}
+      style={{
+        transform: hideRouteTabs
+          ? "translate3d(0, calc(-100% - 10px), 0)"
+          : "translate3d(0, 0, 0)",
+      }}
+    >
+      <div
+        ref={tabsRootRef}
+        data-tour-id="kai-route-tabs"
+        className="pointer-events-auto w-full max-w-[460px] overflow-hidden"
+      >
+        {tabsBody}
+      </div>
+    </div>
   );
 }

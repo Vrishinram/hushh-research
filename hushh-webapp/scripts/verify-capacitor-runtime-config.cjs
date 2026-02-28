@@ -5,12 +5,16 @@
  * Ensures generated Capacitor runtime config is valid and safe:
  * - plugin backend URLs are present for all networked native plugins
  * - hosted WebView URL is never paired with localhost backend target
+ * - SystemBars immersive config is present and StatusBar legacy config is removed
+ * - source capacitor.config.ts stays aligned with runtime expectations
  */
 
 const fs = require("node:fs");
 const path = require("node:path");
 
 const webRoot = path.resolve(__dirname, "..");
+const SOURCE_CONFIG_PATH = path.join(webRoot, "capacitor.config.ts");
+const IOS_VIEW_CONTROLLER_PATH = path.join(webRoot, "ios", "App", "App", "MyViewController.swift");
 
 const CONFIG_FILES = [
   {
@@ -58,6 +62,16 @@ function readJson(relPath) {
   }
 }
 
+function readText(fullPath) {
+  if (!fs.existsSync(fullPath)) return null;
+  try {
+    return fs.readFileSync(fullPath, "utf8");
+  } catch (error) {
+    fail(`Unable to read ${fullPath}: ${error.message}`);
+    return null;
+  }
+}
+
 function hostFromUrl(rawUrl) {
   if (!rawUrl || typeof rawUrl !== "string") return null;
   try {
@@ -74,6 +88,7 @@ function validateConfig(label, relPath, json) {
   const serverUrl = json.server?.url || null;
   const webHost = hostFromUrl(serverUrl);
   const hostedWebView = Boolean(webHost && !LOCAL_HOSTS.has(webHost));
+  const iosContentInset = json?.ios?.contentInset;
 
   const backendUrls = [];
   for (const pluginName of REQUIRED_BACKEND_PLUGINS) {
@@ -105,9 +120,100 @@ function validateConfig(label, relPath, json) {
   if (backendUrls.length > 0) {
     ok(`${label} generated runtime config has backendUrl for required plugins`);
   }
+
+  if (iosContentInset !== "never") {
+    fail(
+      `${label} config (${relPath}) must set ios.contentInset to "never" for SystemBars immersive mode`
+    );
+  } else {
+    ok(`${label} generated runtime config sets ios.contentInset to "never"`);
+  }
+
+  const systemBars = plugins.SystemBars;
+  if (!systemBars || typeof systemBars !== "object") {
+    fail(`${label} config (${relPath}) missing plugins.SystemBars`);
+    return;
+  }
+  if (plugins.StatusBar) {
+    fail(
+      `${label} config (${relPath}) still contains legacy plugins.StatusBar block`
+    );
+  }
+
+  if (systemBars.insetsHandling !== "css") {
+    fail(
+      `${label} config (${relPath}) must set plugins.SystemBars.insetsHandling to "css"`
+    );
+  }
+  if (
+    systemBars.style !== "DEFAULT" ||
+    systemBars.hidden !== false ||
+    systemBars.animation !== "NONE"
+  ) {
+    fail(
+      `${label} config (${relPath}) must set plugins.SystemBars style=DEFAULT hidden=false animation=NONE`
+    );
+  } else {
+    ok(`${label} generated runtime config has expected plugins.SystemBars values`);
+  }
+}
+
+function validateSourceConfig() {
+  const text = readText(SOURCE_CONFIG_PATH);
+  if (!text) {
+    fail("Missing source capacitor.config.ts");
+    return;
+  }
+
+  if (!/contentInset\s*:\s*["']never["']/.test(text)) {
+    fail('Source capacitor.config.ts must set ios.contentInset to "never"');
+  } else {
+    ok('Source capacitor.config.ts sets ios.contentInset to "never"');
+  }
+
+  if (!/SystemBars\s*:\s*\{/.test(text)) {
+    fail("Source capacitor.config.ts must define plugins.SystemBars");
+  } else {
+    ok("Source capacitor.config.ts defines plugins.SystemBars");
+  }
+
+  if (/StatusBar\s*:\s*\{/.test(text)) {
+    fail("Source capacitor.config.ts still defines legacy plugins.StatusBar");
+  } else {
+    ok("Source capacitor.config.ts removed legacy plugins.StatusBar");
+  }
+
+  if (!/insetsHandling\s*:\s*["']css["']/.test(text)) {
+    fail('Source capacitor.config.ts must set plugins.SystemBars.insetsHandling to "css"');
+  }
+}
+
+function validateIOSBridgeInsets() {
+  const text = readText(IOS_VIEW_CONTROLLER_PATH);
+  if (!text) {
+    fail("Missing iOS bridge file ios/App/App/MyViewController.swift");
+    return;
+  }
+
+  if (/contentInsetAdjustmentBehavior\s*=\s*\.automatic/.test(text)) {
+    fail(
+      "MyViewController.swift must not set webView.scrollView.contentInsetAdjustmentBehavior = .automatic"
+    );
+  }
+
+  if (!/contentInsetAdjustmentBehavior\s*=\s*\.never/.test(text)) {
+    fail(
+      "MyViewController.swift must set webView.scrollView.contentInsetAdjustmentBehavior = .never for SystemBars + ios.contentInset=\"never\""
+    );
+  } else {
+    ok("MyViewController.swift uses contentInsetAdjustmentBehavior = .never");
+  }
 }
 
 function main() {
+  validateSourceConfig();
+  validateIOSBridgeInsets();
+
   let validatedCount = 0;
   const missing = [];
 

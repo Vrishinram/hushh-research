@@ -59,7 +59,9 @@
         "hushh-webapp/app/api/vault/get/route.ts",
         "hushh-webapp/app/api/vault/setup/route.ts",
         "hushh-webapp/app/api/vault/wrapper/upsert/route.ts",
-        "hushh-webapp/app/api/vault/primary/set/route.ts"
+        "hushh-webapp/app/api/vault/primary/set/route.ts",
+        "hushh-webapp/app/api/vault/bootstrap-state/route.ts",
+        "hushh-webapp/app/api/vault/pre-vault-state/route.ts"
       ],
       "backend": {
         "file": "consent-protocol/api/routes/db_proxy.py",
@@ -69,7 +71,9 @@
           "/vault/get",
           "/vault/setup",
           "/vault/wrapper/upsert",
-          "/vault/primary/set"
+          "/vault/primary/set",
+          "/vault/bootstrap-state",
+          "/vault/pre-vault-state"
         ]
       },
       "native": {

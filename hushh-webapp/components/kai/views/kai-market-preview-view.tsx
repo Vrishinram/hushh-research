@@ -291,27 +291,33 @@ export function KaiMarketPreviewView() {
       let trackedSymbols = resolveTrackedSymbols();
       let symbolsKey = toSymbolsKey(trackedSymbols);
       let marketCacheKey = CACHE_KEYS.KAI_MARKET_HOME(user.uid, symbolsKey, 7);
+      let seededFromLocalCache = false;
       if (!forceTokenRefresh && marketCacheKey) {
         const cachedPayload = cache.get<KaiHomeInsightsV2>(marketCacheKey);
         if (cachedPayload) {
           setPayload(cachedPayload);
           hasPayloadRef.current = true;
           setLoadingInitial(false);
-          return;
+          seededFromLocalCache = true;
         }
       }
 
-      if (!forceTokenRefresh) {
+      if (!forceTokenRefresh && !seededFromLocalCache) {
         const anyCachedPayload = readAnyKaiHomeCache(cache, user.uid, 7);
         if (anyCachedPayload) {
           setPayload(anyCachedPayload);
           hasPayloadRef.current = true;
           setLoadingInitial(false);
-          return;
+          seededFromLocalCache = true;
         }
       }
 
-      if (!forceTokenRefresh && sessionCacheKey && typeof window !== "undefined") {
+      if (
+        !forceTokenRefresh &&
+        !seededFromLocalCache &&
+        sessionCacheKey &&
+        typeof window !== "undefined"
+      ) {
         try {
           const raw = getSessionItem(sessionCacheKey);
           if (raw) {
@@ -327,7 +333,7 @@ export function KaiMarketPreviewView() {
               setPayload(parsed.payload as KaiHomeInsightsV2);
               hasPayloadRef.current = true;
               setLoadingInitial(false);
-              return;
+              seededFromLocalCache = true;
             }
           }
         } catch {
@@ -337,6 +343,7 @@ export function KaiMarketPreviewView() {
 
       if (
         !forceTokenRefresh &&
+        !seededFromLocalCache &&
         isNativePlatform &&
         persistentCacheKey &&
         typeof window !== "undefined"
@@ -358,6 +365,7 @@ export function KaiMarketPreviewView() {
               setPayload(parsed.payload as KaiHomeInsightsV2);
               hasPayloadRef.current = true;
               setLoadingInitial(false);
+              seededFromLocalCache = true;
             }
           }
         } catch {
@@ -376,8 +384,12 @@ export function KaiMarketPreviewView() {
           setPayload(warmedPayload);
           hasPayloadRef.current = true;
           setLoadingInitial(false);
-          return;
+          seededFromLocalCache = true;
         }
+      }
+
+      if (seededFromLocalCache && !manual && !forceTokenRefresh) {
+        return;
       }
 
       if (inFlightRef.current) {
@@ -571,7 +583,7 @@ export function KaiMarketPreviewView() {
   }, [hasPayload, payload?.hero?.holdings_count]);
 
   return (
-    <div className="mx-auto w-full max-w-[390px] overflow-x-hidden px-4 pt-[var(--kai-view-top-gap,16px)] pb-[calc(148px+var(--app-bottom-inset))]">
+    <div className="mx-auto w-full max-w-[390px] overflow-x-hidden px-4 pt-[var(--kai-view-top-gap,16px)] pb-6">
       <header className="space-y-2 text-center">
         <h1 className="text-2xl font-black tracking-tight leading-tight">Explore the market with Kai</h1>
         <p className="mx-auto max-w-[22rem] text-sm text-muted-foreground">

@@ -1,7 +1,7 @@
 "use client";
 
 import { PreVaultOnboardingService } from "@/lib/services/pre-vault-onboarding-service";
-import { VaultService } from "@/lib/services/vault-service";
+import { PreVaultUserStateService } from "@/lib/services/pre-vault-user-state-service";
 import { ROUTES } from "@/lib/navigation/routes";
 
 const PRE_VAULT_ROUTE = ROUTES.KAI_ONBOARDING;
@@ -18,22 +18,40 @@ export class PostAuthRouteService {
     redirectPath?: string;
   }): Promise<string> {
     const fallbackRoute = normalizeRedirectPath(params.redirectPath);
+    const remoteState = await PreVaultUserStateService.bootstrapState(params.userId);
 
-    try {
-      const hasVault = await VaultService.checkVault(params.userId);
-      if (hasVault) {
-        return fallbackRoute;
-      }
-
-      const pending = await PreVaultOnboardingService.load(params.userId);
-      if (pending?.completed) {
-        return NO_VAULT_DEFAULT_ROUTE;
-      }
-
-      return PRE_VAULT_ROUTE;
-    } catch (error) {
-      console.warn("[PostAuthRouteService] Failed to resolve post-auth route:", error);
+    if (remoteState.hasVault) {
       return fallbackRoute;
     }
+
+    let onboardingResolved = PreVaultUserStateService.isOnboardingResolved(remoteState);
+    if (!onboardingResolved) {
+      const pending = await PreVaultOnboardingService.load(params.userId);
+      const remoteUnset =
+        remoteState.preOnboardingCompleted === null &&
+        remoteState.preOnboardingSkipped === null &&
+        remoteState.preOnboardingCompletedAt === null;
+      if (remoteUnset && pending?.completed) {
+        const completedAtMs =
+          pending.completed_at && !Number.isNaN(Date.parse(pending.completed_at))
+            ? Date.parse(pending.completed_at)
+            : Date.now();
+        try {
+          await PreVaultUserStateService.updatePreVaultState(params.userId, {
+            preOnboardingCompleted: true,
+            preOnboardingSkipped: pending.skipped,
+            preOnboardingCompletedAt: completedAtMs,
+          });
+        } catch (error) {
+          console.warn(
+            "[PostAuthRouteService] Failed local->remote pre-vault onboarding bridge:",
+            error
+          );
+        }
+        onboardingResolved = true;
+      }
+    }
+
+    return onboardingResolved ? NO_VAULT_DEFAULT_ROUTE : PRE_VAULT_ROUTE;
   }
 }

@@ -6,7 +6,7 @@ import { Card, CardContent } from "@/lib/morphy-ux/card";
 import { Icon } from "@/lib/morphy-ux/ui";
 import { cn } from "@/lib/utils";
 
-type SpotlightDecision = "BUY" | "HOLD" | "REDUCE";
+type SpotlightDecision = "BUY" | "HOLD" | "WATCH" | "REDUCE";
 
 export function SpotlightCard(props: {
   title: string;
@@ -18,6 +18,8 @@ export function SpotlightCard(props: {
   const decisionTone =
     props.decision === "BUY"
       ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+      : props.decision === "WATCH"
+        ? "bg-blue-500/10 text-blue-700 dark:text-blue-300"
       : props.decision === "HOLD"
         ? "bg-blue-500/10 text-blue-700 dark:text-blue-300"
         : "bg-orange-500/10 text-orange-700 dark:text-orange-300";

@@ -28,6 +28,8 @@ import {
   AppBackgroundTaskService,
   type AppBackgroundTask,
 } from "@/lib/services/app-background-task-service";
+import { ApiService } from "@/lib/services/api-service";
+import { getSessionItem, removeSessionItem } from "@/lib/utils/session-storage";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { useVault } from "@/lib/vault/vault-context";
 
@@ -67,7 +69,22 @@ function appTaskStatusIcon(task: AppBackgroundTask) {
   return <Icon icon={XCircle} size="sm" className="text-rose-500" />;
 }
 
-export function DebateTaskCenter() {
+interface DebateTaskCenterProps {
+  triggerClassName?: string;
+}
+
+const DEFAULT_TRIGGER_CLASSNAME =
+  "relative grid h-10 w-10 place-items-center rounded-full border border-border/60 bg-background/70 shadow-sm backdrop-blur-sm transition-colors hover:bg-muted/50 active:bg-muted/80";
+const IMPORT_BACKGROUND_SNAPSHOT_KEY = "kai_portfolio_import_background_v1";
+
+interface ImportBackgroundSnapshot {
+  taskId?: string | null;
+  runId?: string | null;
+  status?: string;
+  userId?: string;
+}
+
+export function DebateTaskCenter({ triggerClassName }: DebateTaskCenterProps = {}) {
   const router = useRouter();
   const { userId } = useAuth();
   const { vaultOwnerToken } = useVault();
@@ -82,14 +99,6 @@ export function DebateTaskCenter() {
   useEffect(() => {
     return AppBackgroundTaskService.subscribe(setAppTaskState);
   }, []);
-
-  useEffect(() => {
-    if (!userId || !vaultOwnerToken) return;
-    void DebateRunManagerService.resumeActiveRun({
-      userId,
-      vaultOwnerToken,
-    }).catch(() => undefined);
-  }, [userId, vaultOwnerToken]);
 
   const debateTasks = useMemo(() => {
     if (!userId) return [];
@@ -114,8 +123,16 @@ export function DebateTaskCenter() {
       .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt))[0];
   }, [debateTasks]);
 
-  const openAnalysis = (focusActive = false) => {
-    if (focusActive && latestActiveTask) {
+  const openAnalysis = (focusRunId?: string | null) => {
+    const normalizedRunId = typeof focusRunId === "string" ? focusRunId.trim() : "";
+    if (normalizedRunId) {
+      const params = new URLSearchParams();
+      params.set("focus", "active");
+      params.set("run_id", normalizedRunId);
+      router.push(`/kai/analysis?${params.toString()}`);
+      return;
+    }
+    if (latestActiveTask) {
       const params = new URLSearchParams();
       params.set("focus", "active");
       params.set("run_id", latestActiveTask.runId);
@@ -134,13 +151,43 @@ export function DebateTaskCenter() {
     }
   };
 
+  const readImportSnapshot = (): ImportBackgroundSnapshot | null => {
+    const raw = getSessionItem(IMPORT_BACKGROUND_SNAPSHOT_KEY);
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw) as ImportBackgroundSnapshot;
+    } catch {
+      return null;
+    }
+  };
+
+  const cancelPortfolioImportTask = async (task: AppBackgroundTask) => {
+    const snapshot = readImportSnapshot();
+    if (
+      snapshot &&
+      snapshot.userId === task.userId &&
+      snapshot.taskId === task.taskId &&
+      typeof snapshot.runId === "string" &&
+      snapshot.runId.trim().length > 0 &&
+      vaultOwnerToken
+    ) {
+      await ApiService.cancelPortfolioImportRun({
+        runId: snapshot.runId.trim(),
+        userId: task.userId,
+        vaultOwnerToken,
+      });
+    }
+    removeSessionItem(IMPORT_BACKGROUND_SNAPSHOT_KEY);
+    AppBackgroundTaskService.dismissTask(task.taskId);
+  };
+
   if (!userId) return null;
 
   return (
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
         <button
-          className="relative grid h-10 w-10 place-items-center rounded-full border border-border/60 bg-background/70 shadow-sm backdrop-blur-sm transition-colors hover:bg-muted/50 active:bg-muted/80"
+          className={cn(DEFAULT_TRIGGER_CLASSNAME, triggerClassName)}
           aria-label="Background tasks"
         >
           {activeCount > 0 ? (
@@ -201,7 +248,7 @@ export function DebateTaskCenter() {
                       effect="fade"
                       size="icon"
                       className="h-8 w-8"
-                      onClick={() => openAnalysis(true)}
+                      onClick={() => openAnalysis(task.runId)}
                       aria-label="Open analysis"
                     >
                       <Icon icon={ExternalLink} size="xs" />
@@ -296,6 +343,23 @@ export function DebateTaskCenter() {
                           <Icon icon={ExternalLink} size="xs" />
                         </Button>
                       ) : null}
+                      {task.status === "running" && task.kind === "portfolio_import_stream" ? (
+                        <Button
+                          variant="none"
+                          effect="fade"
+                          size="icon"
+                          className="h-8 w-8"
+                          disabled={!vaultOwnerToken || Boolean(isBusy[task.taskId])}
+                          onClick={() =>
+                            runAction(task.taskId, async () => {
+                              await cancelPortfolioImportTask(task);
+                            })
+                          }
+                          aria-label="Cancel import"
+                        >
+                          <Icon icon={X} size="xs" />
+                        </Button>
+                      ) : null}
                       {task.status !== "running" ? (
                         <Button
                           variant="none"
@@ -321,7 +385,7 @@ export function DebateTaskCenter() {
             className={cn(
               "text-xs text-muted-foreground transition-colors hover:text-foreground"
             )}
-            onClick={() => openAnalysis(Boolean(latestActiveTask))}
+            onClick={() => openAnalysis(latestActiveTask?.runId)}
           >
             Open analysis workspace
           </button>

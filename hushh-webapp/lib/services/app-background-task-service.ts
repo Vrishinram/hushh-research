@@ -175,6 +175,33 @@ class AppBackgroundTaskManager {
     });
   }
 
+  updateTask(
+    taskId: string,
+    updates: {
+      title?: string;
+      description?: string;
+      routeHref?: string | null;
+    }
+  ): void {
+    const existing = this.tasks.get(taskId);
+    if (!existing) return;
+    this.upsert({
+      ...existing,
+      title:
+        typeof updates.title === "string" && updates.title.trim().length > 0
+          ? updates.title
+          : existing.title,
+      description:
+        typeof updates.description === "string" && updates.description.trim().length > 0
+          ? updates.description
+          : existing.description,
+      routeHref:
+        updates.routeHref === undefined
+          ? existing.routeHref
+          : updates.routeHref,
+    });
+  }
+
   dismissTask(taskId: string): void {
     const existing = this.tasks.get(taskId);
     if (!existing) return;
@@ -183,7 +210,22 @@ class AppBackgroundTaskManager {
       dismissedAt: nowIso(),
     });
   }
+
+  hasRunningTask(userId: string, kind?: string): boolean {
+    const normalizedUserId = String(userId || "").trim();
+    if (!normalizedUserId) return false;
+    const normalizedKind = typeof kind === "string" && kind.trim().length > 0
+      ? kind.trim()
+      : null;
+    for (const task of this.tasks.values()) {
+      if (task.userId !== normalizedUserId) continue;
+      if (task.status !== "running") continue;
+      if (task.dismissedAt) continue;
+      if (normalizedKind && task.kind !== normalizedKind) continue;
+      return true;
+    }
+    return false;
+  }
 }
 
 export const AppBackgroundTaskService = new AppBackgroundTaskManager();
-
