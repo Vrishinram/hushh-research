@@ -105,14 +105,22 @@ export function TopAppBar({ className }: TopAppBarProps) {
   // Subscribe to scroll-direction store so the glass shrinks when tabs hide.
   const { hidden: tabsScrollHidden } = useKaiBottomChromeVisibility(showKaiTabs);
 
-  // Glass height: when tabs scroll-hide, collapse to bar-only (keep same fade %).
-  // Height transition is handled by .bar-glass-top { transition: height 300ms }.
-  const glassStyle = useMemo<React.CSSProperties>(
-    () =>
-      showKaiTabs && tabsScrollHidden
-        ? { height: "calc(var(--top-inset) + var(--top-bar-h) + var(--top-fade-active))" }
-        : { height: "var(--top-glass-h)" },
-    [showKaiTabs, tabsScrollHidden],
+  const headerGlassStyle = useMemo<React.CSSProperties>(
+    () => ({
+      height: "calc(var(--top-inset) + var(--top-systembar-row-gap, 0px) + var(--top-bar-h) + var(--top-fade-active))",
+    }),
+    []
+  );
+
+  const tabsGlassStyle = useMemo<React.CSSProperties>(
+    () => ({
+      top: "calc(var(--top-inset) + var(--top-systembar-row-gap, 0px) + var(--top-bar-h))",
+      height: "calc(var(--top-tabs-h) + var(--top-tabs-gap) + var(--top-fade-active))",
+      transform: tabsScrollHidden
+        ? "translate3d(0, calc(-100% - 10px), 0)"
+        : "translate3d(0, 0, 0)",
+    }),
+    [tabsScrollHidden]
   );
 
   if (hideChrome) return null;
@@ -125,8 +133,18 @@ export function TopAppBar({ className }: TopAppBarProps) {
       <div
         aria-hidden
         className="absolute inset-x-0 top-0 bar-glass bar-glass-top"
-        style={glassStyle}
+        style={headerGlassStyle}
       />
+      {showKaiTabs ? (
+        <div
+          aria-hidden
+          className={cn(
+            "absolute inset-x-0 bar-glass bar-glass-top transform-gpu transition-all duration-300 ease-out will-change-transform",
+            tabsScrollHidden ? "opacity-0" : "opacity-100"
+          )}
+          style={tabsGlassStyle}
+        />
+      ) : null}
 
       {/* ── Interactive content layer ──────────────────────────────── */}
       <div
