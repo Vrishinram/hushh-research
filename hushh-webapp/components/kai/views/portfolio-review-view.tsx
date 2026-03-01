@@ -244,6 +244,27 @@ function _formatPercent(value: number | undefined | null): string {
   return `${sign}${value.toFixed(2)}%`;
 }
 
+function compareHoldingsByNameAsc<T extends { name?: string; symbol?: string }>(
+  left: T,
+  right: T
+): number {
+  const leftName = String(left.name || "").trim();
+  const rightName = String(right.name || "").trim();
+  const leftSymbol = String(left.symbol || "").trim();
+  const rightSymbol = String(right.symbol || "").trim();
+  const leftKey = leftName || leftSymbol;
+  const rightKey = rightName || rightSymbol;
+
+  if (!leftKey && !rightKey) return 0;
+  if (!leftKey) return 1;
+  if (!rightKey) return -1;
+
+  return leftKey.localeCompare(rightKey, undefined, {
+    sensitivity: "base",
+    numeric: true,
+  });
+}
+
 function deriveRiskBucket(holdings: Holding[]): string {
   if (!holdings || holdings.length === 0) return "unknown";
 
@@ -1062,11 +1083,13 @@ export function PortfolioReviewView({
 
   const tableHoldingRows = useMemo<ReviewHoldingRow[]>(
     () =>
-      holdings.map((holding, index) => ({
-        ...holding,
-        client_id: `holding-${index}`,
-        source_index: index,
-      })),
+      holdings
+        .map((holding, index) => ({
+          ...holding,
+          client_id: `holding-${index}`,
+          source_index: index,
+        }))
+        .sort(compareHoldingsByNameAsc),
     [holdings]
   );
 
