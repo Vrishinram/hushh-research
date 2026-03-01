@@ -51,6 +51,11 @@ import type { PortfolioData } from "@/components/kai/types/portfolio";
 import { DebateReadinessChart } from "@/components/kai/charts/debate-readiness-chart";
 import { DebateRunManagerService } from "@/lib/services/debate-run-manager";
 import { toInvestorDecisionLabel } from "@/lib/copy/investor-language";
+import {
+  getTickerUniverseSnapshot,
+  preloadTickerUniverse,
+  type TickerUniverseRow,
+} from "@/lib/kai/ticker-universe-cache";
 
 // ============================================================================
 // Props
@@ -79,6 +84,19 @@ interface DebateInputsSnapshot {
   readinessScore: number;
   exclusionSummary: Array<{ reason: string; count: number }>;
 }
+
+const GENERIC_SECTOR_LABELS = new Set([
+  "unknown",
+  "unclassified",
+  "n/a",
+  "na",
+  "none",
+  "other",
+  "equity",
+  "equities",
+  "stock",
+  "stocks",
+]);
 
 // ============================================================================
 // Helpers
@@ -138,8 +156,55 @@ function clampPercent(value: number): number {
   return Math.max(0, Math.min(100, value));
 }
 
-function buildDebateInputsSnapshot(portfolio: PortfolioData): DebateInputsSnapshot {
+function isSpecificSectorLabel(value: string | null | undefined): boolean {
+  const text = String(value || "").trim().toLowerCase();
+  if (!text) return false;
+  return !GENERIC_SECTOR_LABELS.has(text);
+}
+
+function buildTickerSectorLookup(rows: TickerUniverseRow[]): Map<string, { sector?: string; industry?: string }> {
+  const lookup = new Map<string, { sector?: string; industry?: string }>();
+  for (const row of rows) {
+    const ticker = String(row.ticker || "").trim().toUpperCase();
+    if (!ticker) continue;
+    const sector = String(row.sector || row.sector_primary || "").trim() || undefined;
+    const industry = String(row.industry || row.industry_primary || "").trim() || undefined;
+    if (!sector && !industry) continue;
+    lookup.set(ticker, { sector, industry });
+  }
+  return lookup;
+}
+
+function resolveSectorCoveragePct(
+  mapped: ReturnType<typeof mapPortfolioToDashboardViewModel>,
+  tickerSectorLookup: Map<string, { sector?: string; industry?: string }>
+): number {
+  const investablePositions = mapped.canonicalModel.positions.filter(
+    (position) => !position.isCashEquivalent && position.debateEligible
+  );
+  if (investablePositions.length === 0) {
+    return mapped.quality.sectorCoveragePct;
+  }
+
+  const covered = investablePositions.filter((position) => {
+    const symbol = String(position.displaySymbol || "").trim().toUpperCase();
+    const enriched = tickerSectorLookup.get(symbol);
+    return (
+      isSpecificSectorLabel(position.sector) ||
+      isSpecificSectorLabel(enriched?.sector) ||
+      isSpecificSectorLabel(position.assetType)
+    );
+  }).length;
+
+  return covered / investablePositions.length;
+}
+
+function buildDebateInputsSnapshot(
+  portfolio: PortfolioData,
+  tickerSectorLookup: Map<string, { sector?: string; industry?: string }>
+): DebateInputsSnapshot {
   const mapped = mapPortfolioToDashboardViewModel(portfolio);
+  const sectorCoveragePct = resolveSectorCoveragePct(mapped, tickerSectorLookup);
   const coverageRows: DebateCoverageRow[] = [
     {
       key: "ticker",
@@ -150,7 +215,7 @@ function buildDebateInputsSnapshot(portfolio: PortfolioData): DebateInputsSnapsh
     {
       key: "sector",
       label: "Sector",
-      value: clampPercent(mapped.quality.sectorCoveragePct * 100),
+      value: clampPercent(sectorCoveragePct * 100),
       detail: "Investable positions with mapped sector labels",
     },
     {
@@ -590,12 +655,23 @@ export function AnalysisHistoryDashboard({
   const fetchDebateSnapshot = useCallback(async () => {
     try {
       setDebateSnapshotLoading(true);
+      const initialTickerRows = getTickerUniverseSnapshot() || [];
+      let tickerSectorLookup = buildTickerSectorLookup(initialTickerRows);
+      if (tickerSectorLookup.size === 0) {
+        try {
+          const rows = await preloadTickerUniverse();
+          tickerSectorLookup = buildTickerSectorLookup(rows);
+        } catch {
+          // Keep fallback coverage if ticker-universe preload fails.
+        }
+      }
+
       const cache = CacheService.getInstance();
       const cachedPortfolio =
         cache.get<PortfolioData>(CACHE_KEYS.PORTFOLIO_DATA(userId)) ??
         cache.get<PortfolioData>(CACHE_KEYS.DOMAIN_DATA(userId, "financial"));
       if (cachedPortfolio && Array.isArray(cachedPortfolio.holdings)) {
-        setDebateSnapshot(buildDebateInputsSnapshot(cachedPortfolio));
+        setDebateSnapshot(buildDebateInputsSnapshot(cachedPortfolio, tickerSectorLookup));
         return;
       }
 
@@ -621,7 +697,10 @@ export function AnalysisHistoryDashboard({
         return;
       }
 
-      const snapshot = buildDebateInputsSnapshot(portfolioCandidate as unknown as PortfolioData);
+      const snapshot = buildDebateInputsSnapshot(
+        portfolioCandidate as unknown as PortfolioData,
+        tickerSectorLookup
+      );
       setDebateSnapshot(snapshot);
     } catch (err) {
       console.warn("[AnalysisHistoryDashboard] Failed to load debate inputs context:", err);

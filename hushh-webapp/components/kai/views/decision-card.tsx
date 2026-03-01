@@ -249,6 +249,13 @@ function inferOwnedPosition(result: DecisionResult): boolean | null {
   return null;
 }
 
+function normalizeSentimentPercent(raw: unknown): number | null {
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return null;
+  // Support both [-1, 1] and [-100, 100] score conventions.
+  const asPercent = Math.abs(raw) <= 1 ? raw * 100 : raw;
+  return Math.max(-100, Math.min(100, asPercent));
+}
+
 // ============================================================================
 // Chart Sub-Components
 // ============================================================================
@@ -863,19 +870,31 @@ export function DecisionCard({ result }: { result: DecisionResult }) {
             {/* Sentiment Gauge Card */}
             {rawCard?.key_metrics?.sentiment?.sentiment_score !== undefined && (
             <div className="p-4 bg-card/40 border border-border/50 rounded-2xl flex flex-col justify-center">
+                {(() => {
+                  const sentimentPct = normalizeSentimentPercent(
+                    rawCard.key_metrics?.sentiment?.sentiment_score
+                  );
+                  if (sentimentPct === null) return null;
+                  const progressPct = Math.max(0, Math.min(100, (sentimentPct + 100) / 2));
+                  return (
+                    <>
                 <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
                         <Icon icon={BarChart3} size="xs" style={{ color: RESULT_CHART_COLORS.accent }} />
                         <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: RESULT_CHART_COLORS.accent }}>Sentiment</span>
                     </div>
                     <Badge variant="outline" className="text-[10px] font-mono bg-muted/30 border-border/40">
-                        {(rawCard.key_metrics.sentiment.sentiment_score * 100).toFixed(0)}%
+                        {sentimentPct >= 0 ? "+" : ""}
+                        {sentimentPct.toFixed(0)}%
                     </Badge>
                 </div>
-                <Progress value={(rawCard.key_metrics.sentiment.sentiment_score + 1) * 50} className="h-1.5 mb-2" />
+                <Progress value={progressPct} className="h-1.5 mb-2" />
                 <p className="text-[10px] text-muted-foreground text-center font-medium">
-                {rawCard.key_metrics.sentiment.sentiment_score > 0.3 ? "Bullish" : rawCard.key_metrics.sentiment.sentiment_score < -0.3 ? "Bearish" : "Neutral"}
+                {sentimentPct > 30 ? "Bullish" : sentimentPct < -30 ? "Bearish" : "Neutral"}
                 </p>
+                    </>
+                  );
+                })()}
             </div>
             )}
         </div>
