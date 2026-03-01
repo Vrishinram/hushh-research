@@ -12,8 +12,10 @@ export function SpotlightCard(props: {
   title: string;
   price: string;
   decision: SpotlightDecision;
+  confidenceLabel?: string | null;
   summary: string;
   context: string;
+  contextHref?: string | null;
 }) {
   const decisionTone =
     props.decision === "BUY"
@@ -32,21 +34,39 @@ export function SpotlightCard(props: {
             <h3 className="text-base font-black tracking-tight leading-tight">{props.title}</h3>
             <p className="text-sm text-muted-foreground">{props.price}</p>
           </div>
-          <span
-            className={cn(
-              "inline-flex items-center rounded-full px-3 py-1 text-[11px] font-extrabold tracking-wide",
-              decisionTone
-            )}
-          >
-            {props.decision}
-          </span>
+          <div className="flex items-center gap-1.5">
+            {props.confidenceLabel ? (
+              <span className="inline-flex items-center rounded-full bg-background/70 px-2 py-1 text-[10px] font-bold tracking-wide text-muted-foreground">
+                {props.confidenceLabel}
+              </span>
+            ) : null}
+            <span
+              className={cn(
+                "inline-flex items-center rounded-full px-3 py-1 text-[11px] font-extrabold tracking-wide",
+                decisionTone
+              )}
+            >
+              {props.decision}
+            </span>
+          </div>
         </div>
 
         <p className="text-sm font-medium leading-relaxed">{props.summary}</p>
 
         <div className="flex items-center gap-2 border-t border-border/40 pt-3 text-xs text-muted-foreground">
           <Icon icon={LineChart} size="sm" />
-          <span>{props.context}</span>
+          {props.contextHref ? (
+            <a
+              href={props.contextHref}
+              target="_blank"
+              rel="noreferrer"
+              className="line-clamp-1 underline-offset-2 hover:underline"
+            >
+              {props.context}
+            </a>
+          ) : (
+            <span>{props.context}</span>
+          )}
         </div>
       </CardContent>
     </Card>

@@ -100,26 +100,23 @@ export function TopAppBar({ className }: TopAppBarProps) {
   const centerTitle = useMemo(() => getTopBarTitle(pathname), [pathname]);
   const showKaiTabs = topShellMetrics.hasTabs;
 
-  // Subscribe to scroll-direction store so the glass shrinks when tabs hide.
+  // Subscribe to scroll-direction store so top glass height follows tabs visibility.
   const { progress: tabsScrollHideProgress } = useKaiBottomChromeVisibility(showKaiTabs);
 
-  const headerGlassStyle = useMemo<React.CSSProperties>(
+  const topGlassStyle = useMemo<React.CSSProperties>(
     () => ({
       height: showKaiTabs
-        ? "calc(var(--top-inset) + var(--top-systembar-row-gap, 0px) + var(--top-bar-h) + 1px)"
+        ? `calc(var(--top-inset) + var(--top-systembar-row-gap, 0px) + var(--top-bar-h) + ((1 - ${tabsScrollHideProgress}) * var(--top-tabs-h)) + var(--top-fade-active))`
         : "calc(var(--top-inset) + var(--top-systembar-row-gap, 0px) + var(--top-bar-h) + var(--top-fade-active))",
+      "--app-bar-glass-bg-light": "rgba(255, 255, 255, 0.46)",
+      "--app-bar-glass-bg-dark": "rgba(10, 12, 16, 0.64)",
+      "--app-bar-glass-blur": "7px",
+      maskImage:
+        "linear-gradient(to bottom, black 0%, black 56%, rgba(0, 0, 0, 0.96) 70%, rgba(0, 0, 0, 0.78) 84%, rgba(0, 0, 0, 0.42) 94%, transparent 100%)",
+      WebkitMaskImage:
+        "linear-gradient(to bottom, black 0%, black 56%, rgba(0, 0, 0, 0.96) 70%, rgba(0, 0, 0, 0.78) 84%, rgba(0, 0, 0, 0.42) 94%, transparent 100%)",
     }),
-    [showKaiTabs]
-  );
-
-  const tabsGlassStyle = useMemo<React.CSSProperties>(
-    () => ({
-      top: "calc(var(--top-inset) + var(--top-systembar-row-gap, 0px) + var(--top-bar-h) - 2px)",
-      height: "calc(var(--top-tabs-h) + var(--top-tabs-gap) + var(--top-fade-active) + 2px)",
-      transform: `translate3d(0, calc(${-100 * tabsScrollHideProgress}% - ${6 * tabsScrollHideProgress}px), 0)`,
-      opacity: Math.max(0, 1 - tabsScrollHideProgress),
-    }),
-    [tabsScrollHideProgress]
+    [showKaiTabs, tabsScrollHideProgress]
   );
 
   if (hideChrome) return null;
@@ -132,16 +129,9 @@ export function TopAppBar({ className }: TopAppBarProps) {
         {/* ── Unified glass backdrop ───────────────────────────────── */}
         <div
           aria-hidden
-          className="absolute inset-x-0 top-0 bar-glass bar-glass-top-head"
-          style={headerGlassStyle}
+          className="absolute inset-x-0 top-0 bar-glass"
+          style={topGlassStyle}
         />
-        {showKaiTabs ? (
-          <div
-            aria-hidden
-            className="absolute inset-x-0 bar-glass bar-glass-top-tabs transform-gpu will-change-transform"
-            style={tabsGlassStyle}
-          />
-        ) : null}
 
         {/* ── Interactive content layer ────────────────────────────── */}
         <div

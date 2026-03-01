@@ -7,8 +7,8 @@ import { BrandMark, Icon, OnboardingFeatureList } from "@/lib/morphy-ux/ui";
 export function IntroStep({ onNext }: { onNext: () => void }) {
   return (
     <main className="min-h-[100dvh] w-full bg-transparent">
-      <div className="mx-auto flex min-h-[100dvh] w-full max-w-md flex-col overflow-y-auto overscroll-y-contain px-6 pt-8">
-        <div className="flex-1 min-h-0 overflow-y-auto">
+      <div className="mx-auto flex min-h-[100dvh] w-full max-w-md flex-col px-6 pt-8">
+        <div className="flex-1 min-h-0">
           <div className="flex min-h-full flex-col items-center text-center">
             <BrandMark label="Kai" size="md" />
 

@@ -176,7 +176,7 @@ export function PreviewCarouselStep({ onContinue }: { onContinue: () => void }) 
     <main
       ref={mountRef}
       className={cn(
-        "min-h-[100dvh] w-full bg-transparent flex flex-col overflow-y-auto overscroll-y-contain"
+        "min-h-[100dvh] w-full bg-transparent flex flex-col"
       )}
     >
       <div className="w-full min-h-[100dvh] px-4 pt-6 pb-[var(--app-screen-footer-pad)]">

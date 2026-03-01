@@ -149,9 +149,25 @@ export function Providers({ children }: ProvidersProps) {
                         style={{
                           transform: `translate3d(0, calc(${100 * hideBottomChromeGlassProgress}% + ${10 * hideBottomChromeGlassProgress}px), 0)`,
                           opacity: Math.max(0, 1 - hideBottomChromeGlassProgress),
-                        }}
+                        } as CSSProperties}
                       >
-                        <div className="h-[calc(var(--app-bottom-inset)+var(--kai-command-fixed-ui)+36px)] w-full bar-glass bar-glass-bottom" />
+                        <div
+                          className="h-[calc(var(--app-bottom-inset)+var(--kai-command-fixed-ui)+36px)] w-full bar-glass"
+                          style={
+                            {
+                              "--app-bar-glass-bg-light": "rgba(255, 255, 255, 0.5)",
+                              "--app-bar-glass-bg-dark": "rgba(10, 12, 16, 0.74)",
+                              "--app-bar-glass-blur": "8px",
+                              "--app-bar-border-top": "1px solid rgba(255, 255, 255, 0.26)",
+                              "--app-bar-shadow":
+                                "inset 0 1px 0 rgba(255,255,255,0.18), 0 -14px 30px rgba(0,0,0,0.18)",
+                              maskImage:
+                                "linear-gradient(to top, black 0%, black 62%, rgba(0, 0, 0, 0.95) 76%, rgba(0, 0, 0, 0.72) 88%, rgba(0, 0, 0, 0.36) 95%, transparent 100%)",
+                              WebkitMaskImage:
+                                "linear-gradient(to top, black 0%, black 62%, rgba(0, 0, 0, 0.95) 76%, rgba(0, 0, 0, 0.72) 88%, rgba(0, 0, 0, 0.36) 95%, transparent 100%)",
+                            } as CSSProperties
+                          }
+                        />
                       </div>
                     ) : null}
                     <PostAuthOnboardingSyncBridge />
@@ -159,10 +175,17 @@ export function Providers({ children }: ProvidersProps) {
                     {/* Main scroll container: extends under fixed bar so content can scroll behind it; padding clears bar height */}
                     <div
                       data-app-scroll-root="true"
+                      data-app-scroll-mode={
+                        hideGlobalChrome
+                          ? "hidden-shell"
+                          : shouldLockFullscreenRoot
+                          ? "fullscreen-flow"
+                          : "standard"
+                      }
                       className={
                         hideGlobalChrome
                           ? // Landing/onboarding flows should still allow vertical scroll on small screens.
-                            "flex-1 overflow-y-auto overflow-x-hidden overscroll-x-none touch-pan-y relative z-10 min-h-0"
+                            "flex-1 overflow-y-auto overflow-x-hidden overscroll-x-none overscroll-y-contain touch-pan-y relative z-10 min-h-0"
                           : shouldLockFullscreenRoot
                           ? // Fullscreen flows keep chrome contract, but permit y-scroll for small devices.
                             "flex-1 overflow-y-auto overflow-x-hidden overscroll-x-none touch-pan-y relative z-10 min-h-0"

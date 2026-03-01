@@ -77,6 +77,70 @@ function toSpotlightDecision(input: string | undefined): "BUY" | "HOLD" | "REDUC
   return "HOLD";
 }
 
+function isWeakSpotlightDetail(input: string | null | undefined): boolean {
+  const text = String(input || "").trim().toLowerCase();
+  if (!text) return true;
+  return (
+    text.includes("no live recommendation feed available") ||
+    text.includes("recommendation unavailable") ||
+    text.includes("target consensus unavailable")
+  );
+}
+
+function toSafeHttpUrl(input: string | null | undefined): string | null {
+  const text = String(input || "").trim();
+  if (!text) return null;
+  if (!/^https?:\/\//i.test(text)) return null;
+  return text;
+}
+
+function summarizeSpotlight(row: NonNullable<KaiHomeInsightsV2["spotlights"]>[number]): string {
+  const story = String(row.story || "").trim();
+  if (story) return story;
+
+  const detail = String(row.recommendation_detail || "").trim();
+  if (detail && !isWeakSpotlightDetail(detail)) return detail;
+
+  const headline = String(row.headline || "").trim();
+  if (headline) return `Recent coverage: ${headline}`;
+
+  const decision = toSpotlightDecision(row.recommendation);
+  const changePct =
+    typeof row.change_pct === "number" && Number.isFinite(row.change_pct)
+      ? `${row.change_pct >= 0 ? "+" : ""}${row.change_pct.toFixed(2)}% today`
+      : null;
+  if (decision === "BUY") {
+    return changePct
+      ? `Momentum is positive (${changePct}) while analyst updates refresh.`
+      : "Momentum is positive while analyst updates refresh.";
+  }
+  if (decision === "REDUCE") {
+    return changePct
+      ? `Momentum is soft (${changePct}) while analyst updates refresh.`
+      : "Momentum is soft while analyst updates refresh.";
+  }
+  return changePct
+    ? `Price action is mixed (${changePct}) while analyst updates refresh.`
+    : "Price action is mixed while analyst updates refresh.";
+}
+
+function spotlightContextLabel(row: NonNullable<KaiHomeInsightsV2["spotlights"]>[number]): string {
+  const source = String(row.headline_source || "").trim();
+  if (source) return source;
+  const recommendationSource = String(row.recommendation_source || "").trim();
+  if (recommendationSource) return recommendationSource;
+  return "Market signal feed";
+}
+
+function spotlightConfidenceLabel(
+  row: NonNullable<KaiHomeInsightsV2["spotlights"]>[number]
+): string | null {
+  const value = row.confidence;
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  const pct = Math.max(0, Math.min(100, Math.round(value * 100)));
+  return `${pct}% confidence`;
+}
+
 function formatSpotlightPrice(value: number | null | undefined): string {
   if (typeof value !== "number" || !Number.isFinite(value)) return "Price unavailable";
   return new Intl.NumberFormat("en-US", {
@@ -751,10 +815,10 @@ export function KaiMarketPreviewView() {
                 title={String(row.company_name || row.symbol || "Unknown")}
                 price={formatSpotlightPrice(row.price)}
                 decision={toSpotlightDecision(row.recommendation)}
-                summary={String(
-                  row.recommendation_detail || row.headline || "No recommendation detail available."
-                )}
-                context={String(row.headline || "Real-time watchlist context")}
+                confidenceLabel={spotlightConfidenceLabel(row)}
+                summary={summarizeSpotlight(row)}
+                context={spotlightContextLabel(row)}
+                contextHref={toSafeHttpUrl(row.headline_url)}
               />
             ))}
           </div>

@@ -160,7 +160,7 @@ export function ImportProgressView({
   statusMessage,
   stageTrail = [],
   rawStreamLines = [],
-  thoughtCount = 0,
+  thoughtCount: _thoughtCount = 0,
   liveHoldings = [],
   holdingsExtracted = 0,
   holdingsTotal,

@@ -339,7 +339,12 @@ export interface KaiHomeSpotlightItem {
   change_pct: number | null;
   recommendation: string;
   recommendation_detail?: string | null;
+  recommendation_source?: string | null;
+  story?: string | null;
+  confidence?: number | null;
   headline?: string | null;
+  headline_url?: string | null;
+  headline_source?: string | null;
   source_tags: string[];
   as_of: string | null;
   degraded: boolean;

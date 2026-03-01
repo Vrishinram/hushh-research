@@ -27,14 +27,10 @@
   - Onboarding/import keep fullscreen-flow route behavior (spacer suppressed).
 
 ## Top Shell + Tabs
-- Top chrome is split into two visual layers:
-  - `bar-glass-top-head` for status + header row (masked fade)
-  - `bar-glass-top-tabs` for route tabs (minimal fade)
-- Mask/frost styling is centralized in shared CSS tokens and consumed by `.bar-glass` base class:
-  - blur tokens: `--app-mask-blur-*`
-  - tint tokens: `--app-mask-tint-*`
-  - mask gradient tokens: `--app-mask-gradient-*`
-  - variant classes (`top-head`, `top-tabs`, `bottom`) only set active token values.
+- Top chrome uses one unified visual layer:
+  - `bar-glass` for status + header + route tabs
+- Bottom chrome uses the same `bar-glass` class with direction variables (`to top`) instead of a separate class.
+- Mask/frost styling is centralized in shared CSS tokens and consumed by `.bar-glass` only.
 - Tail clearance is route-aware in `resolveTopShellMetrics(...)`:
   - compact clearance for non-tab routes
   - larger clearance for tab routes to avoid title/subtitle collision below tabs

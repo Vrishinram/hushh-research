@@ -1951,19 +1951,6 @@ export function KaiFlow({
           }
           return undefined;
         };
-        const readDetails = (value: unknown): string | undefined => {
-          if (typeof value === "string" && value.trim().length > 0) {
-            return value.trim();
-          }
-          if (value && typeof value === "object") {
-            try {
-              return JSON.stringify(value);
-            } catch {
-              return undefined;
-            }
-          }
-          return undefined;
-        };
         const formatQualityGateDetails = (value: unknown): string | undefined => {
           if (!value || typeof value !== "object" || Array.isArray(value)) {
             return undefined;
