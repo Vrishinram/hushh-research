@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, X } from "lucide-react";
+import { toast } from "sonner";
 
 import { DebateStreamView, type AgentState } from "@/components/kai/debate-stream-view";
 import { HushhLoader } from "@/components/app-ui/hushh-loader";
@@ -95,6 +96,7 @@ function HistoryDebateReplay({ entry }: { entry: AnalysisHistoryEntry }) {
 export default function KaiAnalysisPage() {
   const pageOpenedAtRef = useRef(Date.now());
   const workspaceTopRef = useRef<HTMLDivElement | null>(null);
+  const summaryLoadingToastIdRef = useRef<string | number | null>(null);
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -376,10 +378,16 @@ export default function KaiAnalysisPage() {
 
   const handleLiveDecisionSaved = useCallback(
     (entry: AnalysisHistoryEntry) => {
+      if (summaryLoadingToastIdRef.current === null) {
+        summaryLoadingToastIdRef.current = toast.loading("Preparing summary…", {
+          description: "Final recommendation is ready. Loading summary view.",
+        });
+      }
       setLiveEntry(entry);
       setResolvedEntry(entry);
       setAnalysisParams(null);
       setShowHistoryWhileActive(false);
+      setWorkspaceTab("summary");
       requestAnimationFrame(() => {
         workspaceTopRef.current?.scrollIntoView({ block: "start", behavior: "auto" });
       });
@@ -453,6 +461,27 @@ export default function KaiAnalysisPage() {
       cancelled = true;
     };
   }, [activeTicker, showWorkspace, userId, vaultOwnerToken]);
+
+  useEffect(() => {
+    if (
+      summaryLoadingToastIdRef.current !== null &&
+      workspaceTab === "summary" &&
+      activeEntry
+    ) {
+      toast.success("Summary ready.", { id: summaryLoadingToastIdRef.current });
+      summaryLoadingToastIdRef.current = null;
+    }
+  }, [activeEntry, workspaceTab]);
+
+  useEffect(
+    () => () => {
+      if (summaryLoadingToastIdRef.current !== null) {
+        toast.dismiss(summaryLoadingToastIdRef.current);
+        summaryLoadingToastIdRef.current = null;
+      }
+    },
+    []
+  );
 
   if (!user || !userId) {
     return (
