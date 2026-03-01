@@ -31,6 +31,7 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart";
+import { toInvestorStreamText } from "@/lib/copy/investor-language";
 
 type LoserInput = {
   symbol: string;
@@ -362,6 +363,11 @@ export default function PortfolioHealthPage() {
           typeof value === "number" && Number.isFinite(value) ? value : undefined;
         const readString = (value: unknown): string | undefined =>
           typeof value === "string" && value.trim().length > 0 ? value : undefined;
+        const sanitizeStream = (value: unknown, fallback: string): string => {
+          const next = toInvestorStreamText(value);
+          if (next) return next;
+          return fallback;
+        };
         const stageProgressFallback: Record<string, number> = {
           analyzing: 20,
           thinking: 45,
@@ -390,12 +396,12 @@ export default function PortfolioHealthPage() {
                 setIsExtracting(stage === "extracting");
                 setProgressPct(resolveProgress(stage, payload.progress_pct));
                 setStatusMessage(
-                  readString(payload.message) ?? "Analyzing portfolio positions..."
+                  sanitizeStream(payload.message, "Analyzing portfolio positions...")
                 );
                 break;
               }
               case "thinking": {
-                const thought = typeof payload.thought === "string" ? payload.thought : "";
+                const thought = sanitizeStream(payload.thought, "");
                 if (thought) {
                   setThoughts((prev) => [...prev, thought]);
                 }
@@ -403,22 +409,27 @@ export default function PortfolioHealthPage() {
                 setCurrentStage("thinking");
                 setProgressPct(resolveProgress("thinking", payload.progress_pct));
                 setStatusMessage(
-                  readString(payload.message) ??
+                  sanitizeStream(
+                    payload.message,
                     "AI is reasoning through concentration and replacement scenarios..."
+                  )
                 );
                 break;
               }
               case "chunk": {
                 const text = typeof payload.text === "string" ? payload.text : "";
                 if (text) {
-                  setStreamedText((prev) => prev + text);
+                  const investorText = toInvestorStreamText(text) || text;
+                  setStreamedText((prev) => prev + investorText);
                 }
                 setCurrentStage("extracting");
                 setIsExtracting(true);
                 setProgressPct(resolveProgress("extracting", payload.progress_pct));
                 setStatusMessage(
-                  readString(payload.message) ??
+                  sanitizeStream(
+                    payload.message,
                     "Streaming optimization output..."
+                  )
                 );
                 break;
               }
@@ -435,9 +446,7 @@ export default function PortfolioHealthPage() {
               case "error": {
                 const code = readString(payload.code);
                 const message =
-                  typeof payload.message === "string"
-                    ? payload.message
-                    : "Portfolio health analysis failed";
+                  sanitizeStream(payload.message, "Portfolio health analysis failed");
                 setErrorCode(code ?? null);
                 const friendlyMessage =
                   code === "OPTIMIZE_PARSE_FAILED"
@@ -448,9 +457,7 @@ export default function PortfolioHealthPage() {
               }
               case "aborted": {
                 const message =
-                  typeof payload.message === "string"
-                    ? payload.message
-                    : "Portfolio optimization stream was stopped";
+                  sanitizeStream(payload.message, "Portfolio optimization stream was stopped");
                 setStatusMessage(message);
                 throw new Error(message);
               }
@@ -471,7 +478,9 @@ export default function PortfolioHealthPage() {
           setStatusMessage("Analysis stopped before completion.");
         } else {
           setError((e as Error).message);
-          setStatusMessage((e as Error).message);
+          setStatusMessage(
+            toInvestorStreamText((e as Error).message) || "Portfolio health analysis failed"
+          );
           if ((e as Error).message.includes("formatting issue")) {
             setErrorCode("OPTIMIZE_PARSE_FAILED");
           }

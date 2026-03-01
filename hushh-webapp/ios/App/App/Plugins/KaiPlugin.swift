@@ -29,6 +29,7 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin, URLSessionDataDelegate {
         CAPPluginMethod(name: "importPortfolio", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "analyzePortfolioLosers", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "streamPortfolioImport", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "streamPortfolioImportRun", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "streamPortfolioAnalyzeLosers", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "streamKaiAnalysis", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "chat", returnType: CAPPluginReturnPromise),
@@ -270,10 +271,10 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin, URLSessionDataDelegate {
             return
         }
         
-        // Check file size (max 10MB)
-        if fileData.count > 10 * 1024 * 1024 {
+        // Check file size (max 25MB)
+        if fileData.count > 25 * 1024 * 1024 {
             print("[\(TAG)] ❌ File too large")
-            call.reject("File too large. Maximum size is 10MB.")
+            call.reject("File too large. Maximum size is 25MB.")
             return
         }
         
@@ -446,8 +447,8 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin, URLSessionDataDelegate {
     
     private func makeStreamSession() -> URLSession {
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 150
-        config.timeoutIntervalForResource = 300
+        config.timeoutIntervalForRequest = 180
+        config.timeoutIntervalForResource = 3600
         return URLSession(configuration: config, delegate: self, delegateQueue: nil)
     }
     
@@ -577,6 +578,10 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin, URLSessionDataDelegate {
             call.reject("Invalid base64 file content")
             return
         }
+        if fileData.count > 25 * 1024 * 1024 {
+            call.reject("File too large. Maximum size is 25MB.")
+            return
+        }
         if streamCall != nil {
             call.reject("A stream is already in progress")
             return
@@ -606,6 +611,47 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin, URLSessionDataDelegate {
         body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
         request.httpBody = body
         
+        streamCall = call
+        streamBuffer = ""
+        streamSession = makeStreamSession()
+        streamTask = streamSession?.dataTask(with: request)
+        streamTask?.resume()
+    }
+
+    @objc func streamPortfolioImportRun(_ call: CAPPluginCall) {
+        activeStreamKind = "portfolio"
+        guard let runId = call.getString("runId"),
+              let userId = call.getString("userId"),
+              let vaultOwnerToken = call.getString("vaultOwnerToken") else {
+            call.reject("Missing required parameters: runId, userId, vaultOwnerToken")
+            return
+        }
+        let cursor = max(0, call.getInt("cursor") ?? 0)
+        if streamCall != nil {
+            call.reject("A stream is already in progress")
+            return
+        }
+
+        let backendUrl = getBackendUrl(call)
+        let encodedRunId = runId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? runId
+        guard var components = URLComponents(string: "\(backendUrl)/api/kai/portfolio/import/run/\(encodedRunId)/stream") else {
+            call.reject("Invalid URL components for streamPortfolioImportRun")
+            return
+        }
+        components.queryItems = [
+            URLQueryItem(name: "user_id", value: userId),
+            URLQueryItem(name: "cursor", value: String(cursor)),
+        ]
+        guard let url = components.url else {
+            call.reject("Invalid URL for streamPortfolioImportRun")
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(vaultOwnerToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+
         streamCall = call
         streamBuffer = ""
         streamSession = makeStreamSession()

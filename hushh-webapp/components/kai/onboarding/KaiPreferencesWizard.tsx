@@ -174,15 +174,15 @@ export function KaiPreferencesWizard(props: {
   return (
     <main
       className={cn(
-        "w-full bg-transparent flex flex-col overflow-hidden",
+        "w-full bg-transparent flex flex-col",
         layout === "page"
-          ? "h-full px-6 pt-[calc(16px+env(safe-area-inset-top))] pb-[var(--app-screen-footer-pad)]"
+          ? "min-h-[100dvh] overflow-y-auto overscroll-y-contain px-6 pt-[calc(16px+env(safe-area-inset-top))] pb-[var(--app-screen-footer-pad)]"
           : "min-h-0 px-4 pt-4 pb-4"
       )}
     >
       <div
         className={cn(
-          "w-full max-w-sm mx-auto flex-1 min-h-0 flex flex-col",
+          "w-full max-w-sm mx-auto flex min-h-[calc(100dvh-var(--app-screen-footer-pad))] flex-col",
           layout === "sheet" && "min-h-0"
         )}
       >

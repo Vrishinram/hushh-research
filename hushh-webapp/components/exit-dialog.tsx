@@ -45,6 +45,7 @@ export function ExitDialog({
 }: ExitDialogProps) {
   // Safely try to get vault context (may not exist during SSR/static generation)
   const vaultContext = useContext(VaultContext);
+  const hasUnlockedVault = Boolean(vaultContext?.isVaultUnlocked);
 
   const handleExit = async () => {
     // 1. Lock vault if context is available (clears key from memory)
@@ -78,11 +79,25 @@ export function ExitDialog({
   };
 
   const isLockOnly = mode === "lock_only";
-  const title = isLockOnly ? "Lock Vault" : "Exit Hushh";
+  const title = isLockOnly
+    ? hasUnlockedVault
+      ? "Lock Vault"
+      : "Close App"
+    : "Exit Hushh";
   const description = isLockOnly
-    ? "Lock your vault now? You can close the app manually from iOS app switcher."
-    : "Are you sure you want to exit? Your vault will be locked for security.";
-  const actionLabel = isLockOnly ? "Lock Vault" : "Lock Vault & Exit";
+    ? hasUnlockedVault
+      ? "Lock your vault now? You can close the app manually from iOS app switcher."
+      : "Close the app now? You can reopen any time."
+    : hasUnlockedVault
+      ? "Are you sure you want to exit? Your vault will be locked for security."
+      : "Are you sure you want to exit?";
+  const actionLabel = isLockOnly
+    ? hasUnlockedVault
+      ? "Lock Vault"
+      : "Close App"
+    : hasUnlockedVault
+      ? "Lock Vault & Exit"
+      : "Exit";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange} modal={false}>

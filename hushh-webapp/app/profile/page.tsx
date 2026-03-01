@@ -405,8 +405,8 @@ export default function ProfilePage() {
       : "Unlock Vault";
   const unlockDialogDescription =
     vaultUnlockReason === "delete_account"
-      ? "Unlock your vault to confirm deletion. This is permanent and removes all encrypted data."
-      : "Unlock your vault to access profile data and settings.";
+      ? "Unlock your vault to confirm deletion. This is permanent and removes all encrypted records."
+      : "Unlock your vault to access profile settings.";
 
   async function switchToQuickMethod(targetMethod: VaultMethod) {
     if (!user?.uid) return;
@@ -536,7 +536,7 @@ export default function ProfilePage() {
               <div className="h-10 w-10 shrink-0 rounded-xl bg-primary/10 flex items-center justify-center">
                 <Icon icon={Folder} size="md" className="text-primary" />
               </div>
-              <span className="truncate">Your Data Profile</span>
+              <span className="truncate">Your Profile</span>
             </div>
             <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
               {hasVault === true && (
@@ -552,7 +552,7 @@ export default function ProfilePage() {
               )}
               {!loadingDomains && (
                 <Badge variant="secondary" className="text-xs">
-                  {totalAttributes} data points
+                  {totalAttributes} signals
                 </Badge>
               )}
             </div>
@@ -610,7 +610,7 @@ export default function ProfilePage() {
               {hasVault === false ? (
                 <>
               <p className="text-sm text-muted-foreground mb-3">
-                    Create your vault from import to start building your data profile.
+                    Create your vault from import to start building your profile.
                   </p>
                   <Button variant="gradient" size="sm" onClick={() => router.push(ROUTES.KAI_IMPORT)}>
                     Go to Import
@@ -619,7 +619,7 @@ export default function ProfilePage() {
               ) : hasVault === true && !vaultOwnerToken ? (
                 <>
                   <p className="text-sm text-muted-foreground mb-3">
-                    Unlock your Vault to view your data profile.
+                    Unlock your Vault to view your profile.
                   </p>
                   <Button
                     variant="none"
@@ -636,7 +636,7 @@ export default function ProfilePage() {
               ) : (
                 <>
                   <p className="text-sm text-muted-foreground mb-3">
-                    No data yet. Chat with Kai to personalize your profile.
+                    Nothing here yet. Chat with Kai to personalize your profile.
                   </p>
                   <Button
                     variant="gradient"
@@ -739,7 +739,7 @@ export default function ProfilePage() {
         </CardHeader>
         <CardContent className="space-y-3 pt-4">
           <p className="text-sm text-muted-foreground">
-            Today, your data is securely managed in the cloud for a seamless experience
+            Today, your profile is securely managed in the cloud for a seamless experience
             across your devices.
           </p>
           <div className="rounded-xl border border-border/60 bg-muted/30 p-3 space-y-2">
@@ -902,7 +902,7 @@ export default function ProfilePage() {
         </CardHeader>
         <CardContent className="pt-2 pb-4">
           <p className="text-sm text-muted-foreground mb-4">
-            Deleting your account is permanent. All your data, including your vault and identity, will be erased.
+            Deleting your account is permanent. All your vault records, including identity details, will be erased.
           </p>
           <Button
              variant="none"
@@ -1012,7 +1012,7 @@ export default function ProfilePage() {
             </AlertDialogTitle>
             <AlertDialogDescription>
               This action cannot be undone. This will permanently delete your account
-              and remove your data from our servers.
+              and remove your records from our servers.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1044,7 +1044,7 @@ export default function ProfilePage() {
 
       {/* Security Footer */}
       <p className="text-center text-xs text-muted-foreground">
-        Your data is protected before storage, and only your Vault credentials can unlock it.
+        Your records are protected before storage, and only your Vault credentials can unlock them.
       </p>
       
     </div>

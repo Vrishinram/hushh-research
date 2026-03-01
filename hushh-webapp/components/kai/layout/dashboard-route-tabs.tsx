@@ -82,7 +82,7 @@ export function DashboardRouteTabs({ embedded = false }: DashboardRouteTabsProps
   const tabsRootRef = useRef<HTMLDivElement | null>(null);
   const [dragOffsetTabs, setDragOffsetTabs] = useState(0);
   const [isDraggingIndicator, setIsDraggingIndicator] = useState(false);
-  const { hidden: hideRouteTabs } = useKaiBottomChromeVisibility(!hideTabsForPath);
+  const { hidden: hideRouteTabs, progress: hideRouteTabsProgress } = useKaiBottomChromeVisibility(!hideTabsForPath);
   const busyOperations = useKaiSession((s) => s.busyOperations);
 
   const activeTab = useMemo(
@@ -371,7 +371,7 @@ export function DashboardRouteTabs({ embedded = false }: DashboardRouteTabsProps
             type="button"
             onClick={() => handleTabChange(tab.id)}
             className={cn(
-              "relative z-[1] h-9 text-sm font-semibold transition-colors duration-200",
+              "relative z-[1] h-8 text-sm font-semibold transition-colors duration-200",
               tab.id === activeTab
                 ? "text-foreground"
                 : "text-muted-foreground hover:text-foreground"
@@ -401,9 +401,13 @@ export function DashboardRouteTabs({ embedded = false }: DashboardRouteTabsProps
     return (
       <div
         className={cn(
-          "relative flex w-full justify-center transform-gpu transition-all duration-300 ease-out will-change-transform",
+          "relative flex w-full justify-center transform-gpu will-change-transform",
           hideRouteTabs ? "pointer-events-none opacity-0" : "pointer-events-auto opacity-100"
         )}
+        style={{
+          transform: `translate3d(0, calc(${-100 * hideRouteTabsProgress}% - ${6 * hideRouteTabsProgress}px), 0)`,
+          opacity: Math.max(0, 1 - hideRouteTabsProgress),
+        }}
       >
         <div
           ref={tabsRootRef}
@@ -419,13 +423,12 @@ export function DashboardRouteTabs({ embedded = false }: DashboardRouteTabsProps
   return (
     <div
       className={cn(
-        "relative mx-auto flex w-full max-w-6xl justify-center px-4 sm:px-6",
+        "relative mx-auto flex w-full max-w-6xl justify-center px-4 sm:px-6 transform-gpu will-change-transform",
         hideRouteTabs ? "pointer-events-none opacity-0" : "pointer-events-auto opacity-100"
       )}
       style={{
-        transform: hideRouteTabs
-          ? "translate3d(0, calc(-100% - 10px), 0)"
-          : "translate3d(0, 0, 0)",
+        transform: `translate3d(0, calc(${-100 * hideRouteTabsProgress}% - ${6 * hideRouteTabsProgress}px), 0)`,
+        opacity: Math.max(0, 1 - hideRouteTabsProgress),
       }}
     >
       <div

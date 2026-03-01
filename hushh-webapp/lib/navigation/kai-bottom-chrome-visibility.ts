@@ -1,18 +1,16 @@
 import { useEffect, useSyncExternalStore } from "react";
 
-const HIDE_DELTA_PX = 28;
-const REVEAL_DELTA_PX = 16;
-const MIN_SCROLL_Y_FOR_HIDE = 72;
-const JITTER_DELTA_PX = 2;
+const MIN_SCROLL_Y_FOR_HIDE = 6;
+const JITTER_DELTA_PX = 0.15;
+const CHROME_TRAVEL_DISTANCE_PX = 150;
+const PROGRESS_EPSILON = 0.001;
 const APP_SCROLL_ROOT_SELECTOR = '[data-app-scroll-root="true"]';
 
 type Listener = () => void;
 
 interface VisibilityState {
-  hidden: boolean;
+  progress: number;
   lastY: number;
-  shownValleyY: number;
-  hiddenPeakY: number;
   initialized: boolean;
 }
 
@@ -23,12 +21,17 @@ let activeScrollTarget: Window | HTMLElement | null = null;
 const handleScroll = () => onScroll(readActiveScrollY());
 
 const state: VisibilityState = {
-  hidden: false,
+  progress: 0,
   lastY: 0,
-  shownValleyY: 0,
-  hiddenPeakY: 0,
   initialized: false,
 };
+
+function clamp01(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  if (value <= 0) return 0;
+  if (value >= 1) return 1;
+  return value;
+}
 
 function emit() {
   listeners.forEach((listener) => listener());
@@ -76,8 +79,7 @@ export function onScroll(y: number): void {
   if (!state.initialized) {
     state.initialized = true;
     state.lastY = nextY;
-    state.shownValleyY = nextY;
-    state.hiddenPeakY = nextY;
+    state.progress = 0;
     return;
   }
 
@@ -88,37 +90,20 @@ export function onScroll(y: number): void {
     return;
   }
 
-  if (!state.hidden) {
-    if (delta < 0) {
-      state.shownValleyY = Math.min(state.shownValleyY, nextY);
-      return;
-    }
-
-    if (nextY < MIN_SCROLL_Y_FOR_HIDE) {
-      state.shownValleyY = nextY;
-      return;
-    }
-
-    const downDistance = nextY - state.shownValleyY;
-    if (downDistance >= HIDE_DELTA_PX) {
-      state.hidden = true;
-      state.hiddenPeakY = nextY;
+  if (nextY <= MIN_SCROLL_Y_FOR_HIDE) {
+    if (state.progress > 0) {
+      state.progress = 0;
       emit();
     }
     return;
   }
 
-  if (delta > 0) {
-    state.hiddenPeakY = Math.max(state.hiddenPeakY, nextY);
+  const nextProgress = clamp01(state.progress + delta / CHROME_TRAVEL_DISTANCE_PX);
+  if (Math.abs(nextProgress - state.progress) <= PROGRESS_EPSILON) {
     return;
   }
-
-  const upDistance = state.hiddenPeakY - nextY;
-  if (upDistance >= REVEAL_DELTA_PX || nextY <= 8) {
-    state.hidden = false;
-    state.shownValleyY = nextY;
-    emit();
-  }
+  state.progress = nextProgress;
+  emit();
 }
 
 function attachScrollListener() {
@@ -143,11 +128,9 @@ function detachScrollListener() {
 }
 
 export function resetKaiBottomChromeVisibility(): void {
-  state.hidden = false;
+  state.progress = 0;
   state.initialized = false;
   state.lastY = readActiveScrollY();
-  state.shownValleyY = state.lastY;
-  state.hiddenPeakY = state.lastY;
   emit();
 }
 
@@ -156,15 +139,17 @@ function subscribe(listener: Listener) {
   return () => listeners.delete(listener);
 }
 
-function getSnapshot(): boolean {
-  return state.hidden;
+function getSnapshot(): number {
+  return state.progress;
 }
 
 export function useKaiBottomChromeVisibility(enabled: boolean): {
   hidden: boolean;
+  progress: number;
   onScroll: (y: number) => void;
 } {
-  const hidden = useSyncExternalStore(subscribe, getSnapshot, () => false);
+  const progress = useSyncExternalStore(subscribe, getSnapshot, () => 0);
+  const hidden = progress >= 0.98;
 
   useEffect(() => {
     if (!enabled) {
@@ -184,5 +169,5 @@ export function useKaiBottomChromeVisibility(enabled: boolean): {
     };
   }, [enabled]);
 
-  return { hidden: enabled ? hidden : false, onScroll };
+  return { hidden: enabled ? hidden : false, progress: enabled ? progress : 0, onScroll };
 }

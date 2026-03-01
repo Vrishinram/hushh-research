@@ -86,25 +86,89 @@ function formatSpotlightPrice(value: number | null | undefined): string {
   }).format(value);
 }
 
-function formatOverviewValue(value: string | number | null | undefined): string {
+function isUnavailableText(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  return (
+    normalized.length === 0 ||
+    normalized === "n/a" ||
+    normalized === "na" ||
+    normalized === "unknown" ||
+    normalized === "unavailable" ||
+    normalized === "none" ||
+    normalized === "null" ||
+    normalized === "--" ||
+    normalized === "-"
+  );
+}
+
+function normalizeOverviewSource(source: string | null | undefined): string | null {
+  if (!source) return null;
+  const text = source.trim();
+  if (!text || isUnavailableText(text)) return null;
+  return text;
+}
+
+function formatOverviewValue(
+  value: string | number | null | undefined,
+  {
+    label,
+    degraded,
+  }: {
+    label: string;
+    degraded: boolean;
+  }
+): string {
   if (typeof value === "number" && Number.isFinite(value)) {
     if (Math.abs(value) >= 1000) {
       return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(value);
     }
     return new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(value);
   }
-  if (typeof value === "string" && value.trim()) return value;
-  return "Unavailable";
+  if (typeof value === "string" && value.trim() && !isUnavailableText(value)) return value;
+  const lowerLabel = label.toLowerCase();
+  if (lowerLabel.includes("market status")) {
+    return degraded ? "Status delayed" : "Updating status";
+  }
+  if (lowerLabel.includes("volatility") || lowerLabel.includes("vix")) {
+    return degraded ? "Volatility delayed" : "Updating volatility";
+  }
+  return degraded ? "Data delayed" : "Updating";
 }
 
-function formatOverviewDelta(deltaPct: number | null | undefined): string {
-  if (typeof deltaPct !== "number" || !Number.isFinite(deltaPct)) return "N/A";
+function formatOverviewDelta(
+  deltaPct: number | null | undefined,
+  {
+    label,
+    source,
+    degraded,
+  }: {
+    label: string;
+    source: string | null | undefined;
+    degraded: boolean;
+  }
+): string {
+  if (typeof deltaPct !== "number" || !Number.isFinite(deltaPct)) {
+    const lowerLabel = label.toLowerCase();
+    const normalizedSource = normalizeOverviewSource(source);
+    if (lowerLabel.includes("market status")) {
+      return degraded ? "Schedule fallback" : "Live session";
+    }
+    if (normalizedSource) {
+      return degraded ? `${normalizedSource} delayed` : normalizedSource;
+    }
+    return degraded ? "Data delayed" : "Live";
+  }
   const sign = deltaPct >= 0 ? "+" : "";
   return `${sign}${deltaPct.toFixed(2)}%`;
 }
 
-function toOverviewTone(deltaPct: number | null | undefined): MarketOverviewMetric["tone"] {
-  if (typeof deltaPct !== "number" || !Number.isFinite(deltaPct)) return "neutral";
+function toOverviewTone(
+  deltaPct: number | null | undefined,
+  degraded: boolean
+): MarketOverviewMetric["tone"] {
+  if (typeof deltaPct !== "number" || !Number.isFinite(deltaPct)) {
+    return degraded ? "warning" : "neutral";
+  }
   if (deltaPct > 0.25) return "positive";
   if (deltaPct < -0.25) return "negative";
   return "neutral";
@@ -125,18 +189,59 @@ function toOverviewMetrics(payload: KaiHomeInsightsV2 | null): MarketOverviewMet
   return rows
     .filter((row): row is NonNullable<KaiHomeInsightsV2["market_overview"]>[number] => Boolean(row))
     .map((row, idx) => {
-      const tone = toOverviewTone(row.delta_pct);
+      const tone = toOverviewTone(row.delta_pct, Boolean(row.degraded));
       const label = String(row.label || `Metric ${idx + 1}`);
       return {
         id: `${label}-${idx}`,
         label,
-        value: formatOverviewValue(row.value),
-        delta: formatOverviewDelta(row.delta_pct),
+        value: formatOverviewValue(row.value, {
+          label,
+          degraded: Boolean(row.degraded),
+        }),
+        delta: formatOverviewDelta(row.delta_pct, {
+          label,
+          source: row.source,
+          degraded: Boolean(row.degraded),
+        }),
         tone,
         icon: iconForOverview(label, tone),
       };
     })
     .slice(0, 4);
+}
+
+function hasUsefulOverviewValue(value: string | number | null | undefined): boolean {
+  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value === "string") {
+    const text = value.trim();
+    return Boolean(text) && !isUnavailableText(text);
+  }
+  return false;
+}
+
+function countUsableOverviewRows(payload: KaiHomeInsightsV2 | null | undefined): number {
+  const rows = payload?.market_overview;
+  if (!Array.isArray(rows)) return 0;
+  return rows.reduce((count, row) => {
+    if (!row) return count;
+    if (hasUsefulOverviewValue(row.value)) return count + 1;
+    return count;
+  }, 0);
+}
+
+function withStableOverviewFromCache(
+  nextPayload: KaiHomeInsightsV2,
+  cachedPayload: KaiHomeInsightsV2 | null
+): KaiHomeInsightsV2 {
+  const nextUsableCount = countUsableOverviewRows(nextPayload);
+  const cachedUsableCount = countUsableOverviewRows(cachedPayload);
+  if (nextUsableCount > 0 || cachedUsableCount === 0) {
+    return nextPayload;
+  }
+  return {
+    ...nextPayload,
+    market_overview: cachedPayload?.market_overview ?? nextPayload.market_overview,
+  };
 }
 
 function toThemeIcon(title: string): LucideIcon {
@@ -494,22 +599,29 @@ export function KaiMarketPreviewView() {
           }
 
           if (controller.signal.aborted) return;
-          setPayload(nextPayload);
+          const cachedBaselinePayload =
+            cache.get<KaiHomeInsightsV2>(marketCacheKey) ??
+            readAnyKaiHomeCache(cache, user.uid, 7);
+          const stabilizedPayload = withStableOverviewFromCache(
+            nextPayload,
+            seededFromLocalCache ? cachedBaselinePayload : null
+          );
+          setPayload(stabilizedPayload);
           hasPayloadRef.current = true;
-          cache.set(marketCacheKey, nextPayload, MARKET_HOME_CACHE_TTL_MS);
+          cache.set(marketCacheKey, stabilizedPayload, MARKET_HOME_CACHE_TTL_MS);
           if (trackedSymbols.length === 0) {
-            cache.set(CACHE_KEYS.KAI_MARKET_HOME(user.uid, "default", 7), nextPayload, MARKET_HOME_CACHE_TTL_MS);
+            cache.set(CACHE_KEYS.KAI_MARKET_HOME(user.uid, "default", 7), stabilizedPayload, MARKET_HOME_CACHE_TTL_MS);
           }
           if (sessionCacheKey && typeof window !== "undefined") {
             setSessionItem(
               sessionCacheKey,
-              JSON.stringify({ payload: nextPayload, savedAt: Date.now() })
+              JSON.stringify({ payload: stabilizedPayload, savedAt: Date.now() })
             );
           }
           if (persistentCacheKey && typeof window !== "undefined") {
             setSessionItem(
               persistentCacheKey,
-              JSON.stringify({ payload: nextPayload, savedAt: Date.now() })
+              JSON.stringify({ payload: stabilizedPayload, savedAt: Date.now() })
             );
           }
         } catch (loadError) {
@@ -583,10 +695,10 @@ export function KaiMarketPreviewView() {
   }, [hasPayload, payload?.hero?.holdings_count]);
 
   return (
-    <div className="mx-auto w-full max-w-[390px] overflow-x-hidden px-4 pt-[var(--kai-view-top-gap,16px)] pb-6">
+    <div className="mx-auto w-full max-w-[390px] overflow-x-hidden px-4 pt-[var(--kai-view-top-gap,16px)] pb-6 md:max-w-3xl md:px-6 lg:max-w-5xl">
       <header className="space-y-2 text-center">
-        <h1 className="text-2xl font-black tracking-tight leading-tight">Explore the market with Kai</h1>
-        <p className="mx-auto max-w-[22rem] text-sm text-muted-foreground">
+        <h1 className="text-[clamp(1.85rem,4.2vw,2.75rem)] font-black tracking-tight leading-tight">Explore the market with Kai</h1>
+        <p className="mx-auto max-w-[22rem] text-sm text-muted-foreground md:max-w-2xl">
           Structured insights, even before connecting your portfolio.
         </p>
         {refreshing && hasPayload ? (

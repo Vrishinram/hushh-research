@@ -10,6 +10,11 @@ function Progress({
   value,
   ...props
 }: React.ComponentProps<typeof ProgressPrimitive.Root>) {
+  const safeValue =
+    typeof value === "number" && Number.isFinite(value)
+      ? Math.max(0, Math.min(100, value))
+      : undefined
+
   return (
     <ProgressPrimitive.Root
       data-slot="progress"
@@ -17,12 +22,13 @@ function Progress({
         "bg-primary/20 relative h-2 w-full overflow-hidden rounded-full",
         className
       )}
+      value={safeValue}
       {...props}
     >
       <ProgressPrimitive.Indicator
         data-slot="progress-indicator"
         className="bg-primary h-full w-full flex-1 transition-all"
-        style={{ transform: `translateX(-${100 - (value || 0)}%)` }}
+        style={{ transform: `translateX(-${100 - (safeValue ?? 0)}%)` }}
       />
     </ProgressPrimitive.Root>
   )

@@ -100,6 +100,14 @@ export function KaiNavTour() {
         return;
       }
 
+      const localState = await KaiNavTourLocalService.load(user.uid).catch(() => null);
+      if (cancelled) return;
+      const localResolved = Boolean(localState?.completed_at || localState?.skipped_at);
+      if (localResolved) {
+        setOpen(false);
+        return;
+      }
+
       if (!isVaultUnlocked || !vaultKey || !vaultOwnerToken) {
         const remoteState = await PreVaultUserStateService.bootstrapState(user.uid).catch(
           () => null
@@ -276,12 +284,12 @@ export function KaiNavTour() {
     skippedAt?: string | null;
   }) {
     if (!user?.uid) return;
-    if (isVaultUnlocked && vaultKey) {
+    if (isVaultUnlocked && vaultKey && vaultOwnerToken) {
       try {
         await KaiProfileService.setNavTourState({
           userId: user.uid,
           vaultKey,
-          vaultOwnerToken: vaultOwnerToken ?? undefined,
+          vaultOwnerToken,
           completedAt: payload.completedAt,
           skippedAt: payload.skippedAt,
         });
@@ -289,6 +297,11 @@ export function KaiNavTour() {
       } catch (error) {
         console.warn("[KaiNavTour] Failed to sync nav tour state:", error);
       }
+      return;
+    }
+
+    if (isVaultUnlocked && vaultKey && !vaultOwnerToken) {
+      // Token not ready yet; local state is already persisted and will sync later.
       return;
     }
 

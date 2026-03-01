@@ -32,14 +32,18 @@ export function KaiSearchBar({
   portfolioTickers = [],
 }: KaiSearchBarProps) {
   const [open, setOpen] = useState(false);
-  const { hidden: hideBottomChrome } = useKaiBottomChromeVisibility(true);
+  const { hidden: hideBottomChrome, progress: hideBottomChromeProgress } = useKaiBottomChromeVisibility(true);
   const barRef = useRef<HTMLDivElement | null>(null);
 
   useLayoutEffect(() => {
     const root = document.documentElement;
     const update = () => {
       const barHeight = barRef.current?.getBoundingClientRect().height ?? 48;
-      const total = Math.round(barHeight + 34);
+      const cssGap = Number.parseFloat(
+        getComputedStyle(root).getPropertyValue("--kai-command-bottom-gap")
+      );
+      const gap = Number.isFinite(cssGap) ? cssGap : 12;
+      const total = Math.round(barHeight + gap);
       root.style.setProperty("--kai-command-fixed-ui", `${total}px`);
     };
     update();
@@ -69,16 +73,15 @@ export function KaiSearchBar({
     <>
       <div
         className={cn(
-          "fixed inset-x-0 z-[130] flex justify-center px-4 transition-all duration-300 ease-out",
+          "fixed inset-x-0 z-[130] flex justify-center px-4",
           hideBottomChrome
             ? "pointer-events-none opacity-0"
             : "pointer-events-none opacity-100"
         )}
         style={{
           bottom: "calc(var(--app-bottom-inset) + var(--kai-command-bottom-gap, 18px))",
-          transform: hideBottomChrome
-            ? "translate3d(0, calc(100% + 24px), 0)"
-            : "translate3d(0, 0, 0)",
+          transform: `translate3d(0, calc(${100 * hideBottomChromeProgress}% + ${12 * hideBottomChromeProgress}px), 0)`,
+          opacity: Math.max(0, 1 - hideBottomChromeProgress),
         }}
       >
         <div ref={barRef} className="pointer-events-auto w-full max-w-[420px]">

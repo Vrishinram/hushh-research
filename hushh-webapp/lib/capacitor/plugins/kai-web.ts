@@ -299,6 +299,17 @@ export class KaiWeb extends WebPlugin implements KaiPlugin {
     throw new Error("streamPortfolioImport is native-only; use ApiService.importPortfolioStream on web");
   }
 
+  async streamPortfolioImportRun(_options: {
+    runId: string;
+    userId: string;
+    cursor?: number;
+    vaultOwnerToken: string;
+  }): Promise<{ success: boolean }> {
+    throw new Error(
+      "streamPortfolioImportRun is native-only; use ApiService.streamPortfolioImportRun on web"
+    );
+  }
+
   async streamPortfolioAnalyzeLosers(_options: {
     body: Record<string, unknown>;
     vaultOwnerToken: string;
