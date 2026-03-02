@@ -516,6 +516,77 @@ export class ApiService {
     return getDirectBackendUrl();
   }
 
+  // ==================== Kai Voice ====================
+
+  static async transcribeKaiVoice(data: {
+    userId: string;
+    vaultOwnerToken: string;
+    audioBlob: Blob;
+    mimeType?: string;
+    filename?: string;
+  }): Promise<Response> {
+    const extFromMime = (mime: string) => {
+      if (mime.includes("webm")) return "webm";
+      if (mime.includes("wav")) return "wav";
+      if (mime.includes("mp4") || mime.includes("m4a")) return "m4a";
+      if (mime.includes("mpeg") || mime.includes("mp3")) return "mp3";
+      return "webm";
+    };
+
+    const mimeType = data.mimeType || data.audioBlob.type || "audio/webm";
+    const ext = extFromMime(mimeType);
+    const filename = data.filename || `kai-voice.${ext}`;
+    const form = new FormData();
+    form.append("user_id", data.userId);
+    form.append("audio_file", data.audioBlob, filename);
+
+    return apiFetch("/api/kai/voice/stt", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${data.vaultOwnerToken}`,
+      },
+      body: form,
+    });
+  }
+
+  static async planKaiVoiceIntent(data: {
+    userId: string;
+    vaultOwnerToken: string;
+    transcript: string;
+    context?: Record<string, unknown>;
+  }): Promise<Response> {
+    return apiFetch("/api/kai/voice/plan", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${data.vaultOwnerToken}`,
+      },
+      body: JSON.stringify({
+        user_id: data.userId,
+        transcript: data.transcript,
+        context: data.context || {},
+      }),
+    });
+  }
+
+  static async synthesizeKaiVoice(data: {
+    userId: string;
+    vaultOwnerToken: string;
+    text: string;
+    voice?: string;
+  }): Promise<Response> {
+    return apiFetch("/api/kai/voice/tts", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${data.vaultOwnerToken}`,
+      },
+      body: JSON.stringify({
+        user_id: data.userId,
+        text: data.text,
+        voice: data.voice,
+      }),
+    });
+  }
+
   // ==================== App Config ====================
 
   /**

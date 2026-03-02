@@ -27,16 +27,8 @@ import {
   searchTickerUniverse,
   type TickerUniverseRow,
 } from "@/lib/kai/ticker-universe-cache";
+import type { KaiCommandAction } from "@/lib/kai/kai-command-types";
 import { Icon } from "@/lib/morphy-ux/ui";
-
-export type KaiCommandAction =
-  | "analyze"
-  | "optimize"
-  | "consent"
-  | "profile"
-  | "history"
-  | "dashboard"
-  | "home";
 
 interface KaiCommandPaletteProps {
   open: boolean;

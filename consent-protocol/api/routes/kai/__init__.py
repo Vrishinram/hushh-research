@@ -24,6 +24,7 @@ from .losers import router as losers_router
 from .market_insights import router as market_insights_router
 from .portfolio import router as portfolio_router
 from .stream import router as stream_router
+from .voice import router as voice_router
 
 # Create the main Kai router with prefix
 kai_router = APIRouter(prefix="/api/kai", tags=["kai"])
@@ -43,6 +44,9 @@ KAI_ROUTE_CONTRACT_PATHS = [
     "/analyze/run/active",
     "/analyze/run/{run_id}/stream",
     "/analyze/run/{run_id}/cancel",
+    "/voice/stt",
+    "/voice/plan",
+    "/voice/tts",
     "/portfolio/import",
     "/portfolio/import/stream",
     "/portfolio/import/run/start",
@@ -63,6 +67,7 @@ kai_router.include_router(portfolio_router)
 kai_router.include_router(consent_router)
 kai_router.include_router(analyze_router)
 kai_router.include_router(stream_router)
+kai_router.include_router(voice_router)
 kai_router.include_router(decisions_router)
 kai_router.include_router(losers_router)
 kai_router.include_router(market_insights_router)
