@@ -87,6 +87,9 @@ export interface Holding {
   symbol: string;
   symbol_cusip?: string;
   identifier_type?: "ticker" | "cusip" | "derived";
+  position_side?: "long" | "short" | "liability";
+  is_short_position?: boolean;
+  is_liability_position?: boolean;
   name: string;
   quantity: number;
   price: number;
@@ -238,10 +241,41 @@ function formatCurrency(value: number | undefined | null): string {
   }).format(value);
 }
 
+function formatCurrencyCompact(value: number | undefined | null): string {
+  if (value === undefined || value === null) return "$0";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    notation: "compact",
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
 function _formatPercent(value: number | undefined | null): string {
   if (value === undefined || value === null) return "0.00%";
   const sign = value >= 0 ? "+" : "";
   return `${sign}${value.toFixed(2)}%`;
+}
+
+function compareHoldingsByNameAsc<T extends { name?: string; symbol?: string }>(
+  left: T,
+  right: T
+): number {
+  const leftName = String(left.name || "").trim();
+  const rightName = String(right.name || "").trim();
+  const leftSymbol = String(left.symbol || "").trim();
+  const rightSymbol = String(right.symbol || "").trim();
+  const leftKey = leftName || leftSymbol;
+  const rightKey = rightName || rightSymbol;
+
+  if (!leftKey && !rightKey) return 0;
+  if (!leftKey) return 1;
+  if (!rightKey) return -1;
+
+  return leftKey.localeCompare(rightKey, undefined, {
+    sensitivity: "base",
+    numeric: true,
+  });
 }
 
 function deriveRiskBucket(holdings: Holding[]): string {
@@ -278,6 +312,23 @@ function isCashEquivalentHolding(holding: Holding): boolean {
     name.includes("money market") ||
     name.includes("sweep")
   );
+}
+
+function getPositionSide(holding: Holding): "long" | "short" | "liability" {
+  if (holding.position_side === "long" || holding.position_side === "short" || holding.position_side === "liability") {
+    return holding.position_side;
+  }
+  if (holding.is_liability_position) return "liability";
+  if (holding.is_short_position) return "short";
+  const qty = toFiniteNumber(holding.quantity);
+  const marketValue = toFiniteNumber(holding.market_value);
+  if ((holding.is_cash_equivalent || isCashEquivalentHolding(holding)) && (marketValue ?? 0) < 0) {
+    return "liability";
+  }
+  if ((qty ?? 0) < 0 || (marketValue ?? 0) < 0) {
+    return "short";
+  }
+  return "long";
 }
 
 function inferHoldingIdentifierType(holding: Holding): "ticker" | "cusip" | "derived" {
@@ -904,15 +955,27 @@ export function PortfolioReviewView({
   );
   const pendingDeleteCount = holdings.length - activeHoldings.length;
 
-  const liveCashBalance = useMemo(() => {
-    const holdingsCash = deriveCashFromHoldings(activeHoldings);
-    if (holdingsCash !== undefined) return holdingsCash;
-    return (
+  const reportedCashBalance = useMemo(
+    () =>
       toFiniteNumber(accountSummary.cash_balance) ??
-      toFiniteNumber(initialData.cash_balance) ??
-      0
-    );
-  }, [activeHoldings, accountSummary.cash_balance, initialData.cash_balance]);
+      toFiniteNumber(initialData.cash_balance),
+    [accountSummary.cash_balance, initialData.cash_balance]
+  );
+
+  const reportedTotalValue = useMemo(
+    () =>
+      toFiniteNumber(initialData.total_value) ??
+      toFiniteNumber(accountSummary.ending_value),
+    [initialData.total_value, accountSummary.ending_value]
+  );
+
+  const liveCashBalance = useMemo(() => {
+    // Prefer statement/account summary cash when present.
+    // Holdings-derived cash is only a fallback for sparse parses.
+    if (reportedCashBalance !== undefined) return reportedCashBalance;
+    const holdingsCash = deriveCashFromHoldings(activeHoldings);
+    return holdingsCash ?? 0;
+  }, [activeHoldings, reportedCashBalance]);
 
   const totalValue = useMemo(() => {
     const holdingsTotal = activeHoldings.reduce(
@@ -925,14 +988,17 @@ export function PortfolioReviewView({
     );
     // When cash-equivalent positions are already in holdings, do not add cash again.
     const derivedTotal = holdingsTotal + (holdingsCash !== undefined ? 0 : liveCashBalance);
+    // Before edits, trust statement totals over derived sums. This avoids
+    // rendering drift when parsed holdings are internally inconsistent.
+    if (!hasUnsavedChanges && reportedTotalValue !== undefined) {
+      return reportedTotalValue;
+    }
     if (hasLiveHoldingsMarketValue) return derivedTotal;
-    return toFiniteNumber(initialData.total_value) ??
-      toFiniteNumber(accountSummary.ending_value) ??
-      derivedTotal;
+    return reportedTotalValue ?? derivedTotal;
   }, [
     activeHoldings,
-    accountSummary.ending_value,
-    initialData.total_value,
+    hasUnsavedChanges,
+    reportedTotalValue,
     liveCashBalance,
   ]);
 
@@ -1062,11 +1128,13 @@ export function PortfolioReviewView({
 
   const tableHoldingRows = useMemo<ReviewHoldingRow[]>(
     () =>
-      holdings.map((holding, index) => ({
-        ...holding,
-        client_id: `holding-${index}`,
-        source_index: index,
-      })),
+      holdings
+        .map((holding, index) => ({
+          ...holding,
+          client_id: `holding-${index}`,
+          source_index: index,
+        }))
+        .sort(compareHoldingsByNameAsc),
     [holdings]
   );
 
@@ -1111,6 +1179,13 @@ export function PortfolioReviewView({
         cell: ({ row }) => {
           const holding = row.original;
           const deleted = Boolean(holding.pending_delete);
+          const side = getPositionSide(holding);
+          const sideClass =
+            side === "short"
+              ? "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+              : side === "liability"
+                ? "border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400"
+                : "border-emerald-500/35 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400";
           return (
             <div
               className={cn(
@@ -1118,9 +1193,14 @@ export function PortfolioReviewView({
                 deleted && "opacity-60"
               )}
             >
-              <p className={cn("font-semibold", deleted && "line-through")}>
-                {holding.symbol || "—"}
-              </p>
+              <div className="flex items-center gap-2">
+                <p className={cn("font-semibold", deleted && "line-through")}>
+                  {holding.symbol || "—"}
+                </p>
+                <Badge variant="outline" className={cn("h-5 px-1.5 text-[10px] uppercase", sideClass)}>
+                  {side}
+                </Badge>
+              </div>
               <p
                 title={holding.name || "Unnamed security"}
                 className={cn("truncate text-xs text-muted-foreground", deleted && "line-through")}
@@ -1136,6 +1216,12 @@ export function PortfolioReviewView({
         header: "Shares @ Price",
         cell: ({ row }) => {
           const holding = row.original;
+          const side = getPositionSide(holding);
+          const quantityValue = Number(holding.quantity || 0);
+          const quantityLabel =
+            side === "short" || side === "liability"
+              ? Math.abs(quantityValue).toLocaleString()
+              : quantityValue.toLocaleString();
           return (
             <span
               className={cn(
@@ -1143,7 +1229,7 @@ export function PortfolioReviewView({
                 holding.pending_delete && "line-through text-muted-foreground"
               )}
             >
-              {Number(holding.quantity || 0).toLocaleString()} @{" "}
+              {quantityLabel} @{" "}
               {formatCurrency(Number(holding.price || 0))}
             </span>
           );
@@ -1231,21 +1317,22 @@ export function PortfolioReviewView({
     if (!userId) return;
 
     const invalidHolding = activeHoldings.find((holding) => {
+      const isCashLike = Boolean(holding.is_cash_equivalent) || isCashEquivalentHolding(holding);
       const quantity = Number(holding.quantity);
       const price = Number(holding.price);
       const marketValue = Number(holding.market_value);
+      if (!Number.isFinite(marketValue) || Math.abs(marketValue) <= 0) return true;
+      if (isCashLike) return false;
       return (
         !Number.isFinite(quantity) ||
+        Math.abs(quantity) <= 0 ||
         !Number.isFinite(price) ||
-        !Number.isFinite(marketValue) ||
-        quantity <= 0 ||
-        price <= 0 ||
-        marketValue <= 0
+        price <= 0
       );
     });
     if (invalidHolding) {
       toast.error(
-        `Holding ${invalidHolding.symbol || invalidHolding.name || "entry"} has invalid values. Quantity, price, and market value must be greater than 0.`
+        `Holding ${invalidHolding.symbol || invalidHolding.name || "entry"} has invalid values. Quantity must be non-zero, price must be positive, and market value must be non-zero.`
       );
       return;
     }
@@ -1336,6 +1423,17 @@ export function PortfolioReviewView({
         total_value: toFiniteNumber(initialData.total_value),
         parse_fallback: initialData.parse_fallback === true,
       };
+
+      const optimisticCachePortfolioData: CachedPortfolioData = {
+        ...(savePayload as unknown as CachedPortfolioData),
+        account_info: {
+          ...(savePayload.account_info || {}),
+          brokerage_name: savePayload.account_info?.brokerage,
+          account_holder: savePayload.account_info?.holder_name,
+        },
+      };
+      setCachePortfolioData(userId, optimisticCachePortfolioData);
+      CacheSyncService.onPortfolioUpserted(userId, optimisticCachePortfolioData);
 
       saveTaskId = AppBackgroundTaskService.startTask({
         userId,
@@ -1893,8 +1991,8 @@ export function PortfolioReviewView({
                 <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-1">
                   Total Portfolio Value
                 </p>
-                <p className="max-w-full overflow-hidden text-ellipsis whitespace-nowrap px-2 text-3xl font-black leading-none tracking-tight tabular-nums bg-linear-to-br from-foreground to-foreground/70 bg-clip-text text-transparent sm:text-4xl">
-                  {formatCurrency(totalValue)}
+                <p className="max-w-full px-2 text-[clamp(1.7rem,8.5vw,2.55rem)] font-black leading-none tracking-tight tabular-nums whitespace-nowrap bg-linear-to-br from-foreground to-foreground/70 bg-clip-text text-transparent sm:text-4xl">
+                  <span title={formatCurrency(totalValue)}>{formatCurrencyCompact(totalValue)}</span>
                 </p>
 
                 {totalUnrealizedGainLoss !== 0 && (
@@ -1912,7 +2010,9 @@ export function PortfolioReviewView({
                       ) : (
                         <Icon icon={TrendingDown} size={12} className="mr-1.5" />
                       )}
-                      {formatCurrency(totalUnrealizedGainLoss)} unrealized
+                      <span title={formatCurrency(totalUnrealizedGainLoss)}>
+                        {formatCurrencyCompact(totalUnrealizedGainLoss)} unrealized
+                      </span>
                     </Badge>
                   </div>
                 )}
@@ -1940,8 +2040,17 @@ export function PortfolioReviewView({
                   <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mt-2">Portfolio Risk</p>
                 </div>
                 <div className="min-w-0 text-center sm:text-right sm:pr-4">
-                  <p className="max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-xl font-black leading-none tabular-nums sm:text-2xl">
-                    {formatCurrency(liveCashBalance)}
+                  <p
+                    className={cn(
+                      "max-w-full text-[clamp(1.05rem,5.8vw,1.55rem)] font-black leading-none tabular-nums whitespace-nowrap sm:text-2xl",
+                      liveCashBalance < 0
+                        ? "text-red-500 dark:text-red-400"
+                        : "text-foreground"
+                    )}
+                  >
+                    <span title={formatCurrency(liveCashBalance)}>
+                      {formatCurrencyCompact(liveCashBalance)}
+                    </span>
                   </p>
                   <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Cash</p>
                 </div>

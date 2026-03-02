@@ -2,14 +2,13 @@
  * ImportProgressView Component
  *
  * Real-time streaming progress UI for portfolio import.
- * Consolidated into two stream panels:
- * 1. Reasoning
- * 2. Confirmed Holdings
+ * Stream panels:
+ * 1. Confirmed Holdings
  */
 
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useMemo, useState } from "react";
 import { cn } from "@/lib/morphy-ux";
 import { Card, CardContent, CardHeader, CardTitle } from "@/lib/morphy-ux/card";
 import { Progress } from "@/components/ui/progress";
@@ -23,6 +22,8 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+
+const GENERIC_IMPORT_STREAM_LINE = "Reviewing your statement...";
 
 export type ImportStage =
   | "idle"
@@ -42,6 +43,9 @@ interface LiveHoldingPreview {
   market_value?: number | null;
   quantity?: number | null;
   asset_type?: string;
+  position_side?: "long" | "short" | "liability";
+  is_short_position?: boolean;
+  is_liability_position?: boolean;
 }
 
 export interface ImportProgressViewProps {
@@ -58,6 +62,7 @@ export interface ImportProgressViewProps {
   holdingsTotal?: number;
   errorMessage?: string;
   onCancel?: () => void;
+  onRetry?: () => void;
   onContinue?: () => void;
   onBackToDashboard?: () => void;
   className?: string;
@@ -68,7 +73,7 @@ const stageMessages: Record<ImportStage, string> = {
   uploading: "Processing uploaded file...",
   indexing: "Indexing document...",
   scanning: "Scanning pages and sections...",
-  thinking: "AI reasoning about your portfolio...",
+  thinking: "Preparing your portfolio details...",
   extracting: "Extracting financial data...",
   normalizing: "Normalizing extracted data...",
   validating: "Validating extracted holdings...",
@@ -83,6 +88,7 @@ function normalizeStreamLine(rawLine: string): string {
     .replace(/\s+/g, " ")
     .trim();
   if (!normalized) return "";
+  if (/^[\]\[\{\},:]+$/.test(normalized)) return "";
   const looksStructuredPayload =
     /^\s*[\[{]/.test(normalized) ||
     /"[^"]+"\s*:/.test(normalized) ||
@@ -91,21 +97,23 @@ function normalizeStreamLine(rawLine: string): string {
     );
   const tagged = normalized.match(/^\[([^\]]+)\]\s*(.*)$/);
   if (tagged) {
-    const tag = (tagged[1] || "").trim();
     const cleaned = (tagged[2] || "").trim();
     const message = looksStructuredPayload
-      ? "Analyzing statement details..."
+      ? GENERIC_IMPORT_STREAM_LINE
       : toInvestorStreamText(cleaned);
-    return message ? `[${tag}] ${message}` : `[${tag}]`;
+    return message;
   }
   if (looksStructuredPayload) {
-    return "Analyzing statement details...";
+    return GENERIC_IMPORT_STREAM_LINE;
   }
   return toInvestorStreamText(normalized);
 }
 
 function streamLineKey(line: string): string {
   const normalized = normalizeStreamLine(line);
+  if (normalized.toLowerCase() === GENERIC_IMPORT_STREAM_LINE.toLowerCase()) {
+    return normalized.toLowerCase();
+  }
   const match = normalized.match(/^\[([^\]]+)\]\s*(.*)$/);
   if (!match) return normalized.toLowerCase();
   const tag = (match[1] || "").trim().toUpperCase();
@@ -122,27 +130,27 @@ function splitTaggedLine(line: string): { tag?: string; message: string } {
   return { tag: tag || undefined, message: message || normalized };
 }
 
-function renderBoldMarkdown(text: string): ReactNode {
-  const parts: ReactNode[] = [];
-  const source = String(text || "");
-  const regex = /\*\*(.+?)\*\*/g;
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(source)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push(source.slice(lastIndex, match.index));
-    }
-    parts.push(
-      <strong key={`strong-${match.index}`} className="font-semibold text-foreground">
-        {match[1]}
-      </strong>
-    );
-    lastIndex = match.index + match[0].length;
+function getHoldingPositionSide(holding: LiveHoldingPreview): "long" | "short" | "liability" {
+  if (
+    holding.position_side === "long" ||
+    holding.position_side === "short" ||
+    holding.position_side === "liability"
+  ) {
+    return holding.position_side;
   }
-  if (lastIndex < source.length) {
-    parts.push(source.slice(lastIndex));
+  if (holding.is_liability_position) return "liability";
+  if (holding.is_short_position) return "short";
+  if (typeof holding.quantity === "number" && Number.isFinite(holding.quantity) && holding.quantity < 0) {
+    return "short";
   }
-  return parts.length > 0 ? <>{parts}</> : source;
+  if (
+    typeof holding.market_value === "number" &&
+    Number.isFinite(holding.market_value) &&
+    holding.market_value < 0
+  ) {
+    return "short";
+  }
+  return "long";
 }
 
 export function ImportProgressView({
@@ -151,22 +159,19 @@ export function ImportProgressView({
   progressPct,
   statusMessage,
   stageTrail = [],
-  thoughts = [],
   rawStreamLines = [],
-  thoughtCount = 0,
+  thoughtCount: _thoughtCount = 0,
   liveHoldings = [],
   holdingsExtracted = 0,
   holdingsTotal,
-  errorMessage: _errorMessage,
+  errorMessage,
   onCancel,
+  onRetry,
   onContinue,
   onBackToDashboard,
   className,
 }: ImportProgressViewProps) {
-  const [rawExpanded, setRawExpanded] = useState<boolean>(() => true);
   const [holdingsExpanded, setHoldingsExpanded] = useState<boolean>(() => true);
-  const [stickRawToBottom, setStickRawToBottom] = useState(true);
-  const rawStreamRef = useRef<HTMLDivElement | null>(null);
 
   const hasMeasuredProgress = useMemo(
     () => typeof progressPct === "number" && Number.isFinite(progressPct) && progressPct > 0,
@@ -179,7 +184,10 @@ export function ImportProgressView({
     return 0;
   }, [hasMeasuredProgress, progressPct, stage]);
 
-  const smoothProgress = useSmoothStreamProgress(resolvedProgress);
+  const smoothProgress = useSmoothStreamProgress(resolvedProgress, {
+    // Reset any previous-run visual floor while backend is still in stage-tracking mode.
+    resetHint: !hasMeasuredProgress && stage !== "complete" && stage !== "error",
+  });
 
   const fallbackRawLines = useMemo(() => {
     const lines = stageTrail.length > 0 ? stageTrail : [statusMessage || stageMessages[stage]];
@@ -193,18 +201,8 @@ export function ImportProgressView({
       seen.add(key);
       normalized.push(next);
     }
-    if (normalized.length === 0 && thoughts.length > 0) {
-      for (const thought of thoughts) {
-        const next = normalizeStreamLine(`[THINKING/GENERAL] ${thought}`);
-        if (!next) continue;
-        const key = streamLineKey(next);
-        if (seen.has(key)) continue;
-        seen.add(key);
-        normalized.push(next);
-      }
-    }
     return normalized;
-  }, [stageTrail, statusMessage, stage, thoughts]);
+  }, [stageTrail, statusMessage, stage]);
 
   const effectiveRawLines = useMemo(() => {
     if (rawStreamLines.length > 0) {
@@ -215,43 +213,61 @@ export function ImportProgressView({
     return fallbackRawLines;
   }, [rawStreamLines, fallbackRawLines]);
 
-  useEffect(() => {
-    if (!rawExpanded || !stickRawToBottom) return;
-    const element = rawStreamRef.current;
-    if (!element) return;
-    element.scrollTop = element.scrollHeight;
-  }, [effectiveRawLines, rawExpanded, stickRawToBottom]);
-
-  const handleRawScroll = () => {
-    const element = rawStreamRef.current;
-    if (!element) return;
-    const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
-    setStickRawToBottom(distanceFromBottom <= 24);
-  };
-
   const uniqueLiveHoldings = useMemo(() => {
     if (liveHoldings.length <= 1) return liveHoldings;
-    const seen = new Set<string>();
-    const unique: LiveHoldingPreview[] = [];
+    const bySymbol = new Map<string, LiveHoldingPreview>();
     for (const holding of liveHoldings) {
       const symbol = String(holding.symbol || "").trim().toUpperCase();
-      const name = String(holding.name || "").trim().toLowerCase();
-      const qty =
+      if (!symbol) continue;
+      const existing = bySymbol.get(symbol);
+      if (!existing) {
+        bySymbol.set(symbol, {
+          symbol,
+          name: holding.name,
+          market_value: holding.market_value ?? null,
+          quantity: holding.quantity ?? null,
+          asset_type: holding.asset_type,
+          position_side: getHoldingPositionSide(holding),
+          is_short_position: getHoldingPositionSide(holding) === "short",
+          is_liability_position: getHoldingPositionSide(holding) === "liability",
+        });
+        continue;
+      }
+      const existingQty =
+        typeof existing.quantity === "number" && Number.isFinite(existing.quantity)
+          ? existing.quantity
+          : 0;
+      const incomingQty =
         typeof holding.quantity === "number" && Number.isFinite(holding.quantity)
-          ? holding.quantity.toFixed(6)
-          : "";
-      const value =
+          ? holding.quantity
+          : 0;
+      const existingValue =
+        typeof existing.market_value === "number" && Number.isFinite(existing.market_value)
+          ? existing.market_value
+          : 0;
+      const incomingValue =
         typeof holding.market_value === "number" && Number.isFinite(holding.market_value)
-          ? holding.market_value.toFixed(2)
-          : "";
-      const assetType = String(holding.asset_type || "").trim().toLowerCase();
-      const key = [symbol, name, qty, value, assetType].join("|");
-      if (!key.replace(/\|/g, "").trim()) continue;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      unique.push(holding);
+          ? holding.market_value
+          : 0;
+      bySymbol.set(symbol, {
+        symbol,
+        name: existing.name || holding.name,
+        quantity: existingQty + incomingQty,
+        market_value: existingValue + incomingValue,
+        asset_type: existing.asset_type || holding.asset_type,
+        position_side:
+          getHoldingPositionSide(existing) === "liability" || getHoldingPositionSide(holding) === "liability"
+            ? "liability"
+            : getHoldingPositionSide(existing) === "short" || getHoldingPositionSide(holding) === "short"
+              ? "short"
+              : "long",
+        is_short_position:
+          getHoldingPositionSide(existing) === "short" || getHoldingPositionSide(holding) === "short",
+        is_liability_position:
+          getHoldingPositionSide(existing) === "liability" || getHoldingPositionSide(holding) === "liability",
+      });
     }
-    return unique;
+    return Array.from(bySymbol.values());
   }, [liveHoldings]);
   const showConfirmedHoldings = uniqueLiveHoldings.length > 0 || stage === "complete";
   const displayHoldings = showConfirmedHoldings ? uniqueLiveHoldings : [];
@@ -259,7 +275,9 @@ export function ImportProgressView({
     showConfirmedHoldings && displayHoldings.length > 0
       ? displayHoldings.length
       : holdingsExtracted;
-  const rawCountBadge = effectiveRawLines.length || thoughtCount;
+  const latestStreamUpdate = effectiveRawLines.length
+    ? effectiveRawLines[effectiveRawLines.length - 1]
+    : undefined;
   const displayStatusMessage = useMemo(
     () => normalizeStreamLine(statusMessage || stageMessages[stage]),
     [statusMessage, stage]
@@ -310,57 +328,14 @@ export function ImportProgressView({
         </div>
 
         <p className="text-sm text-muted-foreground">{displayStatusMessage}</p>
-
-        <Collapsible open={rawExpanded} onOpenChange={setRawExpanded}>
-          <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
-            <CollapsibleTrigger asChild>
-              <button
-                type="button"
-                className="mb-2 flex w-full items-center justify-between text-left text-xs text-muted-foreground"
-              >
-                <span>Reasoning</span>
-                <span className="inline-flex items-center gap-1">
-                  {rawCountBadge}
-                  {rawExpanded ? (
-                    <ChevronUp className="h-3.5 w-3.5" />
-                  ) : (
-                    <ChevronDown className="h-3.5 w-3.5" />
-                  )}
-                </span>
-              </button>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div
-                ref={rawStreamRef}
-                onScroll={handleRawScroll}
-                className="max-h-80 space-y-1.5 overflow-y-auto rounded-lg border border-border/40 bg-background/70 px-3 py-2"
-              >
-                {effectiveRawLines.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">
-                    Reasoning will appear as the import pipeline emits events.
-                  </p>
-                ) : (
-                  effectiveRawLines.map((line, index) => {
-                    const { tag, message } = splitTaggedLine(line);
-                    return (
-                      <p
-                        key={`${index}-${streamLineKey(line)}`}
-                        className="text-xs leading-relaxed text-foreground/90 break-words whitespace-pre-wrap"
-                      >
-                        {tag ? (
-                          <span className="mr-1.5 inline-flex rounded border border-border/60 bg-muted/40 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                            {tag}
-                          </span>
-                        ) : null}
-                        {renderBoldMarkdown(message)}
-                      </p>
-                    );
-                  })
-                )}
-              </div>
-            </CollapsibleContent>
-          </div>
-        </Collapsible>
+        {latestStreamUpdate && stage !== "complete" ? (
+          <p className="text-xs text-muted-foreground/80">
+            {(() => {
+              const { tag, message } = splitTaggedLine(latestStreamUpdate);
+              return tag ? `${tag}: ${message}` : message;
+            })()}
+          </p>
+        ) : null}
 
         <Collapsible open={holdingsExpanded} onOpenChange={setHoldingsExpanded}>
           <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
@@ -395,6 +370,26 @@ export function ImportProgressView({
                       key={`${holding.symbol || holding.name || "holding"}-${idx}`}
                       className="rounded-lg border border-border/40 bg-background/70 px-2.5 py-2 text-xs"
                     >
+                      {(() => {
+                        const side = getHoldingPositionSide(holding);
+                        const sideClass =
+                          side === "short"
+                            ? "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                            : side === "liability"
+                              ? "border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400"
+                              : "border-emerald-500/35 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400";
+                        const quantityValue =
+                          typeof holding.quantity === "number" && Number.isFinite(holding.quantity)
+                            ? holding.quantity
+                            : null;
+                        const quantityLabel =
+                          quantityValue === null
+                            ? "—"
+                            : (side === "short" || side === "liability"
+                                ? Math.abs(quantityValue).toLocaleString()
+                                : quantityValue.toLocaleString());
+                        return (
+                          <>
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <p className="truncate font-semibold text-foreground/90">
@@ -404,19 +399,19 @@ export function ImportProgressView({
                             {holding.name || "Security captured from statement"}
                           </p>
                         </div>
-                        {holding.asset_type && (
-                          <span className="rounded border border-border/50 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-                            {holding.asset_type}
+                        <div className="flex items-center gap-1">
+                          <span className={cn("rounded border px-1.5 py-0.5 text-[10px] uppercase tracking-wide", sideClass)}>
+                            {side}
                           </span>
-                        )}
+                          {holding.asset_type && (
+                            <span className="rounded border border-border/50 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                              {holding.asset_type}
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <div className="mt-1.5 flex items-center justify-between text-[11px] text-muted-foreground">
-                        <span>
-                          Qty:{" "}
-                          {typeof holding.quantity === "number"
-                            ? holding.quantity.toLocaleString()
-                            : "—"}
-                        </span>
+                        <span>Qty: {quantityLabel}</span>
                         <span>
                           Value:{" "}
                           {typeof holding.market_value === "number"
@@ -424,6 +419,9 @@ export function ImportProgressView({
                             : "—"}
                         </span>
                       </div>
+                          </>
+                        );
+                      })()}
                     </div>
                   ))
                 )}
@@ -432,7 +430,25 @@ export function ImportProgressView({
           </div>
         </Collapsible>
 
-        {/* Error is already surfaced via status + raw stream event lines to avoid duplicate banners */}
+        {stage === "error" && (
+          <div className="rounded-xl border border-red-500/25 bg-red-500/10 p-4">
+            <p className="text-sm font-medium text-red-600 dark:text-red-400">
+              {errorMessage || statusMessage || "Import failed while processing the statement."}
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {onRetry && (
+                <MorphyButton variant="gradient" size="sm" onClick={onRetry}>
+                  Retry Import
+                </MorphyButton>
+              )}
+              {onCancel && (
+                <MorphyButton variant="muted" size="sm" onClick={onCancel}>
+                  Back
+                </MorphyButton>
+              )}
+            </div>
+          </div>
+        )}
 
         {stage === "complete" && (
           <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4">

@@ -176,10 +176,10 @@ export function PreviewCarouselStep({ onContinue }: { onContinue: () => void }) 
     <main
       ref={mountRef}
       className={cn(
-        "h-[100dvh] w-full bg-transparent flex flex-col overflow-hidden"
+        "min-h-[100dvh] w-full bg-transparent flex flex-col"
       )}
     >
-      <div className="flex-1 min-h-0 w-full px-4 pt-6 pb-[var(--app-screen-footer-pad)]">
+      <div className="w-full min-h-[100dvh] px-4 pt-6 pb-[var(--app-screen-footer-pad)]">
         <div className="relative mx-auto flex h-full w-full flex-col">
           <div className="absolute right-0 top-0 z-10">
             <Button

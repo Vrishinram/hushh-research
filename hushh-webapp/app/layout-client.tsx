@@ -25,7 +25,7 @@ export function RootLayoutClient({
   return (
     <body
       suppressHydrationWarning
-      className={`${fontClasses} font-sans antialiased h-screen min-h-[100dvh] flex flex-col overflow-hidden`}
+      className={`${fontClasses} font-sans antialiased min-h-[100dvh] flex flex-col overflow-x-hidden`}
     >
       {/* Fixed app background surface (oversized to prevent mobile gaps). */}
       <div className="fixed top-[-10vh] left-0 w-full h-[120vh] -z-20 morphy-app-bg pointer-events-none" />

@@ -339,7 +339,12 @@ export interface KaiHomeSpotlightItem {
   change_pct: number | null;
   recommendation: string;
   recommendation_detail?: string | null;
+  recommendation_source?: string | null;
+  story?: string | null;
+  confidence?: number | null;
   headline?: string | null;
+  headline_url?: string | null;
+  headline_source?: string | null;
   source_tags: string[];
   as_of: string | null;
   degraded: boolean;
@@ -1451,13 +1456,25 @@ export class ApiService {
               cleanup();
               controller.close();
             };
+            const toSafeStreamError = (error: unknown): Error => {
+              const raw =
+                error instanceof Error ? String(error.message || "") : String(error || "");
+              if (
+                /network connection was lost|stream error|failed to fetch|network error/i.test(
+                  raw
+                )
+              ) {
+                return new Error(
+                  "Connection was interrupted while importing. Reopen import to continue."
+                );
+              }
+              return error instanceof Error ? error : new Error(String(error));
+            };
             const fail = (error: unknown) => {
               if (closed) return;
               closed = true;
               cleanup();
-              controller.error(
-                error instanceof Error ? error : new Error(String(error))
-              );
+              controller.error(toSafeStreamError(error));
             };
             const handleAbort = () => {
               fail(new DOMException("Aborted", "AbortError"));
@@ -1569,6 +1586,111 @@ export class ApiService {
     cursor?: number;
     signal?: AbortSignal;
   }): Promise<Response> {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const vaultOwnerToken = params.vaultOwnerToken;
+        if (!vaultOwnerToken) {
+          return new Response(
+            JSON.stringify({ error: "Vault must be unlocked" }),
+            { status: 401 }
+          );
+        }
+
+        const encoder = new TextEncoder();
+        const stream = new ReadableStream<Uint8Array>({
+          async start(controller) {
+            let sawTerminalEvent = false;
+            let closed = false;
+            let listener: { remove: () => void } | null = null;
+
+            const cleanup = () => {
+              if (listener) {
+                listener.remove();
+                listener = null;
+              }
+            };
+            const close = () => {
+              if (closed) return;
+              closed = true;
+              cleanup();
+              controller.close();
+            };
+            const fail = (error: unknown) => {
+              if (closed) return;
+              closed = true;
+              cleanup();
+              controller.error(
+                error instanceof Error ? error : new Error(String(error))
+              );
+            };
+            const handleAbort = () => {
+              fail(new DOMException("Aborted", "AbortError"));
+            };
+
+            try {
+              params.signal?.addEventListener("abort", handleAbort, { once: true });
+              listener = await Kai.addListener(
+                PORTFOLIO_STREAM_EVENT,
+                (event: Record<string, unknown>) => {
+                  if (closed) return;
+                  const eventType =
+                    typeof event.event === "string" ? event.event : null;
+                  const envelopeCandidate = event.data;
+                  if (!eventType || !isKaiStreamEnvelope(envelopeCandidate)) {
+                    fail(new Error("Invalid native portfolio stream event"));
+                    return;
+                  }
+
+                  const envelope = envelopeCandidate as KaiStreamEnvelope;
+                  if (envelope.event !== eventType) {
+                    fail(new Error("Native SSE event mismatch"));
+                    return;
+                  }
+
+                  controller.enqueue(
+                    encoder.encode(
+                      `event: ${eventType}\ndata: ${JSON.stringify(envelope)}\n\n`
+                    )
+                  );
+
+                  if (envelope.terminal) {
+                    sawTerminalEvent = true;
+                  }
+                }
+              );
+
+              await Kai.streamPortfolioImportRun({
+                runId: params.runId,
+                userId: params.userId,
+                cursor: Math.max(0, params.cursor ?? 0),
+                vaultOwnerToken,
+              });
+
+              if (!sawTerminalEvent) {
+                fail(new Error("Native import stream ended without terminal event"));
+                return;
+              }
+              close();
+            } catch (error) {
+              fail(error);
+            } finally {
+              params.signal?.removeEventListener("abort", handleAbort);
+            }
+          },
+        });
+
+        return new Response(stream, {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        });
+      } catch (error) {
+        console.error("[ApiService] Native streamPortfolioImportRun error:", error);
+        return new Response(JSON.stringify({ error: (error as Error).message }), {
+          status: 500,
+        });
+      }
+    }
+
     const query = new URLSearchParams({
       user_id: params.userId,
       cursor: String(Math.max(0, params.cursor ?? 0)),

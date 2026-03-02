@@ -34,7 +34,7 @@ export default function KaiImportPage() {
 
   return (
     <div className="relative w-full">
-      <div className="w-full px-4 pb-32 sm:px-6">
+      <div className="w-full px-4 pb-32 sm:px-6 lg:px-8">
         <KaiFlow
           userId={user.uid}
           mode="import"

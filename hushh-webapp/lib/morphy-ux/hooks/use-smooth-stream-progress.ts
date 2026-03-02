@@ -10,6 +10,7 @@ function clampProgress(value: number): number {
 interface UseSmoothStreamProgressOptions {
   stiffness?: number;
   minDelta?: number;
+  resetHint?: boolean;
 }
 
 /**
@@ -22,6 +23,7 @@ export function useSmoothStreamProgress(
 ): number {
   const stiffness = options.stiffness ?? 0.18;
   const minDelta = options.minDelta ?? 0.35;
+  const resetHint = options.resetHint ?? false;
 
   const [displayProgress, setDisplayProgress] = useState(() =>
     clampProgress(targetProgress)
@@ -35,6 +37,26 @@ export function useSmoothStreamProgress(
 
   useEffect(() => {
     const target = clampProgress(targetProgress);
+    if (resetHint) {
+      if (rafRef.current) {
+        window.cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      displayedRef.current = target;
+      setDisplayProgress(target);
+      return;
+    }
+    // New run guard: if a new stream starts near 0, reset the visual floor
+    // instead of staying pinned to the previous run's terminal progress.
+    if (target <= 10 && displayedRef.current - target >= 20) {
+      if (rafRef.current) {
+        window.cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      displayedRef.current = target;
+      setDisplayProgress(target);
+      return;
+    }
     const floor = Math.max(displayedRef.current, target);
 
     if (floor <= displayedRef.current + 0.01) {
@@ -70,7 +92,7 @@ export function useSmoothStreamProgress(
         rafRef.current = null;
       }
     };
-  }, [targetProgress, stiffness, minDelta]);
+  }, [targetProgress, stiffness, minDelta, resetHint]);
 
   return displayProgress;
 }

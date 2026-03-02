@@ -174,15 +174,15 @@ export function KaiPreferencesWizard(props: {
   return (
     <main
       className={cn(
-        "w-full bg-transparent flex flex-col overflow-hidden",
+        "w-full bg-transparent flex flex-col",
         layout === "page"
-          ? "h-full px-6 pt-[calc(16px+env(safe-area-inset-top))] pb-[var(--app-screen-footer-pad)]"
+          ? "min-h-[100dvh] px-6 pt-[calc(16px+env(safe-area-inset-top))] pb-[var(--app-screen-footer-pad)]"
           : "min-h-0 px-4 pt-4 pb-4"
       )}
     >
       <div
         className={cn(
-          "w-full max-w-sm mx-auto flex-1 min-h-0 flex flex-col",
+          "w-full max-w-sm mx-auto flex min-h-[calc(100dvh-var(--app-screen-footer-pad))] flex-col",
           layout === "sheet" && "min-h-0"
         )}
       >
@@ -224,7 +224,14 @@ export function KaiPreferencesWizard(props: {
             Help us tailor your investment plan.
           </p>
 
-          <h1 className="!text-[clamp(1.85rem,4.8vw,2.2rem)] !leading-[1.12] font-extrabold tracking-tight whitespace-pre-line">
+          <h1
+            className={cn(
+              "font-extrabold tracking-tight whitespace-pre-line",
+              layout === "page"
+                ? "text-[clamp(1.55rem,6.2vw,2rem)] leading-[1.14]"
+                : "text-[clamp(1.45rem,4.8vw,1.85rem)] leading-[1.16]"
+            )}
+          >
             {activeQuestion.prompt}
           </h1>
         </div>

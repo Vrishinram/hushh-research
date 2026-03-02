@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState } from "react";
 import {
   Card as MorphyCard,
   CardContent as MorphyCardContent,
@@ -78,33 +78,12 @@ export function RoundTabsCard({
   description,
   isCollapsed,
   onToggleCollapse,
-  activeAgent,
+  activeAgent: _activeAgent,
   agentStates,
   onTabChange,
   className,
 }: RoundTabsCardProps) {
   const [currentTab, setCurrentTab] = useState<string>("fundamental");
-
-  // Auto-switch tab when active agent changes (only for the current round's active agent)
-  useEffect(() => {
-    if (activeAgent && AGENT_ORDER.includes(activeAgent as any)) {
-      setCurrentTab(activeAgent);
-    }
-  }, [activeAgent]);
-
-  // Also auto-switch when an agent becomes active
-  useEffect(() => {
-    for (const agent of AGENT_ORDER) {
-      if (agentStates[agent]?.stage === "active") {
-        setCurrentTab(agent);
-        break;
-      }
-    }
-  }, [
-    agentStates.fundamental?.stage,
-    agentStates.sentiment?.stage,
-    agentStates.valuation?.stage,
-  ]);
 
   const handleTabChange = (val: string) => {
     setCurrentTab(val);

@@ -61,20 +61,24 @@ export function Providers({ children }: ProvidersProps) {
   const topShellRouteStyle = useMemo(
     () =>
       ({
-        "--top-tabs-gap": topShellMetrics.hasTabs ? "2px" : "0px",
+        "--top-tabs-gap": "0px",
         "--top-tabs-total": topShellMetrics.hasTabs
           ? "calc(var(--top-tabs-h) + var(--top-tabs-gap))"
           : "0px",
-        "--top-fade-active": topShellMetrics.hasTabs ? "28px" : "14px",
-        "--kai-route-content-gap": topShellMetrics.hasTabs ? "12px" : "8px",
-        "--kai-route-content-gap-sm": topShellMetrics.hasTabs ? "16px" : "12px",
+        "--top-systembar-row-gap": topShellMetrics.hasTabs ? "4px" : "6px",
+        "--top-fade-active": topShellMetrics.hasTabs ? "24px" : "8px",
+        "--top-content-pad": topShellMetrics.hasTabs
+          ? "var(--top-glass-h)"
+          : "calc(var(--top-shell-h) + 2px)",
+        "--kai-route-content-gap": topShellMetrics.hasTabs ? "20px" : "10px",
+        "--kai-route-content-gap-sm": topShellMetrics.hasTabs ? "24px" : "14px",
         "--app-top-shell-visible": topShellMetrics.shellVisible ? "1" : "0",
         "--app-top-has-tabs": topShellMetrics.hasTabs ? "1" : "0",
         "--app-top-offset-mode":
           topShellMetrics.contentOffsetMode === "fullscreen-flow" ? "fullscreen-flow" : "normal",
         "--app-scroll-bottom-pad": chromeState.hideCommandBar
           ? "var(--app-bottom-inset)"
-          : "calc(var(--app-bottom-inset) + var(--kai-command-fixed-ui) + var(--kai-command-bottom-gap, 12px) + 10px)",
+          : "calc(var(--app-bottom-inset) + var(--kai-command-fixed-ui))",
       } as CSSProperties),
     [
       chromeState.hideCommandBar,
@@ -84,7 +88,7 @@ export function Providers({ children }: ProvidersProps) {
     ]
   );
   const showSharedBottomChromeGlass = topShellMetrics.shellVisible && !isFullscreenTopFlow;
-  const { hidden: hideBottomChromeGlass } = useKaiBottomChromeVisibility(
+  const { hidden: hideBottomChromeGlass, progress: hideBottomChromeGlassProgress } = useKaiBottomChromeVisibility(
     showSharedBottomChromeGlass
   );
   const pageRef = useRef<HTMLDivElement | null>(null);
@@ -139,16 +143,31 @@ export function Providers({ children }: ProvidersProps) {
                       <div
                         aria-hidden
                         className={cn(
-                          "pointer-events-none fixed inset-x-0 bottom-0 z-[108] transform-gpu transition-all duration-300 ease-out",
+                          "pointer-events-none fixed inset-x-0 bottom-0 z-[108] transform-gpu",
                           hideBottomChromeGlass ? "opacity-0" : "opacity-100"
                         )}
                         style={{
-                          transform: hideBottomChromeGlass
-                            ? "translate3d(0, calc(100% + 18px), 0)"
-                            : "translate3d(0, 0, 0)",
-                        }}
+                          transform: `translate3d(0, calc(${100 * hideBottomChromeGlassProgress}% + ${10 * hideBottomChromeGlassProgress}px), 0)`,
+                          opacity: Math.max(0, 1 - hideBottomChromeGlassProgress),
+                        } as CSSProperties}
                       >
-                        <div className="h-[calc(var(--app-bottom-inset)+var(--kai-command-fixed-ui)+36px)] w-full bar-glass bar-glass-bottom" />
+                        <div
+                          className="h-[calc(var(--app-bottom-inset)+var(--kai-command-fixed-ui)+36px)] w-full bar-glass"
+                          style={
+                            {
+                              "--app-bar-glass-bg-light": "rgba(255, 255, 255, 0.5)",
+                              "--app-bar-glass-bg-dark": "rgba(10, 12, 16, 0.74)",
+                              "--app-bar-glass-blur": "8px",
+                              "--app-bar-border-top": "1px solid rgba(255, 255, 255, 0.26)",
+                              "--app-bar-shadow":
+                                "inset 0 1px 0 rgba(255,255,255,0.18), 0 -14px 30px rgba(0,0,0,0.18)",
+                              maskImage:
+                                "linear-gradient(to top, black 0%, black 62%, rgba(0, 0, 0, 0.95) 76%, rgba(0, 0, 0, 0.72) 88%, rgba(0, 0, 0, 0.36) 95%, transparent 100%)",
+                              WebkitMaskImage:
+                                "linear-gradient(to top, black 0%, black 62%, rgba(0, 0, 0, 0.95) 76%, rgba(0, 0, 0, 0.72) 88%, rgba(0, 0, 0, 0.36) 95%, transparent 100%)",
+                            } as CSSProperties
+                          }
+                        />
                       </div>
                     ) : null}
                     <PostAuthOnboardingSyncBridge />
@@ -156,13 +175,20 @@ export function Providers({ children }: ProvidersProps) {
                     {/* Main scroll container: extends under fixed bar so content can scroll behind it; padding clears bar height */}
                     <div
                       data-app-scroll-root="true"
+                      data-app-scroll-mode={
+                        hideGlobalChrome
+                          ? "hidden-shell"
+                          : shouldLockFullscreenRoot
+                          ? "fullscreen-flow"
+                          : "standard"
+                      }
                       className={
                         hideGlobalChrome
-                          ? // Landing is a full-screen onboarding flow: no page scroll, no extra top inset.
-                            "flex-1 overflow-hidden relative z-10 min-h-0"
+                          ? // Landing/onboarding flows should still allow vertical scroll on small screens.
+                            "flex-1 overflow-y-auto overflow-x-hidden overscroll-x-none overscroll-y-contain touch-pan-y relative z-10 min-h-0"
                           : shouldLockFullscreenRoot
-                          ? // Keep onboarding fullscreen routes single-screen; import stays scrollable.
-                            "flex-1 overflow-hidden relative z-10 min-h-0"
+                          ? // Fullscreen flows keep chrome contract, but permit y-scroll for small devices.
+                            "flex-1 overflow-y-auto overflow-x-hidden overscroll-x-none touch-pan-y relative z-10 min-h-0"
                           : "flex-1 overflow-y-auto overflow-x-hidden overscroll-x-none touch-pan-y pb-[var(--app-scroll-bottom-pad,var(--app-bottom-inset))] relative z-10 min-h-0"
                       }
                     >

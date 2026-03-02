@@ -29,7 +29,7 @@ export const Navbar = () => {
   const chromeState = useMemo(() => getKaiChromeState(pathname), [pathname]);
   const useOnboardingChrome = chromeState.useOnboardingChrome;
   const allowScrollHide = isAuthenticated && !useOnboardingChrome;
-  const { hidden: hideBottomChrome } = useKaiBottomChromeVisibility(allowScrollHide);
+  const { hidden: hideBottomChrome, progress: hideBottomChromeProgress } = useKaiBottomChromeVisibility(allowScrollHide);
 
   const lastKaiPath = useKaiSession((s) => s.lastKaiPath);
   const busyOperations = useKaiSession((s) => s.busyOperations);
@@ -155,7 +155,7 @@ export const Navbar = () => {
   return (
     <nav
       className={cn(
-        "fixed inset-x-0 z-[120] flex justify-center px-4 transform-gpu transition-all duration-300 ease-out",
+        "fixed inset-x-0 z-[120] flex justify-center px-4 transform-gpu",
         hideBottomChrome
           ? "pointer-events-none opacity-0"
           : "pointer-events-none opacity-100"
@@ -163,9 +163,8 @@ export const Navbar = () => {
       style={{
         bottom:
           "calc(max(var(--app-safe-area-bottom-effective), 0.75rem) + var(--app-bottom-chrome-lift, 0px))",
-        transform: hideBottomChrome
-          ? "translate3d(0, calc(100% + 18px), 0)"
-          : "translate3d(0, 0, 0)",
+        transform: `translate3d(0, calc(${100 * hideBottomChromeProgress}% + ${10 * hideBottomChromeProgress}px), 0)`,
+        opacity: Math.max(0, 1 - hideBottomChromeProgress),
       }}
     >
       <SegmentedPill

@@ -130,13 +130,13 @@ export function PortfolioImportView({
   }, [onPreloadSchema, isPreloadingSchema, isUploading]);
 
   return (
-    <div className="w-full max-w-md mx-auto space-y-3.5 px-4 pt-3 pb-6">
+    <div className="w-full max-w-md mx-auto space-y-3.5 px-4 pt-3 pb-6 md:max-w-2xl md:px-6 lg:max-w-3xl">
       {/* Header */}
       <div className="text-center space-y-2 px-2">
         <h1 className="text-[34px] font-bold tracking-tight leading-[1.08]">
-          Your data
+          Your money
           <br />
-          <span className="hushh-gradient-text">Your decisions</span>
+          <span className="hushh-gradient-text">Your options</span>
         </h1>
         <p className="text-[17px] font-medium text-muted-foreground leading-snug">
           Let Kai analyze your holdings for precise advice
@@ -151,7 +151,7 @@ export function PortfolioImportView({
 
       {/* Plaid integration */}
       <Card variant="none" effect="glass" showRipple={false}>
-        <CardContent className="p-4 space-y-3">
+        <CardContent className="p-4 space-y-3 md:p-5">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-12 h-12 rounded-full bg-primary/10 border border-primary/15 flex items-center justify-center shrink-0">
@@ -187,7 +187,7 @@ export function PortfolioImportView({
 
       {/* Statement upload */}
       <Card variant="none" effect="glass" showRipple={false}>
-        <CardContent className="p-4 space-y-4">
+        <CardContent className="p-4 space-y-4 md:p-5">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-full bg-primary/10 border border-primary/15 flex items-center justify-center shrink-0">
               <Icon icon={Upload} size="md" className="text-primary" />

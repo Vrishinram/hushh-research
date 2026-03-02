@@ -52,8 +52,8 @@ export function KaiPersonaScreen(props: {
   const icon = cfg.icon;
 
   return (
-    <main className="h-full w-full bg-transparent flex flex-col overflow-hidden px-8 pt-[calc(12px+env(safe-area-inset-top))] pb-[var(--app-screen-footer-pad)]">
-      <div className="w-full max-w-md mx-auto flex-1 min-h-0 flex items-center">
+    <main className="min-h-[100dvh] w-full bg-transparent flex flex-col px-8 pt-[calc(12px+env(safe-area-inset-top))] pb-[var(--app-screen-footer-pad)]">
+      <div className="w-full max-w-md mx-auto flex-1 min-h-0 flex items-start sm:items-center">
         <section className="relative w-full py-4">
           <div className="relative z-10 space-y-6 text-left">
             <div className="h-20 w-20 rounded-[24px] border border-border/60 bg-background/70 backdrop-blur-sm grid place-items-center shadow-sm">
@@ -64,7 +64,7 @@ export function KaiPersonaScreen(props: {
               <p className="text-[13px] font-extrabold tracking-[0.2em] text-[var(--brand-600)] uppercase leading-tight">
                 {cfg.pill}
               </p>
-              <h1 className="text-[44px] font-bold tracking-tight leading-[1.05] text-foreground">
+              <h1 className="text-[clamp(2rem,9.5vw,2.75rem)] font-bold tracking-tight leading-[1.05] text-foreground">
                 {cfg.title}
               </h1>
             </div>

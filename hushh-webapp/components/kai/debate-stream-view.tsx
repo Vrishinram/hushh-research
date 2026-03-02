@@ -51,11 +51,11 @@ export interface AgentState {
   // Rich data from agent_complete
   recommendation?: string;
   confidence?: number;
-  metrics?: Record<string, any>;
+  metrics?: Record<string, unknown>;
   sources?: string[];
   // Fundamental-specific
-  keyMetrics?: Record<string, any>;
-  quantMetrics?: Record<string, any>;
+  keyMetrics?: Record<string, unknown>;
+  quantMetrics?: Record<string, unknown>;
   businessMoat?: string;
   financialResilience?: string;
   growthEfficiency?: string;
@@ -65,9 +65,9 @@ export interface AgentState {
   sentimentScore?: number;
   keyCatalysts?: string[];
   // Valuation-specific
-  valuationMetrics?: Record<string, any>;
-  peerComparison?: Record<string, any>;
-  priceTargets?: Record<string, any>;
+  valuationMetrics?: Record<string, unknown>;
+  peerComparison?: Record<string, unknown>;
+  priceTargets?: Record<string, unknown>;
 }
 
 export interface Insight {
@@ -251,6 +251,15 @@ function extractDebatePortfolioContext(
       name: String(row.name ?? "").trim(),
       quantity: toFiniteNumber(row.quantity),
       market_value: toFiniteNumber(row.market_value),
+      position_side:
+        typeof row.position_side === "string" &&
+        ["long", "short", "liability"].includes(row.position_side.trim().toLowerCase())
+          ? row.position_side.trim().toLowerCase()
+          : undefined,
+      is_short_position:
+        typeof row.is_short_position === "boolean" ? row.is_short_position : undefined,
+      is_liability_position:
+        typeof row.is_liability_position === "boolean" ? row.is_liability_position : undefined,
       unrealized_gain_loss_pct: toFiniteNumber(row.unrealized_gain_loss_pct),
       sector: typeof row.sector === "string" ? row.sector : undefined,
       asset_type:
@@ -301,11 +310,12 @@ function extractDebatePortfolioContext(
       : 0;
   const topPositions = holdings
     .slice()
-    .sort((a, b) => (b.market_value || 0) - (a.market_value || 0))
+    .sort((a, b) => Math.abs(b.market_value || 0) - Math.abs(a.market_value || 0))
     .slice(0, 8)
     .map((row) => ({
       symbol: row.symbol || row.name || "UNKNOWN",
       market_value: row.market_value ?? null,
+      position_side: row.position_side ?? null,
       sector: row.sector ?? null,
       asset_type: row.asset_type ?? null,
     }));
@@ -668,6 +678,7 @@ export function DebateStreamView({
 
   const [decision, setDecision] = useState<DecisionResult | null>(null);
   const [headerMarketQuote, setHeaderMarketQuote] = useState<HeaderMarketQuote | null>(null);
+  const [headerQuoteLoading, setHeaderQuoteLoading] = useState(false);
   const headerPrice = headerMarketQuote?.last_price ?? null;
   const headerChangePct = headerMarketQuote?.change_pct ?? null;
 
@@ -774,20 +785,24 @@ export function DebateStreamView({
   useEffect(() => {
     if (!showHeader) {
       setHeaderMarketQuote(null);
+      setHeaderQuoteLoading(false);
       return;
     }
     if (!userId || !normalizedTicker) {
       setHeaderMarketQuote(null);
+      setHeaderQuoteLoading(false);
       return;
     }
     let cancelled = false;
     const cache = CacheService.getInstance();
     const cached = getCachedHeaderQuote(userId, normalizedTicker);
+    setHeaderQuoteLoading(Boolean(vaultOwnerToken) && !cached);
     if (!cancelled) {
       setHeaderMarketQuote(cached);
     }
 
     if (!vaultOwnerToken) {
+      setHeaderQuoteLoading(false);
       return () => {
         cancelled = true;
       };
@@ -812,6 +827,10 @@ export function DebateStreamView({
         );
       } catch {
         // Non-blocking: keep best known cached quote in header.
+      } finally {
+        if (!cancelled) {
+          setHeaderQuoteLoading(false);
+        }
       }
     })();
 
@@ -922,7 +941,6 @@ export function DebateStreamView({
             activeRoundRef.current = 2;
             setActiveRound(2);
           }
-          setActiveAgent((data.agent || "").toString());
           updateAgentState(r, (data.agent || "").toString(), { stage: "active" });
           break;
         }
@@ -1425,7 +1443,9 @@ export function DebateStreamView({
             </h1>
             <div className="justify-self-end flex items-center gap-2">
               <span className="text-sm font-semibold tabular-nums text-muted-foreground">
-                {formatHeaderPrice(headerPrice)}
+                {headerQuoteLoading && headerPrice === null
+                  ? "Loading price..."
+                  : formatHeaderPrice(headerPrice)}
               </span>
               {headerChangePct !== null ? (
                 <span

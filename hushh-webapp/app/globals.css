@@ -13,6 +13,13 @@ html body[data-scroll-locked] {
   margin-right: 0 !important;
 }
 
+[data-app-scroll-root="true"][data-app-scroll-mode="hidden-shell"] {
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
@@ -112,7 +119,7 @@ html body[data-scroll-locked] {
     var(--app-safe-area-top-probe)
   );
   --app-top-bar-height: 72px;
-  --kai-route-tabs-height: 36px;
+  --kai-route-tabs-height: 32px;
   --kai-route-tabs-content-gap: 8px;
   /* Global top-shell geometry contract (consumed by providers + top-app-bar).
    * Keep these tokens defined at root so web and native share deterministic spacing. */
@@ -576,25 +583,29 @@ html.native-ios {
     font-family: var(--font-sans), system-ui, sans-serif;
     font-size: 1rem;
     line-height: 1.5;
-    /* iOS safe area insets for proper spacing around notch/status bar */
-    padding-top: env(safe-area-inset-top);
-    padding-left: env(safe-area-inset-left);
-    padding-right: env(safe-area-inset-right);
+    /* Safe-area padding is applied only on native shells (see html.native-ios). */
+    padding-top: 0;
+    padding-left: 0;
+    padding-right: 0;
     /* Safe area bottom is handled by the navbar component */
 
     /* FIXED: Prevent body scroll to allow internal containers to manage viewport */
     overflow: hidden;
     height: 100dvh;
 
-    scrollbar-gutter: stable;
+    scrollbar-gutter: auto;
     /* Smooth theme transitions - 200ms for snappy but visible effect */
     transition:
       background-color 200ms ease-in-out,
       color 200ms ease-in-out,
       border-color 200ms ease-in-out;
   }
+  html.native-ios body {
+    padding-top: env(safe-area-inset-top);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
   html {
-    scrollbar-gutter: stable;
     overflow-x: hidden;
   }
 }
@@ -634,64 +645,30 @@ md-ripple.morphy-md-ripple {
 
 /* Shared masked glass for top/bottom app chrome. */
 .bar-glass {
-  background-color: color-mix(in oklch, lab(100 0 0 / 0.72) 26%, transparent);
-  -webkit-backdrop-filter: blur(3px);
-  backdrop-filter: blur(3px);
+  --app-bar-glass-bg-light: rgba(255, 255, 255, 0.46);
+  --app-bar-glass-bg-dark: rgba(10, 12, 16, 0.66);
+  --app-bar-glass-blur: 7px;
+  --app-bar-border-top: 0;
+  --app-bar-shadow: none;
+  background-color: var(--app-bar-glass-bg-light);
+  -webkit-backdrop-filter: blur(var(--app-bar-glass-blur)) saturate(135%);
+  backdrop-filter: blur(var(--app-bar-glass-blur)) saturate(135%);
   transform: translate3d(0, 0, 0);
   will-change: transform;
   backface-visibility: hidden;
   contain: paint;
-  overflow: clip;
+  isolation: isolate;
+  overflow: hidden;
+  border-top: var(--app-bar-border-top);
+  box-shadow: var(--app-bar-shadow);
   mask-size: 100% 100%;
   -webkit-mask-size: 100% 100%;
   mask-repeat: no-repeat;
   -webkit-mask-repeat: no-repeat;
 }
 
-.bar-glass-top {
-  mask-image: linear-gradient(
-    to bottom,
-    black 0%,
-    black 48%,
-    rgba(0, 0, 0, 0.92) 62%,
-    rgba(0, 0, 0, 0.7) 76%,
-    rgba(0, 0, 0, 0.38) 90%,
-    transparent 100%
-  );
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    black 0%,
-    black 48%,
-    rgba(0, 0, 0, 0.92) 62%,
-    rgba(0, 0, 0, 0.7) 76%,
-    rgba(0, 0, 0, 0.38) 90%,
-    transparent 100%
-  );
-}
-
-.bar-glass-bottom {
-  mask-image: linear-gradient(
-    to top,
-    black 0%,
-    black 48%,
-    rgba(0, 0, 0, 0.92) 62%,
-    rgba(0, 0, 0, 0.7) 76%,
-    rgba(0, 0, 0, 0.38) 90%,
-    transparent 100%
-  );
-  -webkit-mask-image: linear-gradient(
-    to top,
-    black 0%,
-    black 48%,
-    rgba(0, 0, 0, 0.92) 62%,
-    rgba(0, 0, 0, 0.7) 76%,
-    rgba(0, 0, 0, 0.38) 90%,
-    transparent 100%
-  );
-}
-
 .dark .bar-glass {
-  background-color: color-mix(in oklch, lab(0 0 0 / 0.72) 46%, transparent);
+  background-color: var(--app-bar-glass-bg-dark);
 }
 
 /* Shared frosted surface for persistent chrome (tabs / bottom nav / command bar). */
@@ -1220,16 +1197,62 @@ md-ripple.morphy-md-ripple {
 
 @keyframes kai-tour-highlight-pulse {
   0% {
-    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.28);
+    box-shadow:
+      0 0 0 0 rgba(56, 189, 248, 0.58),
+      0 0 0 2px rgba(59, 130, 246, 0.72),
+      0 0 18px rgba(56, 189, 248, 0.44);
+    filter: brightness(1) saturate(1.02);
+  }
+  35% {
+    box-shadow:
+      0 0 0 10px rgba(56, 189, 248, 0.2),
+      0 0 0 3px rgba(59, 130, 246, 0.82),
+      0 0 26px rgba(56, 189, 248, 0.56);
+    filter: brightness(1.2) saturate(1.24);
   }
   70% {
-    box-shadow: 0 0 0 12px rgba(59, 130, 246, 0);
+    box-shadow:
+      0 0 0 18px rgba(56, 189, 248, 0),
+      0 0 0 1px rgba(59, 130, 246, 0.25),
+      0 0 8px rgba(56, 189, 248, 0.18);
+    filter: brightness(1.04) saturate(1.08);
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+    box-shadow:
+      0 0 0 0 rgba(56, 189, 248, 0),
+      0 0 0 1px rgba(59, 130, 246, 0.2),
+      0 0 6px rgba(56, 189, 248, 0.12);
+    filter: brightness(1) saturate(1);
+  }
+}
+
+@keyframes kai-tour-highlight-flash {
+  0%,
+  100% {
+    background-color: rgba(56, 189, 248, 0);
+  }
+  25% {
+    background-color: rgba(56, 189, 248, 0.16);
+  }
+  50% {
+    background-color: rgba(56, 189, 248, 0.08);
   }
 }
 
 .kai-tour-highlight {
-  animation: kai-tour-highlight-pulse 1.8s ease-out infinite;
+  animation:
+    kai-tour-highlight-pulse 1.2s cubic-bezier(0.2, 0, 0, 1) infinite,
+    kai-tour-highlight-flash 1.2s ease-in-out infinite;
+  will-change: box-shadow, filter, background-color;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kai-tour-highlight {
+    animation: none;
+    box-shadow:
+      0 0 0 2px rgba(59, 130, 246, 0.82),
+      0 0 12px rgba(56, 189, 248, 0.36);
+    background-color: rgba(56, 189, 248, 0.14);
+    filter: none;
+  }
 }

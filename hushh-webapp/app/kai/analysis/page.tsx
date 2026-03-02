@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, X } from "lucide-react";
+import { morphyToast as toast } from "@/lib/morphy-ux/morphy";
 
 import { DebateStreamView, type AgentState } from "@/components/kai/debate-stream-view";
 import { HushhLoader } from "@/components/app-ui/hushh-loader";
@@ -95,6 +96,7 @@ function HistoryDebateReplay({ entry }: { entry: AnalysisHistoryEntry }) {
 export default function KaiAnalysisPage() {
   const pageOpenedAtRef = useRef(Date.now());
   const workspaceTopRef = useRef<HTMLDivElement | null>(null);
+  const summaryLoadingToastIdRef = useRef<string | number | null>(null);
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -116,9 +118,9 @@ export default function KaiAnalysisPage() {
   const [focusedRunId, setFocusedRunId] = useState<string | null>(null);
   const [focusedRunTask, setFocusedRunTask] = useState<DebateRunTask | null>(null);
   const [showHistoryWhileActive, setShowHistoryWhileActive] = useState(false);
-  const [autoSwitchToSummaryOnDecision, setAutoSwitchToSummaryOnDecision] = useState(true);
   const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>("debate");
   const [headerSnapshot, setHeaderSnapshot] = useState<TickerMarketSnapshot | null>(null);
+  const [headerSnapshotLoading, setHeaderSnapshotLoading] = useState(false);
 
   const hasFreshAnalysisIntent =
     Boolean(analysisParams) &&
@@ -161,7 +163,6 @@ export default function KaiAnalysisPage() {
       if (runIdParam && runIdParam.trim()) {
         setFocusedRunId(runIdParam.trim());
       }
-      setAutoSwitchToSummaryOnDecision(false);
       setShowHistoryWhileActive(false);
       setWorkspaceTab("debate");
       requestAnimationFrame(() => {
@@ -248,12 +249,8 @@ export default function KaiAnalysisPage() {
   useEffect(() => {
     if (liveIntentReady) {
       setWorkspaceTab("debate");
-      return;
     }
-    if (resolvedEntry) {
-      setWorkspaceTab("summary");
-    }
-  }, [liveIntentReady, resolvedEntry]);
+  }, [liveIntentReady]);
 
   useEffect(() => {
     if (!debateId || !userId || !vaultKey) {
@@ -301,7 +298,6 @@ export default function KaiAnalysisPage() {
       setLiveEntry(null);
       setFocusedRunId(null);
       setFocusedRunTask(null);
-      setAutoSwitchToSummaryOnDecision(true);
       setAnalysisParams({
         ticker,
         userId,
@@ -322,7 +318,6 @@ export default function KaiAnalysisPage() {
       setFocusedRunId(null);
       setFocusedRunTask(null);
       setShowHistoryWhileActive(false);
-      setAutoSwitchToSummaryOnDecision(true);
       setWorkspaceTab("summary");
       setDebateIdParam(extractDebateId(entry));
     },
@@ -342,7 +337,6 @@ export default function KaiAnalysisPage() {
     setFocusedRunId(null);
     setFocusedRunTask(null);
     setShowHistoryWhileActive(false);
-    setAutoSwitchToSummaryOnDecision(true);
     setDebateIdParam(null);
   }, [activeRunTask, setAnalysisParams, setDebateIdParam, vaultOwnerToken]);
 
@@ -353,7 +347,6 @@ export default function KaiAnalysisPage() {
     setFocusedRunId(null);
     setFocusedRunTask(null);
     setShowHistoryWhileActive(true);
-    setAutoSwitchToSummaryOnDecision(true);
     setDebateIdParam(null);
   }, [setAnalysisParams, setDebateIdParam]);
 
@@ -364,7 +357,6 @@ export default function KaiAnalysisPage() {
       setLiveEntry(null);
       setFocusedRunId(null);
       setFocusedRunTask(null);
-      setAutoSwitchToSummaryOnDecision(true);
       setAnalysisParams({
         ticker,
         userId,
@@ -386,18 +378,22 @@ export default function KaiAnalysisPage() {
 
   const handleLiveDecisionSaved = useCallback(
     (entry: AnalysisHistoryEntry) => {
+      if (summaryLoadingToastIdRef.current === null) {
+        summaryLoadingToastIdRef.current = toast.info("Preparing summary…", {
+          duration: Infinity,
+          description: "Final recommendation is ready. Loading summary view.",
+        });
+      }
       setLiveEntry(entry);
       setResolvedEntry(entry);
       setAnalysisParams(null);
       setShowHistoryWhileActive(false);
-      if (autoSwitchToSummaryOnDecision) {
-        setWorkspaceTab("summary");
-      }
+      setWorkspaceTab("summary");
       requestAnimationFrame(() => {
         workspaceTopRef.current?.scrollIntoView({ block: "start", behavior: "auto" });
       });
     },
-    [autoSwitchToSummaryOnDecision, setAnalysisParams]
+    [setAnalysisParams]
   );
 
   const hasFocusedRun = Boolean(focusedRunTask && !focusedRunTask.dismissedAt);
@@ -415,22 +411,28 @@ export default function KaiAnalysisPage() {
     }
     return activeEntry?.ticker ? String(activeEntry.ticker).trim().toUpperCase() : "";
   }, [activeEntry?.ticker, activeRunTask?.ticker, analysisParams?.ticker, focusedRunTask?.ticker, liveIntentReady]);
-  const headerPriceLabel = formatCurrency(headerSnapshot?.last_price ?? null);
+  const headerPriceLabel =
+    headerSnapshotLoading && (headerSnapshot?.last_price ?? null) === null
+      ? "Loading price..."
+      : formatCurrency(headerSnapshot?.last_price ?? null);
   const headerChangePct = headerSnapshot?.change_pct ?? null;
 
   useEffect(() => {
     if (!showWorkspace || !activeTicker || !userId) {
       setHeaderSnapshot(null);
+      setHeaderSnapshotLoading(false);
       return;
     }
 
     let cancelled = false;
     const cached = getLatestMarketSnapshotFromCache(userId, activeTicker);
+    setHeaderSnapshotLoading(Boolean(vaultOwnerToken) && !cached);
     if (!cancelled) {
       setHeaderSnapshot((prev) => pickPreferredMarketSnapshot(prev, cached));
     }
 
     if (!vaultOwnerToken) {
+      setHeaderSnapshotLoading(false);
       return () => {
         cancelled = true;
       };
@@ -449,6 +451,10 @@ export default function KaiAnalysisPage() {
         }
       } catch {
         // Keep best known cached value.
+      } finally {
+        if (!cancelled) {
+          setHeaderSnapshotLoading(false);
+        }
       }
     })();
 
@@ -456,6 +462,28 @@ export default function KaiAnalysisPage() {
       cancelled = true;
     };
   }, [activeTicker, showWorkspace, userId, vaultOwnerToken]);
+
+  useEffect(() => {
+    if (
+      summaryLoadingToastIdRef.current !== null &&
+      workspaceTab === "summary" &&
+      activeEntry
+    ) {
+      toast.dismiss(summaryLoadingToastIdRef.current);
+      toast.success("Summary ready.");
+      summaryLoadingToastIdRef.current = null;
+    }
+  }, [activeEntry, workspaceTab]);
+
+  useEffect(
+    () => () => {
+      if (summaryLoadingToastIdRef.current !== null) {
+        toast.dismiss(summaryLoadingToastIdRef.current);
+        summaryLoadingToastIdRef.current = null;
+      }
+    },
+    []
+  );
 
   if (!user || !userId) {
     return (
@@ -639,7 +667,6 @@ export default function KaiAnalysisPage() {
                 onClick={() => {
                   if (activeRunTask?.runId) {
                     setFocusedRunId(activeRunTask.runId);
-                    setAutoSwitchToSummaryOnDecision(false);
                   }
                   setShowHistoryWhileActive(false);
                   setWorkspaceTab("debate");

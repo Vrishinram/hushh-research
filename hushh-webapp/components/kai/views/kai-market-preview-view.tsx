@@ -77,6 +77,70 @@ function toSpotlightDecision(input: string | undefined): "BUY" | "HOLD" | "REDUC
   return "HOLD";
 }
 
+function isWeakSpotlightDetail(input: string | null | undefined): boolean {
+  const text = String(input || "").trim().toLowerCase();
+  if (!text) return true;
+  return (
+    text.includes("no live recommendation feed available") ||
+    text.includes("recommendation unavailable") ||
+    text.includes("target consensus unavailable")
+  );
+}
+
+function toSafeHttpUrl(input: string | null | undefined): string | null {
+  const text = String(input || "").trim();
+  if (!text) return null;
+  if (!/^https?:\/\//i.test(text)) return null;
+  return text;
+}
+
+function summarizeSpotlight(row: NonNullable<KaiHomeInsightsV2["spotlights"]>[number]): string {
+  const story = String(row.story || "").trim();
+  if (story) return story;
+
+  const detail = String(row.recommendation_detail || "").trim();
+  if (detail && !isWeakSpotlightDetail(detail)) return detail;
+
+  const headline = String(row.headline || "").trim();
+  if (headline) return `Recent coverage: ${headline}`;
+
+  const decision = toSpotlightDecision(row.recommendation);
+  const changePct =
+    typeof row.change_pct === "number" && Number.isFinite(row.change_pct)
+      ? `${row.change_pct >= 0 ? "+" : ""}${row.change_pct.toFixed(2)}% today`
+      : null;
+  if (decision === "BUY") {
+    return changePct
+      ? `Momentum is positive (${changePct}) while analyst updates refresh.`
+      : "Momentum is positive while analyst updates refresh.";
+  }
+  if (decision === "REDUCE") {
+    return changePct
+      ? `Momentum is soft (${changePct}) while analyst updates refresh.`
+      : "Momentum is soft while analyst updates refresh.";
+  }
+  return changePct
+    ? `Price action is mixed (${changePct}) while analyst updates refresh.`
+    : "Price action is mixed while analyst updates refresh.";
+}
+
+function spotlightContextLabel(row: NonNullable<KaiHomeInsightsV2["spotlights"]>[number]): string {
+  const source = String(row.headline_source || "").trim();
+  if (source) return source;
+  const recommendationSource = String(row.recommendation_source || "").trim();
+  if (recommendationSource) return recommendationSource;
+  return "Market signal feed";
+}
+
+function spotlightConfidenceLabel(
+  row: NonNullable<KaiHomeInsightsV2["spotlights"]>[number]
+): string | null {
+  const value = row.confidence;
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  const pct = Math.max(0, Math.min(100, Math.round(value * 100)));
+  return `${pct}% confidence`;
+}
+
 function formatSpotlightPrice(value: number | null | undefined): string {
   if (typeof value !== "number" || !Number.isFinite(value)) return "Price unavailable";
   return new Intl.NumberFormat("en-US", {
@@ -86,25 +150,89 @@ function formatSpotlightPrice(value: number | null | undefined): string {
   }).format(value);
 }
 
-function formatOverviewValue(value: string | number | null | undefined): string {
+function isUnavailableText(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  return (
+    normalized.length === 0 ||
+    normalized === "n/a" ||
+    normalized === "na" ||
+    normalized === "unknown" ||
+    normalized === "unavailable" ||
+    normalized === "none" ||
+    normalized === "null" ||
+    normalized === "--" ||
+    normalized === "-"
+  );
+}
+
+function normalizeOverviewSource(source: string | null | undefined): string | null {
+  if (!source) return null;
+  const text = source.trim();
+  if (!text || isUnavailableText(text)) return null;
+  return text;
+}
+
+function formatOverviewValue(
+  value: string | number | null | undefined,
+  {
+    label,
+    degraded,
+  }: {
+    label: string;
+    degraded: boolean;
+  }
+): string {
   if (typeof value === "number" && Number.isFinite(value)) {
     if (Math.abs(value) >= 1000) {
       return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(value);
     }
     return new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(value);
   }
-  if (typeof value === "string" && value.trim()) return value;
-  return "Unavailable";
+  if (typeof value === "string" && value.trim() && !isUnavailableText(value)) return value;
+  const lowerLabel = label.toLowerCase();
+  if (lowerLabel.includes("market status")) {
+    return degraded ? "Status delayed" : "Updating status";
+  }
+  if (lowerLabel.includes("volatility") || lowerLabel.includes("vix")) {
+    return degraded ? "Volatility delayed" : "Updating volatility";
+  }
+  return degraded ? "Data delayed" : "Updating";
 }
 
-function formatOverviewDelta(deltaPct: number | null | undefined): string {
-  if (typeof deltaPct !== "number" || !Number.isFinite(deltaPct)) return "N/A";
+function formatOverviewDelta(
+  deltaPct: number | null | undefined,
+  {
+    label,
+    source,
+    degraded,
+  }: {
+    label: string;
+    source: string | null | undefined;
+    degraded: boolean;
+  }
+): string {
+  if (typeof deltaPct !== "number" || !Number.isFinite(deltaPct)) {
+    const lowerLabel = label.toLowerCase();
+    const normalizedSource = normalizeOverviewSource(source);
+    if (lowerLabel.includes("market status")) {
+      return degraded ? "Schedule fallback" : "Live session";
+    }
+    if (normalizedSource) {
+      return degraded ? `${normalizedSource} delayed` : normalizedSource;
+    }
+    return degraded ? "Data delayed" : "Live";
+  }
   const sign = deltaPct >= 0 ? "+" : "";
   return `${sign}${deltaPct.toFixed(2)}%`;
 }
 
-function toOverviewTone(deltaPct: number | null | undefined): MarketOverviewMetric["tone"] {
-  if (typeof deltaPct !== "number" || !Number.isFinite(deltaPct)) return "neutral";
+function toOverviewTone(
+  deltaPct: number | null | undefined,
+  degraded: boolean
+): MarketOverviewMetric["tone"] {
+  if (typeof deltaPct !== "number" || !Number.isFinite(deltaPct)) {
+    return degraded ? "warning" : "neutral";
+  }
   if (deltaPct > 0.25) return "positive";
   if (deltaPct < -0.25) return "negative";
   return "neutral";
@@ -125,18 +253,59 @@ function toOverviewMetrics(payload: KaiHomeInsightsV2 | null): MarketOverviewMet
   return rows
     .filter((row): row is NonNullable<KaiHomeInsightsV2["market_overview"]>[number] => Boolean(row))
     .map((row, idx) => {
-      const tone = toOverviewTone(row.delta_pct);
+      const tone = toOverviewTone(row.delta_pct, Boolean(row.degraded));
       const label = String(row.label || `Metric ${idx + 1}`);
       return {
         id: `${label}-${idx}`,
         label,
-        value: formatOverviewValue(row.value),
-        delta: formatOverviewDelta(row.delta_pct),
+        value: formatOverviewValue(row.value, {
+          label,
+          degraded: Boolean(row.degraded),
+        }),
+        delta: formatOverviewDelta(row.delta_pct, {
+          label,
+          source: row.source,
+          degraded: Boolean(row.degraded),
+        }),
         tone,
         icon: iconForOverview(label, tone),
       };
     })
     .slice(0, 4);
+}
+
+function hasUsefulOverviewValue(value: string | number | null | undefined): boolean {
+  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value === "string") {
+    const text = value.trim();
+    return Boolean(text) && !isUnavailableText(text);
+  }
+  return false;
+}
+
+function countUsableOverviewRows(payload: KaiHomeInsightsV2 | null | undefined): number {
+  const rows = payload?.market_overview;
+  if (!Array.isArray(rows)) return 0;
+  return rows.reduce((count, row) => {
+    if (!row) return count;
+    if (hasUsefulOverviewValue(row.value)) return count + 1;
+    return count;
+  }, 0);
+}
+
+function withStableOverviewFromCache(
+  nextPayload: KaiHomeInsightsV2,
+  cachedPayload: KaiHomeInsightsV2 | null
+): KaiHomeInsightsV2 {
+  const nextUsableCount = countUsableOverviewRows(nextPayload);
+  const cachedUsableCount = countUsableOverviewRows(cachedPayload);
+  if (nextUsableCount > 0 || cachedUsableCount === 0) {
+    return nextPayload;
+  }
+  return {
+    ...nextPayload,
+    market_overview: cachedPayload?.market_overview ?? nextPayload.market_overview,
+  };
 }
 
 function toThemeIcon(title: string): LucideIcon {
@@ -494,22 +663,29 @@ export function KaiMarketPreviewView() {
           }
 
           if (controller.signal.aborted) return;
-          setPayload(nextPayload);
+          const cachedBaselinePayload =
+            cache.get<KaiHomeInsightsV2>(marketCacheKey) ??
+            readAnyKaiHomeCache(cache, user.uid, 7);
+          const stabilizedPayload = withStableOverviewFromCache(
+            nextPayload,
+            seededFromLocalCache ? cachedBaselinePayload : null
+          );
+          setPayload(stabilizedPayload);
           hasPayloadRef.current = true;
-          cache.set(marketCacheKey, nextPayload, MARKET_HOME_CACHE_TTL_MS);
+          cache.set(marketCacheKey, stabilizedPayload, MARKET_HOME_CACHE_TTL_MS);
           if (trackedSymbols.length === 0) {
-            cache.set(CACHE_KEYS.KAI_MARKET_HOME(user.uid, "default", 7), nextPayload, MARKET_HOME_CACHE_TTL_MS);
+            cache.set(CACHE_KEYS.KAI_MARKET_HOME(user.uid, "default", 7), stabilizedPayload, MARKET_HOME_CACHE_TTL_MS);
           }
           if (sessionCacheKey && typeof window !== "undefined") {
             setSessionItem(
               sessionCacheKey,
-              JSON.stringify({ payload: nextPayload, savedAt: Date.now() })
+              JSON.stringify({ payload: stabilizedPayload, savedAt: Date.now() })
             );
           }
           if (persistentCacheKey && typeof window !== "undefined") {
             setSessionItem(
               persistentCacheKey,
-              JSON.stringify({ payload: nextPayload, savedAt: Date.now() })
+              JSON.stringify({ payload: stabilizedPayload, savedAt: Date.now() })
             );
           }
         } catch (loadError) {
@@ -583,10 +759,10 @@ export function KaiMarketPreviewView() {
   }, [hasPayload, payload?.hero?.holdings_count]);
 
   return (
-    <div className="mx-auto w-full max-w-[390px] overflow-x-hidden px-4 pt-[var(--kai-view-top-gap,16px)] pb-6">
+    <div className="mx-auto w-full max-w-[390px] overflow-x-hidden px-4 pt-[var(--kai-view-top-gap,16px)] pb-6 md:max-w-3xl md:px-6 lg:max-w-5xl">
       <header className="space-y-2 text-center">
-        <h1 className="text-2xl font-black tracking-tight leading-tight">Explore the market with Kai</h1>
-        <p className="mx-auto max-w-[22rem] text-sm text-muted-foreground">
+        <h1 className="text-[clamp(1.85rem,4.2vw,2.75rem)] font-black tracking-tight leading-tight">Explore the market with Kai</h1>
+        <p className="mx-auto max-w-[22rem] text-sm text-muted-foreground md:max-w-2xl">
           Structured insights, even before connecting your portfolio.
         </p>
         {refreshing && hasPayload ? (
@@ -639,10 +815,10 @@ export function KaiMarketPreviewView() {
                 title={String(row.company_name || row.symbol || "Unknown")}
                 price={formatSpotlightPrice(row.price)}
                 decision={toSpotlightDecision(row.recommendation)}
-                summary={String(
-                  row.recommendation_detail || row.headline || "No recommendation detail available."
-                )}
-                context={String(row.headline || "Real-time watchlist context")}
+                confidenceLabel={spotlightConfidenceLabel(row)}
+                summary={summarizeSpotlight(row)}
+                context={spotlightContextLabel(row)}
+                contextHref={toSafeHttpUrl(row.headline_url)}
               />
             ))}
           </div>

@@ -155,6 +155,17 @@ const STREAM_TECHNICAL_SUBSTITUTIONS: Array<{ pattern: RegExp; replacement: stri
   { pattern: /\brun_id\b/gi, replacement: "session id" },
   { pattern: /\bcursor\b/gi, replacement: "position" },
   { pattern: /\bseq\b/gi, replacement: "step" },
+  { pattern: /\bjson\b/gi, replacement: "details" },
+  { pattern: /\bxml\b/gi, replacement: "details" },
+  { pattern: /\bpayload\b/gi, replacement: "update" },
+  { pattern: /\bendpoint\b/gi, replacement: "service" },
+  { pattern: /\bschema\b/gi, replacement: "format" },
+  { pattern: /\bapi\b/gi, replacement: "service" },
+  { pattern: /\bstream error\b/gi, replacement: "connection interrupted" },
+  { pattern: /\bthe network connection was lost\b/gi, replacement: "connection was interrupted while syncing" },
+  { pattern: /\bstack trace\b/gi, replacement: "" },
+  { pattern: /\btraceback\b/gi, replacement: "" },
+  { pattern: /\bexception\b/gi, replacement: "issue" },
   { pattern: /https?:\/\/[^\s)]+/gi, replacement: "" },
 ];
 
@@ -171,7 +182,7 @@ export function toInvestorStreamText(value: unknown): string {
   // Remove XML/HTML-ish wrappers that leak from streamed model output.
   next = next.replace(/<\/?[\w:-]+(?:\s[^>]*)?>/g, " ");
   if (/^\s*[\[{]/.test(next) || /"[^"]+"\s*:/.test(next)) {
-    return "Analyzing statement details...";
+    return "Reviewing current signals...";
   }
   for (const rule of STREAM_TECHNICAL_SUBSTITUTIONS) {
     next = next.replace(rule.pattern, rule.replacement);
@@ -182,5 +193,14 @@ export function toInvestorStreamText(value: unknown): string {
     .replace(/\n{3,}/g, "\n\n")
     .replace(/\(\s*\)/g, "")
     .trim();
+  if (/connection interrupted while syncing|network response/i.test(next)) {
+    return "Connection was interrupted. Reconnecting automatically.";
+  }
+  if (/did not pass strict validation checks/i.test(next)) {
+    return "We could not confirm all holdings from this upload. Please retry or use a clearer brokerage statement.";
+  }
+  if (/analyzing statement details/i.test(next)) {
+    return "Reviewing your statement...";
+  }
   return next;
 }

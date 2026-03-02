@@ -178,6 +178,18 @@ export interface KaiPlugin {
   }): Promise<{ success: boolean }>;
 
   /**
+   * Resume an existing portfolio import run stream from a cursor.
+   * Subscribe to events via Kai.addListener('portfolioStreamEvent', handler).
+   * Resolves when stream ends.
+   */
+  streamPortfolioImportRun(options: {
+    runId: string;
+    userId: string;
+    cursor?: number;
+    vaultOwnerToken: string;
+  }): Promise<{ success: boolean }>;
+
+  /**
    * Stream portfolio analyze-losers (SSE) from native.
    * Subscribe to events via Kai.addListener('portfolioStreamEvent', handler).
    * Resolves when stream ends.

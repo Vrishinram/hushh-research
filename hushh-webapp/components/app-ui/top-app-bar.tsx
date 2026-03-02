@@ -99,67 +99,51 @@ export function TopAppBar({ className }: TopAppBarProps) {
   const hideChrome = !topShellMetrics.shellVisible;
   const centerTitle = useMemo(() => getTopBarTitle(pathname), [pathname]);
   const showKaiTabs = topShellMetrics.hasTabs;
-  const hideBackButtonForVaultGuard =
-    pathname.startsWith(ROUTES.CONSENTS) && !isVaultUnlocked;
 
-  // Subscribe to scroll-direction store so the glass shrinks when tabs hide.
-  const { hidden: tabsScrollHidden } = useKaiBottomChromeVisibility(showKaiTabs);
+  // Subscribe to scroll-direction store so top glass height follows tabs visibility.
+  const { progress: tabsScrollHideProgress } = useKaiBottomChromeVisibility(showKaiTabs);
 
-  const headerGlassStyle = useMemo<React.CSSProperties>(
+  const topGlassStyle = useMemo<React.CSSProperties>(
     () => ({
-      height: "calc(var(--top-inset) + var(--top-systembar-row-gap, 0px) + var(--top-bar-h) + var(--top-fade-active))",
+      height: showKaiTabs
+        ? `calc(var(--top-inset) + var(--top-systembar-row-gap, 0px) + var(--top-bar-h) + ((1 - ${tabsScrollHideProgress}) * var(--top-tabs-h)) + var(--top-fade-active))`
+        : "calc(var(--top-inset) + var(--top-systembar-row-gap, 0px) + var(--top-bar-h) + var(--top-fade-active))",
+      "--app-bar-glass-bg-light": "rgba(255, 255, 255, 0.46)",
+      "--app-bar-glass-bg-dark": "rgba(10, 12, 16, 0.64)",
+      "--app-bar-glass-blur": "7px",
+      maskImage:
+        "linear-gradient(to bottom, black 0%, black 56%, rgba(0, 0, 0, 0.96) 70%, rgba(0, 0, 0, 0.78) 84%, rgba(0, 0, 0, 0.42) 94%, transparent 100%)",
+      WebkitMaskImage:
+        "linear-gradient(to bottom, black 0%, black 56%, rgba(0, 0, 0, 0.96) 70%, rgba(0, 0, 0, 0.78) 84%, rgba(0, 0, 0, 0.42) 94%, transparent 100%)",
     }),
-    []
-  );
-
-  const tabsGlassStyle = useMemo<React.CSSProperties>(
-    () => ({
-      top: "calc(var(--top-inset) + var(--top-systembar-row-gap, 0px) + var(--top-bar-h))",
-      height: "calc(var(--top-tabs-h) + var(--top-tabs-gap) + var(--top-fade-active))",
-      transform: tabsScrollHidden
-        ? "translate3d(0, calc(-100% - 10px), 0)"
-        : "translate3d(0, 0, 0)",
-    }),
-    [tabsScrollHidden]
+    [showKaiTabs, tabsScrollHideProgress]
   );
 
   if (hideChrome) return null;
 
   return (
     <div
-      className={cn("fixed inset-x-0 top-0 z-50 overflow-hidden pointer-events-none", className)}
+      className={cn("fixed inset-x-0 top-0 z-50 pointer-events-none", className)}
     >
-      {/* ── Unified glass backdrop ─────────────────────────────────── */}
-      <div
-        aria-hidden
-        className="absolute inset-x-0 top-0 bar-glass bar-glass-top"
-        style={headerGlassStyle}
-      />
-      {showKaiTabs ? (
+      <div className="relative w-full overflow-hidden">
+        {/* ── Unified glass backdrop ───────────────────────────────── */}
         <div
           aria-hidden
-          className={cn(
-            "absolute inset-x-0 bar-glass bar-glass-top transform-gpu transition-all duration-300 ease-out will-change-transform",
-            tabsScrollHidden ? "opacity-0" : "opacity-100"
-          )}
-          style={tabsGlassStyle}
+          className="absolute inset-x-0 top-0 bar-glass"
+          style={topGlassStyle}
         />
-      ) : null}
 
-      {/* ── Interactive content layer ──────────────────────────────── */}
-      <div
-        className="relative mx-auto w-full max-w-6xl px-4 sm:px-6"
-        style={{ paddingTop: "calc(var(--top-inset) + var(--top-systembar-row-gap, 0px))" }}
-      >
-        {/* Header row: back · title · actions */}
+        {/* ── Interactive content layer ────────────────────────────── */}
         <div
-          data-testid="top-app-bar-row"
-          className="grid h-11 shrink-0 grid-cols-[44px_1fr_44px] items-center pointer-events-auto"
+          className="relative mx-auto w-full max-w-[540px] px-4 sm:px-6"
+          style={{ paddingTop: "calc(var(--top-inset) + var(--top-systembar-row-gap, 0px))" }}
         >
-          <div className="flex h-11 w-11 items-center justify-center">
-            {hideBackButtonForVaultGuard ? (
-              <div className="h-11 w-11" aria-hidden />
-            ) : (
+          {/* Header row: back · title · actions */}
+          <div
+            data-testid="top-app-bar-row"
+            className="grid h-11 shrink-0 grid-cols-[44px_1fr_44px] items-center pointer-events-auto"
+          >
+            <div className="flex h-11 w-11 items-center justify-center">
               <button
                 onClick={handleBack}
                 className={TOP_SHELL_ICON_BUTTON_CLASSNAME}
@@ -167,37 +151,37 @@ export function TopAppBar({ className }: TopAppBarProps) {
               >
                 <ArrowLeft className="h-5 w-5" />
               </button>
-            )}
+            </div>
+
+            <div className="flex min-w-0 items-center justify-center px-2">
+              {centerTitle ? (
+                <span className="truncate text-base font-semibold tracking-tight text-foreground sm:text-lg">
+                  {centerTitle}
+                </span>
+              ) : null}
+            </div>
+
+            <div className="flex h-11 w-11 items-center justify-center">
+              {showOnboardingActions ? (
+                <OnboardingRouteActions />
+              ) : isVaultUnlocked ? (
+                <DebateTaskCenter triggerClassName={TOP_SHELL_ICON_BUTTON_CLASSNAME} />
+              ) : (
+                <div className="h-11 w-11" aria-hidden />
+              )}
+            </div>
           </div>
 
-          <div className="flex min-w-0 items-center justify-center px-2">
-            {centerTitle ? (
-              <span className="truncate text-base font-semibold tracking-tight text-foreground sm:text-lg">
-                {centerTitle}
-              </span>
-            ) : null}
-          </div>
-
-          <div className="flex h-11 w-11 items-center justify-center">
-            {showOnboardingActions ? (
-              <OnboardingRouteActions />
-            ) : isVaultUnlocked ? (
-              <DebateTaskCenter triggerClassName={TOP_SHELL_ICON_BUTTON_CLASSNAME} />
-            ) : (
-              <div className="h-11 w-11" aria-hidden />
-            )}
-          </div>
+          {/* Tabs row (only on routes that enable them) */}
+          {showKaiTabs ? (
+            <div
+              className="flex shrink-0 items-end pointer-events-auto"
+              style={{ height: "var(--top-tabs-h)" }}
+            >
+              <DashboardRouteTabs embedded />
+            </div>
+          ) : null}
         </div>
-
-        {/* Tabs row (only on routes that enable them) */}
-        {showKaiTabs ? (
-          <div
-            className="flex shrink-0 items-end pointer-events-auto"
-            style={{ height: "calc(var(--top-tabs-h) + var(--top-tabs-gap))" }}
-          >
-            <DashboardRouteTabs embedded />
-          </div>
-        ) : null}
       </div>
     </div>
   );

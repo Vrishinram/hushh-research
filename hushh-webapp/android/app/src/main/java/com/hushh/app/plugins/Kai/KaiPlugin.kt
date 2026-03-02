@@ -11,6 +11,7 @@ import org.json.JSONTokener
 import java.io.BufferedReader
 import java.io.IOException
 import java.io.InputStreamReader
+import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
 /**
@@ -35,7 +36,8 @@ class KaiPlugin : Plugin() {
         .connectTimeout(15, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
         .readTimeout(150, TimeUnit.SECONDS)
-        .callTimeout(170, TimeUnit.SECONDS)
+        // Stream calls can legitimately run longer than a fixed wall clock budget.
+        .callTimeout(0, TimeUnit.MILLISECONDS)
         .build()
 
     private fun getBackendUrl(call: PluginCall? = null): String {
@@ -307,10 +309,10 @@ class KaiPlugin : Plugin() {
             return
         }
         
-        // Check file size (max 10MB)
-        if (fileData.size > 10 * 1024 * 1024) {
+        // Check file size (max 25MB)
+        if (fileData.size > 25 * 1024 * 1024) {
             android.util.Log.e(TAG, "❌ File too large: ${fileData.size} bytes")
-            call.reject("File too large. Maximum size is 10MB.")
+            call.reject("File too large. Maximum size is 25MB.")
             return
         }
         
@@ -544,6 +546,10 @@ class KaiPlugin : Plugin() {
             call.reject("Invalid base64 file content")
             return
         }
+        if (fileData.size > 25 * 1024 * 1024) {
+            call.reject("File too large. Maximum size is 25MB.")
+            return
+        }
         val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/api/kai/portfolio/import/stream"
         val requestBody = MultipartBody.Builder()
@@ -578,6 +584,62 @@ class KaiPlugin : Plugin() {
                 activity.runOnUiThread { pluginCall.resolve(JSObject().put("success", true)) }
             } catch (e: Exception) {
                 android.util.Log.e(TAG, "streamPortfolioImport error", e)
+                activity.runOnUiThread { pluginCall.reject("Stream error: ${e.message}") }
+            }
+        }.start()
+    }
+
+    @PluginMethod
+    fun streamPortfolioImportRun(call: PluginCall) {
+        val runId = call.getString("runId") ?: run {
+            call.reject("Missing runId")
+            return
+        }
+        val userId = call.getString("userId") ?: run {
+            call.reject("Missing userId")
+            return
+        }
+        val vaultOwnerToken = call.getString("vaultOwnerToken") ?: run {
+            call.reject("Missing vaultOwnerToken")
+            return
+        }
+        val cursor = call.getInt("cursor") ?: 0
+
+        val backendUrl = getBackendUrl(call)
+        val encodedRunId = URLEncoder.encode(runId, "UTF-8")
+        val encodedUserId = URLEncoder.encode(userId, "UTF-8")
+        val safeCursor = maxOf(0, cursor)
+        val url =
+            "$backendUrl/api/kai/portfolio/import/run/$encodedRunId/stream?user_id=$encodedUserId&cursor=$safeCursor"
+        val request = Request.Builder()
+            .url(url)
+            .get()
+            .addHeader("Authorization", "Bearer $vaultOwnerToken")
+            .addHeader("Accept", "text/event-stream")
+            .build()
+
+        val pluginCall = call
+        Thread {
+            try {
+                val response = httpClient.newCall(request).execute()
+                if (!response.isSuccessful) {
+                    activity.runOnUiThread { pluginCall.reject("HTTP ${response.code}") }
+                    return@Thread
+                }
+                val body = response.body ?: run {
+                    activity.runOnUiThread { pluginCall.reject("No response body") }
+                    return@Thread
+                }
+                body.byteStream().use { stream ->
+                    BufferedReader(InputStreamReader(stream, Charsets.UTF_8)).use { reader ->
+                        processSseStream(reader) { eventName, eventId, dataText ->
+                            emitPortfolioSseBlock(eventName, eventId, dataText)
+                        }
+                    }
+                }
+                activity.runOnUiThread { pluginCall.resolve(JSObject().put("success", true)) }
+            } catch (e: Exception) {
+                android.util.Log.e(TAG, "streamPortfolioImportRun error", e)
                 activity.runOnUiThread { pluginCall.reject("Stream error: ${e.message}") }
             }
         }.start()
