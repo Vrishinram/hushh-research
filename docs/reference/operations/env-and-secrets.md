@@ -30,15 +30,13 @@ The script reports:
 
 ### Ops-only GitHub secrets (backup/recovery governance)
 
-These are not Cloud Run runtime secrets. They are required in GitHub Actions for production DB backup posture checks and pre-deploy restore-point gates:
+These are not Cloud Run runtime secrets.
 
-- `SUPABASE_PROJECT_REF_PROD`
-- `SUPABASE_MANAGEMENT_TOKEN`
+- Required: `GCP_SA_KEY` (used by production deploy and backup posture workflows to call GCP APIs)
 
 Used by:
 - `.github/workflows/deploy-production.yml`
 - `.github/workflows/prod-supabase-backup-posture.yml`
-- `scripts/ops/supabase_backup_posture_check.py`
 
 ---
 
@@ -65,15 +63,15 @@ Used by:
 | `OTEL_ENABLED` | `api/middlewares/observability.py` | No | Enables OpenTelemetry export to Cloud Trace when true |
 | `AGENT_ID` | `hushh_mcp/config.py` | No | |
 | `HUSHH_HACKATHON` | `hushh_mcp/config.py` | No | |
-| `CONSENT_TIMEOUT_SECONDS` | `api/routes/sse.py`, `developer.py` | No | |
+| `CONSENT_TIMEOUT_SECONDS` | `mcp_modules/config.py` | No | MCP server timeout (not required for FastAPI runtime) |
 | `ROOT_PATH` | `server.py` | No | |
 | `GOOGLE_GENAI_USE_VERTEXAI` | Cloud Run env (Gemini SDK) | No | Set in deploy, not in .env |
 | `APP_REVIEW_MODE` / `HUSHH_APP_REVIEW_MODE` | `api/routes/health.py` (`/api/app-config/review-mode`) | No | Backend runtime toggle for app review login |
 | `REVIEWER_UID` | `api/routes/health.py` (`POST /api/app-config/review-mode/session`) | Required when app review is enabled | Firebase UID used for custom token minting |
 | `CONSENT_SSE_ENABLED` | `api/routes/sse.py` | No | Default off in production unless explicitly enabled |
-| `SYNC_REMOTE_ENABLED` | `api/routes/sync.py` | No | Default false; `/api/sync/*` returns 501 when disabled |
-| `DEVELOPER_API_ENABLED` | `api/routes/developer.py`, `mcp_modules/config.py` | No | Production default false; disables `/api/v1/*` |
-| `DEVELOPER_REGISTRY_JSON` | `api/routes/developer.py` | Non-prod when enabled | Runtime developer registry for `/api/v1/request-consent` |
+| `SYNC_REMOTE_ENABLED` | deploy env (`deploy/backend.cloudbuild.yaml`) | No | Legacy deploy flag; currently not read by backend code |
+| `DEVELOPER_API_ENABLED` | `server.py`, `mcp_modules/config.py` | No | Production default false; MCP developer tooling gate |
+| `DEVELOPER_REGISTRY_JSON` | n/a (legacy) | Optional legacy | Legacy developer registry payload; no active backend reader |
 | `MCP_DEVELOPER_TOKEN` | `api/routes/session.py` (`/api/user/lookup`) | Recommended | Required for protected service-to-service lookup |
 
 **Migrations/scripts:** Use **DB_*** only (same as runtime). `db/migrate.py` uses `db.connection.get_database_url()` and `get_database_ssl()`. No `DATABASE_URL` anywhere.
@@ -127,10 +125,10 @@ Used by:
 | `HUSHH_APP_REVIEW_MODE` | No | No | Optional alternative key | Alias toggle for app review |
 | `REVIEWER_UID` | If app review | Yes (prod) | Local: `.env`; Prod: Secret Manager | Reviewer Firebase UID for custom token minting |
 | `CONSENT_SSE_ENABLED` | No | No | Local: `.env`; Prod: Cloud Run env | Keep false in production (FCM-first) |
-| `SYNC_REMOTE_ENABLED` | No | No | Local: `.env`; Prod: Cloud Run env | Keep false in production |
+| `SYNC_REMOTE_ENABLED` | No | No | Local: `.env`; Prod: Cloud Run env | Legacy deploy flag; keep false |
 | `DEVELOPER_API_ENABLED` | No | No | Local: `.env`; Prod: Cloud Run env | Keep false in production |
 | `OBS_DATA_STALE_RATIO_THRESHOLD` | No | No | Local: `.env`; Scheduler/Job env | Threshold for Supabase data-health stale-ratio anomaly |
-| `DEVELOPER_REGISTRY_JSON` | Non-prod when enabled | No | Local/non-prod env | Runtime developer registry JSON |
+| `DEVELOPER_REGISTRY_JSON` | Optional legacy | No | Local/non-prod env | Legacy developer registry JSON |
 | `MCP_DEVELOPER_TOKEN` | Recommended | Yes (prod) | Local: `.env`; Prod: Secret Manager | Service auth for `/api/user/lookup` |
 
 **CI (GitHub Actions):** Backend tests use `TESTING=true`, dummy `SECRET_KEY`, and dummy `VAULT_ENCRYPTION_KEY`; no `.env` file required.
@@ -208,7 +206,7 @@ Secret Manager must hold **exactly** the keys the code uses. No extra secrets; n
 | `REVIEWER_UID` | `REVIEWER_UID` (api/routes/health.py) |
 | `MCP_DEVELOPER_TOKEN` | `MCP_DEVELOPER_TOKEN` (api/routes/session.py) |
 
-**Not in Secret Manager (set as Cloud Run env vars in cloudbuild):** `DB_HOST`, `DB_PORT`, `DB_NAME`, `ENVIRONMENT`, `GOOGLE_GENAI_USE_VERTEXAI`, `CONSENT_SSE_ENABLED`, `SYNC_REMOTE_ENABLED`, `DEVELOPER_API_ENABLED`, `CORS_ALLOWED_ORIGINS`, `DEVELOPER_REGISTRY_JSON` (non-prod only).
+**Not in Secret Manager (set as Cloud Run env vars in cloudbuild):** `DB_HOST`, `DB_PORT`, `DB_NAME`, `ENVIRONMENT`, `GOOGLE_GENAI_USE_VERTEXAI`, `CONSENT_SSE_ENABLED`, `SYNC_REMOTE_ENABLED`, `DEVELOPER_API_ENABLED`, `CORS_ALLOWED_ORIGINS`.
 
 **Strict parity:** `DATABASE_URL` is not used anywhere. Migrations (`db/migrate.py`) use **DB_*** only, via `db.connection.get_database_url()`. Do **not** create or keep `DATABASE_URL` in Secret Manager; delete it if present.
 
@@ -260,21 +258,32 @@ Verify manually with `gcloud secrets list --project=YOUR_PROJECT_ID` and the che
 
 ---
 
-## Backup/Recovery Ops Keys (GitHub Actions)
+## Backup/Recovery Ops Keys
+
+### GitHub Actions (required)
 
 | Key | Scope | Used by | Notes |
 |-----|-------|---------|-------|
-| `SUPABASE_PROJECT_REF_PROD` | GitHub Actions secret | Backup posture checks + pre-deploy restore-point gate | Supabase project ref for production DB |
-| `SUPABASE_MANAGEMENT_TOKEN` | GitHub Actions secret | Backup posture checks + pre-deploy restore-point gate | Supabase Management API token |
+| `GCP_SA_KEY` | GitHub Actions secret | `.github/workflows/deploy-production.yml`, `.github/workflows/prod-supabase-backup-posture.yml` | Service-account JSON with Cloud Run + Storage read access for backup gates |
+
+### Cloud Run Job runtime config (required for logical backup)
+
+| Key | Scope | Used by | Notes |
+|-----|-------|---------|-------|
+| `BACKUP_BUCKET` | Cloud Run Job env | `scripts/ops/supabase_logical_backup.py` | GCS bucket for backup artifacts |
+| `BACKUP_PREFIX` | Cloud Run Job env | `scripts/ops/supabase_logical_backup.py`, `scripts/ops/logical_backup_freshness_check.py` | Prefix path in bucket (`prod/supabase-logical`) |
+| `BACKUP_RETENTION_DAYS` | Cloud Run Job env | `scripts/ops/supabase_logical_backup.py` | Metadata + lifecycle target (default `14`) |
+| `BACKUP_MAX_AGE_HOURS` | Deploy/workflow env | `scripts/ops/logical_backup_freshness_check.py` | Freshness gate threshold (default `30`) |
 
 Validation command:
 
 ```bash
-python3 scripts/ops/supabase_backup_posture_check.py \
-  --project-ref "$SUPABASE_PROJECT_REF_PROD" \
-  --management-token "$SUPABASE_MANAGEMENT_TOKEN" \
-  --require-pitr \
-  --max-backup-age-hours 24
+python3 scripts/ops/logical_backup_freshness_check.py \
+  --project-id hushh-pda \
+  --bucket hushh-pda-prod-db-backups \
+  --prefix prod/supabase-logical \
+  --max-age-hours 30 \
+  --report-path /tmp/prod-backup-posture-report.json
 ```
 
 ---

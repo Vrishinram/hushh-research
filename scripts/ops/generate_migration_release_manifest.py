@@ -6,7 +6,7 @@ The manifest is immutable release evidence for DB governance:
 - migration files included in the release
 - operator
 - timestamp
-- pre-deploy restore point metadata
+- pre-deploy backup evidence metadata
 """
 
 from __future__ import annotations
@@ -57,9 +57,30 @@ def _read_backup_report(path: Path | None) -> dict[str, Any] | None:
     if not path.exists():
         return None
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        parsed = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _extract_backup_evidence(report: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(report, dict):
+        return {
+            "backup_report_status": None,
+            "backup_object_uri": None,
+            "backup_checksum_sha256": None,
+            "backup_completed_at": None,
+        }
+
+    latest = report.get("latest_backup")
+    latest_dict = latest if isinstance(latest, dict) else {}
+
+    return {
+        "backup_report_status": report.get("status"),
+        "backup_object_uri": latest_dict.get("backup_object_uri") or report.get("backup_object_uri"),
+        "backup_checksum_sha256": latest_dict.get("checksum_sha256") or report.get("checksum_sha256"),
+        "backup_completed_at": latest_dict.get("backup_completed_at") or report.get("backup_completed_at"),
+    }
 
 
 def _collect_migrations(migrations_dir: Path) -> tuple[list[dict[str, Any]], str]:
@@ -103,15 +124,7 @@ def run(args: argparse.Namespace) -> int:
         return 2
 
     backup_report = _read_backup_report(backup_report_path)
-    backup_restore_point_id = (
-        (
-            backup_report.get("restore_point", {}).get("id")
-            if isinstance(backup_report, dict)
-            else None
-        )
-        or args.restore_point_id
-        or None
-    )
+    backup_evidence = _extract_backup_evidence(backup_report)
 
     manifest = {
         "manifest_type": "prod_migration_release_manifest",
@@ -126,9 +139,11 @@ def run(args: argparse.Namespace) -> int:
             "ref": os.getenv("GITHUB_REF", ""),
         },
         "backup_gate": {
-            "restore_point_id": backup_restore_point_id,
             "backup_report_path": str(backup_report_path) if backup_report_path else "",
-            "backup_report_status": backup_report.get("status") if isinstance(backup_report, dict) else None,
+            "backup_report_status": backup_evidence.get("backup_report_status"),
+            "backup_object_uri": backup_evidence.get("backup_object_uri"),
+            "backup_checksum_sha256": backup_evidence.get("backup_checksum_sha256"),
+            "backup_completed_at": backup_evidence.get("backup_completed_at"),
         },
         "migrations": {
             "dir": str(migrations_dir),
@@ -161,11 +176,6 @@ def parse_args() -> argparse.Namespace:
         "--environment",
         default="production",
         help="Environment label for manifest metadata.",
-    )
-    parser.add_argument(
-        "--restore-point-id",
-        default="",
-        help="Optional pre-deploy restore point ID.",
     )
     parser.add_argument(
         "--backup-report-path",

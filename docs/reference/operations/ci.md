@@ -191,9 +191,9 @@ Blocking rule:
 The production deploy workflow (`.github/workflows/deploy-production.yml`) enforces additional DB governance before backend deploy:
 
 1. Supabase backup posture gate:
-- requires PITR probe success
-- requires latest successful backup age `<24h`
-- creates a pre-deploy restore point
+- validates logical backup freshness from GCS manifests via `scripts/ops/logical_backup_freshness_check.py`
+- requires latest successful backup age within configured threshold (`BACKUP_MAX_AGE_HOURS`, default `30`)
+- optional manual predeploy backup execution via workflow input `run_predeploy_backup_job=true`
 
 2. Migration governance + drift gate:
 - checks migration filename monotonicity (`consent-protocol/db/migrations`)
@@ -201,7 +201,7 @@ The production deploy workflow (`.github/workflows/deploy-production.yml`) enfor
 - checks live DB schema contract in read-only mode
 
 3. Manifest artifact:
-- emits a production migration release manifest with restore-point linkage for audit traceability
+- emits a production migration release manifest with logical backup evidence (`backup_object_uri`, checksum, completion timestamp)
 
 The daily scheduled workflow `.github/workflows/prod-supabase-backup-posture.yml` runs the same backup posture policy and uploads a report artifact.
 

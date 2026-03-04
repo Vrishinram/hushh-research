@@ -12,6 +12,14 @@ on:
           - all
           - backend
           - frontend
+      run_predeploy_backup_job:
+        description: "Optionally run logical backup job before backend deploy gate"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
 
 env:
   GCP_PROJECT_ID: hushh-pda
@@ -19,7 +27,10 @@ env:
   BACKEND_SERVICE: consent-protocol
   FRONTEND_SERVICE: hushh-webapp
   CLOUD_RUN_REVISION_RETENTION: "10"
-  SUPABASE_BACKUP_MAX_AGE_HOURS: "24"
+  BACKUP_BUCKET: hushh-pda-prod-db-backups
+  BACKUP_PREFIX: prod/supabase-logical
+  BACKUP_MAX_AGE_HOURS: "30"
+  BACKUP_JOB_NAME: prod-supabase-logical-backup
 
 jobs:
   deploy:
@@ -80,37 +91,34 @@ jobs:
 
       - name: Install DB governance dependencies
         if: steps.scope.outputs.deploy_backend == 'true'
-        run: python3 -m pip install --disable-pip-version-check asyncpg
+        run: python3 -m pip install --disable-pip-version-check asyncpg google-cloud-storage
 
-      - name: Pre-deploy Supabase backup gate
+      - name: Optional predeploy logical backup run
+        if: steps.scope.outputs.deploy_backend == 'true' && github.event.inputs.run_predeploy_backup_job == 'true'
+        run: |
+          set -euo pipefail
+          gcloud run jobs execute "${BACKUP_JOB_NAME}" \
+            --project="${GCP_PROJECT_ID}" \
+            --region="${GCP_REGION}" \
+            --wait
+
+      - name: Pre-deploy logical backup freshness gate
         if: steps.scope.outputs.deploy_backend == 'true'
         id: backup-gate
-        env:
-          SUPABASE_PROJECT_REF_PROD: ${{ secrets.SUPABASE_PROJECT_REF_PROD }}
-          SUPABASE_MANAGEMENT_TOKEN: ${{ secrets.SUPABASE_MANAGEMENT_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
-          if [ -z "${SUPABASE_PROJECT_REF_PROD}" ] || [ -z "${SUPABASE_MANAGEMENT_TOKEN}" ]; then
-            echo "Missing required GitHub secrets: SUPABASE_PROJECT_REF_PROD and/or SUPABASE_MANAGEMENT_TOKEN"
-            exit 1
-          fi
-
-          python3 scripts/ops/supabase_backup_posture_check.py \
-            --project-ref "${SUPABASE_PROJECT_REF_PROD}" \
-            --management-token "${SUPABASE_MANAGEMENT_TOKEN}" \
-            --require-pitr \
-            --max-backup-age-hours "${SUPABASE_BACKUP_MAX_AGE_HOURS}" \
-            --create-restore-point \
-            --restore-point-label "predeploy-${GITHUB_SHA:-local}" \
+          python3 scripts/ops/logical_backup_freshness_check.py \
+            --project-id "${GCP_PROJECT_ID}" \
+            --bucket "${BACKUP_BUCKET}" \
+            --prefix "${BACKUP_PREFIX}" \
+            --max-age-hours "${BACKUP_MAX_AGE_HOURS}" \
             --report-path /tmp/backup-posture-report.json
 
-          RESTORE_POINT_ID="$(python3 -c "import json; from pathlib import Path; payload=json.loads(Path('/tmp/backup-posture-report.json').read_text(encoding='utf-8')); restore_point=payload.get('restore_point', {}) if isinstance(payload, dict) else {}; print(str(restore_point.get('id') or '').strip())")"
-
-          if [ -z "${RESTORE_POINT_ID}" ]; then
-            RESTORE_POINT_ID="created-no-id"
-          fi
-          echo "restore_point_id=${RESTORE_POINT_ID}" >> "$GITHUB_OUTPUT"
+          BACKUP_OBJECT_URI="$(python3 -c "import json; from pathlib import Path; payload=json.loads(Path('/tmp/backup-posture-report.json').read_text(encoding='utf-8')); latest=payload.get('latest_backup', {}) if isinstance(payload, dict) else {}; print(str(latest.get('backup_object_uri') or '').strip())")"
+          BACKUP_COMPLETED_AT="$(python3 -c "import json; from pathlib import Path; payload=json.loads(Path('/tmp/backup-posture-report.json').read_text(encoding='utf-8')); latest=payload.get('latest_backup', {}) if isinstance(payload, dict) else {}; print(str(latest.get('backup_completed_at') or '').strip())")"
+          echo "backup_object_uri=${BACKUP_OBJECT_URI}" >> "$GITHUB_OUTPUT"
+          echo "backup_completed_at=${BACKUP_COMPLETED_AT}" >> "$GITHUB_OUTPUT"
 
       - name: Migration governance and DB drift gate
         if: steps.scope.outputs.deploy_backend == 'true'
@@ -151,7 +159,6 @@ jobs:
           python3 scripts/ops/generate_migration_release_manifest.py \
             --output /tmp/prod-migration-release-manifest.json \
             --environment production \
-            --restore-point-id "${{ steps.backup-gate.outputs.restore_point_id }}" \
             --backup-report-path /tmp/backup-posture-report.json
 
       - name: Upload production DB governance artifacts
@@ -221,7 +228,8 @@ jobs:
           echo "Scope: ${{ steps.scope.outputs.scope }}"
           if [ "${{ steps.scope.outputs.deploy_backend }}" = "true" ]; then
             echo "Backend: ${{ steps.backend-url.outputs.url }}"
-            echo "Restore point: ${{ steps.backup-gate.outputs.restore_point_id }}"
+            echo "Latest backup object: ${{ steps.backup-gate.outputs.backup_object_uri }}"
+            echo "Latest backup completed at: ${{ steps.backup-gate.outputs.backup_completed_at }}"
           else
             echo "Backend: skipped"
           fi

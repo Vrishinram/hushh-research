@@ -8,9 +8,15 @@ on:
 permissions:
   contents: read
 
+env:
+  GCP_PROJECT_ID: hushh-pda
+  BACKUP_BUCKET: hushh-pda-prod-db-backups
+  BACKUP_PREFIX: prod/supabase-logical
+  BACKUP_MAX_AGE_HOURS: "30"
+
 jobs:
   backup-posture:
-    name: Daily Supabase Backup Posture Check
+    name: Daily Logical Backup Posture Check
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -18,30 +24,28 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Validate required ops secrets
-        shell: bash
-        env:
-          SUPABASE_PROJECT_REF_PROD: ${{ secrets.SUPABASE_PROJECT_REF_PROD }}
-          SUPABASE_MANAGEMENT_TOKEN: ${{ secrets.SUPABASE_MANAGEMENT_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [ -z "${SUPABASE_PROJECT_REF_PROD}" ] || [ -z "${SUPABASE_MANAGEMENT_TOKEN}" ]; then
-            echo "Missing required GitHub secrets: SUPABASE_PROJECT_REF_PROD and/or SUPABASE_MANAGEMENT_TOKEN"
-            exit 1
-          fi
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-      - name: Run backup posture policy check
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install backup posture dependencies
+        run: python3 -m pip install --disable-pip-version-check google-cloud-storage
+
+      - name: Run logical backup posture policy check
         shell: bash
-        env:
-          SUPABASE_PROJECT_REF_PROD: ${{ secrets.SUPABASE_PROJECT_REF_PROD }}
-          SUPABASE_MANAGEMENT_TOKEN: ${{ secrets.SUPABASE_MANAGEMENT_TOKEN }}
         run: |
           set -euo pipefail
-          python3 scripts/ops/supabase_backup_posture_check.py \
-            --project-ref "${SUPABASE_PROJECT_REF_PROD}" \
-            --management-token "${SUPABASE_MANAGEMENT_TOKEN}" \
-            --require-pitr \
-            --max-backup-age-hours 24 \
+          python3 scripts/ops/logical_backup_freshness_check.py \
+            --project-id "${GCP_PROJECT_ID}" \
+            --bucket "${BACKUP_BUCKET}" \
+            --prefix "${BACKUP_PREFIX}" \
+            --max-age-hours "${BACKUP_MAX_AGE_HOURS}" \
             --report-path /tmp/prod-backup-posture-report.json
 
       - name: Upload backup posture artifact
