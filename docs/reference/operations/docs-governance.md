@@ -21,6 +21,7 @@ Define one durable documentation model across:
 2. Put frontend/native implementation docs in `hushh-webapp/docs/`.
 3. Keep cross-cutting architecture/ops/policy docs in root `docs/`.
 4. Do not duplicate source-of-truth content across homes; link instead.
+5. Put AI strategy/runtime planning in `docs/reference/ai/` unless it is backend- or frontend-only.
 
 ## Required Quality Gates
 
@@ -34,6 +35,7 @@ Both gates must pass in CI before merge.
 1. If a route/component/API is deleted, remove doc references in the same change.
 2. If a public contract changes, update both docs and contract verification artifacts.
 3. If a file is renamed, update all links immediately; no deferred follow-up.
+4. Any future-plan document must include an explicit `Status` section and a promotion rule before it can be treated as implementation reference.
 
 ## Ownership
 
