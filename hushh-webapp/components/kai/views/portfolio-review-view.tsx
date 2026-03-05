@@ -2088,7 +2088,8 @@ export function PortfolioReviewView({
                     }))
                   }
                   placeholder="Name"
-                  className="mt-1"
+                  className="mt-1 overflow-x-auto whitespace-nowrap [text-overflow:clip] [touch-action:pan-x]"
+                  title={accountInfo.holder_name || ""}
                 />
               </div>
               <div>
@@ -2102,7 +2103,8 @@ export function PortfolioReviewView({
                     }))
                   }
                   placeholder="XXX-XXXX"
-                  className="mt-1"
+                  className="mt-1 overflow-x-auto whitespace-nowrap [text-overflow:clip] [touch-action:pan-x]"
+                  title={accountInfo.account_number || ""}
                 />
               </div>
               <div>
@@ -2116,7 +2118,8 @@ export function PortfolioReviewView({
                     }))
                   }
                   placeholder="Brokerage name"
-                  className="mt-1"
+                  className="mt-1 overflow-x-auto whitespace-nowrap [text-overflow:clip] [touch-action:pan-x]"
+                  title={accountInfo.brokerage || ""}
                 />
               </div>
               <div>
@@ -2130,7 +2133,8 @@ export function PortfolioReviewView({
                     }))
                   }
                   placeholder="Individual, IRA, etc."
-                  className="mt-1"
+                  className="mt-1 overflow-x-auto whitespace-nowrap [text-overflow:clip] [touch-action:pan-x]"
+                  title={accountInfo.account_type || ""}
                 />
               </div>
             </div>
