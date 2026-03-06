@@ -12,6 +12,14 @@ on:
           - all
           - backend
           - frontend
+      run_predeploy_backup_job:
+        description: "Optionally run logical backup job before backend deploy gate"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
 
 env:
   GCP_PROJECT_ID: hushh-pda
@@ -19,6 +27,10 @@ env:
   BACKEND_SERVICE: consent-protocol
   FRONTEND_SERVICE: hushh-webapp
   CLOUD_RUN_REVISION_RETENTION: "10"
+  BACKUP_BUCKET: hushh-pda-prod-db-backups
+  BACKUP_PREFIX: prod/supabase-logical
+  BACKUP_MAX_AGE_HOURS: "30"
+  BACKUP_JOB_NAME: prod-supabase-logical-backup
 
 jobs:
   deploy:
@@ -71,6 +83,95 @@ jobs:
           echo "deploy_backend=$DEPLOY_BACKEND" >> "$GITHUB_OUTPUT"
           echo "deploy_frontend=$DEPLOY_FRONTEND" >> "$GITHUB_OUTPUT"
 
+      - name: Set up Python for DB governance gates
+        if: steps.scope.outputs.deploy_backend == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install DB governance dependencies
+        if: steps.scope.outputs.deploy_backend == 'true'
+        run: python3 -m pip install --disable-pip-version-check asyncpg google-cloud-storage
+
+      - name: Optional predeploy logical backup run
+        if: steps.scope.outputs.deploy_backend == 'true' && github.event.inputs.run_predeploy_backup_job == 'true'
+        run: |
+          set -euo pipefail
+          gcloud run jobs execute "${BACKUP_JOB_NAME}" \
+            --project="${GCP_PROJECT_ID}" \
+            --region="${GCP_REGION}" \
+            --wait
+
+      - name: Pre-deploy logical backup freshness gate
+        if: steps.scope.outputs.deploy_backend == 'true'
+        id: backup-gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ops/logical_backup_freshness_check.py \
+            --project-id "${GCP_PROJECT_ID}" \
+            --bucket "${BACKUP_BUCKET}" \
+            --prefix "${BACKUP_PREFIX}" \
+            --max-age-hours "${BACKUP_MAX_AGE_HOURS}" \
+            --report-path /tmp/backup-posture-report.json
+
+          BACKUP_OBJECT_URI="$(python3 -c "import json; from pathlib import Path; payload=json.loads(Path('/tmp/backup-posture-report.json').read_text(encoding='utf-8')); latest=payload.get('latest_backup', {}) if isinstance(payload, dict) else {}; print(str(latest.get('backup_object_uri') or '').strip())")"
+          BACKUP_COMPLETED_AT="$(python3 -c "import json; from pathlib import Path; payload=json.loads(Path('/tmp/backup-posture-report.json').read_text(encoding='utf-8')); latest=payload.get('latest_backup', {}) if isinstance(payload, dict) else {}; print(str(latest.get('backup_completed_at') or '').strip())")"
+          echo "backup_object_uri=${BACKUP_OBJECT_URI}" >> "$GITHUB_OUTPUT"
+          echo "backup_completed_at=${BACKUP_COMPLETED_AT}" >> "$GITHUB_OUTPUT"
+
+      - name: Migration governance and DB drift gate
+        if: steps.scope.outputs.deploy_backend == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SERVICE_JSON="$(gcloud run services describe "${{ env.BACKEND_SERVICE }}" \
+            --project="${{ env.GCP_PROJECT_ID }}" \
+            --region="${{ env.GCP_REGION }}" \
+            --format=json)"
+
+          DB_HOST="$(printf '%s' "${SERVICE_JSON}" | jq -r '.spec.template.spec.containers[0].env[] | select(.name=="DB_HOST") | .value' | tail -n 1)"
+          DB_PORT="$(printf '%s' "${SERVICE_JSON}" | jq -r '.spec.template.spec.containers[0].env[] | select(.name=="DB_PORT") | .value' | tail -n 1)"
+          DB_NAME="$(printf '%s' "${SERVICE_JSON}" | jq -r '.spec.template.spec.containers[0].env[] | select(.name=="DB_NAME") | .value' | tail -n 1)"
+
+          DB_USER="$(gcloud secrets versions access latest --secret=DB_USER --project="${{ env.GCP_PROJECT_ID }}")"
+          DB_PASSWORD="$(gcloud secrets versions access latest --secret=DB_PASSWORD --project="${{ env.GCP_PROJECT_ID }}")"
+          echo "::add-mask::${DB_USER}"
+          echo "::add-mask::${DB_PASSWORD}"
+
+          if [ -z "${DB_HOST}" ] || [ -z "${DB_USER}" ] || [ -z "${DB_PASSWORD}" ]; then
+            echo "Failed to resolve DB credentials/host for migration governance gate."
+            exit 1
+          fi
+
+          export DB_HOST DB_USER DB_PASSWORD
+          export DB_PORT="${DB_PORT:-5432}"
+          export DB_NAME="${DB_NAME:-postgres}"
+          python3 scripts/ops/db_migration_release_guard.py \
+            --report-path /tmp/db-migration-guard-report.json
+
+      - name: Generate production migration release manifest
+        if: steps.scope.outputs.deploy_backend == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ops/generate_migration_release_manifest.py \
+            --output /tmp/prod-migration-release-manifest.json \
+            --environment production \
+            --backup-report-path /tmp/backup-posture-report.json
+
+      - name: Upload production DB governance artifacts
+        if: always() && steps.scope.outputs.deploy_backend == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: prod-db-governance-${{ github.run_id }}
+          if-no-files-found: ignore
+          path: |
+            /tmp/backup-posture-report.json
+            /tmp/db-migration-guard-report.json
+            /tmp/prod-migration-release-manifest.json
+
       - name: Deploy backend using Cloud Build
         if: steps.scope.outputs.deploy_backend == 'true'
         run: |
@@ -101,7 +202,7 @@ jobs:
           gcloud builds submit \
             --project="${{ env.GCP_PROJECT_ID }}" \
             --config=deploy/frontend.cloudbuild.yaml \
-            --substitutions=_FRONTEND_SERVICE=${{ env.FRONTEND_SERVICE }},_REGION=${{ env.GCP_REGION }},_OBS_ENV=production
+            --substitutions=_FRONTEND_SERVICE=${{ env.FRONTEND_SERVICE }},_REGION=${{ env.GCP_REGION }},_APP_ENV=production
 
       - name: Get frontend URL
         if: steps.scope.outputs.deploy_frontend == 'true'
@@ -127,6 +228,8 @@ jobs:
           echo "Scope: ${{ steps.scope.outputs.scope }}"
           if [ "${{ steps.scope.outputs.deploy_backend }}" = "true" ]; then
             echo "Backend: ${{ steps.backend-url.outputs.url }}"
+            echo "Latest backup object: ${{ steps.backup-gate.outputs.backup_object_uri }}"
+            echo "Latest backup completed at: ${{ steps.backup-gate.outputs.backup_completed_at }}"
           else
             echo "Backend: skipped"
           fi

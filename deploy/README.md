@@ -40,7 +40,7 @@ gcloud builds submit --config=deploy/frontend.cloudbuild.yaml
 
 3. **Configure Secrets** (one-time setup)
 
-   Secrets in GCP Secret Manager must match **exactly** what the code uses — no more, no less. See [docs/reference/env-and-secrets.md](../docs/reference/env-and-secrets.md) for the full audit and gcloud CLI.
+   Secrets in GCP Secret Manager must match **exactly** what the code uses — no more, no less. See [docs/reference/operations/env-and-secrets.md](../docs/reference/operations/env-and-secrets.md) for the full audit and gcloud CLI.
 
    ```bash
    python3 scripts/ops/verify-env-secrets-parity.py \
@@ -65,6 +65,38 @@ gcloud builds submit --config=deploy/frontend.cloudbuild.yaml
 
    **Note:** `DB_HOST`, `DB_PORT`, `DB_NAME`, `CONSENT_SSE_ENABLED`, and `SYNC_REMOTE_ENABLED` are set as Cloud Run env vars (not secrets). **Do not use `DATABASE_URL`** — migrations and scripts use DB_* only (strict parity). Delete `DATABASE_URL` from Secret Manager if present.
 
+4. **Configure production logical backup infrastructure** (GCP)
+
+   Provision the bucket + service accounts + Cloud Run Job + Cloud Scheduler:
+
+   ```bash
+   PROJECT_ID=hushh-pda REGION=us-central1 bash deploy/backup/setup_prod_logical_backup.sh
+   ```
+
+   The setup script enforces bucket hardening (UBLA + PAP), lifecycle delete at 14 days, and soft-delete disabled for cost control.
+
+   If the currently deployed backend image does not yet include `scripts/ops/supabase_logical_backup.py`,
+   pass an explicit image override:
+
+   ```bash
+   PROJECT_ID=hushh-pda REGION=us-central1 \
+   BACKUP_JOB_IMAGE=gcr.io/hushh-pda/consent-protocol:backup-job-YYYYMMDD-HHMMSS \
+   bash deploy/backup/setup_prod_logical_backup.sh
+   ```
+
+   Validate backup freshness policy locally (same gate used by production deploy workflow):
+
+   ```bash
+   python3 scripts/ops/logical_backup_freshness_check.py \
+     --project-id hushh-pda \
+     --bucket hushh-pda-prod-db-backups \
+     --prefix prod/supabase-logical \
+     --max-age-hours 30 \
+     --report-path /tmp/prod-backup-posture-report.json
+   ```
+
+   This checker requires ADC-capable credentials (`gcloud auth application-default login`) or a service account credential source.
+
 ---
 
 ## 🔧 Cloud Build Configuration
@@ -76,7 +108,7 @@ Deploys Python FastAPI backend to Cloud Run:
 - Builds Docker image from `consent-protocol/Dockerfile`
 - Pushes to Google Container Registry
 - Deploys to `consent-protocol` service
-- Connects to Cloud SQL via Unix socket
+- Uses DB host/port env wiring (optionally supports Cloud SQL Unix socket when configured)
 - Injects secrets from Secret Manager
 - Sets `ENVIRONMENT=production` and `GOOGLE_GENAI_USE_VERTEXAI=True` (Vertex AI for Gemini)
 
@@ -161,7 +193,7 @@ All required secrets must exist in Google Cloud Secret Manager before deployment
 
 **Note:** 
 - `DB_HOST`, `DB_PORT`, `DB_NAME`, `CONSENT_SSE_ENABLED`, and `SYNC_REMOTE_ENABLED` are set as Cloud Run env vars (not secrets) in `backend.cloudbuild.yaml`
-- Migrations use DB_* only (no DATABASE_URL). See docs/reference/env-and-secrets.md.
+- Migrations use DB_* only (no DATABASE_URL). See docs/reference/operations/env-and-secrets.md.
 - **Action required:** Create `DB_USER` and `DB_PASSWORD` secrets in Secret Manager if they don't exist:
   ```bash
   echo "your-db-username" | gcloud secrets create DB_USER --data-file=-
@@ -184,7 +216,7 @@ All required secrets must exist in Google Cloud Secret Manager before deployment
 
 These Firebase values are public client config, but are still centrally injected from Secret Manager to avoid hardcoded deploy YAML values.
 
-See [docs/reference/env-and-secrets.md](../docs/reference/env-and-secrets.md) for full reference.
+See [docs/reference/operations/env-and-secrets.md](../docs/reference/operations/env-and-secrets.md) for full reference.
 
 ### Mobile Firebase Artifacts (Regulated)
 
@@ -213,6 +245,36 @@ Optional email notification channel wiring:
 
 ```bash
 OBS_ALERT_EMAIL=you@example.com bash deploy/observability/setup_gcp_observability.sh
+```
+
+### Production DB Governance Helpers
+
+```bash
+# Provision logical backup infra (idempotent)
+bash deploy/backup/setup_prod_logical_backup.sh
+
+# Execute logical backup job manually (optional pre-deploy trigger)
+gcloud run jobs execute prod-supabase-logical-backup \
+  --project hushh-pda \
+  --region us-central1 \
+  --wait
+
+# Read-only logical backup freshness gate
+python3 scripts/ops/logical_backup_freshness_check.py \
+  --project-id hushh-pda \
+  --bucket hushh-pda-prod-db-backups \
+  --prefix prod/supabase-logical \
+  --max-age-hours 30 \
+  --report-path /tmp/prod-backup-posture-report.json
+
+# Read-only migration governance + DB drift checks
+python3 scripts/ops/db_migration_release_guard.py \
+  --report-path /tmp/db-migration-guard-report.json
+
+# Generate audit manifest for a production release
+python3 scripts/ops/generate_migration_release_manifest.py \
+  --output /tmp/prod-migration-release-manifest.json \
+  --environment production
 ```
 
 ### Verify Secrets
@@ -325,6 +387,7 @@ gcloud run services update-traffic consent-protocol \
 deploy/
 ├── backend.cloudbuild.yaml      # Backend Cloud Build config
 ├── frontend.cloudbuild.yaml     # Frontend Cloud Build config
+├── backup/setup_prod_logical_backup.sh  # Logical backup infra bootstrap
 ├── ../scripts/ops/verify-env-secrets-parity.py  # Secrets/deploy parity audit utility
 ├── .env.backend.example         # Backend env vars template
 ├── .env.frontend.example        # Frontend env vars template

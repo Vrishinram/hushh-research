@@ -4,6 +4,8 @@ set -euo pipefail
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 WEB_DIR="$REPO_ROOT/hushh-webapp"
 
+bash "$REPO_ROOT/scripts/ci/no-ria-feature-flags.sh"
+
 cd "$WEB_DIR"
 
 npm --version
@@ -30,4 +32,10 @@ if [ -f scripts/verify-capacitor-routes.cjs ]; then
   npm run verify:capacitor:routes
 else
   echo "⚠ WARNING: verify-capacitor-routes.cjs not found, skipping"
+fi
+
+if [ -f "$REPO_ROOT/scripts/verify-doc-links.cjs" ]; then
+  node "$REPO_ROOT/scripts/verify-doc-links.cjs"
+else
+  echo "⚠ WARNING: scripts/verify-doc-links.cjs not found, skipping"
 fi
