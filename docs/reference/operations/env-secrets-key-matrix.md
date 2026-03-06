@@ -17,6 +17,7 @@ bash scripts/verify-pre-launch.sh
 | `VAULT_ENCRYPTION_KEY` | `consent-protocol/hushh_mcp/config.py` | Y | N | Y | secret | N | secret | N | required |
 | `GOOGLE_API_KEY` | `consent-protocol/hushh_mcp/config.py` | Y | N | Y | secret | N | secret | N | required |
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | `consent-protocol/api/utils/firebase_admin.py`, `hushh-webapp/lib/firebase/admin.ts` | Y | Y | Y | secret | N | secret | N | required |
+| `FIREBASE_AUTH_SERVICE_ACCOUNT_JSON` | `consent-protocol/api/utils/firebase_admin.py` | Y | N | Y | secret | N | secret | N | required |
 | `FRONTEND_URL` | `consent-protocol/server.py` | Y | N | Y | secret | N | secret | N | required |
 | `DB_USER` | `consent-protocol/db/connection.py` | Y | N | Y | secret | N | secret | N | required |
 | `DB_PASSWORD` | `consent-protocol/db/connection.py` | Y | N | Y | secret | N | secret | N | required |
@@ -40,6 +41,10 @@ bash scripts/verify-pre-launch.sh
 | `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` | `hushh-webapp/lib/firebase/config.ts` | N | Y | Y | N | Y | N | N | required |
 | `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | `hushh-webapp/lib/firebase/config.ts` | N | Y | Y | N | Y | N | N | required |
 | `NEXT_PUBLIC_FIREBASE_APP_ID` | `hushh-webapp/lib/firebase/config.ts` | N | Y | Y | N | Y | N | N | required |
+| `NEXT_PUBLIC_AUTH_FIREBASE_API_KEY` | `hushh-webapp/lib/firebase/config.ts` | N | Y | Y | N | Y | N | N | required |
+| `NEXT_PUBLIC_AUTH_FIREBASE_AUTH_DOMAIN` | `hushh-webapp/lib/firebase/config.ts` | N | Y | Y | N | Y | N | N | required |
+| `NEXT_PUBLIC_AUTH_FIREBASE_PROJECT_ID` | `hushh-webapp/lib/firebase/config.ts` | N | Y | Y | N | Y | N | N | required |
+| `NEXT_PUBLIC_AUTH_FIREBASE_APP_ID` | `hushh-webapp/lib/firebase/config.ts` | N | Y | Y | N | Y | N | N | required |
 | `NEXT_PUBLIC_FIREBASE_VAPID_KEY` | `hushh-webapp/lib/notifications/fcm-service.ts` | N | Y | Y | N | Y | N | N | required |
 | `NEXT_PUBLIC_APP_ENV` | `hushh-webapp/lib/app-env.ts` | N | Y | N | N | N | N | N | required |
 | `NEXT_PUBLIC_ENVIRONMENT_MODE` | `hushh-webapp/lib/app-env.ts` | N | Y | N | N | N | N | N | legacy |

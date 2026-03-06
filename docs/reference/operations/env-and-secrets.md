@@ -160,6 +160,10 @@ These are used by MCP modules (`mcp_modules/`) for MCP server functionality, not
 | `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | Yes | No | Same | Required by current Cloud Build frontend manifest |
 | `NEXT_PUBLIC_FIREBASE_APP_ID` | Yes | No | Same | Required by current Cloud Build frontend manifest |
 | `NEXT_PUBLIC_FIREBASE_VAPID_KEY` | Yes | No | Same | **Web push (FCM)**: VAPID key from Firebase Console -> Cloud Messaging -> Web configuration -> Key pair. Required for production build and consent push on web. See [fcm-notifications.md](../../../consent-protocol/docs/reference/fcm-notifications.md). |
+| `NEXT_PUBLIC_AUTH_FIREBASE_API_KEY` | Recommended (auth-split) | No | `.env.local` / CI / build-arg | Optional auth-only override for web login project |
+| `NEXT_PUBLIC_AUTH_FIREBASE_AUTH_DOMAIN` | Recommended (auth-split) | No | Same | Optional auth-only override for web login project |
+| `NEXT_PUBLIC_AUTH_FIREBASE_PROJECT_ID` | Recommended (auth-split) | No | Same | Optional auth-only override for web login project |
+| `NEXT_PUBLIC_AUTH_FIREBASE_APP_ID` | Recommended (auth-split) | No | Same | Optional auth-only override for web login project |
 | `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID_UAT` | Recommended | No | `.env.local` / CI / build-arg | Analytics measurement ID for UAT (preferred key) |
 | `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID_STAGING` | Optional legacy | No | `.env.local` / CI / build-arg | Backward-compatible alias for UAT measurement ID |
 | `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID_PRODUCTION` | Recommended | No | `.env.local` / CI / Prod build-arg | Analytics measurement ID for production |
@@ -194,7 +198,7 @@ These are used by MCP modules (`mcp_modules/`) for MCP server functionality, not
 
 Secret Manager must hold **exactly** the keys the code uses. No extra secrets; no missing secrets. Cloud Build injects only these.
 
-### Backend (10 secrets) — all injected by `deploy/backend.cloudbuild.yaml`
+### Backend (11 secrets) — all injected by `deploy/backend.cloudbuild.yaml`
 
 | Secret name | Env var / usage in code |
 |-------------|-------------------------|
@@ -202,6 +206,7 @@ Secret Manager must hold **exactly** the keys the code uses. No extra secrets; n
 | `VAULT_ENCRYPTION_KEY` | `VAULT_ENCRYPTION_KEY` (hushh_mcp/config.py) |
 | `GOOGLE_API_KEY` | `GOOGLE_API_KEY` (config + Gemini/Vertex services) |
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | `FIREBASE_SERVICE_ACCOUNT_JSON` (api/utils/firebase_admin.py) |
+| `FIREBASE_AUTH_SERVICE_ACCOUNT_JSON` | `FIREBASE_AUTH_SERVICE_ACCOUNT_JSON` (auth-only token verification app; falls back to FIREBASE_SERVICE_ACCOUNT_JSON if unset) |
 | `FRONTEND_URL` | `FRONTEND_URL` (server.py CORS) |
 | `DB_USER` | `DB_USER` (db/connection.py, db/db_client.py) |
 | `DB_PASSWORD` | `DB_PASSWORD` (same) |
@@ -213,7 +218,7 @@ Secret Manager must hold **exactly** the keys the code uses. No extra secrets; n
 
 **Strict parity:** `DATABASE_URL` is not used anywhere. Migrations (`db/migrate.py`) use **DB_*** only, via `db.connection.get_database_url()`. Do **not** create or keep `DATABASE_URL` in Secret Manager; delete it if present.
 
-### Frontend (12 centrally-managed values, build-time only) — all used by `deploy/frontend.cloudbuild.yaml`
+### Frontend (16 centrally-managed values, build-time only) — all used by `deploy/frontend.cloudbuild.yaml`
 
 | Secret name | Build-arg / usage in code |
 |-------------|---------------------------|
@@ -225,6 +230,10 @@ Secret Manager must hold **exactly** the keys the code uses. No extra secrets; n
 | `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` |
 | `NEXT_PUBLIC_FIREBASE_APP_ID` | `NEXT_PUBLIC_FIREBASE_APP_ID` |
 | `NEXT_PUBLIC_FIREBASE_VAPID_KEY` | `NEXT_PUBLIC_FIREBASE_VAPID_KEY` (Web FCM push key) |
+| `NEXT_PUBLIC_AUTH_FIREBASE_API_KEY` | `NEXT_PUBLIC_AUTH_FIREBASE_API_KEY` (auth-only web override) |
+| `NEXT_PUBLIC_AUTH_FIREBASE_AUTH_DOMAIN` | `NEXT_PUBLIC_AUTH_FIREBASE_AUTH_DOMAIN` (auth-only web override) |
+| `NEXT_PUBLIC_AUTH_FIREBASE_PROJECT_ID` | `NEXT_PUBLIC_AUTH_FIREBASE_PROJECT_ID` (auth-only web override) |
+| `NEXT_PUBLIC_AUTH_FIREBASE_APP_ID` | `NEXT_PUBLIC_AUTH_FIREBASE_APP_ID` (auth-only web override) |
 | `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID_STAGING` | `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID_STAGING` |
 | `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID_PRODUCTION` | `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID_PRODUCTION` |
 | `NEXT_PUBLIC_GTM_ID_STAGING` | `NEXT_PUBLIC_GTM_ID_STAGING` |
@@ -233,7 +242,7 @@ Secret Manager must hold **exactly** the keys the code uses. No extra secrets; n
 ### gcloud CLI: list and create only these secrets
 
 ```bash
-# List existing secrets (ensure only the 22 above exist for this project)
+# List existing secrets (ensure only the 27 above exist for this project)
 gcloud secrets list --project=YOUR_PROJECT_ID
 
 # Create a missing backend secret (repeat for each of the 10 names)
@@ -245,8 +254,8 @@ gcloud secrets create BACKEND_URL --replication-policy=automatic --project=YOUR_
 echo -n "https://your-backend.run.app" | gcloud secrets versions add BACKEND_URL --data-file=- --project=YOUR_PROJECT_ID
 ```
 
-**Required backend 10:** `SECRET_KEY`, `VAULT_ENCRYPTION_KEY`, `GOOGLE_API_KEY`, `FIREBASE_SERVICE_ACCOUNT_JSON`, `FRONTEND_URL`, `DB_USER`, `DB_PASSWORD`, `APP_REVIEW_MODE`, `REVIEWER_UID`, `MCP_DEVELOPER_TOKEN`.
-**Required frontend 12:** `BACKEND_URL`, `NEXT_PUBLIC_FIREBASE_API_KEY`, `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`, `NEXT_PUBLIC_FIREBASE_PROJECT_ID`, `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`, `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`, `NEXT_PUBLIC_FIREBASE_APP_ID`, `NEXT_PUBLIC_FIREBASE_VAPID_KEY`, `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID_STAGING`, `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID_PRODUCTION`, `NEXT_PUBLIC_GTM_ID_STAGING`, `NEXT_PUBLIC_GTM_ID_PRODUCTION`.
+**Required backend 11:** `SECRET_KEY`, `VAULT_ENCRYPTION_KEY`, `GOOGLE_API_KEY`, `FIREBASE_SERVICE_ACCOUNT_JSON`, `FIREBASE_AUTH_SERVICE_ACCOUNT_JSON`, `FRONTEND_URL`, `DB_USER`, `DB_PASSWORD`, `APP_REVIEW_MODE`, `REVIEWER_UID`, `MCP_DEVELOPER_TOKEN`.
+**Required frontend 16:** `BACKEND_URL`, `NEXT_PUBLIC_FIREBASE_API_KEY`, `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`, `NEXT_PUBLIC_FIREBASE_PROJECT_ID`, `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`, `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`, `NEXT_PUBLIC_FIREBASE_APP_ID`, `NEXT_PUBLIC_FIREBASE_VAPID_KEY`, `NEXT_PUBLIC_AUTH_FIREBASE_API_KEY`, `NEXT_PUBLIC_AUTH_FIREBASE_AUTH_DOMAIN`, `NEXT_PUBLIC_AUTH_FIREBASE_PROJECT_ID`, `NEXT_PUBLIC_AUTH_FIREBASE_APP_ID`, `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID_STAGING`, `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID_PRODUCTION`, `NEXT_PUBLIC_GTM_ID_STAGING`, `NEXT_PUBLIC_GTM_ID_PRODUCTION`.
 
 These Firebase values are public client config, but storing them in Secret Manager keeps deployment manifests free of hardcoded production values.
 

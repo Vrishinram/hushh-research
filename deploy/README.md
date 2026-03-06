@@ -189,7 +189,7 @@ gcloud builds submit --config=deploy/frontend.cloudbuild.yaml
 
 All required secrets must exist in Google Cloud Secret Manager before deployment. Run the parity audit script, then create any missing secrets manually.
 
-**Backend (10 secrets):** `SECRET_KEY`, `VAULT_ENCRYPTION_KEY`, `GOOGLE_API_KEY`, `FIREBASE_SERVICE_ACCOUNT_JSON`, `FRONTEND_URL`, `DB_USER`, `DB_PASSWORD`, `APP_REVIEW_MODE`, `REVIEWER_UID`, `MCP_DEVELOPER_TOKEN`
+**Backend (11 secrets):** `SECRET_KEY`, `VAULT_ENCRYPTION_KEY`, `GOOGLE_API_KEY`, `FIREBASE_SERVICE_ACCOUNT_JSON`, `FIREBASE_AUTH_SERVICE_ACCOUNT_JSON`, `FRONTEND_URL`, `DB_USER`, `DB_PASSWORD`, `APP_REVIEW_MODE`, `REVIEWER_UID`, `MCP_DEVELOPER_TOKEN`
 
 **Note:** 
 - `DB_HOST`, `DB_PORT`, `DB_NAME`, `CONSENT_SSE_ENABLED`, and `SYNC_REMOTE_ENABLED` are set as Cloud Run env vars (not secrets) in `backend.cloudbuild.yaml`
@@ -200,7 +200,7 @@ All required secrets must exist in Google Cloud Secret Manager before deployment
   echo "your-db-password" | gcloud secrets create DB_PASSWORD --data-file=-
   ```
 
-**Frontend build-time (12 centrally-managed values):**
+**Frontend build-time (16 centrally-managed values):**
 - `BACKEND_URL`
 - `NEXT_PUBLIC_FIREBASE_API_KEY`
 - `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`
@@ -209,6 +209,10 @@ All required secrets must exist in Google Cloud Secret Manager before deployment
 - `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`
 - `NEXT_PUBLIC_FIREBASE_APP_ID`
 - `NEXT_PUBLIC_FIREBASE_VAPID_KEY` (web push / FCM)
+- `NEXT_PUBLIC_AUTH_FIREBASE_API_KEY`
+- `NEXT_PUBLIC_AUTH_FIREBASE_AUTH_DOMAIN`
+- `NEXT_PUBLIC_AUTH_FIREBASE_PROJECT_ID`
+- `NEXT_PUBLIC_AUTH_FIREBASE_APP_ID`
 - `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID_STAGING`
 - `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID_PRODUCTION`
 - `NEXT_PUBLIC_GTM_ID_STAGING`
