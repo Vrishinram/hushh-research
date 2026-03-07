@@ -3,7 +3,7 @@
 # Usage: make <target>
 # Run `make help` for available targets.
 
-.PHONY: help dev dev-frontend dev-backend lint test verify-docs ci-local env-use run-web run-backend
+.PHONY: help dev dev-frontend dev-backend lint test verify-docs ci-local env-bootstrap env-use run-web run-backend
 
 ENV ?= dev
 CONFIRM_PROD_LOCAL ?= 0
@@ -57,6 +57,9 @@ ci-local: ## Full local CI simulation (mirrors GitHub Actions)
 	./scripts/test-ci-local.sh
 
 # === Environment Profiles ====================================================
+
+env-bootstrap: ## Create/hydrate local env profiles from templates + GCP secrets
+	bash scripts/env/bootstrap_profiles.sh
 
 env-use: ## Activate local profile files (ENV=dev|uat|prod, set CONFIRM_PROD_LOCAL=1 for prod)
 	@if [ "$(ENV)" = "prod" ] && [ "$(CONFIRM_PROD_LOCAL)" != "1" ]; then \

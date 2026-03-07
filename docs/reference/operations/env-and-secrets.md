@@ -27,10 +27,28 @@ See also: [deploy/README.md](../../../deploy/README.md), [consent-protocol/.env.
 5. Profile activation command:
 
 ```bash
+bash scripts/env/bootstrap_profiles.sh
+```
+
+This command creates and hydrates local profile files from templates plus current cloud secrets/runtime metadata.
+It does not print secret values and sets profile files to `chmod 600`.
+
+6. Activate the chosen profile:
+
+```bash
 bash scripts/env/use_profile.sh dev
 bash scripts/env/use_profile.sh uat
 bash scripts/env/use_profile.sh prod --confirm-prod-local
 ```
+
+Frontend convenience launcher:
+
+```bash
+cd hushh-webapp
+npm run dev
+```
+
+`npm run dev` prompts for `dev|uat|prod` unless `APP_PROFILE` or `--env=<profile>` is provided.
 
 ### One-command parity audit
 
