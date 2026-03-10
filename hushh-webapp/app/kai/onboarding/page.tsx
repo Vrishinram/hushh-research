@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { morphyToast as toast } from "@/lib/morphy-ux/morphy";
 
 import { HushhLoader } from "@/components/app-ui/hushh-loader";
 import { KaiPersonaScreen } from "@/components/kai/onboarding/KaiPersonaScreen";
 import { KaiPreferencesWizard } from "@/components/kai/onboarding/KaiPreferencesWizard";
+import { KaiInviteHandshake } from "@/components/kai/onboarding/kai-invite-handshake";
 import {
   KaiProfileService,
   computeRiskScore,
@@ -65,6 +66,7 @@ function computePersona(answers: WizardAnswers, explicit?: RiskProfile | null): 
 
 export default function KaiOnboardingPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, loading: authLoading } = useAuth();
   const { vaultKey, vaultOwnerToken, isVaultUnlocked } = useVault();
 
@@ -76,6 +78,7 @@ export default function KaiOnboardingPage() {
   const [preVaultState, setPreVaultState] = useState<PreVaultOnboardingState | null>(null);
   const [retryNonce, setRetryNonce] = useState(0);
   const onboardingStartedRef = useRef(false);
+  const inviteToken = searchParams.get("invite");
 
   useEffect(() => {
     let cancelled = false;
@@ -85,6 +88,11 @@ export default function KaiOnboardingPage() {
 
       if (!user) {
         router.replace("/login?redirect=%2Fkai%2Fonboarding");
+        return;
+      }
+
+      if (inviteToken) {
+        setLoadError(null);
         return;
       }
 
@@ -159,7 +167,17 @@ export default function KaiOnboardingPage() {
     return () => {
       cancelled = true;
     };
-  }, [authLoading, user, user?.uid, isVaultUnlocked, vaultKey, vaultOwnerToken, router, retryNonce]);
+  }, [
+    authLoading,
+    inviteToken,
+    user,
+    user?.uid,
+    isVaultUnlocked,
+    vaultKey,
+    vaultOwnerToken,
+    router,
+    retryNonce,
+  ]);
 
   const wizardAnswers: WizardAnswers = useMemo(() => {
     if (source === "vault") return profileToAnswers(profile);
@@ -187,6 +205,10 @@ export default function KaiOnboardingPage() {
 
   if (!user) {
     return <HushhLoader label="Redirecting..." variant="fullscreen" />;
+  }
+
+  if (inviteToken) {
+    return <KaiInviteHandshake inviteToken={inviteToken} />;
   }
 
   if (loadError) {

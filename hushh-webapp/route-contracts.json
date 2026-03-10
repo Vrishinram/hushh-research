@@ -314,6 +314,8 @@
           "/onboarding/status",
           "/firms",
           "/clients",
+          "/invites",
+          "/marketplace/discoverability",
           "/requests",
           "/workspace/{investor_user_id}"
         ]
@@ -329,6 +331,21 @@
           "/rias",
           "/investors",
           "/ria/{ria_id}"
+        ]
+      }
+    },
+    {
+      "id": "inviteProxy",
+      "webRouteFiles": [
+        "hushh-webapp/app/api/invites/[token]/route.ts",
+        "hushh-webapp/app/api/invites/[token]/accept/route.ts"
+      ],
+      "backend": {
+        "file": "consent-protocol/api/routes/invites.py",
+        "routerPrefix": "/api/invites",
+        "paths": [
+          "/{invite_token}",
+          "/{invite_token}/accept"
         ]
       }
     },
@@ -381,17 +398,20 @@
       "pageFile": "hushh-webapp/app/kai/onboarding/page.tsx",
       "componentFiles": [
         "hushh-webapp/components/kai/onboarding/KaiPreferencesWizard.tsx",
-        "hushh-webapp/components/kai/onboarding/KaiPersonaScreen.tsx"
+        "hushh-webapp/components/kai/onboarding/KaiPersonaScreen.tsx",
+        "hushh-webapp/components/kai/onboarding/kai-invite-handshake.tsx"
       ],
       "serviceFiles": [
         "hushh-webapp/lib/services/kai-profile-service.ts",
         "hushh-webapp/lib/services/pre-vault-onboarding-service.ts",
-        "hushh-webapp/lib/services/vault-service.ts"
+        "hushh-webapp/lib/services/vault-service.ts",
+        "hushh-webapp/lib/services/ria-service.ts"
       ],
       "apiContractIds": [
         "vaultWebProxy",
         "worldModelProxy",
-        "vaultOwnerToken"
+        "vaultOwnerToken",
+        "inviteProxy"
       ],
       "nativeContractIds": [
         "vaultWebProxy",
@@ -518,13 +538,15 @@
       "serviceFiles": [
         "hushh-webapp/lib/services/world-model-service.ts",
         "hushh-webapp/lib/services/account-service.ts",
-        "hushh-webapp/lib/services/vault-service.ts"
+        "hushh-webapp/lib/services/vault-service.ts",
+        "hushh-webapp/lib/services/ria-service.ts"
       ],
       "apiContractIds": [
         "worldModelProxy",
         "vaultWebProxy",
         "vaultOwnerToken",
-        "accountDelete"
+        "accountDelete",
+        "iamProxy"
       ],
       "nativeContractIds": [
         "worldModelProxy",
@@ -546,8 +568,24 @@
       ]
     },
     {
+      "id": "marketplaceRiaProfilePage",
+      "pageFile": "hushh-webapp/app/marketplace/ria/[riaId]/page.tsx",
+      "serviceFiles": [
+        "hushh-webapp/lib/services/ria-service.ts"
+      ],
+      "apiContractIds": [
+        "marketplaceProxy"
+      ]
+    },
+    {
       "id": "riaHomePage",
-      "pageFile": "hushh-webapp/app/ria/page.tsx"
+      "pageFile": "hushh-webapp/app/ria/page.tsx",
+      "serviceFiles": [
+        "hushh-webapp/lib/services/ria-service.ts"
+      ],
+      "apiContractIds": [
+        "riaProxy"
+      ]
     },
     {
       "id": "riaOnboardingPage",
@@ -587,6 +625,17 @@
       ],
       "apiContractIds": [
         "riaProxy"
+      ]
+    },
+    {
+      "id": "riaSettingsPage",
+      "pageFile": "hushh-webapp/app/ria/settings/page.tsx",
+      "serviceFiles": [
+        "hushh-webapp/lib/services/ria-service.ts"
+      ],
+      "apiContractIds": [
+        "riaProxy",
+        "marketplaceProxy"
       ]
     },
     {

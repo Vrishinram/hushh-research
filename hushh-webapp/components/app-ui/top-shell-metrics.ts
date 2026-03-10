@@ -5,6 +5,7 @@ export type TopShellRouteProfileId =
   | "hidden"
   | "kai-fullscreen-flow"
   | "kai-tabs"
+  | "ria-tabs"
   | "default-no-tabs";
 
 export interface TopShellMetrics {
@@ -41,6 +42,12 @@ const KAI_TABS_METRICS: TopShellMetrics = {
   contentOffsetMode: "normal",
 };
 
+const RIA_TABS_METRICS: TopShellMetrics = {
+  shellVisible: true,
+  hasTabs: true,
+  contentOffsetMode: "normal",
+};
+
 const DEFAULT_VISIBLE_METRICS: TopShellMetrics = {
   shellVisible: true,
   hasTabs: false,
@@ -65,6 +72,15 @@ const TOP_SHELL_ROUTE_PROFILES: readonly TopShellRouteProfile[] = [
     id: "kai-tabs",
     matches: (pathname) => routeMatches(pathname, ROUTES.KAI_HOME),
     metrics: KAI_TABS_METRICS,
+  },
+  {
+    id: "ria-tabs",
+    matches: (pathname) =>
+      pathname === ROUTES.RIA_HOME ||
+      routeMatches(pathname, ROUTES.RIA_CLIENTS) ||
+      routeMatches(pathname, ROUTES.RIA_REQUESTS) ||
+      routeMatches(pathname, ROUTES.RIA_SETTINGS),
+    metrics: RIA_TABS_METRICS,
   },
 ] as const;
 

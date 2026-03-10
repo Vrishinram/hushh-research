@@ -7,9 +7,12 @@ export const ROUTE_ID_VALUES = [
   "profile",
   "consents",
   "marketplace",
+  "marketplace_ria_profile",
+  "ria_home",
   "ria_onboarding",
   "ria_clients",
   "ria_requests",
+  "ria_settings",
   "ria_workspace",
   "kai_home",
   "kai_onboarding",
@@ -30,9 +33,12 @@ export function resolveRouteId(pathname: string): RouteId {
   if (pathname === ROUTES.PROFILE) return "profile";
   if (pathname === ROUTES.CONSENTS) return "consents";
   if (pathname === ROUTES.MARKETPLACE) return "marketplace";
+  if (pathname.startsWith(`${ROUTES.MARKETPLACE_RIA_PROFILE}/`)) return "marketplace_ria_profile";
+  if (pathname === ROUTES.RIA_HOME) return "ria_home";
   if (pathname === ROUTES.RIA_ONBOARDING) return "ria_onboarding";
   if (pathname === ROUTES.RIA_CLIENTS) return "ria_clients";
   if (pathname === ROUTES.RIA_REQUESTS) return "ria_requests";
+  if (pathname === ROUTES.RIA_SETTINGS) return "ria_settings";
   if (pathname.startsWith(`${ROUTES.RIA_HOME}/workspace/`)) return "ria_workspace";
   if (pathname === ROUTES.KAI_HOME) return "kai_home";
   if (pathname === ROUTES.KAI_ONBOARDING) return "kai_onboarding";
@@ -160,6 +166,14 @@ const API_TEMPLATE_RULES: Array<{ regex: RegExp; template: string }> = [
     template: "/api/ria/clients",
   },
   {
+    regex: /^\/api\/ria\/invites(?:\?.*)?$/i,
+    template: "/api/ria/invites",
+  },
+  {
+    regex: /^\/api\/ria\/marketplace\/discoverability(?:\?.*)?$/i,
+    template: "/api/ria/marketplace/discoverability",
+  },
+  {
     regex: /^\/api\/ria\/requests(?:\?.*)?$/i,
     template: "/api/ria/requests",
   },
@@ -178,6 +192,14 @@ const API_TEMPLATE_RULES: Array<{ regex: RegExp; template: string }> = [
   {
     regex: /^\/api\/marketplace\/ria\/[^/?]+(?:\?.*)?$/i,
     template: "/api/marketplace/ria/{ria_id}",
+  },
+  {
+    regex: /^\/api\/invites\/[^/?]+(?:\?.*)?$/i,
+    template: "/api/invites/{invite_token}",
+  },
+  {
+    regex: /^\/api\/invites\/[^/?]+\/accept(?:\?.*)?$/i,
+    template: "/api/invites/{invite_token}/accept",
   },
 ];
 

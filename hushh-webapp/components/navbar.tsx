@@ -5,7 +5,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Shield, TrendingUp, User } from "lucide-react";
+import { BriefcaseBusiness, Shield, TrendingUp, User } from "lucide-react";
 
 import { useAuth } from "@/hooks/use-auth";
 import { usePendingConsentCount } from "@/components/consent/notification-provider";
@@ -16,19 +16,25 @@ import { SegmentedPill, type SegmentedPillOption } from "@/lib/morphy-ux/ui";
 import { useKaiBottomChromeVisibility } from "@/lib/navigation/kai-bottom-chrome-visibility";
 import { cn } from "@/lib/utils";
 import { morphyToast as toast } from "@/lib/morphy-ux/morphy";
+import { RiaService, type Persona } from "@/lib/services/ria-service";
 
-type NavKey = "kai" | "consents" | "profile";
+type NavKey = "home" | "consents" | "profile";
 
 export const Navbar = () => {
   const pathname = usePathname();
   const router = useRouter();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const pendingConsents = usePendingConsentCount();
   const pillRef = React.useRef<HTMLDivElement | null>(null);
   const [kaiHref, setKaiHref] = useState("/kai");
+  const [riaHref, setRiaHref] = useState("/ria");
+  const [primaryPersona, setPrimaryPersona] = useState<Persona>("investor");
   const chromeState = useMemo(() => getKaiChromeState(pathname), [pathname]);
   const useOnboardingChrome = chromeState.useOnboardingChrome;
-  const allowScrollHide = isAuthenticated && !useOnboardingChrome;
+  const preserveBottomChrome = Boolean(
+    pathname?.startsWith("/ria") || pathname?.startsWith("/marketplace")
+  );
+  const allowScrollHide = isAuthenticated && !useOnboardingChrome && !preserveBottomChrome;
   const { hidden: hideBottomChrome, progress: hideBottomChromeProgress } = useKaiBottomChromeVisibility(allowScrollHide);
 
   const lastKaiPath = useKaiSession((s) => s.lastKaiPath);
@@ -70,15 +76,48 @@ export const Navbar = () => {
     if (pathname.startsWith("/kai")) {
       useKaiSession.getState().setLastKaiPath(pathname);
       setKaiHref(pathname);
+      setPrimaryPersona("investor");
+    }
+    if (pathname.startsWith("/ria")) {
+      setRiaHref(pathname);
+      setPrimaryPersona("ria");
     }
   }, [pathname]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadPersona() {
+      if (!isAuthenticated || !user) return;
+      try {
+        const idToken = await user.getIdToken();
+        const state = await RiaService.getPersonaState(idToken);
+        if (!cancelled) {
+          setPrimaryPersona(state.last_active_persona);
+        }
+      } catch {
+        if (!cancelled) {
+          setPrimaryPersona(pathname?.startsWith("/ria") ? "ria" : "investor");
+        }
+      }
+    }
+
+    void loadPersona();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, pathname, user]);
+
+  const primaryNavLabel = primaryPersona === "ria" ? "RIA" : "Kai";
+  const primaryNavIcon = primaryPersona === "ria" ? BriefcaseBusiness : TrendingUp;
+  const primaryHref = primaryPersona === "ria" ? riaHref : kaiHref;
 
   const navOptions = useMemo<SegmentedPillOption[]>(
     () => [
       {
-        value: "kai",
-        label: "Kai",
-        icon: TrendingUp,
+        value: "home",
+        label: primaryNavLabel,
+        icon: primaryNavIcon,
         dataTourId: "nav-kai",
       },
       {
@@ -95,7 +134,7 @@ export const Navbar = () => {
         dataTourId: "nav-profile",
       },
     ],
-    [pendingConsents]
+    [pendingConsents, primaryNavIcon, primaryNavLabel]
   );
 
   if (!isAuthenticated || useOnboardingChrome) {
@@ -119,7 +158,7 @@ export const Navbar = () => {
     ? "consents"
     : normalizedPathname.startsWith("/profile")
       ? "profile"
-      : "kai";
+      : "home";
 
   const navigateTo = (value: string) => {
     if (busyOperations["portfolio_save"]) {
@@ -138,8 +177,8 @@ export const Navbar = () => {
     }
 
     switch (value as NavKey) {
-      case "kai":
-        router.push(kaiHref);
+      case "home":
+        router.push(primaryHref);
         return;
       case "consents":
         router.push("/consents");

@@ -87,6 +87,7 @@ import type { LucideIcon } from "lucide-react";
 import { Icon } from "@/lib/morphy-ux/ui";
 import { ROUTES } from "@/lib/navigation/routes";
 import { toInvestorMessage } from "@/lib/copy/investor-language";
+import { RiaService } from "@/lib/services/ria-service";
 
 // Icon mapping for domains
 const DOMAIN_ICONS: Record<string, LucideIcon> = {
@@ -132,6 +133,9 @@ export default function ProfilePage() {
   const [newPassphrase, setNewPassphrase] = useState("");
   const [confirmPassphrase, setConfirmPassphrase] = useState("");
   const [showKaiPreferencesSheet, setShowKaiPreferencesSheet] = useState(false);
+  const [marketplaceOptIn, setMarketplaceOptIn] = useState(false);
+  const [loadingMarketplaceOptIn, setLoadingMarketplaceOptIn] = useState(true);
+  const [savingMarketplaceOptIn, setSavingMarketplaceOptIn] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -181,6 +185,39 @@ export default function ProfilePage() {
 
     void refreshVaultMethodState(user.uid);
   }, [authLoading, hasVault, user?.uid]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadMarketplaceOptIn() {
+      if (!user) {
+        setLoadingMarketplaceOptIn(false);
+        return;
+      }
+      try {
+        setLoadingMarketplaceOptIn(true);
+        const idToken = await user.getIdToken();
+        const personaState = await RiaService.getPersonaState(idToken);
+        if (!cancelled) {
+          setMarketplaceOptIn(Boolean(personaState.investor_marketplace_opt_in));
+        }
+      } catch (error) {
+        console.warn("[ProfilePage] Failed to load marketplace opt-in:", error);
+        if (!cancelled) {
+          setMarketplaceOptIn(false);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingMarketplaceOptIn(false);
+        }
+      }
+    }
+
+    void loadMarketplaceOptIn();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   // Load world model data - auth is handled by VaultLockGuard in layout
   useEffect(() => {
@@ -335,6 +372,26 @@ export default function ProfilePage() {
     } else {
       setVaultUnlockReason("delete_account");
       setShowVaultUnlock(true);
+    }
+  };
+
+  const handleMarketplaceOptInToggle = async () => {
+    if (!user) return;
+    try {
+      setSavingMarketplaceOptIn(true);
+      const idToken = await user.getIdToken();
+      const result = await RiaService.setInvestorMarketplaceOptIn(idToken, !marketplaceOptIn);
+      setMarketplaceOptIn(Boolean(result.investor_marketplace_opt_in));
+      toast.success(
+        result.investor_marketplace_opt_in
+          ? "Investor marketplace profile is now discoverable."
+          : "Investor marketplace profile is now hidden."
+      );
+    } catch (error) {
+      console.error("[ProfilePage] Failed to update marketplace opt-in:", error);
+      toast.error("Couldn't update marketplace visibility.");
+    } finally {
+      setSavingMarketplaceOptIn(false);
     }
   };
 
@@ -531,6 +588,48 @@ export default function ProfilePage() {
           <PersonaSwitcher />
         </div>
       </div>
+
+      <Card variant="none" effect="glass">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
+              <Icon icon={RefreshCw} size="md" className="text-primary" />
+            </div>
+            <span>Marketplace Visibility</span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4 pt-4">
+          <p className="text-sm text-muted-foreground">
+            Let RIAs discover your public investor profile in Marketplace. This only shares public
+            metadata. Private financial data remains consent-gated.
+          </p>
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-muted/30 p-4">
+            <div>
+              <p className="text-sm font-medium">Investor marketplace profile</p>
+              <p className="text-xs text-muted-foreground">
+                {loadingMarketplaceOptIn
+                  ? "Checking visibility..."
+                  : marketplaceOptIn
+                    ? "Discoverable to RIAs"
+                    : "Hidden from marketplace search"}
+              </p>
+            </div>
+            <Button
+              variant={marketplaceOptIn ? "blue-gradient" : "none"}
+              effect="fade"
+              size="sm"
+              disabled={loadingMarketplaceOptIn || savingMarketplaceOptIn}
+              onClick={() => void handleMarketplaceOptInToggle()}
+            >
+              {savingMarketplaceOptIn
+                ? "Saving..."
+                : marketplaceOptIn
+                  ? "Hide"
+                  : "Turn On"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* World Model KPI Cards */}
       <Card variant="none" effect="glass">

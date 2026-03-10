@@ -17,6 +17,9 @@ export interface MarketplaceRia {
   display_name: string;
   headline?: string | null;
   strategy_summary?: string | null;
+  bio?: string | null;
+  strategy?: string | null;
+  disclosures_url?: string | null;
   verification_status: string;
   firms?: Array<{
     firm_id: string;
@@ -50,14 +53,35 @@ export interface RiaOnboardingStatus {
   } | null;
 }
 
+export interface RiaFirmMembership {
+  id: string;
+  legal_name: string;
+  finra_firm_crd?: string | null;
+  sec_iard?: string | null;
+  website_url?: string | null;
+  role_title?: string | null;
+  membership_status?: string | null;
+  is_primary?: boolean;
+}
+
 export interface RiaClientAccess {
   id: string;
-  investor_user_id: string;
+  investor_user_id?: string | null;
   status: string;
   granted_scope?: string | null;
   last_request_id?: string | null;
   investor_display_name?: string | null;
   investor_headline?: string | null;
+  acquisition_source?: string | null;
+  invite_status?: string | null;
+  invite_id?: string | null;
+  invite_token?: string | null;
+  invite_expires_at?: string | null;
+  delivery_channel?: string | null;
+  consent_expires_at?: string | null;
+  next_action?: string | null;
+  scope_template_id?: string | null;
+  is_invite_only?: boolean;
 }
 
 export interface RiaRequestRecord {
@@ -68,6 +92,45 @@ export interface RiaRequestRecord {
   issued_at: number;
   expires_at?: number | null;
   metadata?: Record<string, unknown>;
+  subject_display_name?: string | null;
+  subject_headline?: string | null;
+}
+
+export interface RiaInviteRecord {
+  invite_id: string;
+  invite_token: string;
+  invite_path?: string;
+  status: string;
+  expires_at?: string | null;
+  scope_template_id?: string;
+  duration_mode?: string;
+  duration_hours?: number | null;
+  source?: string;
+  delivery_channel?: string;
+  target_display_name?: string | null;
+  target_email?: string | null;
+  target_phone?: string | null;
+  target_investor_user_id?: string | null;
+  accepted_by_user_id?: string | null;
+  accepted_request_id?: string | null;
+}
+
+export interface RiaInviteResolution {
+  invite_id: string;
+  invite_token: string;
+  status: string;
+  firm_id?: string | null;
+  scope_template_id: string;
+  duration_mode: string;
+  duration_hours?: number | null;
+  reason?: string | null;
+  expires_at?: string | null;
+  target_display_name?: string | null;
+  target_email?: string | null;
+  target_phone?: string | null;
+  accepted_by_user_id?: string | null;
+  accepted_request_id?: string | null;
+  ria: MarketplaceRia;
 }
 
 interface FetchOptions {
@@ -239,6 +302,31 @@ export class RiaService {
     return toJsonOrThrow<RiaOnboardingStatus>(response);
   }
 
+  static async listFirms(idToken: string): Promise<RiaFirmMembership[]> {
+    const response = await authFetch("/api/ria/firms", {
+      method: "GET",
+      idToken,
+    });
+    const payload = await toJsonOrThrow<{ items: RiaFirmMembership[] }>(response);
+    return payload.items;
+  }
+
+  static async setRiaMarketplaceDiscoverability(
+    idToken: string,
+    payload: {
+      enabled: boolean;
+      headline?: string;
+      strategy_summary?: string;
+    }
+  ): Promise<{ user_id: string; is_discoverable: boolean; verification_status: string }> {
+    const response = await authFetch("/api/ria/marketplace/discoverability", {
+      method: "POST",
+      idToken,
+      body: payload,
+    });
+    return toJsonOrThrow(response);
+  }
+
   static async listClients(idToken: string): Promise<RiaClientAccess[]> {
     const response = await authFetch("/api/ria/clients", {
       method: "GET",
@@ -255,6 +343,41 @@ export class RiaService {
     });
     const payload = await toJsonOrThrow<{ items: RiaRequestRecord[] }>(response);
     return payload.items;
+  }
+
+  static async listInvites(idToken: string): Promise<RiaInviteRecord[]> {
+    const response = await authFetch("/api/ria/invites", {
+      method: "GET",
+      idToken,
+    });
+    const payload = await toJsonOrThrow<{ items: RiaInviteRecord[] }>(response);
+    return payload.items;
+  }
+
+  static async createInvites(
+    idToken: string,
+    payload: {
+      scope_template_id: string;
+      duration_mode?: "preset" | "custom";
+      duration_hours?: number;
+      firm_id?: string;
+      reason?: string;
+      targets: Array<{
+        display_name?: string;
+        email?: string;
+        phone?: string;
+        investor_user_id?: string;
+        source?: string;
+        delivery_channel?: string;
+      }>;
+    }
+  ): Promise<{ items: RiaInviteRecord[] }> {
+    const response = await authFetch("/api/ria/invites", {
+      method: "POST",
+      idToken,
+      body: payload,
+    });
+    return toJsonOrThrow(response);
   }
 
   static async createRequest(
@@ -288,12 +411,17 @@ export class RiaService {
     idToken: string,
     investorUserId: string
   ): Promise<{
+    investor_user_id: string;
+    investor_display_name?: string | null;
+    investor_headline?: string | null;
     workspace_ready: boolean;
     available_domains: string[];
     domain_summaries: Record<string, unknown>;
     total_attributes: number;
     relationship_status: string;
     scope: string;
+    consent_expires_at?: number | string | null;
+    updated_at?: string;
   }> {
     const response = await authFetch(
       `/api/ria/workspace/${encodeURIComponent(investorUserId)}`,
@@ -302,6 +430,31 @@ export class RiaService {
         idToken,
       }
     );
+    return toJsonOrThrow(response);
+  }
+
+  static async resolveInvite(inviteToken: string): Promise<RiaInviteResolution> {
+    const response = await ApiService.apiFetch(`/api/invites/${encodeURIComponent(inviteToken)}`, {
+      method: "GET",
+    });
+    return toJsonOrThrow(response);
+  }
+
+  static async acceptInvite(
+    idToken: string,
+    inviteToken: string
+  ): Promise<{
+    invite_token: string;
+    request_id?: string;
+    status: string;
+    scope?: string;
+    expires_at?: number;
+    ria: MarketplaceRia;
+  }> {
+    const response = await authFetch(`/api/invites/${encodeURIComponent(inviteToken)}/accept`, {
+      method: "POST",
+      idToken,
+    });
     return toJsonOrThrow(response);
   }
 }

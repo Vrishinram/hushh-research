@@ -55,6 +55,7 @@ import { ROUTES } from "@/lib/navigation/routes";
 import { DebateTaskCenter } from "@/components/app-ui/debate-task-center";
 import { UserLocalStateService } from "@/lib/services/user-local-state-service";
 import { DashboardRouteTabs } from "@/components/kai/layout/dashboard-route-tabs";
+import { RiaRouteTabs } from "@/components/ria/layout/ria-route-tabs";
 import { resolveTopShellMetrics } from "@/components/app-ui/top-shell-metrics";
 import { useKaiBottomChromeVisibility } from "@/lib/navigation/kai-bottom-chrome-visibility";
 
@@ -101,6 +102,9 @@ export function TopAppBar({ className }: TopAppBarProps) {
   const hideChrome = !topShellMetrics.shellVisible;
   const centerTitle = useMemo(() => getTopBarTitle(pathname), [pathname]);
   const showKaiTabs = topShellMetrics.hasTabs;
+  const showRiaTabs = Boolean(
+    pathname && pathname.startsWith(ROUTES.RIA_HOME) && topShellMetrics.hasTabs
+  );
 
   // Subscribe to scroll-direction store so top glass height follows tabs visibility.
   const { progress: tabsScrollHideProgress } = useKaiBottomChromeVisibility(showKaiTabs);
@@ -180,7 +184,7 @@ export function TopAppBar({ className }: TopAppBarProps) {
               className="flex shrink-0 items-end pointer-events-auto"
               style={{ height: "var(--top-tabs-h)" }}
             >
-              <DashboardRouteTabs embedded />
+              {showRiaTabs ? <RiaRouteTabs embedded /> : <DashboardRouteTabs embedded />}
             </div>
           ) : null}
         </div>
