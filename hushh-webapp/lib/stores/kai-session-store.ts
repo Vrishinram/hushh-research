@@ -40,6 +40,8 @@ interface KaiSessionState {
   losersInput: LosersInput | null;
   /** Last visited Kai sub-path for navbar navigation */
   lastKaiPath: string;
+  /** Last visited RIA sub-path for shell navigation */
+  lastRiaPath: string;
   /** Active long-running Kai operations keyed by operation id */
   busyOperations: Record<string, boolean>;
   /** Derived flag for disabling global analyze search UI */
@@ -51,6 +53,8 @@ interface KaiSessionState {
   setLosersInput: (input: LosersInput | null) => void;
   /** Update last visited Kai path (replaces localStorage "lastKaiPath") */
   setLastKaiPath: (path: string) => void;
+  /** Update last visited RIA path */
+  setLastRiaPath: (path: string) => void;
   /** Mark/unmark a named long-running operation */
   setBusyOperation: (operation: string, busy: boolean) => void;
   /** Clear all session state */
@@ -62,6 +66,7 @@ export const useKaiSession = create<KaiSessionState>((set) => ({
   analysisParamsUpdatedAt: null,
   losersInput: null,
   lastKaiPath: "/kai",
+  lastRiaPath: "/ria",
   busyOperations: {},
   isSearchDisabled: false,
 
@@ -72,6 +77,7 @@ export const useKaiSession = create<KaiSessionState>((set) => ({
     }),
   setLosersInput: (input) => set({ losersInput: input }),
   setLastKaiPath: (path) => set({ lastKaiPath: path }),
+  setLastRiaPath: (path) => set({ lastRiaPath: path }),
   setBusyOperation: (operation, busy) =>
     set((state) => {
       const nextBusyOperations = { ...state.busyOperations };
@@ -90,6 +96,8 @@ export const useKaiSession = create<KaiSessionState>((set) => ({
       analysisParams: null,
       analysisParamsUpdatedAt: null,
       losersInput: null,
+      lastKaiPath: "/kai",
+      lastRiaPath: "/ria",
       busyOperations: {},
       isSearchDisabled: false,
     }),

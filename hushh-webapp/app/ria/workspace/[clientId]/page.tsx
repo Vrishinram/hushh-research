@@ -7,8 +7,10 @@ import { useParams } from "next/navigation";
 import {
   RiaCompatibilityState,
   RiaPageShell,
+  RiaStatusPanel,
   RiaSurface,
 } from "@/components/ria/ria-page-shell";
+import { SectionHeader } from "@/components/app-ui/page-sections";
 import { useAuth } from "@/hooks/use-auth";
 import { ROUTES } from "@/lib/navigation/routes";
 import { isIAMSchemaNotReadyError, RiaService } from "@/lib/services/ria-service";
@@ -88,6 +90,44 @@ export default function RiaWorkspacePage() {
         data?.investor_headline ||
         "Consent-gated workspace access. If the relationship is no longer active, the surface stays locked and the next valid action is to re-request access."
       }
+      statusPanel={
+        iamUnavailable || !data ? null : (
+          <RiaStatusPanel
+            title="Access state before data state"
+            description="The workspace should first answer whether access is still valid, when it expires, and whether the data plane is populated."
+            items={[
+              {
+                label: "Relationship",
+                value: data.relationship_status,
+                helper: "Operational access state",
+                tone: data.relationship_status === "approved" ? "success" : "warning",
+              },
+              {
+                label: "Workspace",
+                value: data.workspace_ready ? "Ready" : "Pending",
+                helper: data.workspace_ready
+                  ? "World-model summaries are available"
+                  : "Consent exists but data is not yet indexed",
+                tone: data.workspace_ready ? "success" : "warning",
+              },
+              {
+                label: "Consent expires",
+                value: data.consent_expires_at
+                  ? new Date(data.consent_expires_at).toLocaleDateString()
+                  : "Not returned",
+                helper: "Freshness gate for continued access",
+                tone: data.consent_expires_at ? "neutral" : "warning",
+              },
+              {
+                label: "Scope",
+                value: data.scope,
+                helper: "Approved access boundary",
+                tone: "neutral",
+              },
+            ]}
+          />
+        )
+      }
       actions={
         <Link
           href={ROUTES.RIA_REQUESTS}
@@ -128,15 +168,7 @@ export default function RiaWorkspacePage() {
 
       {data && !error ? (
         <>
-          <div className="grid gap-4 md:grid-cols-4">
-            <RiaSurface className="p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">State</p>
-              <p className="mt-2 text-xl font-semibold text-foreground">{data.relationship_status}</p>
-            </RiaSurface>
-            <RiaSurface className="p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Scope</p>
-              <p className="mt-2 text-sm font-medium text-foreground">{data.scope}</p>
-            </RiaSurface>
+          <div className="grid gap-4 md:grid-cols-3">
             <RiaSurface className="p-4">
               <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Domains</p>
               <p className="mt-2 text-xl font-semibold text-foreground">{data.available_domains.length}</p>
@@ -145,66 +177,82 @@ export default function RiaWorkspacePage() {
               <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Attributes</p>
               <p className="mt-2 text-xl font-semibold text-foreground">{data.total_attributes}</p>
             </RiaSurface>
+            <RiaSurface className="p-4">
+              <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Updated</p>
+              <p className="mt-2 text-sm font-medium text-foreground">
+                {data.updated_at ? new Date(data.updated_at).toLocaleString() : "Pending"}
+              </p>
+            </RiaSurface>
           </div>
 
           {!data.workspace_ready ? (
-            <RiaSurface className="border-amber-500/30 bg-amber-500/5">
-              <p className="text-sm text-amber-100">
+            <RiaSurface className="border-primary/30 bg-primary/5">
+              <p className="text-sm text-primary">
                 Consent is active but the workspace is not populated yet. Client data will appear
                 after the world-model index is available for this investor.
               </p>
             </RiaSurface>
           ) : (
             <div className="grid gap-5 lg:grid-cols-[1.2fr_1.8fr]">
-              <RiaSurface>
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
-                  Access freshness
-                </p>
-                <div className="mt-4 space-y-3">
-                  <div className="rounded-2xl border border-border/50 bg-background/60 p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                      Consent expires
-                    </p>
-                    <p className="mt-2 text-sm text-foreground">
-                      {data.consent_expires_at
-                        ? new Date(data.consent_expires_at).toLocaleString()
-                        : "No active expiry returned"}
-                    </p>
-                  </div>
-                  <div className="rounded-2xl border border-border/50 bg-background/60 p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                      Workspace updated
-                    </p>
-                    <p className="mt-2 text-sm text-foreground">
-                      {data.updated_at ? new Date(data.updated_at).toLocaleString() : "Pending"}
-                    </p>
-                  </div>
-                </div>
-              </RiaSurface>
-
-              <RiaSurface>
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
-                  Domain summaries
-                </p>
-                <div className="mt-4 grid gap-3 md:grid-cols-2">
-                  {domainEntries.map((entry) => (
-                    <div
-                      key={entry.key}
-                      className="rounded-2xl border border-border/50 bg-background/60 p-4"
-                    >
+              <section className="space-y-3">
+                <SectionHeader
+                  eyebrow="Access freshness"
+                  title="Consent and workspace timing"
+                  description="Access should feel operationally clear before the advisor scans data detail."
+                />
+                <RiaSurface>
+                  <div className="space-y-3">
+                    <div className="rounded-2xl border border-border/50 bg-background/60 p-4">
                       <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                        {entry.key}
+                        Consent expires
                       </p>
-                      <p className="mt-2 line-clamp-5 text-sm text-foreground">
-                        {entry.summary}
+                      <p className="mt-2 text-sm text-foreground">
+                        {data.consent_expires_at
+                          ? new Date(data.consent_expires_at).toLocaleString()
+                          : "No active expiry returned"}
                       </p>
                     </div>
-                  ))}
-                  {domainEntries.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No domain summaries available yet.</p>
-                  ) : null}
-                </div>
-              </RiaSurface>
+                    <div className="rounded-2xl border border-border/50 bg-background/60 p-4">
+                      <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                        Workspace updated
+                      </p>
+                      <p className="mt-2 text-sm text-foreground">
+                        {data.updated_at ? new Date(data.updated_at).toLocaleString() : "Pending"}
+                      </p>
+                    </div>
+                  </div>
+                </RiaSurface>
+              </section>
+
+              <section className="space-y-3">
+                <SectionHeader
+                  eyebrow="Domain summaries"
+                  title="Available client metadata"
+                  description="This surface is a summarized, consent-gated projection of the investor world model."
+                />
+                <RiaSurface>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {domainEntries.map((entry) => (
+                      <div
+                        key={entry.key}
+                        className="rounded-2xl border border-border/50 bg-background/60 p-4"
+                      >
+                        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                          {entry.key}
+                        </p>
+                        <p className="mt-2 line-clamp-5 text-sm text-foreground">
+                          {entry.summary}
+                        </p>
+                      </div>
+                    ))}
+                    {domainEntries.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        No domain summaries available yet.
+                      </p>
+                    ) : null}
+                  </div>
+                </RiaSurface>
+              </section>
             </div>
           )}
         </>

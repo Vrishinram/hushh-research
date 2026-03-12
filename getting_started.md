@@ -216,8 +216,7 @@ python -m uvicorn server:app --reload --port 8000
 ### Terminal 2: Frontend (Next.js)
 
 ```bash
-cd hushh-webapp
-npm run dev
+make local-web
 
 # Expected output:
 # ▲ Next.js 16.x.x
@@ -381,7 +380,7 @@ pip install -r requirements.txt
 ```bash
 # Clear Next.js cache
 rm -rf .next
-npm run dev
+make local-web
 ```
 
 ### iOS build fails

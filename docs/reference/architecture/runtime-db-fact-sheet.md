@@ -2,6 +2,8 @@
 
 This appendix records a read-only schema snapshot of the runtime Postgres database used in local development. It is documentation-only and intentionally excludes credentials, row payloads, and any user-secret values.
 
+Note: the original snapshot below predates the Investor + RIA IAM rollout. Current runtime also includes the IAM/public-workflow tables listed under "Post-IAM Extension Tables".
+
 - Captured at (UTC): `2026-03-02T03:52:45Z`
 - Source: read-only introspection using local `consent-protocol/.env` connectivity
 - Schema: `public`
@@ -21,6 +23,21 @@ This appendix records a read-only schema snapshot of the runtime Postgres databa
 11. `vault_keys`
 12. `world_model_data`
 13. `world_model_index_v2`
+
+## Post-IAM Extension Tables
+
+These tables are part of the current runtime architecture after the IAM rollout and should be treated as expected runtime schema, even though they were added after the original 13-table snapshot.
+
+1. `actor_profiles`
+2. `ria_profiles`
+3. `ria_firms`
+4. `ria_firm_memberships`
+5. `ria_verification_events`
+6. `advisor_investor_relationships`
+7. `ria_client_invites`
+8. `consent_scope_templates`
+9. `marketplace_public_profiles`
+10. `runtime_persona_state` (transitional compatibility only)
 
 ## Key Column Snapshots
 

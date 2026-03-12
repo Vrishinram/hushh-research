@@ -2,14 +2,18 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import {
   MetricTile,
   RiaCompatibilityState,
   RiaPageShell,
+  RiaStatusPanel,
   RiaSurface,
 } from "@/components/ria/ria-page-shell";
+import { SectionHeader } from "@/components/app-ui/page-sections";
 import { useAuth } from "@/hooks/use-auth";
+import { usePersonaState } from "@/lib/persona/persona-context";
 import { ROUTES } from "@/lib/navigation/routes";
 import {
   isIAMSchemaNotReadyError,
@@ -39,8 +43,42 @@ function describeRequestAction(action: string) {
   }
 }
 
+function formatVerificationStatus(status?: string | null, loading?: boolean) {
+  if (loading) return "Loading";
+  switch (status) {
+    case "finra_verified":
+      return "FINRA verified";
+    case "active":
+      return "Active";
+    case "submitted":
+      return "Submitted";
+    case "rejected":
+      return "Rejected";
+    case "draft":
+    default:
+      return "Draft";
+  }
+}
+
+function verificationTone(status?: string | null): "neutral" | "warning" | "success" | "critical" {
+  switch (status) {
+    case "active":
+    case "finra_verified":
+      return "success";
+    case "submitted":
+      return "warning";
+    case "rejected":
+      return "critical";
+    case "draft":
+    default:
+      return "neutral";
+  }
+}
+
 export default function RiaHomePage() {
+  const router = useRouter();
   const { user } = useAuth();
+  const { riaCapability, riaOnboardingStatus } = usePersonaState();
   const [status, setStatus] = useState<RiaOnboardingStatus | null>(null);
   const [clients, setClients] = useState<RiaClientAccess[]>([]);
   const [requests, setRequests] = useState<RiaRequestRecord[]>([]);
@@ -49,9 +87,20 @@ export default function RiaHomePage() {
   const [iamUnavailable, setIamUnavailable] = useState(false);
 
   useEffect(() => {
+    if (riaCapability === "setup") {
+      router.replace(ROUTES.RIA_ONBOARDING);
+      return;
+    }
+  }, [riaCapability, router]);
+
+  useEffect(() => {
     let cancelled = false;
 
     async function load() {
+      if (riaCapability === "setup") {
+        setLoading(false);
+        return;
+      }
       if (!user) {
         setLoading(false);
         return;
@@ -91,7 +140,7 @@ export default function RiaHomePage() {
     return () => {
       cancelled = true;
     };
-  }, [user]);
+  }, [riaCapability, user]);
 
   const metrics = useMemo(() => {
     const activeClients = clients.filter((item) => item.status === "approved").length;
@@ -110,6 +159,47 @@ export default function RiaHomePage() {
       eyebrow="Advisor Workspace"
       title="A consent-first operating system for client relationships"
       description="Verification, requests, client workspace access, and marketplace discovery live in one RIA shell. Private data stays gated until consent is active."
+      statusPanel={
+        iamUnavailable ? null : (
+          <RiaStatusPanel
+            title="Verification and access state"
+            description="Keep the trust posture visible before the user scans metrics or workflow modules."
+            items={[
+              {
+                label: "Verification",
+                value: formatVerificationStatus(
+                  (status || riaOnboardingStatus)?.verification_status,
+                  loading
+                ),
+                helper:
+                  (status || riaOnboardingStatus)?.verification_status === "active" ||
+                  (status || riaOnboardingStatus)?.verification_status === "finra_verified"
+                    ? "Requests and workspace access are available"
+                    : "Consent requests remain gated until trusted status is reached",
+                tone: verificationTone((status || riaOnboardingStatus)?.verification_status),
+              },
+              {
+                label: "Active clients",
+                value: loading ? "..." : String(metrics.activeClients),
+                helper: "Approved relationships",
+                tone: metrics.activeClients > 0 ? "success" : "neutral",
+              },
+              {
+                label: "Pending requests",
+                value: loading ? "..." : String(metrics.pendingRequests),
+                helper: "Awaiting investor review",
+                tone: metrics.pendingRequests > 0 ? "warning" : "neutral",
+              },
+              {
+                label: "Open invites",
+                value: loading ? "..." : String(metrics.openInvites),
+                helper: "Shared but not yet accepted",
+                tone: metrics.openInvites > 0 ? "warning" : "neutral",
+              },
+            ]}
+          />
+        )
+      }
       actions={
         <>
           <Link
@@ -134,12 +224,7 @@ export default function RiaHomePage() {
         />
       ) : null}
 
-      <div className="grid gap-4 md:grid-cols-4">
-        <MetricTile
-          label="Verification"
-          value={status?.verification_status || (loading ? "Loading" : "Draft")}
-          helper="Fail-closed until verified"
-        />
+      <div className="grid gap-4 md:grid-cols-3">
         <MetricTile
           label="Active Clients"
           value={loading ? "..." : String(metrics.activeClients)}
@@ -155,152 +240,159 @@ export default function RiaHomePage() {
           value={loading ? "..." : String(metrics.openInvites)}
           helper="Shared but not yet accepted"
         />
+        <MetricTile
+          label="Relationships"
+          value={loading ? "..." : metrics.totalRelationships}
+          helper="Total tracked connections"
+        />
       </div>
 
       <div className="grid gap-5 lg:grid-cols-[1.4fr_1fr]">
-        <RiaSurface>
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-amber-200/80">
-                Next Best Action
-              </p>
-              <h2 className="mt-2 text-xl font-semibold text-foreground">
-                {status?.verification_status === "active" ||
-                status?.verification_status === "finra_verified"
-                  ? "Start the next client conversation"
-                  : "Complete verification and profile setup"}
-              </h2>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-                {status?.verification_status === "active" ||
-                status?.verification_status === "finra_verified"
-                  ? "Use the client roster to send invites, move pending relationships forward, and reopen revoked or expired access."
-                  : "RIA access requests remain blocked until verification reaches a trusted state. Finish onboarding, confirm your firm data, and enable marketplace discoverability from settings."}
-              </p>
-            </div>
-            <Link
-              href={
-                status?.verification_status === "active" ||
-                status?.verification_status === "finra_verified"
-                  ? ROUTES.RIA_CLIENTS
-                  : ROUTES.RIA_ONBOARDING
-              }
-              className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-full border border-amber-500/35 bg-amber-500/10 px-4 text-sm font-medium text-amber-100"
-            >
-              {status?.verification_status === "active" ||
-              status?.verification_status === "finra_verified"
-                ? "Open clients"
-                : "Resume onboarding"}
-            </Link>
-          </div>
-        </RiaSurface>
-
-        <RiaSurface>
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
-            Activity Snapshot
-          </p>
-          <div className="mt-4 space-y-3">
-            {requests.slice(0, 4).map((item) => (
-              <div
-                key={item.request_id}
-                className="rounded-2xl border border-border/50 bg-background/60 p-3"
+        <section className="space-y-3">
+          <SectionHeader
+            eyebrow="Next Best Action"
+            title={
+              (status || riaOnboardingStatus)?.verification_status === "active" ||
+              (status || riaOnboardingStatus)?.verification_status === "finra_verified"
+                ? "Start the next client conversation"
+                : "Complete verification and profile setup"
+            }
+            description={
+              (status || riaOnboardingStatus)?.verification_status === "active" ||
+              (status || riaOnboardingStatus)?.verification_status === "finra_verified"
+                ? "Use the client roster to send invites, move pending relationships forward, and reopen revoked or expired access."
+                : "RIA access requests remain blocked until verification reaches a trusted state. Finish onboarding, confirm your firm data, and enable marketplace discoverability from settings."
+            }
+            actions={
+              <Link
+                href={
+                  (status || riaOnboardingStatus)?.verification_status === "active" ||
+                  (status || riaOnboardingStatus)?.verification_status === "finra_verified"
+                    ? ROUTES.RIA_CLIENTS
+                    : ROUTES.RIA_ONBOARDING
+                }
+                className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-full border border-primary/25 bg-primary/10 px-4 text-sm font-medium text-primary"
               >
-                <p className="text-sm font-medium text-foreground">
-                  {item.subject_display_name || "Investor"} · {describeRequestAction(item.action)}
+                {(status || riaOnboardingStatus)?.verification_status === "active" ||
+                (status || riaOnboardingStatus)?.verification_status === "finra_verified"
+                  ? "Open clients"
+                  : "Resume onboarding"}
+              </Link>
+            }
+          />
+        </section>
+
+        <section className="space-y-3">
+          <SectionHeader
+            eyebrow="Activity"
+            title="Recent request movement"
+            description="Keep the latest consent and request outcomes visible without burying them inside the roster."
+          />
+          <RiaSurface>
+            <div className="space-y-3">
+              {requests.slice(0, 4).map((item) => (
+                <div
+                  key={item.request_id}
+                  className="rounded-2xl border border-border/50 bg-background/60 p-3"
+                >
+                  <p className="text-sm font-medium text-foreground">
+                    {item.subject_display_name || "Investor"} · {describeRequestAction(item.action)}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {item.subject_headline || item.scope}
+                  </p>
+                </div>
+              ))}
+              {!loading && requests.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No request activity yet. Start from clients or marketplace.
                 </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {item.subject_headline || item.scope}
-                </p>
-              </div>
-            ))}
-            {!loading && requests.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No request activity yet. Start from clients or marketplace.
-              </p>
-            ) : null}
-          </div>
-        </RiaSurface>
+              ) : null}
+            </div>
+          </RiaSurface>
+        </section>
       </div>
 
       <div className="grid gap-5 lg:grid-cols-2">
-        <RiaSurface>
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
-                Client Roster
-              </p>
-              <h2 className="mt-2 text-lg font-semibold text-foreground">Latest relationship states</h2>
-            </div>
-            <Link href={ROUTES.RIA_CLIENTS} className="text-sm font-medium text-amber-200">
-              View all
-            </Link>
-          </div>
-          <div className="mt-4 space-y-3">
-            {clients.slice(0, 4).map((client) => (
-              <div
-                key={client.id}
-                className="rounded-2xl border border-border/50 bg-background/60 p-3"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-medium text-foreground">
-                      {client.investor_display_name || client.investor_user_id || "Invited investor"}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {client.status} · {client.next_action || "request_access"}
-                    </p>
+        <section className="space-y-3">
+          <SectionHeader
+            eyebrow="Client roster"
+            title="Latest relationship states"
+            actions={
+              <Link href={ROUTES.RIA_CLIENTS} className="text-sm font-medium text-primary">
+                View all
+              </Link>
+            }
+          />
+          <RiaSurface>
+            <div className="space-y-3">
+              {clients.slice(0, 4).map((client) => (
+                <div
+                  key={client.id}
+                  className="rounded-2xl border border-border/50 bg-background/60 p-3"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">
+                        {client.investor_display_name || client.investor_user_id || "Invited investor"}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {client.status} · {client.next_action || "request_access"}
+                      </p>
+                    </div>
+                    {client.investor_user_id ? (
+                      <Link
+                        href={`/ria/workspace/${encodeURIComponent(client.investor_user_id)}`}
+                        className="text-xs font-medium text-foreground/75"
+                      >
+                        Workspace
+                      </Link>
+                    ) : null}
                   </div>
-                  {client.investor_user_id ? (
-                    <Link
-                      href={`/ria/workspace/${encodeURIComponent(client.investor_user_id)}`}
-                      className="text-xs font-medium text-foreground/75"
-                    >
-                      Workspace
-                    </Link>
-                  ) : null}
                 </div>
-              </div>
-            ))}
-            {!loading && clients.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No active client relationships yet.
-              </p>
-            ) : null}
-          </div>
-        </RiaSurface>
-
-        <RiaSurface>
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
-                Invite Pipeline
-              </p>
-              <h2 className="mt-2 text-lg font-semibold text-foreground">Shared, accepted, and pending</h2>
+              ))}
+              {!loading && clients.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No active client relationships yet.
+                </p>
+              ) : null}
             </div>
-            <Link href={ROUTES.RIA_REQUESTS} className="text-sm font-medium text-amber-200">
-              View activity
-            </Link>
-          </div>
-          <div className="mt-4 space-y-3">
-            {invites.slice(0, 4).map((invite) => (
-              <div
-                key={invite.invite_id}
-                className="rounded-2xl border border-border/50 bg-background/60 p-3"
-              >
-                <p className="text-sm font-medium text-foreground">
-                  {invite.target_display_name || invite.target_email || invite.target_phone || "Share link"}
+          </RiaSurface>
+        </section>
+
+        <section className="space-y-3">
+          <SectionHeader
+            eyebrow="Invite pipeline"
+            title="Shared, accepted, and pending"
+            actions={
+              <Link href={ROUTES.RIA_REQUESTS} className="text-sm font-medium text-primary">
+                View activity
+              </Link>
+            }
+          />
+          <RiaSurface>
+            <div className="space-y-3">
+              {invites.slice(0, 4).map((invite) => (
+                <div
+                  key={invite.invite_id}
+                  className="rounded-2xl border border-border/50 bg-background/60 p-3"
+                >
+                  <p className="text-sm font-medium text-foreground">
+                    {invite.target_display_name || invite.target_email || invite.target_phone || "Share link"}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {invite.status} · {invite.delivery_channel || "share_link"}
+                  </p>
+                </div>
+              ))}
+              {!loading && invites.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No invites sent yet.
                 </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {invite.status} · {invite.delivery_channel || "share_link"}
-                </p>
-              </div>
-            ))}
-            {!loading && invites.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No invites sent yet.
-              </p>
-            ) : null}
-          </div>
-        </RiaSurface>
+              ) : null}
+            </div>
+          </RiaSurface>
+        </section>
       </div>
     </RiaPageShell>
   );

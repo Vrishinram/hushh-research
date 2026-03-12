@@ -6,6 +6,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   RiaCompatibilityState,
   RiaPageShell,
+  RiaStatusPanel,
   RiaSurface,
 } from "@/components/ria/ria-page-shell";
 import { useAuth } from "@/hooks/use-auth";
@@ -15,6 +16,7 @@ import {
   RiaService,
   type RiaOnboardingStatus,
 } from "@/lib/services/ria-service";
+import { usePersonaState } from "@/lib/persona/persona-context";
 
 const STEPS = [
   "Welcome",
@@ -25,6 +27,38 @@ const STEPS = [
   "Preferences",
   "Activate",
 ] as const;
+
+function formatVerificationStatus(status?: string | null, loading?: boolean) {
+  if (loading) return "Loading";
+  switch (status) {
+    case "finra_verified":
+      return "FINRA verified";
+    case "active":
+      return "Active";
+    case "submitted":
+      return "Submitted";
+    case "rejected":
+      return "Rejected";
+    case "draft":
+    default:
+      return "Draft";
+  }
+}
+
+function verificationTone(status?: string | null): "neutral" | "warning" | "success" | "critical" {
+  switch (status) {
+    case "active":
+    case "finra_verified":
+      return "success";
+    case "submitted":
+      return "warning";
+    case "rejected":
+      return "critical";
+    case "draft":
+    default:
+      return "neutral";
+  }
+}
 
 const STEP_CONTEXT = [
   {
@@ -66,6 +100,7 @@ const STEP_CONTEXT = [
 
 export default function RiaOnboardingPage() {
   const { user } = useAuth();
+  const { devRiaBypassAllowed, refresh: refreshPersonaState } = usePersonaState();
   const [step, setStep] = useState(0);
   const [status, setStatus] = useState<RiaOnboardingStatus | null>(null);
   const [saving, setSaving] = useState(false);
@@ -132,6 +167,18 @@ export default function RiaOnboardingPage() {
     return true;
   }, [bio, displayName, firmName, headline, legalName, step, strategy]);
   const currentStepContext = STEP_CONTEXT[step] ?? STEP_CONTEXT[0];
+  const verificationLabel = formatVerificationStatus(status?.verification_status, loading);
+  const verificationHelper = status?.latest_verification_event
+    ? `${status.latest_verification_event.outcome} • ${new Date(status.latest_verification_event.checked_at).toLocaleDateString()}`
+    : status?.verification_status === "draft" || !status?.verification_status
+      ? "Verification starts after activation"
+      : "Verification updates appear here first";
+  const nextUnlock =
+    status?.verification_status === "active" || status?.verification_status === "finra_verified"
+      ? "RIA workspace available"
+      : step === STEPS.length - 1
+        ? "Waiting on verification"
+        : "Complete onboarding to submit";
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -166,6 +213,7 @@ export default function RiaOnboardingPage() {
         headline: headline || undefined,
         strategy_summary: strategy || undefined,
       }).catch(() => null);
+      await refreshPersonaState({ force: true });
 
       setStep(STEPS.length - 1);
     } catch (submitError) {
@@ -178,18 +226,65 @@ export default function RiaOnboardingPage() {
     }
   }
 
+  async function onDevActivate() {
+    if (!user) return;
+
+    setSaving(true);
+    setError(null);
+    try {
+      const idToken = await user.getIdToken();
+      const result = await RiaService.activateDevRia(idToken, {
+        display_name: displayName || legalName || user.displayName || user.email || "RIA User",
+        legal_name: legalName || undefined,
+        finra_crd: finraCrd || undefined,
+        sec_iard: secIard || undefined,
+        bio: bio || undefined,
+        strategy: strategy || undefined,
+        disclosures_url: disclosuresUrl || undefined,
+        primary_firm_name: firmName || undefined,
+        primary_firm_role: firmRole || undefined,
+      });
+      setStatus((current) => ({
+        ...(current || { exists: true }),
+        display_name: displayName || legalName || user.displayName || user.email || "RIA User",
+        legal_name: legalName || undefined,
+        finra_crd: finraCrd || undefined,
+        sec_iard: secIard || undefined,
+        verification_status: result.verification_status,
+        dev_ria_bypass_allowed: true,
+      }));
+
+      await RiaService.setRiaMarketplaceDiscoverability(idToken, {
+        enabled: true,
+        headline: headline || undefined,
+        strategy_summary: strategy || undefined,
+      }).catch(() => null);
+      await refreshPersonaState({ force: true });
+      setStep(STEPS.length - 1);
+    } catch (activateError) {
+      if (isIAMSchemaNotReadyError(activateError)) {
+        setIamUnavailable(true);
+      }
+      setError(
+        activateError instanceof Error ? activateError.message : "Failed to activate dev RIA"
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function renderStep() {
     switch (step) {
       case 0:
         return (
-          <RiaSurface className="bg-[radial-gradient(circle_at_top_right,_rgba(245,158,11,0.14),_transparent_35%),rgba(17,17,19,0.86)]">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-amber-200/80">
+          <RiaSurface className="bg-gradient-to-br from-primary/10 via-card/95 to-card/88">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary/80">
               Verified advisory activation
             </p>
-            <h2 className="mt-3 text-3xl font-semibold tracking-tight text-zinc-50">
+            <h2 className="mt-3 text-3xl font-semibold tracking-tight text-foreground">
               Build trust before you ask for data
             </h2>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-300">
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
               This onboarding keeps the compliance-heavy work focused and short: identity,
               credentials, firm context, public profile, then activation. Verification stays
               fail-closed the whole time.
@@ -408,17 +503,17 @@ export default function RiaOnboardingPage() {
         );
       default:
         return (
-          <RiaSurface className="bg-[radial-gradient(circle_at_top_left,_rgba(245,158,11,0.14),_transparent_35%),rgba(17,17,19,0.9)]">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-amber-200/80">
+          <RiaSurface className="bg-gradient-to-br from-primary/10 via-card/95 to-card/88">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary/80">
               Activation state
             </p>
-            <h2 className="mt-3 text-3xl font-semibold tracking-tight text-zinc-50">
+            <h2 className="mt-3 text-3xl font-semibold tracking-tight text-foreground">
               {status?.verification_status === "finra_verified" ||
               status?.verification_status === "active"
                 ? "Verification passed. RIA mode is ready."
                 : "Onboarding submitted. Verification is in progress."}
             </h2>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-300">
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
               Communication style is set to <strong>{communicationStyle}</strong> and cadence to{" "}
               <strong>{alertCadence.replace("_", " ")}</strong>. Public profile data is staged, and
               discoverability is enabled unless this environment is still running in compatibility
@@ -448,6 +543,58 @@ export default function RiaOnboardingPage() {
       eyebrow="RIA Onboarding"
       title="Verify the advisor before unlocking the workflow"
       description="Progressive disclosure keeps onboarding short: identity, credentials, firm context, and the public trust surface clients will actually see."
+      statusPanel={
+        iamUnavailable ? null : (
+          <RiaStatusPanel
+            title="Verification state is the primary control point"
+            description="Keep the regulatory status visible while the form moves forward. Investors should never feel that trust state is hidden below the fold."
+            items={[
+              {
+                label: "Verification",
+                value: verificationLabel,
+                helper: verificationHelper,
+                tone: verificationTone(status?.verification_status),
+              },
+              {
+                label: "Step",
+                value: `${step + 1} / ${STEPS.length}`,
+                helper: STEPS[step],
+                tone: "neutral",
+              },
+              {
+                label: "Next unlock",
+                value: nextUnlock,
+                helper:
+                  status?.verification_status === "active" ||
+                  status?.verification_status === "finra_verified"
+                    ? "Marketplace and client acquisition are available"
+                    : "Requests stay gated until trusted status is reached",
+                tone:
+                  status?.verification_status === "active" ||
+                  status?.verification_status === "finra_verified"
+                    ? "success"
+                    : "warning",
+              },
+              {
+                label: "Profile identity",
+                value: displayName || legalName || user?.displayName || "Not set",
+                helper: "This name appears in invites and public discovery",
+                tone: "neutral",
+              },
+            ]}
+            actions={
+              status?.verification_status === "active" || status?.verification_status === "finra_verified" ? (
+                <Link
+                  href={ROUTES.RIA_HOME}
+                  className="inline-flex min-h-11 items-center justify-center rounded-full bg-foreground px-4 text-sm font-medium text-background"
+                >
+                  Open RIA Home
+                </Link>
+              ) : null
+            }
+          />
+        )
+      }
     >
       {iamUnavailable ? (
         <RiaCompatibilityState
@@ -464,7 +611,7 @@ export default function RiaOnboardingPage() {
               index === step
                 ? "bg-foreground text-background"
                 : index < step
-                  ? "bg-amber-500/15 text-amber-100"
+                  ? "border border-primary/20 bg-primary/10 text-primary"
                   : "border border-border bg-background text-muted-foreground"
             }`}
           >
@@ -473,12 +620,12 @@ export default function RiaOnboardingPage() {
         ))}
       </RiaSurface>
 
-      <RiaSurface className="bg-[radial-gradient(circle_at_top_right,_rgba(245,158,11,0.12),_transparent_34%),rgba(17,17,19,0.86)]">
-        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-amber-200/80">
+      <RiaSurface className="bg-gradient-to-br from-primary/10 via-card/95 to-card/88">
+        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary/80">
           Step {step + 1} of {STEPS.length}
         </p>
-        <h2 className="mt-2 text-xl font-semibold text-zinc-50">{currentStepContext.decision}</h2>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-300">
+        <h2 className="mt-2 text-xl font-semibold text-foreground">{currentStepContext.decision}</h2>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
           {currentStepContext.detail}
         </p>
       </RiaSurface>
@@ -487,47 +634,34 @@ export default function RiaOnboardingPage() {
         <form className="space-y-5" onSubmit={onSubmit}>
           {renderStep()}
 
-          {status ? (
-            <RiaSurface>
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
-                Verification Status
-              </p>
-              <p className="mt-2 text-lg font-semibold text-foreground">
-                {loading ? "Loading..." : status.verification_status || "draft"}
-              </p>
-              {status.latest_verification_event ? (
-                <p className="mt-2 text-sm text-muted-foreground">
-                  Latest event: {status.latest_verification_event.outcome} on{" "}
-                  {new Date(status.latest_verification_event.checked_at).toLocaleString()}
-                </p>
-              ) : null}
-            </RiaSurface>
-          ) : null}
-
           {error ? <p className="text-sm text-red-500">{error}</p> : null}
 
-          <div className="flex flex-wrap justify-between gap-3">
-            <button
-              type="button"
-              disabled={step === 0}
-              onClick={() => setStep((value) => Math.max(0, value - 1))}
-              className="inline-flex min-h-11 items-center justify-center rounded-full border border-border bg-background px-4 text-sm font-medium text-foreground disabled:opacity-50"
-            >
-              Back
-            </button>
+          <div className="flex flex-wrap justify-end gap-3">
             {step < STEPS.length - 1 ? (
-              <button
-                type={step === STEPS.length - 2 ? "submit" : "button"}
-                disabled={!canProceed || saving}
-                onClick={
-                  step === STEPS.length - 2
-                    ? undefined
-                    : () => setStep((value) => Math.min(STEPS.length - 1, value + 1))
-                }
-                className="inline-flex min-h-11 items-center justify-center rounded-full bg-foreground px-4 text-sm font-medium text-background disabled:opacity-60"
-              >
-                {step === STEPS.length - 2 ? (saving ? "Submitting..." : "Activate RIA mode") : "Continue"}
-              </button>
+              <div className="flex flex-wrap gap-3">
+                {step === STEPS.length - 2 && devRiaBypassAllowed ? (
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={() => void onDevActivate()}
+                    className="inline-flex min-h-11 items-center justify-center rounded-full border border-border bg-background px-4 text-sm font-medium text-foreground disabled:opacity-60"
+                  >
+                    {saving ? "Activating..." : "Activate Dev RIA"}
+                  </button>
+                ) : null}
+                <button
+                  type={step === STEPS.length - 2 ? "submit" : "button"}
+                  disabled={!canProceed || saving}
+                  onClick={
+                    step === STEPS.length - 2
+                      ? undefined
+                      : () => setStep((value) => Math.min(STEPS.length - 1, value + 1))
+                  }
+                  className="inline-flex min-h-11 items-center justify-center rounded-full bg-foreground px-4 text-sm font-medium text-background disabled:opacity-60"
+                >
+                  {step === STEPS.length - 2 ? (saving ? "Submitting..." : "Activate RIA mode") : "Continue"}
+                </button>
+              </div>
             ) : null}
           </div>
         </form>

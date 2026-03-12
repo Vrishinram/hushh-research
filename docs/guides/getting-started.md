@@ -100,8 +100,7 @@ Health check: `curl http://localhost:8000/health`
 ### Frontend (Terminal 2)
 
 ```bash
-cd hushh-webapp
-npm run dev
+make local-web
 ```
 
 Open: `http://localhost:3000`

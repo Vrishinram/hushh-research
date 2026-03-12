@@ -15,17 +15,18 @@ The Hushh mobile app uses **Next.js static export** in a native WebView, with **
 - **Native plugins must always call the Python backend** (FastAPI) via `NEXT_PUBLIC_BACKEND_URL` for parity with production.
 - Next.js `app/api/**` routes are treated as **web-only proxy routes**; native plugins are the proxy layer on mobile.
 
-Recommended commands (from `hushh-webapp`):
+Recommended commands:
 
-- Terminal A: `npm run dev`
-- Terminal B:
-  - Android: `npx cap run android --no-sync`
-  - iOS: `npx cap run ios --no-sync`
+- Terminal A (repo root): `make local-backend`
+- Terminal B (repo root):
+  - Android: `cd hushh-webapp && npm run cap:android:run -- --profile local-uatdb --fresh`
+  - iOS: `cd hushh-webapp && npm run cap:ios:run -- --profile local-uatdb --fresh`
 
 Required env:
 
 - `NEXT_PUBLIC_BACKEND_URL` must point to your dev/staging Python backend.
   - If you use a local backend on your host machine, remember Android emulator needs `10.0.2.2` instead of `localhost`.
+  - The runtime profile launcher handles that rewrite automatically in `capacitor.config.ts` for Android when the active profile uses localhost.
 
 ### Passkey domain association (production)
 

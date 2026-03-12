@@ -1,4 +1,5 @@
 import { ApiService } from "@/lib/services/api-service";
+import { CacheService, CACHE_KEYS, CACHE_TTL } from "@/lib/services/cache-service";
 
 export type Persona = "investor" | "ria";
 
@@ -6,6 +7,11 @@ export interface PersonaState {
   user_id: string;
   personas: Persona[];
   last_active_persona: Persona;
+  active_persona: Persona;
+  primary_nav_persona: Persona;
+  ria_setup_available: boolean;
+  ria_switch_available: boolean;
+  dev_ria_bypass_allowed: boolean;
   investor_marketplace_opt_in: boolean;
   iam_schema_ready: boolean;
   mode: "full" | "compat_investor";
@@ -41,6 +47,7 @@ export interface RiaOnboardingStatus {
   exists: boolean;
   ria_profile_id?: string;
   verification_status: string;
+  dev_ria_bypass_allowed?: boolean;
   display_name?: string;
   legal_name?: string | null;
   finra_crd?: string | null;
@@ -230,6 +237,7 @@ export class RiaService {
     firm?: string;
     verification_status?: string;
   }): Promise<MarketplaceRia[]> {
+    const cache = CacheService.getInstance();
     const query = new URLSearchParams();
     if (params.query) query.set("query", params.query);
     if (params.firm) query.set("firm", params.firm);
@@ -237,11 +245,15 @@ export class RiaService {
       query.set("verification_status", params.verification_status);
     }
     if (typeof params.limit === "number") query.set("limit", String(params.limit));
+    const queryKey = query.toString() || "all";
+    const cached = cache.get<MarketplaceRia[]>(CACHE_KEYS.MARKETPLACE_RIAS_SEARCH(queryKey));
+    if (cached) return cached;
 
     const response = await ApiService.apiFetch(`/api/marketplace/rias?${query.toString()}`, {
       method: "GET",
     });
     const payload = await toJsonOrThrow<{ items: MarketplaceRia[] }>(response);
+    cache.set(CACHE_KEYS.MARKETPLACE_RIAS_SEARCH(queryKey), payload.items, CACHE_TTL.MEDIUM);
     return payload.items;
   }
 
@@ -249,14 +261,19 @@ export class RiaService {
     query?: string;
     limit?: number;
   }): Promise<MarketplaceInvestor[]> {
+    const cache = CacheService.getInstance();
     const query = new URLSearchParams();
     if (params.query) query.set("query", params.query);
     if (typeof params.limit === "number") query.set("limit", String(params.limit));
+    const queryKey = query.toString() || "all";
+    const cached = cache.get<MarketplaceInvestor[]>(CACHE_KEYS.MARKETPLACE_INVESTORS_SEARCH(queryKey));
+    if (cached) return cached;
 
     const response = await ApiService.apiFetch(`/api/marketplace/investors?${query.toString()}`, {
       method: "GET",
     });
     const payload = await toJsonOrThrow<{ items: MarketplaceInvestor[] }>(response);
+    cache.set(CACHE_KEYS.MARKETPLACE_INVESTORS_SEARCH(queryKey), payload.items, CACHE_TTL.MEDIUM);
     return payload.items;
   }
 
@@ -300,6 +317,33 @@ export class RiaService {
       idToken,
     });
     return toJsonOrThrow<RiaOnboardingStatus>(response);
+  }
+
+  static async activateDevRia(
+    idToken: string,
+    payload: {
+      display_name: string;
+      legal_name?: string;
+      finra_crd?: string;
+      sec_iard?: string;
+      bio?: string;
+      strategy?: string;
+      disclosures_url?: string;
+      primary_firm_name?: string;
+      primary_firm_role?: string;
+    }
+  ): Promise<{
+    ria_profile_id: string;
+    verification_status: string;
+    verification_outcome: string;
+    verification_message: string;
+  }> {
+    const response = await authFetch("/api/ria/onboarding/dev-activate", {
+      method: "POST",
+      idToken,
+      body: payload,
+    });
+    return toJsonOrThrow(response);
   }
 
   static async listFirms(idToken: string): Promise<RiaFirmMembership[]> {

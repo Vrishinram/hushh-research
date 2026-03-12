@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(git -C "$SCRIPT_DIR/../.." rev-parse --show-toplevel)"
+source "$SCRIPT_DIR/runtime_profile_lib.sh"
+
 usage() {
-  cat <<'EOF'
+  cat <<'USAGE'
 Usage:
   scripts/env/bootstrap_profiles.sh [options]
 
@@ -17,22 +21,26 @@ Options:
   -h, --help                         Show this help
 
 Description:
-  Creates and hydrates local profile files:
-    consent-protocol/.env.dev.local
-    consent-protocol/.env.uat.local
-    consent-protocol/.env.prod.local
-    hushh-webapp/.env.dev.local
-    hushh-webapp/.env.uat.local
-    hushh-webapp/.env.prod.local
+  Creates and hydrates local runtime profile files:
+    consent-protocol/.env.local-uatdb.local
+    consent-protocol/.env.uat-remote.local
+    consent-protocol/.env.prod-remote.local
+    hushh-webapp/.env.local-uatdb.local
+    hushh-webapp/.env.uat-remote.local
+    hushh-webapp/.env.prod-remote.local
 
-  Sources:
-  - dev profile: current local active files (.env / .env.local)
-  - uat/prod profiles: GCP Secret Manager + Cloud Run service runtime env
+  Runtime profile model:
+  - local-uatdb : local frontend + local backend, backed by UAT resources
+  - uat-remote  : local frontend only, pointed at deployed UAT backend
+  - prod-remote : local frontend only, pointed at deployed production backend
 
-Notes:
+  Notes:
   - No secret values are printed.
   - Generated local profiles are chmod 600.
-EOF
+  - local-uatdb uses a localhost-compatible backend profile and, when UAT uses
+    Cloud SQL sockets, writes CLOUDSQL_INSTANCE_CONNECTION_NAME + CLOUDSQL_PROXY_PORT
+    so the launcher can open a local Cloud SQL proxy automatically.
+USAGE
 }
 
 REGION="${REGION:-us-central1}"
@@ -42,6 +50,9 @@ UAT_PROJECT_ID="${UAT_PROJECT_ID:-hushh-pda-uat}"
 PROD_PROJECT_ID="${PROD_PROJECT_ID:-hushh-pda}"
 FORCE=false
 STRICT=false
+LOCAL_UATDB_PROXY_PORT="${LOCAL_UATDB_PROXY_PORT:-6543}"
+GCLOUD_TIMEOUT_SECONDS="${GCLOUD_TIMEOUT_SECONDS:-5}"
+LEGACY_CACHE_FIRST="${LEGACY_CACHE_FIRST:-true}"
 
 while [ "$#" -gt 0 ]; do
   case "${1:-}" in
@@ -97,19 +108,114 @@ require_cmd gcloud
 require_cmd jq
 require_cmd python3
 
-REPO_ROOT="$(git rev-parse --show-toplevel)"
 BACKEND_DIR="$REPO_ROOT/consent-protocol"
 FRONTEND_DIR="$REPO_ROOT/hushh-webapp"
-
-BACKEND_ACTIVE="$BACKEND_DIR/.env"
-FRONTEND_ACTIVE="$FRONTEND_DIR/.env.local"
-
 CACHE_DIR="$(mktemp -d)"
 trap 'rm -rf "$CACHE_DIR"' EXIT
 
 declare -a SUMMARY
 declare -a WARNINGS
 declare -a MISSING_REQUIRED
+
+normalize_env_json_values() {
+  local file="$1"
+  [ -f "$file" ] || return 0
+  python3 - "$file" <<'PY'
+import json
+import pathlib
+import re
+import sys
+
+path = pathlib.Path(sys.argv[1])
+lines = path.read_text(encoding="utf-8").splitlines()
+keys = {
+    "FIREBASE_SERVICE_ACCOUNT_JSON",
+    "FIREBASE_AUTH_SERVICE_ACCOUNT_JSON",
+}
+assign_re = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+decoder = json.JSONDecoder()
+
+out = []
+i = 0
+while i < len(lines):
+    line = lines[i]
+    matched = next((key for key in keys if line.startswith(f"{key}=")), None)
+    if not matched:
+        out.append(line)
+        i += 1
+        continue
+
+    prefix = f"{matched}="
+    buf = line[len(prefix):]
+    j = i
+    normalized = None
+
+    while True:
+        try:
+            parsed, end = decoder.raw_decode(buf)
+            if isinstance(parsed, dict):
+                normalized = json.dumps(parsed, separators=(",", ":"))
+            break
+        except json.JSONDecodeError:
+            j += 1
+            if j >= len(lines):
+                break
+            buf += "\n" + lines[j]
+
+    if normalized is None:
+        out.append(line)
+        i += 1
+        continue
+
+    out.append(prefix + normalized)
+    i = j + 1
+    while i < len(lines):
+        nxt = lines[i]
+        if assign_re.match(nxt) or nxt.startswith("#") or not nxt.strip():
+            break
+        i += 1
+
+path.write_text("\n".join(out) + "\n", encoding="utf-8")
+PY
+}
+
+run_with_timeout() {
+  local timeout_seconds="$1"
+  shift
+  python3 - "$timeout_seconds" "$@" <<'PY'
+import subprocess
+import sys
+
+timeout_seconds = float(sys.argv[1])
+cmd = sys.argv[2:]
+
+try:
+    completed = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=timeout_seconds,
+        check=True,
+    )
+except subprocess.TimeoutExpired as exc:
+    if exc.stdout:
+        sys.stdout.write(exc.stdout)
+    if exc.stderr:
+        sys.stderr.write(exc.stderr)
+    raise SystemExit(124)
+except subprocess.CalledProcessError as exc:
+    if exc.stdout:
+        sys.stdout.write(exc.stdout)
+    if exc.stderr:
+        sys.stderr.write(exc.stderr)
+    raise SystemExit(exc.returncode)
+
+if completed.stdout:
+    sys.stdout.write(completed.stdout)
+if completed.stderr:
+    sys.stderr.write(completed.stderr)
+PY
+}
 
 read_env_value() {
   local file="$1"
@@ -154,19 +260,33 @@ if path.exists():
 else:
     lines = []
 
-replaced = False
 for idx, line in enumerate(lines):
     if line.startswith(needle):
         lines[idx] = f"{key}={value}"
-        replaced = True
         break
-
-if not replaced:
+else:
     if lines and lines[-1].strip():
         lines.append("")
     lines.append(f"{key}={value}")
 
 path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+PY
+}
+
+delete_env_key() {
+  local file="$1"
+  local key="$2"
+  python3 - "$file" "$key" <<'PY'
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+key = sys.argv[2]
+needle = f"{key}="
+if not path.exists():
+    raise SystemExit(0)
+lines = [line for line in path.read_text(encoding="utf-8").splitlines() if not line.startswith(needle)]
+path.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
 PY
 }
 
@@ -187,7 +307,7 @@ get_secret_value() {
   local project="$1"
   local secret="$2"
   local value=""
-  if value="$(gcloud secrets versions access latest --secret="$secret" --project="$project" 2>/dev/null)"; then
+  if value="$(run_with_timeout "$GCLOUD_TIMEOUT_SECONDS" gcloud secrets versions access latest --secret="$secret" --project="$project" 2>/dev/null)"; then
     value="${value%$'\n'}"
     value="${value%$'\r'}"
     printf '%s' "$value"
@@ -201,7 +321,7 @@ service_json_path() {
   local service="$2"
   local out="$CACHE_DIR/${project}_${service}.json"
   if [ ! -f "$out" ]; then
-    if ! gcloud run services describe "$service" \
+    if ! run_with_timeout "$GCLOUD_TIMEOUT_SECONDS" gcloud run services describe "$service" \
       --project="$project" \
       --region="$REGION" \
       --format=json >"$out" 2>/dev/null; then
@@ -224,10 +344,19 @@ run_env_value() {
 run_service_url() {
   local project="$1"
   local service="$2"
-  gcloud run services describe "$service" \
+  run_with_timeout "$GCLOUD_TIMEOUT_SECONDS" gcloud run services describe "$service" \
     --project="$project" \
     --region="$REGION" \
     --format='value(status.url)' 2>/dev/null || true
+}
+
+run_service_annotation() {
+  local project="$1"
+  local service="$2"
+  local key="$3"
+  local json_file
+  json_file="$(service_json_path "$project" "$service")"
+  jq -r --arg key "$key" '.spec.template.metadata.annotations[$key] // empty' "$json_file" | head -n1
 }
 
 set_if_non_empty() {
@@ -257,96 +386,166 @@ set_secret_key() {
   fi
 }
 
-hydrate_backend_dev() {
-  local file="$1"
-  upsert_env_value "$file" "ENVIRONMENT" "development"
-  set_if_non_empty "$file" "PORT" "$(read_env_value "$BACKEND_ACTIVE" "PORT")"
-  set_if_non_empty "$file" "FRONTEND_URL" "$(read_env_value "$BACKEND_ACTIVE" "FRONTEND_URL")"
-  set_if_non_empty "$file" "CORS_ALLOWED_ORIGINS" "$(read_env_value "$BACKEND_ACTIVE" "CORS_ALLOWED_ORIGINS")"
-  set_if_non_empty "$file" "GOOGLE_GENAI_USE_VERTEXAI" "$(read_env_value "$BACKEND_ACTIVE" "GOOGLE_GENAI_USE_VERTEXAI")"
-  set_if_non_empty "$file" "OTEL_ENABLED" "$(read_env_value "$BACKEND_ACTIVE" "OTEL_ENABLED")"
-
-  for key in \
-    SECRET_KEY VAULT_ENCRYPTION_KEY FIREBASE_SERVICE_ACCOUNT_JSON FIREBASE_AUTH_SERVICE_ACCOUNT_JSON \
-    APP_REVIEW_MODE REVIEWER_UID MCP_DEVELOPER_TOKEN \
-    DB_HOST DB_PORT DB_NAME DB_USER DB_PASSWORD DB_UNIX_SOCKET \
-    GOOGLE_API_KEY FINNHUB_API_KEY PMP_API_KEY \
-    CONSENT_SSE_ENABLED SYNC_REMOTE_ENABLED DEVELOPER_API_ENABLED OBS_DATA_STALE_RATIO_THRESHOLD
-  do
-    set_if_non_empty "$file" "$key" "$(read_env_value "$BACKEND_ACTIVE" "$key")"
-  done
+resolve_cloud_or_cached_env_value() {
+  local project="$1"
+  local service="$2"
+  local key="$3"
+  local cache_file="$4"
+  local value
+  if [ "$LEGACY_CACHE_FIRST" = "true" ] && [ -f "$cache_file" ]; then
+    value="$(read_env_value "$cache_file" "$key")"
+  fi
+  if [ -z "$value" ]; then
+    value="$(run_env_value "$project" "$service" "$key")"
+  fi
+  if [ -z "$value" ] && [ "$LEGACY_CACHE_FIRST" != "true" ] && [ -f "$cache_file" ]; then
+    value="$(read_env_value "$cache_file" "$key")"
+  fi
+  printf '%s' "$value"
 }
 
-hydrate_backend_cloud() {
+resolve_cloud_or_cached_secret_value() {
+  local project="$1"
+  local secret="$2"
+  local cache_file="$3"
+  local value=""
+  if [ "$LEGACY_CACHE_FIRST" = "true" ] && [ -f "$cache_file" ]; then
+    value="$(read_env_value "$cache_file" "$secret")"
+    if [ -n "$value" ]; then
+      printf '%s' "$value"
+      return 0
+    fi
+  fi
+  if value="$(get_secret_value "$project" "$secret")"; then
+    printf '%s' "$value"
+    return 0
+  fi
+  if [ "$LEGACY_CACHE_FIRST" != "true" ] && [ -f "$cache_file" ]; then
+    value="$(read_env_value "$cache_file" "$secret")"
+    if [ -n "$value" ]; then
+      printf '%s' "$value"
+      return 0
+    fi
+  fi
+  return 1
+}
+
+set_secret_key_or_cached() {
+  local file="$1"
+  local profile="$2"
+  local project="$3"
+  local key="$4"
+  local required="$5"
+  local cache_file="$6"
+  local value=""
+  if value="$(resolve_cloud_or_cached_secret_value "$project" "$key" "$cache_file")"; then
+    upsert_env_value "$file" "$key" "$value"
+    return 0
+  fi
+  if [ "$required" = "true" ]; then
+    MISSING_REQUIRED+=("${profile}: missing secret ${key} in ${project} and no cached fallback in ${cache_file#$REPO_ROOT/}")
+  else
+    WARNINGS+=("${profile}: optional secret ${key} missing in ${project} and cached fallback")
+  fi
+}
+
+cloudsql_instance_for_backend() {
+  local project="$1"
+  local annotation
+  annotation="$(run_service_annotation "$project" "$BACKEND_SERVICE" 'run.googleapis.com/cloudsql-instances')"
+  if [ -n "$annotation" ]; then
+    printf '%s' "${annotation%%,*}"
+    return 0
+  fi
+
+  local socket
+  socket="$(run_env_value "$project" "$BACKEND_SERVICE" 'DB_UNIX_SOCKET')"
+  if [[ "$socket" == /cloudsql/* ]]; then
+    printf '%s' "${socket#/cloudsql/}"
+    return 0
+  fi
+  return 1
+}
+
+hydrate_backend_cloud_reference() {
   local file="$1"
   local profile="$2"
   local project="$3"
   local env_name="$4"
+  local cache_file="$file"
 
+  upsert_env_value "$file" "APP_RUNTIME_PROFILE" "$profile"
   upsert_env_value "$file" "ENVIRONMENT" "$env_name"
 
   local front_secret=""
-  if front_secret="$(get_secret_value "$project" "FRONTEND_URL")"; then
+  if front_secret="$(resolve_cloud_or_cached_secret_value "$project" "FRONTEND_URL" "$cache_file")"; then
     upsert_env_value "$file" "FRONTEND_URL" "$front_secret"
   else
     MISSING_REQUIRED+=("${profile}: missing secret FRONTEND_URL in ${project}")
   fi
 
   for key in PORT CORS_ALLOWED_ORIGINS GOOGLE_GENAI_USE_VERTEXAI OTEL_ENABLED DB_HOST DB_PORT DB_NAME DB_UNIX_SOCKET CONSENT_SSE_ENABLED SYNC_REMOTE_ENABLED DEVELOPER_API_ENABLED OBS_DATA_STALE_RATIO_THRESHOLD; do
-    set_if_non_empty "$file" "$key" "$(run_env_value "$project" "$BACKEND_SERVICE" "$key")"
+    set_if_non_empty "$file" "$key" "$(resolve_cloud_or_cached_env_value "$project" "$BACKEND_SERVICE" "$key" "$cache_file")"
   done
 
   if [ -z "$(read_env_value "$file" "CORS_ALLOWED_ORIGINS")" ] && [ -n "$front_secret" ]; then
     upsert_env_value "$file" "CORS_ALLOWED_ORIGINS" "$front_secret"
   fi
 
-  set_secret_key "$file" "$profile" "$project" "SECRET_KEY" "true"
-  set_secret_key "$file" "$profile" "$project" "VAULT_ENCRYPTION_KEY" "true"
-  set_secret_key "$file" "$profile" "$project" "GOOGLE_API_KEY" "true"
-  set_secret_key "$file" "$profile" "$project" "FIREBASE_SERVICE_ACCOUNT_JSON" "true"
-  set_secret_key "$file" "$profile" "$project" "FIREBASE_AUTH_SERVICE_ACCOUNT_JSON" "false"
-  set_secret_key "$file" "$profile" "$project" "DB_USER" "true"
-  set_secret_key "$file" "$profile" "$project" "DB_PASSWORD" "true"
-  set_secret_key "$file" "$profile" "$project" "APP_REVIEW_MODE" "false"
-  set_secret_key "$file" "$profile" "$project" "REVIEWER_UID" "false"
-  set_secret_key "$file" "$profile" "$project" "MCP_DEVELOPER_TOKEN" "true"
+  set_secret_key_or_cached "$file" "$profile" "$project" "SECRET_KEY" "true" "$cache_file"
+  set_secret_key_or_cached "$file" "$profile" "$project" "VAULT_ENCRYPTION_KEY" "true" "$cache_file"
+  set_secret_key_or_cached "$file" "$profile" "$project" "GOOGLE_API_KEY" "true" "$cache_file"
+  set_secret_key_or_cached "$file" "$profile" "$project" "FIREBASE_SERVICE_ACCOUNT_JSON" "true" "$cache_file"
+  set_secret_key_or_cached "$file" "$profile" "$project" "FIREBASE_AUTH_SERVICE_ACCOUNT_JSON" "false" "$cache_file"
+  set_secret_key_or_cached "$file" "$profile" "$project" "DB_USER" "true" "$cache_file"
+  set_secret_key_or_cached "$file" "$profile" "$project" "DB_PASSWORD" "true" "$cache_file"
+  set_secret_key_or_cached "$file" "$profile" "$project" "APP_REVIEW_MODE" "false" "$cache_file"
+  set_secret_key_or_cached "$file" "$profile" "$project" "REVIEWER_UID" "false" "$cache_file"
+  set_secret_key_or_cached "$file" "$profile" "$project" "MCP_DEVELOPER_TOKEN" "true" "$cache_file"
+  set_secret_key_or_cached "$file" "$profile" "$project" "FINNHUB_API_KEY" "false" "$cache_file"
+  set_secret_key_or_cached "$file" "$profile" "$project" "PMP_API_KEY" "false" "$cache_file"
 
   if [ -z "$(read_env_value "$file" "FIREBASE_AUTH_SERVICE_ACCOUNT_JSON")" ]; then
     set_if_non_empty "$file" "FIREBASE_AUTH_SERVICE_ACCOUNT_JSON" "$(read_env_value "$file" "FIREBASE_SERVICE_ACCOUNT_JSON")"
   fi
 }
 
-hydrate_frontend_dev() {
+hydrate_backend_local_uatdb() {
   local file="$1"
-  upsert_env_value "$file" "NEXT_PUBLIC_APP_ENV" "development"
-  set_if_non_empty "$file" "NEXT_PUBLIC_BACKEND_URL" "$(read_env_value "$FRONTEND_ACTIVE" "NEXT_PUBLIC_BACKEND_URL")"
-  set_if_non_empty "$file" "NEXT_PUBLIC_APP_URL" "$(read_env_value "$FRONTEND_ACTIVE" "NEXT_PUBLIC_APP_URL")"
-  set_if_non_empty "$file" "NEXT_PUBLIC_FRONTEND_URL" "$(read_env_value "$FRONTEND_ACTIVE" "NEXT_PUBLIC_FRONTEND_URL")"
+  local profile="local-uatdb"
+  local project="$2"
 
-  for key in \
-    NEXT_PUBLIC_FIREBASE_API_KEY NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN NEXT_PUBLIC_FIREBASE_PROJECT_ID \
-    NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID NEXT_PUBLIC_FIREBASE_APP_ID \
-    NEXT_PUBLIC_FIREBASE_VAPID_KEY \
-    NEXT_PUBLIC_AUTH_FIREBASE_API_KEY NEXT_PUBLIC_AUTH_FIREBASE_AUTH_DOMAIN NEXT_PUBLIC_AUTH_FIREBASE_PROJECT_ID NEXT_PUBLIC_AUTH_FIREBASE_APP_ID \
-    NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID_UAT NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID_STAGING NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID_PRODUCTION \
-    NEXT_PUBLIC_GTM_ID_UAT NEXT_PUBLIC_GTM_ID_STAGING NEXT_PUBLIC_GTM_ID_PRODUCTION \
-    NEXT_PUBLIC_OBSERVABILITY_ENABLED NEXT_PUBLIC_OBSERVABILITY_DEBUG NEXT_PUBLIC_OBSERVABILITY_SAMPLE_RATE
-  do
-    set_if_non_empty "$file" "$key" "$(read_env_value "$FRONTEND_ACTIVE" "$key")"
-  done
+  hydrate_backend_cloud_reference "$file" "$profile" "$project" "development"
+  upsert_env_value "$file" "FRONTEND_URL" "http://localhost:3000"
+  upsert_env_value "$file" "CORS_ALLOWED_ORIGINS" "http://localhost:3000"
+  upsert_env_value "$file" "ENVIRONMENT" "development"
+  upsert_env_value "$file" "PORT" "8000"
 
-  # Next.js server routes in hushh-webapp verify Firebase ID tokens.
-  # Keep these server-only values in frontend local profiles for parity with Cloud Run.
-  set_if_non_empty "$file" "FIREBASE_SERVICE_ACCOUNT_JSON" "$(read_env_value "$FRONTEND_ACTIVE" "FIREBASE_SERVICE_ACCOUNT_JSON")"
-  set_if_non_empty "$file" "FIREBASE_AUTH_SERVICE_ACCOUNT_JSON" "$(read_env_value "$FRONTEND_ACTIVE" "FIREBASE_AUTH_SERVICE_ACCOUNT_JSON")"
-  if [ -z "$(read_env_value "$file" "FIREBASE_SERVICE_ACCOUNT_JSON")" ]; then
-    set_if_non_empty "$file" "FIREBASE_SERVICE_ACCOUNT_JSON" "$(read_env_value "$BACKEND_ACTIVE" "FIREBASE_SERVICE_ACCOUNT_JSON")"
-  fi
-  if [ -z "$(read_env_value "$file" "FIREBASE_AUTH_SERVICE_ACCOUNT_JSON")" ]; then
-    set_if_non_empty "$file" "FIREBASE_AUTH_SERVICE_ACCOUNT_JSON" "$(read_env_value "$BACKEND_ACTIVE" "FIREBASE_AUTH_SERVICE_ACCOUNT_JSON")"
-  fi
-  if [ -z "$(read_env_value "$file" "FIREBASE_AUTH_SERVICE_ACCOUNT_JSON")" ]; then
-    set_if_non_empty "$file" "FIREBASE_AUTH_SERVICE_ACCOUNT_JSON" "$(read_env_value "$file" "FIREBASE_SERVICE_ACCOUNT_JSON")"
+  local runtime_db_host runtime_db_port runtime_socket instance_name
+  local cache_file="$file"
+  runtime_db_host="$(resolve_cloud_or_cached_env_value "$project" "$BACKEND_SERVICE" 'DB_HOST' "$cache_file")"
+  runtime_db_port="$(resolve_cloud_or_cached_env_value "$project" "$BACKEND_SERVICE" 'DB_PORT' "$cache_file")"
+  runtime_socket="$(resolve_cloud_or_cached_env_value "$project" "$BACKEND_SERVICE" 'DB_UNIX_SOCKET' "$cache_file")"
+  instance_name="$(cloudsql_instance_for_backend "$project" || true)"
+
+  if [[ "$runtime_db_host" == "cloudsql-socket" || "$runtime_socket" == /cloudsql/* || -n "$instance_name" ]]; then
+    upsert_env_value "$file" "DB_HOST" "127.0.0.1"
+    upsert_env_value "$file" "DB_PORT" "$LOCAL_UATDB_PROXY_PORT"
+    delete_env_key "$file" "DB_UNIX_SOCKET"
+    if [ -n "$instance_name" ]; then
+      upsert_env_value "$file" "CLOUDSQL_INSTANCE_CONNECTION_NAME" "$instance_name"
+      upsert_env_value "$file" "CLOUDSQL_PROXY_PORT" "$LOCAL_UATDB_PROXY_PORT"
+    else
+      MISSING_REQUIRED+=("${profile}: UAT backend uses Cloud SQL socket but no instance connection name could be discovered")
+    fi
+  else
+    set_if_non_empty "$file" "DB_HOST" "$runtime_db_host"
+    if [ -n "$runtime_db_port" ]; then
+      upsert_env_value "$file" "DB_PORT" "$runtime_db_port"
+    fi
+    delete_env_key "$file" "DB_UNIX_SOCKET"
+    delete_env_key "$file" "CLOUDSQL_INSTANCE_CONNECTION_NAME"
+    delete_env_key "$file" "CLOUDSQL_PROXY_PORT"
   fi
 }
 
@@ -355,19 +554,20 @@ hydrate_frontend_cloud() {
   local profile="$2"
   local project="$3"
   local env_name="$4"
+  local cache_file="$file"
 
+  upsert_env_value "$file" "APP_RUNTIME_PROFILE" "$profile"
   upsert_env_value "$file" "NEXT_PUBLIC_APP_ENV" "$env_name"
 
   local backend_url=""
   local frontend_url=""
-
-  if backend_url="$(get_secret_value "$project" "BACKEND_URL")"; then
+  if backend_url="$(resolve_cloud_or_cached_secret_value "$project" "BACKEND_URL" "$cache_file")"; then
     upsert_env_value "$file" "NEXT_PUBLIC_BACKEND_URL" "$backend_url"
   else
     MISSING_REQUIRED+=("${profile}: missing secret BACKEND_URL in ${project}")
   fi
 
-  if frontend_url="$(get_secret_value "$project" "FRONTEND_URL")"; then
+  if frontend_url="$(resolve_cloud_or_cached_secret_value "$project" "FRONTEND_URL" "$cache_file")"; then
     upsert_env_value "$file" "NEXT_PUBLIC_APP_URL" "$frontend_url"
     upsert_env_value "$file" "NEXT_PUBLIC_FRONTEND_URL" "$frontend_url"
   else
@@ -388,21 +588,21 @@ hydrate_frontend_cloud() {
     NEXT_PUBLIC_FIREBASE_VAPID_KEY \
     NEXT_PUBLIC_AUTH_FIREBASE_API_KEY NEXT_PUBLIC_AUTH_FIREBASE_AUTH_DOMAIN NEXT_PUBLIC_AUTH_FIREBASE_PROJECT_ID NEXT_PUBLIC_AUTH_FIREBASE_APP_ID
   do
-    set_secret_key "$file" "$profile" "$project" "$key" "true"
+    set_secret_key_or_cached "$file" "$profile" "$project" "$key" "true" "$cache_file"
   done
 
-  # Server-side token verification in frontend API routes.
-  set_secret_key "$file" "$profile" "$project" "FIREBASE_SERVICE_ACCOUNT_JSON" "true"
-  set_secret_key "$file" "$profile" "$project" "FIREBASE_AUTH_SERVICE_ACCOUNT_JSON" "false"
+  set_secret_key_or_cached "$file" "$profile" "$project" "FIREBASE_SERVICE_ACCOUNT_JSON" "true" "$cache_file"
+  set_secret_key_or_cached "$file" "$profile" "$project" "FIREBASE_AUTH_SERVICE_ACCOUNT_JSON" "false" "$cache_file"
   if [ -z "$(read_env_value "$file" "FIREBASE_AUTH_SERVICE_ACCOUNT_JSON")" ]; then
     set_if_non_empty "$file" "FIREBASE_AUTH_SERVICE_ACCOUNT_JSON" "$(read_env_value "$file" "FIREBASE_SERVICE_ACCOUNT_JSON")"
   fi
 
   for key in \
     NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID_UAT NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID_STAGING NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID_PRODUCTION \
-    NEXT_PUBLIC_GTM_ID_UAT NEXT_PUBLIC_GTM_ID_STAGING NEXT_PUBLIC_GTM_ID_PRODUCTION
+    NEXT_PUBLIC_GTM_ID_UAT NEXT_PUBLIC_GTM_ID_STAGING NEXT_PUBLIC_GTM_ID_PRODUCTION \
+    NEXT_PUBLIC_OBSERVABILITY_ENABLED NEXT_PUBLIC_OBSERVABILITY_DEBUG NEXT_PUBLIC_OBSERVABILITY_SAMPLE_RATE
   do
-    set_secret_key "$file" "$profile" "$project" "$key" "false"
+    set_secret_key_or_cached "$file" "$profile" "$project" "$key" "false" "$cache_file"
   done
 
   if [ -z "$(read_env_value "$file" "NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID_UAT")" ]; then
@@ -413,22 +613,17 @@ hydrate_frontend_cloud() {
   fi
 }
 
-profiles=(dev uat prod)
-for profile in "${profiles[@]}"; do
-  copy_template_if_needed "$BACKEND_DIR/.env.${profile}.local.example" "$BACKEND_DIR/.env.${profile}.local"
-  copy_template_if_needed "$FRONTEND_DIR/.env.${profile}.local.example" "$FRONTEND_DIR/.env.${profile}.local"
-done
+hydrate_frontend_local_uatdb() {
+  local file="$1"
+  local project="$2"
+  local profile="local-uatdb"
 
-hydrate_backend_dev "$BACKEND_DIR/.env.dev.local"
-hydrate_frontend_dev "$FRONTEND_DIR/.env.dev.local"
-hydrate_backend_cloud "$BACKEND_DIR/.env.uat.local" "uat" "$UAT_PROJECT_ID" "uat"
-hydrate_frontend_cloud "$FRONTEND_DIR/.env.uat.local" "uat" "$UAT_PROJECT_ID" "uat"
-hydrate_backend_cloud "$BACKEND_DIR/.env.prod.local" "prod" "$PROD_PROJECT_ID" "production"
-hydrate_frontend_cloud "$FRONTEND_DIR/.env.prod.local" "prod" "$PROD_PROJECT_ID" "production"
-
-for profile in "${profiles[@]}"; do
-  chmod 600 "$BACKEND_DIR/.env.${profile}.local" "$FRONTEND_DIR/.env.${profile}.local"
-done
+  hydrate_frontend_cloud "$file" "$profile" "$project" "development"
+  upsert_env_value "$file" "NEXT_PUBLIC_BACKEND_URL" "http://localhost:8000"
+  upsert_env_value "$file" "NEXT_PUBLIC_APP_URL" "http://localhost:3000"
+  upsert_env_value "$file" "NEXT_PUBLIC_FRONTEND_URL" "http://localhost:3000"
+  upsert_env_value "$file" "NEXT_PUBLIC_APP_ENV" "development"
+}
 
 validate_canonical_keys() {
   local profile="$1"
@@ -437,9 +632,8 @@ validate_canonical_keys() {
   local expected_backend="$4"
   local expected_frontend="$5"
 
-  local backend_env
+  local backend_env frontend_env
   backend_env="$(read_env_value "$backend_file" "ENVIRONMENT")"
-  local frontend_env
   frontend_env="$(read_env_value "$frontend_file" "NEXT_PUBLIC_APP_ENV")"
 
   if [ -z "$backend_env" ]; then
@@ -455,33 +649,59 @@ validate_canonical_keys() {
   fi
 }
 
-validate_canonical_keys "dev" \
-  "$BACKEND_DIR/.env.dev.local" \
-  "$FRONTEND_DIR/.env.dev.local" \
+profiles=(local-uatdb uat-remote prod-remote)
+for profile in "${profiles[@]}"; do
+  copy_template_if_needed "$BACKEND_DIR/.env.${profile}.local.example" "$BACKEND_DIR/.env.${profile}.local"
+  copy_template_if_needed "$FRONTEND_DIR/.env.${profile}.local.example" "$FRONTEND_DIR/.env.${profile}.local"
+done
+
+hydrate_backend_local_uatdb "$BACKEND_DIR/.env.local-uatdb.local" "$UAT_PROJECT_ID"
+hydrate_frontend_local_uatdb "$FRONTEND_DIR/.env.local-uatdb.local" "$UAT_PROJECT_ID"
+hydrate_backend_cloud_reference "$BACKEND_DIR/.env.uat-remote.local" "uat-remote" "$UAT_PROJECT_ID" "uat"
+hydrate_frontend_cloud "$FRONTEND_DIR/.env.uat-remote.local" "uat-remote" "$UAT_PROJECT_ID" "uat"
+hydrate_backend_cloud_reference "$BACKEND_DIR/.env.prod-remote.local" "prod-remote" "$PROD_PROJECT_ID" "production"
+hydrate_frontend_cloud "$FRONTEND_DIR/.env.prod-remote.local" "prod-remote" "$PROD_PROJECT_ID" "production"
+
+for profile in "${profiles[@]}"; do
+  chmod 600 "$BACKEND_DIR/.env.${profile}.local" "$FRONTEND_DIR/.env.${profile}.local"
+done
+
+for path in \
+  "$BACKEND_DIR/.env.local-uatdb.local" "$BACKEND_DIR/.env.uat-remote.local" "$BACKEND_DIR/.env.prod-remote.local" \
+  "$FRONTEND_DIR/.env.local-uatdb.local" "$FRONTEND_DIR/.env.uat-remote.local" "$FRONTEND_DIR/.env.prod-remote.local" \
+  "$BACKEND_DIR/.env.dev.local" "$BACKEND_DIR/.env.uat.local" "$BACKEND_DIR/.env.prod.local" \
+  "$FRONTEND_DIR/.env.dev.local" "$FRONTEND_DIR/.env.uat.local" "$FRONTEND_DIR/.env.prod.local"
+do
+  normalize_env_json_values "$path"
+done
+
+validate_canonical_keys "local-uatdb" \
+  "$BACKEND_DIR/.env.local-uatdb.local" \
+  "$FRONTEND_DIR/.env.local-uatdb.local" \
   "development" \
   "development"
 
-validate_canonical_keys "uat" \
-  "$BACKEND_DIR/.env.uat.local" \
-  "$FRONTEND_DIR/.env.uat.local" \
+validate_canonical_keys "uat-remote" \
+  "$BACKEND_DIR/.env.uat-remote.local" \
+  "$FRONTEND_DIR/.env.uat-remote.local" \
   "uat" \
   "uat"
 
-validate_canonical_keys "prod" \
-  "$BACKEND_DIR/.env.prod.local" \
-  "$FRONTEND_DIR/.env.prod.local" \
+validate_canonical_keys "prod-remote" \
+  "$BACKEND_DIR/.env.prod-remote.local" \
+  "$FRONTEND_DIR/.env.prod-remote.local" \
   "production" \
   "production"
 
 for path in \
-  "$BACKEND_DIR/.env.dev.local" "$BACKEND_DIR/.env.uat.local" "$BACKEND_DIR/.env.prod.local" \
-  "$FRONTEND_DIR/.env.dev.local" "$FRONTEND_DIR/.env.uat.local" "$FRONTEND_DIR/.env.prod.local"
+  "$BACKEND_DIR/.env.local-uatdb.local" "$BACKEND_DIR/.env.uat-remote.local" "$BACKEND_DIR/.env.prod-remote.local" \
+  "$FRONTEND_DIR/.env.local-uatdb.local" "$FRONTEND_DIR/.env.uat-remote.local" "$FRONTEND_DIR/.env.prod-remote.local"
 do
   key_count="$(grep -E '^[A-Za-z_][A-Za-z0-9_]*=' "$path" | wc -l | tr -d ' ')"
   SUMMARY+=("hydrated ${path#$REPO_ROOT/} (${key_count} keys)")
 done
 
-echo "Bootstrap profile summary:"
+echo "Bootstrap runtime profile summary:"
 for item in "${SUMMARY[@]}"; do
   echo "- $item"
 done
@@ -506,5 +726,5 @@ if [ "${#MISSING_REQUIRED[@]}" -gt 0 ]; then
 fi
 
 echo ""
-echo "Done. Use a profile with:"
-echo "  bash scripts/env/use_profile.sh dev|uat|prod [--confirm-prod-local]"
+echo "Done. Use a runtime profile with:"
+echo "  bash scripts/env/use_profile.sh local-uatdb|uat-remote|prod-remote"

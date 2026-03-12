@@ -35,11 +35,17 @@
     "cap:clean:web": "rm -rf out .next",
     "cap:clean:android": "cd android && ./gradlew clean",
     "cap:clean:ios": "rm -rf ios/App/build ios/App/DerivedData || true",
-    "cap:sync:android:prod": "npx cross-env CAPACITOR_PLATFORM=android npx cap sync android",
-    "cap:sync:ios:prod": "npx cross-env CAPACITOR_PLATFORM=ios npx cap sync ios",
-    "cap:android:prod:fresh:run": "bash scripts/native/android-prod-fresh-run.sh",
-    "cap:ios:prod:fresh:run": "bash scripts/native/ios-prod-fresh-run.sh",
-    "cap:ios:prod:sync": "bash scripts/native/ios-prod-sync.sh"
+    "cap:sync:android": "npx cross-env CAPACITOR_PLATFORM=android npx cap sync android",
+    "cap:sync:ios": "npx cross-env CAPACITOR_PLATFORM=ios npx cap sync ios",
+    "cap:android:run": "bash scripts/native/run-profile.sh --platform android",
+    "cap:ios:run": "bash scripts/native/run-profile.sh --platform ios",
+    "cap:android:sync": "bash scripts/native/run-profile.sh --platform android --sync-only",
+    "cap:ios:sync": "bash scripts/native/run-profile.sh --platform ios --sync-only",
+    "cap:sync:android:prod": "npm run cap:sync:android",
+    "cap:sync:ios:prod": "npm run cap:sync:ios",
+    "cap:android:prod:fresh:run": "bash scripts/native/run-profile.sh --platform android --profile prod-remote --fresh",
+    "cap:ios:prod:fresh:run": "bash scripts/native/run-profile.sh --platform ios --profile prod-remote --fresh",
+    "cap:ios:prod:sync": "bash scripts/native/run-profile.sh --platform ios --profile prod-remote --sync-only"
   },
   "dependencies": {
     "@base-ui/react": "^1.2.0",

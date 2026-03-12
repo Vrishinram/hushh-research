@@ -48,11 +48,14 @@ export function AuthStep({
   }, []);
 
   const resolveAndNavigate = useCallback(
-    async (userId: string) => {
+    async (userId: string, idToken?: string) => {
       try {
+        const resolvedIdToken =
+          idToken || (user ? await user.getIdToken().catch(() => undefined) : undefined);
         const resolvedPath = await PostAuthRouteService.resolveAfterLogin({
           userId,
           redirectPath,
+          idToken: resolvedIdToken,
         });
 
         const resumeImportFlow =
@@ -97,7 +100,7 @@ export function AuthStep({
     completeStep();
 
     getRedirectResult(auth)
-      .then((result) => {
+      .then(async (result) => {
         if (result?.user) {
           trackEvent("auth_succeeded", {
             action: "redirect",
@@ -105,7 +108,7 @@ export function AuthStep({
           });
           debugLog("[AuthStep] Redirect result found, navigating to:", redirectPath);
           setNativeUser(result.user);
-          void resolveAndNavigate(result.user.uid);
+          void resolveAndNavigate(result.user.uid, await result.user.getIdToken());
         }
       })
       .catch((err) => {
@@ -118,7 +121,7 @@ export function AuthStep({
         result: "success",
       });
       debugLog("[AuthStep] User authenticated, navigating to:", redirectPath);
-      void resolveAndNavigate(user.uid);
+      void resolveAndNavigate(user.uid, undefined);
     }
   }, [
     redirectPath,
@@ -160,7 +163,7 @@ export function AuthStep({
           result: "success",
         });
         setNativeUser(authenticatedUser);
-        await resolveAndNavigate(authenticatedUser.uid);
+        await resolveAndNavigate(authenticatedUser.uid, await authenticatedUser.getIdToken());
       } else {
         debugError("[AuthStep] No user returned from signInWithGoogle");
         trackEvent("auth_failed", {
@@ -198,7 +201,7 @@ export function AuthStep({
           result: "success",
         });
         setNativeUser(authenticatedUser);
-        await resolveAndNavigate(authenticatedUser.uid);
+        await resolveAndNavigate(authenticatedUser.uid, await authenticatedUser.getIdToken());
       } else {
         debugError("[AuthStep] No user returned from signInWithApple");
         trackEvent("auth_failed", {
@@ -239,7 +242,7 @@ export function AuthStep({
           result: "success",
         });
         setNativeUser(authenticatedUser);
-        await resolveAndNavigate(authenticatedUser.uid);
+        await resolveAndNavigate(authenticatedUser.uid, await authenticatedUser.getIdToken());
       } else {
         trackEvent("auth_failed", {
           action: "reviewer",

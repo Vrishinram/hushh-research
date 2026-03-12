@@ -3,9 +3,9 @@
 
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { BriefcaseBusiness, Shield, TrendingUp, User } from "lucide-react";
+import { BriefcaseBusiness, Shield, Store, TrendingUp, User } from "lucide-react";
 
 import { useAuth } from "@/hooks/use-auth";
 import { usePendingConsentCount } from "@/components/consent/notification-provider";
@@ -14,21 +14,20 @@ import { useKaiSession } from "@/lib/stores/kai-session-store";
 import { getKaiChromeState } from "@/lib/navigation/kai-chrome-state";
 import { SegmentedPill, type SegmentedPillOption } from "@/lib/morphy-ux/ui";
 import { useKaiBottomChromeVisibility } from "@/lib/navigation/kai-bottom-chrome-visibility";
+import { ROUTES } from "@/lib/navigation/routes";
 import { cn } from "@/lib/utils";
 import { morphyToast as toast } from "@/lib/morphy-ux/morphy";
-import { RiaService, type Persona } from "@/lib/services/ria-service";
+import { usePersonaState } from "@/lib/persona/persona-context";
 
-type NavKey = "home" | "consents" | "profile";
+type NavKey = "primary" | "market" | "consents" | "profile";
 
 export const Navbar = () => {
   const pathname = usePathname();
   const router = useRouter();
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated } = useAuth();
+  const { primaryNavPersona, riaEntryRoute } = usePersonaState();
   const pendingConsents = usePendingConsentCount();
   const pillRef = React.useRef<HTMLDivElement | null>(null);
-  const [kaiHref, setKaiHref] = useState("/kai");
-  const [riaHref, setRiaHref] = useState("/ria");
-  const [primaryPersona, setPrimaryPersona] = useState<Persona>("investor");
   const chromeState = useMemo(() => getKaiChromeState(pathname), [pathname]);
   const useOnboardingChrome = chromeState.useOnboardingChrome;
   const preserveBottomChrome = Boolean(
@@ -38,6 +37,7 @@ export const Navbar = () => {
   const { hidden: hideBottomChrome, progress: hideBottomChromeProgress } = useKaiBottomChromeVisibility(allowScrollHide);
 
   const lastKaiPath = useKaiSession((s) => s.lastKaiPath);
+  const lastRiaPath = useKaiSession((s) => s.lastRiaPath);
   const busyOperations = useKaiSession((s) => s.busyOperations);
 
   React.useLayoutEffect(() => {
@@ -68,57 +68,43 @@ export const Navbar = () => {
   }, [isAuthenticated, useOnboardingChrome]);
 
   useEffect(() => {
-    if (lastKaiPath) setKaiHref(lastKaiPath);
-  }, [lastKaiPath]);
-
-  useEffect(() => {
     if (!pathname) return;
     if (pathname.startsWith("/kai")) {
       useKaiSession.getState().setLastKaiPath(pathname);
-      setKaiHref(pathname);
-      setPrimaryPersona("investor");
+      return;
     }
     if (pathname.startsWith("/ria")) {
-      setRiaHref(pathname);
-      setPrimaryPersona("ria");
+      useKaiSession.getState().setLastRiaPath(pathname);
     }
   }, [pathname]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadPersona() {
-      if (!isAuthenticated || !user) return;
-      try {
-        const idToken = await user.getIdToken();
-        const state = await RiaService.getPersonaState(idToken);
-        if (!cancelled) {
-          setPrimaryPersona(state.last_active_persona);
-        }
-      } catch {
-        if (!cancelled) {
-          setPrimaryPersona(pathname?.startsWith("/ria") ? "ria" : "investor");
-        }
-      }
-    }
-
-    void loadPersona();
-    return () => {
-      cancelled = true;
-    };
-  }, [isAuthenticated, pathname, user]);
-
-  const primaryNavLabel = primaryPersona === "ria" ? "RIA" : "Kai";
+  const primaryPersona =
+    pathname?.startsWith("/ria")
+      ? "ria"
+      : pathname?.startsWith("/kai")
+        ? "investor"
+        : primaryNavPersona;
+  const primaryNavLabel = primaryPersona === "ria" ? "RIA" : "Investor";
   const primaryNavIcon = primaryPersona === "ria" ? BriefcaseBusiness : TrendingUp;
-  const primaryHref = primaryPersona === "ria" ? riaHref : kaiHref;
+  const primaryHref =
+    primaryPersona === "ria" ? lastRiaPath || riaEntryRoute : lastKaiPath || "/kai";
+
+  if (pathname?.startsWith(ROUTES.LABS_PROFILE_APPEARANCE)) {
+    return null;
+  }
 
   const navOptions = useMemo<SegmentedPillOption[]>(
     () => [
       {
-        value: "home",
+        value: "primary",
         label: primaryNavLabel,
         icon: primaryNavIcon,
         dataTourId: "nav-kai",
+      },
+      {
+        value: "market",
+        label: "Market",
+        icon: Store,
+        dataTourId: "nav-marketplace",
       },
       {
         value: "consents",
@@ -156,9 +142,11 @@ export const Navbar = () => {
   const normalizedPathname = pathname?.replace(/\/$/, "") || "";
   const activeNav: NavKey = normalizedPathname.startsWith("/consents")
     ? "consents"
+    : normalizedPathname.startsWith("/marketplace")
+      ? "market"
     : normalizedPathname.startsWith("/profile")
       ? "profile"
-      : "home";
+      : "primary";
 
   const navigateTo = (value: string) => {
     if (busyOperations["portfolio_save"]) {
@@ -177,8 +165,11 @@ export const Navbar = () => {
     }
 
     switch (value as NavKey) {
-      case "home":
+      case "primary":
         router.push(primaryHref);
+        return;
+      case "market":
+        router.push("/marketplace");
         return;
       case "consents":
         router.push("/consents");

@@ -5,18 +5,19 @@ import { useEffect, useMemo, useState } from "react";
 
 import { RiaPageShell, RiaSurface } from "@/components/ria/ria-page-shell";
 import { useAuth } from "@/hooks/use-auth";
+import { usePersonaState } from "@/lib/persona/persona-context";
 import { ROUTES } from "@/lib/navigation/routes";
 import {
   isIAMSchemaNotReadyError,
   RiaService,
   type MarketplaceInvestor,
   type MarketplaceRia,
-  type PersonaState,
   type RiaClientAccess,
 } from "@/lib/services/ria-service";
 
 export default function MarketplacePage() {
   const { isAuthenticated, user } = useAuth();
+  const { personaState } = usePersonaState();
   const [tab, setTab] = useState<"rias" | "investors">("rias");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
@@ -24,33 +25,29 @@ export default function MarketplacePage() {
   const [rias, setRias] = useState<MarketplaceRia[]>([]);
   const [investors, setInvestors] = useState<MarketplaceInvestor[]>([]);
   const [relationships, setRelationships] = useState<RiaClientAccess[]>([]);
-  const [personaState, setPersonaState] = useState<PersonaState | null>(null);
   const [iamUnavailable, setIamUnavailable] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
 
-    async function loadPersonaContext() {
+    async function loadRelationshipContext() {
       if (!user) return;
       try {
         const idToken = await user.getIdToken();
-        const [nextPersona, nextClients] = await Promise.all([
-          RiaService.getPersonaState(idToken),
-          RiaService.listClients(idToken).catch(() => [] as RiaClientAccess[]),
-        ]);
+        const nextClients = await RiaService.listClients(idToken).catch(
+          () => [] as RiaClientAccess[]
+        );
         if (!cancelled) {
-          setPersonaState(nextPersona);
           setRelationships(nextClients);
         }
       } catch {
         if (!cancelled) {
-          setPersonaState(null);
           setRelationships([]);
         }
       }
     }
 
-    void loadPersonaContext();
+    void loadRelationshipContext();
     return () => {
       cancelled = true;
     };
@@ -98,7 +95,8 @@ export default function MarketplacePage() {
     return map;
   }, [relationships]);
 
-  const currentPersona = personaState?.last_active_persona || "investor";
+  const currentPersona =
+    personaState?.active_persona || personaState?.last_active_persona || "investor";
 
   async function createInvite(investor: MarketplaceInvestor) {
     if (!user) return;
@@ -236,7 +234,9 @@ export default function MarketplacePage() {
                         {actionLoadingUserId === investor.user_id ? "Inviting..." : "Invite"}
                       </button>
                       <Link
-                        href={`${ROUTES.RIA_REQUESTS}?investor=${encodeURIComponent(investor.user_id)}`}
+                        href={`${ROUTES.CONSENTS}?actor=ria&view=outgoing&investor=${encodeURIComponent(
+                          investor.user_id
+                        )}`}
                         className="inline-flex min-h-11 items-center justify-center rounded-full border border-border bg-background px-4 text-sm font-medium text-foreground"
                       >
                         Request access

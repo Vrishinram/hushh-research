@@ -19,37 +19,47 @@ See also: [deploy/README.md](../../../deploy/README.md), [consent-protocol/.env.
 3. Legacy frontend fallback keys are read-only compatibility paths for one release cycle:
 - `NEXT_PUBLIC_OBSERVABILITY_ENV`
 - `NEXT_PUBLIC_ENVIRONMENT_MODE`
-4. Local profile model (non-committed):
-- backend templates: `consent-protocol/.env.dev.local.example`, `consent-protocol/.env.uat.local.example`, `consent-protocol/.env.prod.local.example`
-- frontend templates: `hushh-webapp/.env.dev.local.example`, `hushh-webapp/.env.uat.local.example`, `hushh-webapp/.env.prod.local.example`
+4. Local runtime-profile model (non-committed):
+- backend templates: `consent-protocol/.env.local-uatdb.local.example`, `consent-protocol/.env.uat-remote.local.example`, `consent-protocol/.env.prod-remote.local.example`
+- frontend templates: `hushh-webapp/.env.local-uatdb.local.example`, `hushh-webapp/.env.uat-remote.local.example`, `hushh-webapp/.env.prod-remote.local.example`
 - local source files are created from templates and kept uncommitted
 - active files: `consent-protocol/.env`, `hushh-webapp/.env.local`
-5. Profile activation command:
+5. Runtime profile bootstrap command:
 
 ```bash
 bash scripts/env/bootstrap_profiles.sh
 ```
 
-This command creates and hydrates local profile files from templates plus current cloud secrets/runtime metadata.
+This command creates and hydrates local runtime-profile files from templates plus current cloud secrets/runtime metadata.
 It does not print secret values and sets profile files to `chmod 600`.
-It also validates canonical identity keys per profile (`ENVIRONMENT`, `NEXT_PUBLIC_APP_ENV`) and reports missing required values.
+It also validates canonical identity keys per runtime profile (`ENVIRONMENT`, `NEXT_PUBLIC_APP_ENV`) and reports missing required values.
 
-6. Activate the chosen profile:
+6. Activate the chosen runtime profile:
 
 ```bash
-bash scripts/env/use_profile.sh dev
-bash scripts/env/use_profile.sh uat
-bash scripts/env/use_profile.sh prod --confirm-prod-local
+bash scripts/env/use_profile.sh local-uatdb
+bash scripts/env/use_profile.sh uat-remote
+bash scripts/env/use_profile.sh prod-remote
 ```
 
-Frontend convenience launcher:
+Canonical launchers:
+
+```bash
+make local
+make uat
+make prod
+```
+
+`make local` and `make local-backend` now run IAM schema verification against the active UAT-backed database before booting. If IAM is incomplete, the launcher exits instead of silently falling back to investor-compatibility mode.
+
+Frontend-only launcher:
 
 ```bash
 cd hushh-webapp
-npm run dev
+npm run dev -- --profile=local-uatdb
 ```
 
-`npm run dev` prompts for `dev|uat|prod` unless `APP_PROFILE` or `--env=<profile>` is provided.
+`npm run dev` now prompts for `local-uatdb|uat-remote|prod-remote` unless `APP_RUNTIME_PROFILE` or `--profile=<runtime-profile>` is provided.
 
 ### One-command parity audit
 

@@ -119,12 +119,13 @@ Layer 4: Agent Tokens     → Scoped permissions (OPERATIONS)
 git clone https://github.com/hushh-labs/hushh-research.git
 cd hushh-research
 
-# Frontend
-cd hushh-webapp && npm install && npm run dev
+# Install
+cd hushh-webapp && npm install
+cd ../consent-protocol && pip install -r requirements.txt
+cd ..
 
-# Backend (new terminal)
-cd consent-protocol && pip install -r requirements.txt
-uvicorn server:app --reload --port 8000
+# Full local stack against UAT-backed resources
+make local
 
 # Open http://localhost:3000
 ```
@@ -251,8 +252,8 @@ make sync-protocol      # Pulls latest backend from upstream
 ### Frontend-Only Contributor
 
 ```bash
-make dev-backend        # Start backend (terminal 1)
-make dev-frontend       # Start frontend (terminal 2)
+make local-backend      # Start backend (terminal 1)
+make local-web          # Start frontend (terminal 2)
 # Commit normally -- consent-protocol/ is just a directory to you
 ```
 

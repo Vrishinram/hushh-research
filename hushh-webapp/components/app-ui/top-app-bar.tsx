@@ -5,11 +5,10 @@
  *
  * Single fixed component that owns the entire top chrome:
  *   1. Capacitor safe-area inset (notch / Dynamic Island)
- *   2. Header row  –  back · title · actions
- *   3. Swipeable route tabs (when the route enables them, e.g. /kai)
+ *   2. Header row  –  actor title · actions
  *
- * One continuous frosted-glass backdrop + mask-image fade covers all
- * three layers so that page content scrolls seamlessly underneath.
+ * One continuous frosted-glass backdrop + mask-image fade covers the
+ * signed-in shell so page content scrolls seamlessly underneath.
  *
  * All sizing uses CSS custom properties from globals.css
  * (--top-inset, --top-bar-h, --top-tabs-total, --top-glass-h, etc.)
@@ -19,11 +18,11 @@
  */
 
 import { useMemo, useState } from "react";
-import { ArrowLeft, LogOut, MoreHorizontal, Trash2 } from "lucide-react";
+import { BriefcaseBusiness, LogOut, MoreHorizontal, Trash2, UserRound } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useNavigation } from "@/lib/navigation/navigation-context";
 import { usePathname, useRouter } from "next/navigation";
 import { Button } from "@/lib/morphy-ux/button";
+import { Icon } from "@/lib/morphy-ux/ui";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -54,10 +53,9 @@ import { getKaiChromeState } from "@/lib/navigation/kai-chrome-state";
 import { ROUTES } from "@/lib/navigation/routes";
 import { DebateTaskCenter } from "@/components/app-ui/debate-task-center";
 import { UserLocalStateService } from "@/lib/services/user-local-state-service";
-import { DashboardRouteTabs } from "@/components/kai/layout/dashboard-route-tabs";
-import { RiaRouteTabs } from "@/components/ria/layout/ria-route-tabs";
 import { resolveTopShellMetrics } from "@/components/app-ui/top-shell-metrics";
 import { useKaiBottomChromeVisibility } from "@/lib/navigation/kai-bottom-chrome-visibility";
+import { usePersonaState } from "@/lib/persona/persona-context";
 
 /* ── Re-exports (backward compat) ─────────────────────────────────── */
 export {
@@ -78,12 +76,18 @@ export function StatusBarBlur() { return null; }
 export function TopAppBarSpacer() { return null; }
 
 /* ── Helpers ───────────────────────────────────────────────────────── */
-function getTopBarTitle(pathname: string): string | null {
-  if (pathname.startsWith(ROUTES.KAI_HOME)) return "Kai";
-  if (pathname.startsWith(ROUTES.RIA_HOME)) return "RIA";
-  if (pathname.startsWith(ROUTES.MARKETPLACE)) return "Marketplace";
-  if (pathname.startsWith(ROUTES.CONSENTS)) return "Consents";
-  if (pathname.startsWith(ROUTES.PROFILE)) return "Profile";
+function getTopBarTitle(pathname: string, activePersona: "investor" | "ria") {
+  if (
+    pathname.startsWith(ROUTES.KAI_HOME) ||
+    pathname.startsWith(ROUTES.RIA_HOME) ||
+    pathname.startsWith(ROUTES.MARKETPLACE) ||
+    pathname.startsWith(ROUTES.CONSENTS) ||
+    pathname.startsWith(ROUTES.PROFILE)
+  ) {
+    return activePersona === "ria"
+      ? { label: "RIA", icon: BriefcaseBusiness }
+      : { label: "Investor", icon: UserRound };
+  }
   return null;
 }
 
@@ -93,18 +97,18 @@ interface TopAppBarProps {
 }
 
 export function TopAppBar({ className }: TopAppBarProps) {
-  const { handleBack } = useNavigation();
   const { isVaultUnlocked } = useVault();
+  const { activePersona } = usePersonaState();
   const pathname = usePathname();
   const topShellMetrics = useMemo(() => resolveTopShellMetrics(pathname), [pathname]);
   const chromeState = useMemo(() => getKaiChromeState(pathname), [pathname]);
   const showOnboardingActions = chromeState.useOnboardingChrome;
   const hideChrome = !topShellMetrics.shellVisible;
-  const centerTitle = useMemo(() => getTopBarTitle(pathname), [pathname]);
-  const showKaiTabs = topShellMetrics.hasTabs;
-  const showRiaTabs = Boolean(
-    pathname && pathname.startsWith(ROUTES.RIA_HOME) && topShellMetrics.hasTabs
+  const centerTitle = useMemo(
+    () => getTopBarTitle(pathname, activePersona),
+    [activePersona, pathname]
   );
+  const showKaiTabs = topShellMetrics.hasTabs;
 
   // Subscribe to scroll-direction store so top glass height follows tabs visibility.
   const { progress: tabsScrollHideProgress } = useKaiBottomChromeVisibility(showKaiTabs);
@@ -114,13 +118,15 @@ export function TopAppBar({ className }: TopAppBarProps) {
       height: showKaiTabs
         ? `calc(var(--top-inset) + var(--top-systembar-row-gap, 0px) + var(--top-bar-h) + ((1 - ${tabsScrollHideProgress}) * var(--top-tabs-h)) + var(--top-fade-active))`
         : "calc(var(--top-inset) + var(--top-systembar-row-gap, 0px) + var(--top-bar-h) + var(--top-fade-active))",
-      "--app-bar-glass-bg-light": "rgba(255, 255, 255, 0.46)",
-      "--app-bar-glass-bg-dark": "rgba(10, 12, 16, 0.64)",
-      "--app-bar-glass-blur": "7px",
+      "--app-bar-glass-bg-light": "rgba(255, 255, 255, 0.64)",
+      "--app-bar-glass-bg-dark": "rgba(10, 12, 16, 0.82)",
+      "--app-bar-glass-blur": "12px",
+      "--app-bar-shadow":
+        "inset 0 1px 0 rgba(255,255,255,0.2), 0 16px 30px rgba(0,0,0,0.18)",
       maskImage:
-        "linear-gradient(to bottom, black 0%, black 56%, rgba(0, 0, 0, 0.96) 70%, rgba(0, 0, 0, 0.78) 84%, rgba(0, 0, 0, 0.42) 94%, transparent 100%)",
+        "linear-gradient(to bottom, black 0%, black 54%, rgba(0, 0, 0, 0.96) 70%, rgba(0, 0, 0, 0.82) 82%, rgba(0, 0, 0, 0.58) 90%, rgba(0, 0, 0, 0.24) 96%, transparent 100%)",
       WebkitMaskImage:
-        "linear-gradient(to bottom, black 0%, black 56%, rgba(0, 0, 0, 0.96) 70%, rgba(0, 0, 0, 0.78) 84%, rgba(0, 0, 0, 0.42) 94%, transparent 100%)",
+        "linear-gradient(to bottom, black 0%, black 54%, rgba(0, 0, 0, 0.96) 70%, rgba(0, 0, 0, 0.82) 82%, rgba(0, 0, 0, 0.58) 90%, rgba(0, 0, 0, 0.24) 96%, transparent 100%)",
     }),
     [showKaiTabs, tabsScrollHideProgress]
   );
@@ -144,25 +150,18 @@ export function TopAppBar({ className }: TopAppBarProps) {
           className="relative mx-auto w-full max-w-[540px] px-4 sm:px-6"
           style={{ paddingTop: "calc(var(--top-inset) + var(--top-systembar-row-gap, 0px))" }}
         >
-          {/* Header row: back · title · actions */}
+          {/* Header row: actor title · actions */}
           <div
             data-testid="top-app-bar-row"
             className="grid h-11 shrink-0 grid-cols-[44px_1fr_44px] items-center pointer-events-auto"
           >
-            <div className="flex h-11 w-11 items-center justify-center">
-              <button
-                onClick={handleBack}
-                className={TOP_SHELL_ICON_BUTTON_CLASSNAME}
-                aria-label="Go back"
-              >
-                <ArrowLeft className="h-5 w-5" />
-              </button>
-            </div>
+            <div className="h-11 w-11" aria-hidden />
 
             <div className="flex min-w-0 items-center justify-center px-2">
               {centerTitle ? (
-                <span className="truncate text-base font-semibold tracking-tight text-foreground sm:text-lg">
-                  {centerTitle}
+                <span className="flex min-w-0 items-center justify-center gap-2 truncate text-base font-semibold tracking-tight text-foreground sm:text-lg">
+                  <Icon icon={centerTitle.icon} size="sm" className="shrink-0 text-primary" />
+                  <span className="truncate">{centerTitle.label}</span>
                 </span>
               ) : null}
             </div>
@@ -178,15 +177,6 @@ export function TopAppBar({ className }: TopAppBarProps) {
             </div>
           </div>
 
-          {/* Tabs row (only on routes that enable them) */}
-          {showKaiTabs ? (
-            <div
-              className="flex shrink-0 items-end pointer-events-auto"
-              style={{ height: "var(--top-tabs-h)" }}
-            >
-              {showRiaTabs ? <RiaRouteTabs embedded /> : <DashboardRouteTabs embedded />}
-            </div>
-          ) : null}
         </div>
       </div>
     </div>

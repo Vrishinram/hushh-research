@@ -50,6 +50,9 @@ The frontend route split is intentional and must remain stable unless route cont
 - `/kai/import`: portfolio connection/import flow and vault introduction moment
 - `/kai`: signed-in live market home (token-gated, cache-first, degraded labels when providers are partial)
 - `/kai/dashboard`: portfolio analytics/dashboard (requires data, redirects to `/kai/import` when empty)
+- `/ria/*`: advisor workflow tree under the same product shell
+- `/marketplace`: shared discovery surface for investor + RIA
+- `/consents`: shared workflow hub for incoming/outgoing requests, grants, history, invites, and future MCP/developer access
 
 Guard invariants:
 - Incomplete onboarding cannot navigate to non-onboarding `/kai` routes.
@@ -86,6 +89,20 @@ World-model storage is encrypted and domain-driven.
 Primary references:
 - `consent-protocol/docs/reference/world-model.md`
 - `consent-protocol/docs/reference/consent-protocol.md`
+
+Storage boundary:
+- Relational tables own identity, consent workflow, compliance, public discovery, and query-heavy shared market datasets.
+- `world_model_data` stores encrypted private user content only.
+- `world_model_index_v2` stores sanitized metadata only.
+- The same boundary applies to both Investor and RIA personas. RIA does not introduce a second private data plane.
+
+Persona state:
+- `actor_profiles.last_active_persona` is the canonical persisted persona state.
+- `runtime_persona_state` is transitional setup continuity only and should not become a second long-term source of truth.
+
+Shared market datasets:
+- `renaissance_*` tables remain the current system-curated benchmark dataset.
+- Future RIA stock templates should land behind a generic security-list abstraction, not by cloning Renaissance tables per advisor.
 
 Current onboarding/tour domain usage:
 - `kai_profile` (encrypted) is canonical for onboarding completion and nav-tour completion/skips.

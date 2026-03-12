@@ -8,17 +8,10 @@
  * Mobile-first design with Morphy-UX styling.
  */
 
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  Button,
-} from "@/lib/morphy-ux/morphy";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState, type ReactNode } from "react";
+import { Button } from "@/lib/morphy-ux/morphy";
 import { useAuth } from "@/hooks/use-auth";
-import { useTheme } from "next-themes";
 import { useVault } from "@/lib/vault/vault-context";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { KaiPreferencesSheet } from "@/components/kai/onboarding/KaiPreferencesSheet";
@@ -28,11 +21,9 @@ import { Input } from "@/components/ui/input";
 import { useStepProgress } from "@/lib/progress/step-progress-context";
 import {
   User, 
-  Mail, 
   LogOut, 
   Fingerprint,
   KeyRound,
-  Shield, 
   Cloud,
   HardDrive,
   RefreshCw,
@@ -88,6 +79,10 @@ import { Icon } from "@/lib/morphy-ux/ui";
 import { ROUTES } from "@/lib/navigation/routes";
 import { toInvestorMessage } from "@/lib/copy/investor-language";
 import { RiaService } from "@/lib/services/ria-service";
+import { usePersonaState } from "@/lib/persona/persona-context";
+import { RiaSettingsSection } from "@/components/profile/ria-settings-section";
+import { ContentSurface, SectionHeader } from "@/components/app-ui/page-sections";
+import { cn } from "@/lib/utils";
 
 // Icon mapping for domains
 const DOMAIN_ICONS: Record<string, LucideIcon> = {
@@ -107,10 +102,47 @@ const DOMAIN_ICONS: Record<string, LucideIcon> = {
   folder: Folder,
 };
 
+function ProfileSection({
+  id,
+  eyebrow,
+  title,
+  description,
+  actions,
+  icon,
+  children,
+  className,
+  surfaceClassName,
+}: {
+  id?: string;
+  eyebrow?: string;
+  title: ReactNode;
+  description?: ReactNode;
+  actions?: ReactNode;
+  icon?: LucideIcon;
+  children: ReactNode;
+  className?: string;
+  surfaceClassName?: string;
+}) {
+  return (
+    <section id={id} className={cn("space-y-3", className)}>
+      <SectionHeader
+        eyebrow={eyebrow}
+        title={title}
+        description={description}
+        actions={actions}
+        icon={icon}
+      />
+      <ContentSurface className={surfaceClassName}>{children}</ContentSurface>
+    </section>
+  );
+}
+
 export default function ProfilePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, loading: authLoading, signOut } = useAuth();
-  const { theme: _theme, setTheme: _setTheme } = useTheme();
+  const { personaState, riaOnboardingStatus, riaCapability, refresh: refreshPersonaState } =
+    usePersonaState();
   const { vaultKey, vaultOwnerToken, isVaultUnlocked } = useVault();
   const { registerSteps, completeStep, reset } = useStepProgress();
   const [showVaultUnlock, setShowVaultUnlock] = useState(false);
@@ -187,37 +219,29 @@ export default function ProfilePage() {
   }, [authLoading, hasVault, user?.uid]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function loadMarketplaceOptIn() {
-      if (!user) {
-        setLoadingMarketplaceOptIn(false);
-        return;
-      }
-      try {
-        setLoadingMarketplaceOptIn(true);
-        const idToken = await user.getIdToken();
-        const personaState = await RiaService.getPersonaState(idToken);
-        if (!cancelled) {
-          setMarketplaceOptIn(Boolean(personaState.investor_marketplace_opt_in));
-        }
-      } catch (error) {
-        console.warn("[ProfilePage] Failed to load marketplace opt-in:", error);
-        if (!cancelled) {
-          setMarketplaceOptIn(false);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoadingMarketplaceOptIn(false);
-        }
-      }
+    if (!user) {
+      setMarketplaceOptIn(false);
+      setLoadingMarketplaceOptIn(false);
+      return;
     }
+    if (!personaState) {
+      setLoadingMarketplaceOptIn(true);
+      return;
+    }
+    setMarketplaceOptIn(Boolean(personaState.investor_marketplace_opt_in));
+    setLoadingMarketplaceOptIn(false);
+  }, [personaState, user]);
 
-    void loadMarketplaceOptIn();
-    return () => {
-      cancelled = true;
-    };
-  }, [user]);
+  useEffect(() => {
+    if (searchParams.get("section") !== "ria") return;
+    const id = window.requestAnimationFrame(() => {
+      document.getElementById("ria-settings-section")?.scrollIntoView({
+        block: "start",
+        behavior: "smooth",
+      });
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [searchParams]);
 
   // Load world model data - auth is handled by VaultLockGuard in layout
   useEffect(() => {
@@ -382,6 +406,8 @@ export default function ProfilePage() {
       const idToken = await user.getIdToken();
       const result = await RiaService.setInvestorMarketplaceOptIn(idToken, !marketplaceOptIn);
       setMarketplaceOptIn(Boolean(result.investor_marketplace_opt_in));
+      CacheSyncService.onMarketplaceVisibilityChanged(user.uid);
+      await refreshPersonaState({ force: true });
       toast.success(
         result.investor_marketplace_opt_in
           ? "Investor marketplace profile is now discoverable."
@@ -416,6 +442,41 @@ export default function ProfilePage() {
   };
 
   const provider = getProvider();
+
+  const renderProviderIcon = () => {
+    if (provider.id === "google") {
+      return (
+        <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" aria-hidden>
+          <path
+            fill="currentColor"
+            d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+          />
+          <path
+            fill="currentColor"
+            d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+          />
+          <path
+            fill="currentColor"
+            d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+          />
+          <path
+            fill="currentColor"
+            d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+          />
+        </svg>
+      );
+    }
+
+    if (provider.id === "apple") {
+      return (
+        <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+          <path d="M17.05 20.28c-.98.95-2.05.88-3.08.38-1.07-.52-2.07-.51-3.2 0-1.01.43-2.1.49-2.98-.38C5.22 17.63 2.7 12 5.45 8.04c1.47-2.09 3.8-2.31 5.33-1.18 1.1.75 3.3.73 4.45-.04 2.1-1.31 3.55-.95 4.5 1.14-.15.08.2.14 0 .2-2.63 1.34-3.35 6.03.95 7.84-.46 1.4-1.25 2.89-2.26 4.4l-.07.08-.05-.2zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.17 2.22-1.8 4.19-3.74 4.25z" />
+        </svg>
+      );
+    }
+
+    return <Icon icon={User} size="xs" className="shrink-0" />;
+  };
 
   // Show loading state while auth is loading
   if (authLoading) {
@@ -580,29 +641,43 @@ export default function ProfilePage() {
             )}
           </AvatarFallback>
         </Avatar>
-        <div>
+        <div className="space-y-3">
           <h1 className="text-2xl font-bold">{user?.displayName || "User"}</h1>
-          <p className="text-muted-foreground text-sm">{user?.email}</p>
-        </div>
-        <div className="flex justify-center">
-          <PersonaSwitcher />
+          <div
+            className="inline-flex max-w-full items-center justify-center gap-2 rounded-full border border-border/60 bg-muted/35 px-3 py-1.5 text-sm text-muted-foreground"
+            title={provider.name}
+          >
+            {renderProviderIcon()}
+            <span className="truncate">{user?.email || "Not available"}</span>
+          </div>
+          <div className="space-y-2">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              Persona
+            </p>
+            <div className="flex justify-center">
+              <PersonaSwitcher />
+            </div>
+            {riaCapability === "setup" ? (
+              <p className="text-xs text-muted-foreground">
+                Use this same login to set up your RIA profile. You can keep both personas on one
+                account.
+              </p>
+            ) : null}
+          </div>
         </div>
       </div>
 
-      <Card variant="none" effect="glass">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-lg flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
+      <ProfileSection
+        title={
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
               <Icon icon={RefreshCw} size="md" className="text-primary" />
             </div>
-            <span>Marketplace Visibility</span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4 pt-4">
-          <p className="text-sm text-muted-foreground">
-            Let RIAs discover your public investor profile in Marketplace. This only shares public
-            metadata. Private financial data remains consent-gated.
-          </p>
+            <span>Marketplace visibility</span>
+          </div>
+        }
+        description="Let RIAs discover your public investor profile in Marketplace. Private financial data remains consent-gated."
+      >
           <div className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-muted/30 p-4">
             <div>
               <p className="text-sm font-medium">Investor marketplace profile</p>
@@ -628,40 +703,44 @@ export default function ProfilePage() {
                   : "Turn On"}
             </Button>
           </div>
-        </CardContent>
-      </Card>
+      </ProfileSection>
 
-      {/* World Model KPI Cards */}
-      <Card variant="none" effect="glass">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-lg flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="h-10 w-10 shrink-0 rounded-xl bg-primary/10 flex items-center justify-center">
-                <Icon icon={Folder} size="md" className="text-primary" />
-              </div>
-              <span className="truncate">Your Profile</span>
+      <RiaSettingsSection
+        capability={riaCapability}
+        onboardingStatus={riaOnboardingStatus}
+      />
+
+      <ProfileSection
+        title={
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+              <Icon icon={Folder} size="md" className="text-primary" />
             </div>
-            <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
-              {hasVault === true && (
-                <Button
-                  variant="blue-gradient"
-                  effect="fade"
-                  size="sm"
-                  disabled={!canEditKaiPreferences}
-                  onClick={() => setShowKaiPreferencesSheet(true)}
-                >
-                  Edit Kai Preferences
-                </Button>
-              )}
-              {!loadingDomains && (
-                <Badge variant="secondary" className="text-xs">
-                  {totalAttributes} signals
-                </Badge>
-              )}
-            </div>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="pt-4">
+            <span className="truncate">Your profile</span>
+          </div>
+        }
+        description="Signals stored in your world model and used to personalize Kai."
+        actions={
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+            {hasVault === true ? (
+              <Button
+                variant="blue-gradient"
+                effect="fade"
+                size="sm"
+                disabled={!canEditKaiPreferences}
+                onClick={() => setShowKaiPreferencesSheet(true)}
+              >
+                Edit Kai Preferences
+              </Button>
+            ) : null}
+            {!loadingDomains ? (
+              <Badge variant="secondary" className="text-xs">
+                {totalAttributes} signals
+              </Badge>
+            ) : null}
+          </div>
+        }
+      >
           {loadingDomains ? (
             <div className="flex items-center justify-center py-8">
               <Icon
@@ -752,95 +831,31 @@ export default function ProfilePage() {
               )}
             </div>
           )}
-        </CardContent>
-      </Card>
+      </ProfileSection>
 
-      {/* Account Info Card */}
-      <Card variant="none" effect="glass">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-lg flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
-              <Icon icon={Shield} size="md" className="text-primary" />
-            </div>
-            <span>Account</span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4 pt-4">
-          {/* Email */}
-          <div className="flex items-center gap-4">
-            <div className="h-10 w-10 rounded-xl bg-muted flex items-center justify-center">
-              <Icon icon={Mail} size="md" className="text-muted-foreground" />
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-medium">Email</p>
-              <p className="text-xs text-muted-foreground truncate">
-                {user?.email || "Not available"}
-              </p>
-            </div>
-          </div>
-
-          {/* Provider */}
-          <div className="flex items-center gap-4">
-            <div className="h-10 w-10 rounded-xl bg-muted flex items-center justify-center">
-              {provider.id === "google" ? (
-                <svg className="h-5 w-5" viewBox="0 0 24 24">
-                  <path
-                    fill="currentColor"
-                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                  />
-                  <path
-                    fill="currentColor"
-                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                  />
-                  <path
-                    fill="currentColor"
-                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                  />
-                  <path
-                    fill="currentColor"
-                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                  />
-                </svg>
-              ) : provider.id === "apple" ? (
-                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M17.05 20.28c-.98.95-2.05.88-3.08.38-1.07-.52-2.07-.51-3.2 0-1.01.43-2.1.49-2.98-.38C5.22 17.63 2.7 12 5.45 8.04c1.47-2.09 3.8-2.31 5.33-1.18 1.1.75 3.3.73 4.45-.04 2.1-1.31 3.55-.95 4.5 1.14-.15.08.2.14 0 .2-2.63 1.34-3.35 6.03.95 7.84-.46 1.4-1.25 2.89-2.26 4.4l-.07.08-.05-.2zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.17 2.22-1.8 4.19-3.74 4.25z" />
-                </svg>
-              ) : (
-                <Icon icon={Shield} size="md" className="text-muted-foreground" />
-              )}
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-medium">Sign-in Provider</p>
-              <p className="text-xs text-muted-foreground">{provider.name}</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Appearance Card */}
-      <Card variant="none" effect="glass">
-        <CardContent className="py-5">
+      <ProfileSection title="Appearance">
+        <div className="py-1">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium">Appearance</span>
             <ThemeToggle />
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </ProfileSection>
 
-      {/* Sync to Cloud (Coming Soon) */}
-      <Card variant="none" effect="glass">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-lg flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
+      <ProfileSection
+        title={
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
               <Icon icon={Cloud} size="md" className="text-primary" />
             </div>
             <div className="flex items-center gap-2">
-              <span>Sync to Cloud</span>
+              <span>Sync to cloud</span>
               <Badge variant="secondary">Coming Soon</Badge>
             </div>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 pt-4">
+          </div>
+        }
+      >
+        <div className="space-y-3">
           <p className="text-sm text-muted-foreground">
             Today, your profile is securely managed in the cloud for a seamless experience
             across your devices.
@@ -860,20 +875,21 @@ export default function ProfilePage() {
               </p>
             </div>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </ProfileSection>
 
-      {/* Vault Security Methods */}
-      <Card variant="none" effect="glass">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-lg flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
+      <ProfileSection
+        title={
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
               <Icon icon={Fingerprint} size="md" className="text-primary" />
             </div>
-            <span>Vault Security Methods</span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4 pt-4">
+            <span>Vault security methods</span>
+          </div>
+        }
+        description="Manage passphrase, passkey, and biometric unlock without changing your encrypted vault model."
+      >
+        <div className="space-y-4">
           {hasVault === false && (
             <p className="text-sm text-muted-foreground">
               Create your vault first from import to enable biometric or passkey unlock.
@@ -978,8 +994,8 @@ export default function ProfilePage() {
               </div>
             </>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </ProfileSection>
 
       {/* Sign Out Button */}
       <div className="w-full">
@@ -995,17 +1011,19 @@ export default function ProfilePage() {
         </Button>
       </div>
 
-      {/* Danger Zone */}
-      <Card variant="none" className="app-critical-card">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-lg flex items-center gap-3 app-critical-title">
+      <ProfileSection
+        title={
+          <div className="flex items-center gap-3 app-critical-title">
             <Icon icon={AlertTriangle} size="md" />
-            <span>Danger Zone</span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="pt-2 pb-4">
+            <span>Danger zone</span>
+          </div>
+        }
+        description="Deleting your account is permanent. All vault records and identity details will be erased."
+        surfaceClassName="app-critical-card"
+      >
+        <div className="pt-1">
           <p className="text-sm text-muted-foreground mb-4">
-            Deleting your account is permanent. All your vault records, including identity details, will be erased.
+            This action cannot be undone.
           </p>
           <Button
              variant="none"
@@ -1031,8 +1049,8 @@ export default function ProfilePage() {
               </>
             )}
           </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </ProfileSection>
 
       {/* Unlock Dialog */}
       {hasVault === true && (

@@ -20,11 +20,20 @@ Define identity, actor boundaries, and consent IAM control flow for Investor + R
 
 A single authenticated account may hold both `investor` and `ria` personas. Runtime defaults to `last_active_persona`.
 
+### Persona State Model
+
+1. `actor_profiles.last_active_persona` is the canonical persisted persona state.
+2. `runtime_persona_state` is transitional compatibility state only.
+3. Runtime state exists solely to preserve the "same account, entering RIA setup before full activation" path.
+4. Once an account truly holds both personas, `actor_profiles` owns the persisted actor context and runtime state must not override it.
+
 ## Route Model
 
 1. Investor route tree remains under existing Kai surfaces.
 2. RIA route tree is isolated under `/ria/*`.
 3. Shared discovery entry is `/marketplace` with dual-sided tabs.
+4. Shared workflow hub is `/consents`.
+5. `/ria/requests` is a compatibility alias into the consent center, not a first-class workflow surface.
 
 ## Consent IAM Control Plane
 
@@ -46,6 +55,13 @@ A single authenticated account may hold both `investor` and `ria` personas. Runt
 
 Public discovery data may be shown in marketplace cards.
 Private data is always consent-gated and scoped.
+
+### Storage Boundary
+
+1. Relational tables own identity, consent workflow, verification/compliance, firm membership, public discovery, and query-heavy shared market datasets.
+2. `world_model_data` stores encrypted user-owned private content only.
+3. `world_model_index_v2` stores sanitized metadata only.
+4. RIA verification/compliance and relationship workflow do not belong in the world model.
 
 ## Change Control
 

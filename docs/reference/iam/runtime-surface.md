@@ -31,9 +31,11 @@ Compatibility fallback (temporary): frontend still accepts `NEXT_PUBLIC_OBSERVAB
 2. RIA routes:
    1. `/ria/onboarding`
    2. `/ria/clients`
-   3. `/ria/requests`
-   4. `/ria/workspace/[clientId]`
-3. Marketplace route: `/marketplace`.
+   3. `/ria/workspace/[clientId]`
+3. Compatibility aliases:
+   1. `/ria/requests` -> `/consents?actor=ria&view=outgoing`
+   2. `/ria/settings` -> `/profile?section=ria`
+4. Marketplace route: `/marketplace`.
 
 ## Backend API Surface
 
@@ -49,9 +51,17 @@ Compatibility fallback (temporary): frontend still accepts `NEXT_PUBLIC_OBSERVAB
 2. `GET /api/ria/onboarding/status`
 3. `GET /api/ria/firms`
 4. `GET /api/ria/clients`
-5. `GET /api/ria/requests`
-6. `POST /api/ria/requests`
+5. `GET /api/ria/requests` (compatibility alias)
+6. `POST /api/ria/requests` (compatibility alias)
 7. `GET /api/ria/workspace/{investor_user_id}`
+8. `GET /api/ria/invites`
+9. `POST /api/ria/invites`
+
+### Consent Center
+
+1. `GET /api/consent/center`
+2. `GET /api/consent/requests/outgoing`
+3. `POST /api/consent/requests`
 
 ### Marketplace
 
@@ -67,15 +77,23 @@ Compatibility fallback (temporary): frontend still accepts `NEXT_PUBLIC_OBSERVAB
 4. `ria_firm_memberships`
 5. `ria_verification_events`
 6. `advisor_investor_relationships`
-7. `consent_scope_templates`
-8. `marketplace_public_profiles`
-9. `runtime_persona_state`
+7. `ria_client_invites`
+8. `consent_scope_templates`
+9. `marketplace_public_profiles`
+10. `runtime_persona_state` (transitional compatibility only)
+
+## Persona State Ownership
+
+1. `actor_profiles.last_active_persona` is the canonical persisted persona state.
+2. `runtime_persona_state` is used only for transitional setup continuity before an account fully earns the `ria` persona.
+3. Full-mode persona responses must prefer `actor_profiles` and never let runtime state override a real dual-persona account.
 
 ## Consent Integration
 
 1. RIA request creation writes `REQUESTED` rows into `consent_audit` with actor metadata.
 2. Consent approve/deny/cancel/revoke actions synchronize relationship lifecycle.
 3. Workspace access is blocked unless relationship is approved and consent is active/non-expired.
+4. Invite state is pre-consent workflow only; it is surfaced through the same consent-center read model but remains distinct from the canonical audit ledger.
 
 ## MCP Read-Only Tools
 

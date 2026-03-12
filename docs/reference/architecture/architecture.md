@@ -87,6 +87,7 @@ API Route → Service (validates consent) → DatabaseClient → PostgreSQL
 | `WorldModelService`   | `hushh_mcp/services/world_model_service.py`   | Unified user data: store, retrieve, index |
 | `ConsentDBService`    | `hushh_mcp/services/consent_db.py`            | Consent audit trail, token lookup         |
 | `ChatDBService`       | `hushh_mcp/services/chat_db_service.py`       | Kai chat history persistence              |
+| `UniverseListService` | `hushh_mcp/services/universe_list_service.py` | Generic abstraction for system and future RIA security lists |
 | `RenaissanceService`  | `hushh_mcp/services/renaissance_service.py`   | Investable universe data                  |
 | `PushTokensService`   | `hushh_mcp/services/push_tokens_service.py`   | FCM push token CRUD                       |
 | `DomainRegistryService` | `hushh_mcp/services/domain_registry_service.py` | Domain metadata registry               |
@@ -178,7 +179,7 @@ consent-protocol/
 
 **Runtime**: Next.js 16, React 19, TailwindCSS, Capacitor 8
 
-### Route Architecture (Kai v4)
+### Route Architecture (Persona Shell)
 
 Current route contract:
 
@@ -186,8 +187,16 @@ Current route contract:
 - `/login` -> auth only
 - `/kai/onboarding` -> questionnaire + persona (first-time and vault-backed continuity)
 - `/kai/import` -> portfolio connect/import flow
-- `/kai` -> signed-in exploratory mock home (explicit sonner notice + dashboard CTA)
+- `/kai` -> investor market home
 - `/kai/dashboard` -> portfolio analytics view
+- `/kai/analysis` -> investor analysis workflow
+- `/kai/optimize` -> investor optimization workflow
+- `/marketplace` -> shared discovery surface for investor + RIA
+- `/consents` -> shared workflow hub for requests, grants, history, invites, and future developer/MCP access
+- `/profile` -> shared account and persona settings
+- `/ria/onboarding` -> advisor onboarding and verification
+- `/ria/clients` -> advisor relationship roster
+- `/ria/workspace/[clientId]` -> advisor client workspace
 
 Flow orchestration:
 
@@ -195,6 +204,7 @@ Flow orchestration:
 2. `KaiOnboardingGuard` enforces onboarding completion before non-onboarding `/kai/*`.
 3. `VaultLockGuard` enforces unlock only when a vault exists.
 4. `KaiFlow` route mode controls import vs dashboard behavior.
+5. Top shell title reflects actor context (`Investor` or `RIA`), while route purpose moves into the page body.
 
 ### Vault Security UX Architecture
 
@@ -278,25 +288,51 @@ hushh-webapp/
 
 Connection: SQLAlchemy with Supabase Session Pooler. No ORM models -- raw SQL through `DatabaseClient`.
 
-### Live Tables (13)
+### Runtime Tables (Core + IAM)
 
 | Table                       | Purpose                                     | Encrypted |
 | --------------------------- | ------------------------------------------- | --------- |
 | `vault_keys`                | Vault header (hash, primary method, recovery wrapper) | Partial   |
 | `vault_key_wrappers`        | Enrolled unlock wrappers per method         | Partial   |
-| `world_model_data`          | User data blobs (AES-256-GCM ciphertext)    | Yes       |
-| `world_model_index_v2`      | Non-encrypted metadata for MCP scoping      | No        |
+| `world_model_data`          | User-owned encrypted private content        | Yes       |
+| `world_model_index_v2`      | Sanitized metadata for MCP scoping          | No        |
 | `domain_registry`           | Available data domains (food, financial...) | No        |
-| `consent_audit`             | Token lifecycle audit trail                 | No        |
+| `consent_audit`             | Canonical token/request/grant audit trail   | No        |
 | `consent_exports`           | Encrypted exports for MCP consumption       | Yes       |
 | `user_push_tokens`          | FCM push tokens per user/platform           | No        |
 | `kai_market_cache_entries`  | Server-side market payload cache entries    | No        |
 | `tickers`                   | Ticker master and enrichment metadata       | No        |
-| `renaissance_universe`      | Investable stock universe                   | No        |
-| `renaissance_screening_criteria` | Screening tier definitions              | No        |
-| `renaissance_avoid`         | Excluded stocks                             | No        |
+| `renaissance_universe`      | System-curated benchmark security list      | No        |
+| `renaissance_screening_criteria` | System-curated screening rubric         | No        |
+| `renaissance_avoid`         | System-curated excluded securities          | No        |
+| `actor_profiles`            | Canonical actor identity + persisted persona state | No   |
+| `ria_profiles`              | Advisor compliance/profile record           | No        |
+| `ria_firms`                 | Advisor firm registry                       | No        |
+| `ria_firm_memberships`      | Advisor-to-firm membership projection       | No        |
+| `ria_verification_events`   | Verification audit trail                    | No        |
+| `advisor_investor_relationships` | Derived operational relationship state  | No        |
+| `ria_client_invites`        | Pre-consent advisor acquisition workflow    | No        |
+| `consent_scope_templates`   | Consent scope template catalog              | No        |
+| `marketplace_public_profiles` | Public discovery projection               | No        |
+| `runtime_persona_state`     | Transitional setup continuity only          | No        |
 
 See [World Model](../../../consent-protocol/docs/reference/world-model.md) for detailed schema.
+
+### Data Boundary
+
+1. Relational tables own identity, workflow, compliance, public discovery, and query-heavy shared datasets.
+2. `world_model_data` and `world_model_index_v2` remain the only user-private data plane.
+3. RIA does not introduce a second private data plane. Private RIA uploads and preferences follow the same world-model boundary as investor-private data.
+4. `runtime_persona_state` is transitional compatibility state. `actor_profiles.last_active_persona` is the long-term canonical persisted persona state.
+
+### Shared Security List Model
+
+1. `renaissance_*` remains the current system-curated benchmark dataset.
+2. New advisor-owned stock templates must not clone Renaissance tables per RIA.
+3. Future custom lists should use:
+   - relational registry + parsed member tables for queryable metadata
+   - world-model storage for raw uploaded private files and parser configuration
+4. `UniverseListService` is the abstraction seam for converging system-curated and future advisor-owned list types.
 
 ### RPCs (Core + Optional)
 

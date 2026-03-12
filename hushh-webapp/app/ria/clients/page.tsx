@@ -2,13 +2,17 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import {
   RiaCompatibilityState,
   RiaPageShell,
+  RiaStatusPanel,
   RiaSurface,
 } from "@/components/ria/ria-page-shell";
+import { SectionHeader } from "@/components/app-ui/page-sections";
 import { useAuth } from "@/hooks/use-auth";
+import { usePersonaState } from "@/lib/persona/persona-context";
 import { ROUTES } from "@/lib/navigation/routes";
 import {
   isIAMSchemaNotReadyError,
@@ -25,8 +29,41 @@ const STATUS_ORDER = [
   "blocked",
 ] as const;
 
+function formatVerificationStatus(status?: string | null) {
+  switch (status) {
+    case "finra_verified":
+      return "FINRA verified";
+    case "active":
+      return "Active";
+    case "submitted":
+      return "Submitted";
+    case "rejected":
+      return "Rejected";
+    case "draft":
+    default:
+      return "Draft";
+  }
+}
+
+function verificationTone(status?: string | null): "neutral" | "warning" | "success" | "critical" {
+  switch (status) {
+    case "active":
+    case "finra_verified":
+      return "success";
+    case "submitted":
+      return "warning";
+    case "rejected":
+      return "critical";
+    case "draft":
+    default:
+      return "neutral";
+  }
+}
+
 export default function RiaClientsPage() {
+  const router = useRouter();
   const { user } = useAuth();
+  const { riaCapability, riaOnboardingStatus } = usePersonaState();
   const [items, setItems] = useState<RiaClientAccess[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingInvite, setSavingInvite] = useState(false);
@@ -46,6 +83,10 @@ export default function RiaClientsPage() {
   }
 
   async function loadClients() {
+    if (riaCapability === "setup") {
+      setLoading(false);
+      return;
+    }
     if (!user) {
       setLoading(false);
       return;
@@ -65,9 +106,16 @@ export default function RiaClientsPage() {
   }
 
   useEffect(() => {
+    if (riaCapability === "setup") {
+      router.replace(ROUTES.RIA_ONBOARDING);
+      return;
+    }
+  }, [riaCapability, router]);
+
+  useEffect(() => {
     void loadClients();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+  }, [riaCapability, user]);
 
   async function onCreateInvite() {
     if (!user) return;
@@ -125,12 +173,53 @@ export default function RiaClientsPage() {
     if (filter === "all") return sorted;
     return sorted.filter((item) => item.status === filter);
   }, [filter, items]);
+  const approvedCount = items.filter((item) => item.status === "approved").length;
+  const inviteCount = items.filter((item) => item.status === "invited").length;
+  const pendingCount = items.filter((item) => item.status === "request_pending").length;
 
   return (
     <RiaPageShell
       eyebrow="Client Roster"
       title="Track every relationship from invite to workspace access"
       description="The roster is the single operational view for invited prospects, pending requests, approved workspaces, and relationships that need reactivation."
+      statusPanel={
+        iamUnavailable ? null : (
+          <RiaStatusPanel
+            title="Relationship state before list detail"
+            description="Keep verification, approvals, and invite pressure visible before the roster grid. The page should answer whether the advisor is allowed to act before it answers who is in the roster."
+            items={[
+              {
+                label: "Verification",
+                value: formatVerificationStatus(riaOnboardingStatus?.verification_status),
+                helper:
+                  riaOnboardingStatus?.verification_status === "active" ||
+                  riaOnboardingStatus?.verification_status === "finra_verified"
+                    ? "Requests and workspace access are enabled"
+                    : "Client access remains gated until trusted status is reached",
+                tone: verificationTone(riaOnboardingStatus?.verification_status),
+              },
+              {
+                label: "Approved",
+                value: loading ? "..." : String(approvedCount),
+                helper: "Clients with workspace access",
+                tone: approvedCount > 0 ? "success" : "neutral",
+              },
+              {
+                label: "Pending",
+                value: loading ? "..." : String(pendingCount),
+                helper: "Awaiting investor consent",
+                tone: pendingCount > 0 ? "warning" : "neutral",
+              },
+              {
+                label: "Invite pipeline",
+                value: loading ? "..." : String(inviteCount),
+                helper: "Private links not yet converted",
+                tone: inviteCount > 0 ? "warning" : "neutral",
+              },
+            ]}
+          />
+        )
+      }
       actions={
         <Link
           href={ROUTES.MARKETPLACE}
@@ -150,75 +239,68 @@ export default function RiaClientsPage() {
       {!iamUnavailable ? (
         <>
           <div className="grid gap-5 lg:grid-cols-[1.2fr_1.8fr]">
-            <RiaSurface>
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
-                Invite a client
-              </p>
-              <h2 className="mt-2 text-xl font-semibold text-foreground">
-                Start with a private link instead of a raw user ID
-              </h2>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                Manual invite creation is available now. CRM and CSV entry points can plug into this
-                same lifecycle later without changing the relationship model.
-              </p>
-              <div className="mt-5 space-y-3">
-                <input
-                  value={inviteName}
-                  onChange={(event) => setInviteName(event.target.value)}
-                  className="min-h-11 w-full rounded-2xl border border-border bg-background px-4 text-sm"
-                  placeholder="Client name"
-                />
-                <input
-                  value={inviteEmail}
-                  onChange={(event) => setInviteEmail(event.target.value)}
-                  className="min-h-11 w-full rounded-2xl border border-border bg-background px-4 text-sm"
-                  placeholder="Client email"
-                />
-                <input
-                  value={invitePhone}
-                  onChange={(event) => setInvitePhone(event.target.value)}
-                  className="min-h-11 w-full rounded-2xl border border-border bg-background px-4 text-sm"
-                  placeholder="Client phone"
-                />
-                {error ? <p className="text-sm text-red-500">{error}</p> : null}
-                <button
-                  type="button"
-                  onClick={() => void onCreateInvite()}
-                  disabled={savingInvite || (!inviteName && !inviteEmail && !invitePhone)}
-                  className="inline-flex min-h-11 w-full items-center justify-center rounded-full bg-foreground px-4 text-sm font-medium text-background disabled:opacity-60"
-                >
-                  {savingInvite ? "Creating invite..." : "Create invite link"}
-                </button>
-                {lastCreatedInviteToken ? (
-                  <div className="rounded-[22px] border border-amber-500/20 bg-amber-500/5 p-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-200/80">
-                      Latest invite link
-                    </p>
-                    <p className="mt-2 break-all text-sm text-foreground">
-                      {buildInviteLink(lastCreatedInviteToken)}
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => void copyInviteLink(lastCreatedInviteToken, "latest")}
-                      className="mt-3 inline-flex min-h-11 items-center justify-center rounded-full border border-border bg-background px-4 text-sm font-medium text-foreground"
-                    >
-                      {copiedInviteId === "latest" ? "Copied" : "Copy link"}
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-            </RiaSurface>
-
-            <RiaSurface>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
-                    Relationship states
-                  </p>
-                  <h2 className="mt-2 text-xl font-semibold text-foreground">
-                    Approved, pending, invited, and recoverable
-                  </h2>
+            <section className="space-y-3">
+              <SectionHeader
+                eyebrow="Invite a client"
+                title="Start with a private link instead of a raw user ID"
+                description="Manual invite creation is available now. CRM and CSV entry points can plug into this same lifecycle later without changing the relationship model."
+              />
+              <RiaSurface>
+                <div className="space-y-3">
+                  <input
+                    value={inviteName}
+                    onChange={(event) => setInviteName(event.target.value)}
+                    className="min-h-11 w-full rounded-2xl border border-border bg-background px-4 text-sm"
+                    placeholder="Client name"
+                  />
+                  <input
+                    value={inviteEmail}
+                    onChange={(event) => setInviteEmail(event.target.value)}
+                    className="min-h-11 w-full rounded-2xl border border-border bg-background px-4 text-sm"
+                    placeholder="Client email"
+                  />
+                  <input
+                    value={invitePhone}
+                    onChange={(event) => setInvitePhone(event.target.value)}
+                    className="min-h-11 w-full rounded-2xl border border-border bg-background px-4 text-sm"
+                    placeholder="Client phone"
+                  />
+                  {error ? <p className="text-sm text-red-500">{error}</p> : null}
+                  <button
+                    type="button"
+                    onClick={() => void onCreateInvite()}
+                    disabled={savingInvite || (!inviteName && !inviteEmail && !invitePhone)}
+                    className="inline-flex min-h-11 w-full items-center justify-center rounded-full bg-foreground px-4 text-sm font-medium text-background disabled:opacity-60"
+                  >
+                    {savingInvite ? "Creating invite..." : "Create invite link"}
+                  </button>
+                  {lastCreatedInviteToken ? (
+                    <div className="rounded-[22px] border border-primary/20 bg-primary/5 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary/80">
+                        Latest invite link
+                      </p>
+                      <p className="mt-2 break-all text-sm text-foreground">
+                        {buildInviteLink(lastCreatedInviteToken)}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => void copyInviteLink(lastCreatedInviteToken, "latest")}
+                        className="mt-3 inline-flex min-h-11 items-center justify-center rounded-full border border-border bg-background px-4 text-sm font-medium text-foreground"
+                      >
+                        {copiedInviteId === "latest" ? "Copied" : "Copy link"}
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
+              </RiaSurface>
+            </section>
+
+            <section className="space-y-3">
+              <SectionHeader
+                eyebrow="Relationship states"
+                title="Approved, pending, invited, and recoverable"
+              />
+              <RiaSurface>
                 <div className="flex flex-wrap gap-2">
                   {["all", "approved", "request_pending", "invited", "revoked", "expired"].map(
                     (value) => (
@@ -237,8 +319,8 @@ export default function RiaClientsPage() {
                     )
                   )}
                 </div>
-              </div>
-            </RiaSurface>
+              </RiaSurface>
+            </section>
           </div>
 
           <div className="space-y-3">
@@ -282,7 +364,7 @@ export default function RiaClientsPage() {
                       <button
                         type="button"
                         onClick={() => void copyInviteLink(item.invite_token || "", String(item.id))}
-                        className="inline-flex min-h-11 items-center justify-center rounded-full border border-amber-500/25 bg-amber-500/5 px-4 text-sm font-medium text-amber-100"
+                        className="inline-flex min-h-11 items-center justify-center rounded-full border border-primary/25 bg-primary/5 px-4 text-sm font-medium text-primary"
                       >
                         {copiedInviteId === String(item.id) ? "Copied" : "Copy invite"}
                       </button>

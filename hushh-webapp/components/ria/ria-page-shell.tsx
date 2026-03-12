@@ -1,7 +1,14 @@
 "use client";
 
 import type { ReactNode } from "react";
+import type { LucideIcon } from "lucide-react";
+import { BriefcaseBusiness, ShieldCheck, TriangleAlert } from "lucide-react";
 
+import {
+  ContentSurface,
+  PageHeader,
+  SectionHeader,
+} from "@/components/app-ui/page-sections";
 import { cn } from "@/lib/utils";
 
 export function RiaPageShell({
@@ -9,6 +16,8 @@ export function RiaPageShell({
   title,
   description,
   actions,
+  icon = BriefcaseBusiness,
+  statusPanel,
   children,
   className,
 }: {
@@ -16,31 +25,22 @@ export function RiaPageShell({
   title: string;
   description?: string;
   actions?: ReactNode;
+  icon?: LucideIcon;
+  statusPanel?: ReactNode;
   children: ReactNode;
   className?: string;
 }) {
   return (
     <main className={cn("mx-auto w-full max-w-5xl px-4 pb-28 pt-4 sm:px-6", className)}>
-      <section className="rounded-[28px] border border-amber-500/15 bg-[radial-gradient(circle_at_top_left,_rgba(244,196,48,0.16),_transparent_34%),linear-gradient(180deg,rgba(18,18,20,0.94),rgba(11,12,14,0.98))] p-5 shadow-[0_20px_70px_rgba(0,0,0,0.28)]">
-        {eyebrow ? (
-          <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-amber-200/75">
-            {eyebrow}
-          </p>
-        ) : null}
-        <div className="mt-2 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div className="max-w-2xl">
-            <h1 className="text-3xl font-semibold tracking-tight text-zinc-50 sm:text-4xl">
-              {title}
-            </h1>
-            {description ? (
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-300 sm:text-base">
-                {description}
-              </p>
-            ) : null}
-          </div>
-          {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
-        </div>
-      </section>
+      <PageHeader
+        eyebrow={eyebrow}
+        title={title}
+        description={description}
+        actions={actions}
+        icon={icon}
+      />
+
+      {statusPanel ? <div className="mt-5">{statusPanel}</div> : null}
 
       <div className="mt-5 space-y-5">{children}</div>
     </main>
@@ -54,16 +54,7 @@ export function RiaSurface({
   children: ReactNode;
   className?: string;
 }) {
-  return (
-    <section
-      className={cn(
-        "rounded-[24px] border border-border/60 bg-card/70 p-5 shadow-sm backdrop-blur-sm",
-        className
-      )}
-    >
-      {children}
-    </section>
-  );
+  return <ContentSurface className={className}>{children}</ContentSurface>;
 }
 
 export function RiaCompatibilityState({
@@ -74,15 +65,20 @@ export function RiaCompatibilityState({
   description: string;
 }) {
   return (
-    <RiaSurface className="border-dashed border-amber-500/40 bg-amber-500/5">
-      <div className="max-w-xl">
-        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-amber-200/80">
-          Compatibility Mode
+    <section className="space-y-3">
+      <SectionHeader
+        eyebrow="Compatibility Mode"
+        title={title}
+        description={description}
+        icon={TriangleAlert}
+      />
+      <RiaSurface className="border-dashed border-amber-500/40 bg-amber-500/5">
+        <p className="text-sm leading-6 text-muted-foreground">
+          This surface is running in degraded compatibility mode until the full IAM contract is
+          available in the active environment.
         </p>
-        <h2 className="mt-2 text-xl font-semibold text-zinc-50">{title}</h2>
-        <p className="mt-2 text-sm leading-6 text-zinc-300">{description}</p>
-      </div>
-    </RiaSurface>
+      </RiaSurface>
+    </section>
   );
 }
 
@@ -101,5 +97,66 @@ export function MetricTile({
       <p className="mt-2 text-2xl font-semibold tracking-tight text-foreground">{value}</p>
       {helper ? <p className="mt-1 text-xs text-muted-foreground">{helper}</p> : null}
     </div>
+  );
+}
+
+type RiaStatusTone = "neutral" | "warning" | "success" | "critical";
+
+type RiaStatusItem = {
+  label: string;
+  value: string;
+  helper?: string;
+  tone?: RiaStatusTone;
+};
+
+const STATUS_TONE_STYLES: Record<RiaStatusTone, string> = {
+  neutral: "border-border/60 bg-background/75 text-foreground",
+  warning: "border-primary/20 bg-primary/6 text-foreground",
+  success: "border-emerald-500/20 bg-emerald-500/8 text-foreground",
+  critical: "border-red-500/20 bg-red-500/8 text-foreground",
+};
+
+export function RiaStatusPanel({
+  title,
+  description,
+  items,
+  actions,
+  className,
+}: {
+  title: string;
+  description?: string;
+  items: RiaStatusItem[];
+  actions?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <section className={cn("space-y-3", className)}>
+      <SectionHeader
+        eyebrow="Status"
+        title={title}
+        description={description}
+        actions={actions}
+        icon={ShieldCheck}
+      />
+      <RiaSurface className="bg-gradient-to-br from-primary/8 via-card/95 to-card/88">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {items.map((item) => (
+            <div
+              key={`${item.label}-${item.value}`}
+              className={cn(
+                "rounded-[22px] border p-4 shadow-sm",
+                STATUS_TONE_STYLES[item.tone || "neutral"]
+              )}
+            >
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+                {item.label}
+              </p>
+              <p className="mt-2 text-lg font-semibold tracking-tight text-foreground">{item.value}</p>
+              {item.helper ? <p className="mt-1 text-xs text-muted-foreground">{item.helper}</p> : null}
+            </div>
+          ))}
+        </div>
+      </RiaSurface>
+    </section>
   );
 }

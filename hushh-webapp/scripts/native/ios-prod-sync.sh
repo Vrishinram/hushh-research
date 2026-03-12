@@ -2,8 +2,4 @@
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-WEB_DIR="$REPO_ROOT/hushh-webapp"
-cd "$WEB_DIR"
-
-npm run cap:build:mobile
-npm run cap:sync:ios:prod
+exec bash "$REPO_ROOT/hushh-webapp/scripts/native/run-profile.sh" --platform ios --profile prod-remote --sync-only "$@"

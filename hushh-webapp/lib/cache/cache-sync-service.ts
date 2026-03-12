@@ -231,7 +231,25 @@ export class CacheSyncService {
     cache.invalidate(CACHE_KEYS.ACTIVE_CONSENTS(userId));
     cache.invalidate(CACHE_KEYS.PENDING_CONSENTS(userId));
     cache.invalidate(CACHE_KEYS.CONSENT_AUDIT_LOG(userId));
+    cache.invalidate(CACHE_KEYS.CONSENT_CENTER(userId, "all"));
+    cache.invalidate(CACHE_KEYS.RIA_ROSTER_SUMMARY(userId));
     cache.invalidate(CACHE_KEYS.VAULT_STATUS(userId));
+  }
+
+  static onPersonaStateChanged(userId: string): void {
+    const cache = CacheService.getInstance();
+    cache.invalidate(CACHE_KEYS.PERSONA_STATE(userId));
+    cache.invalidate(CACHE_KEYS.RIA_ONBOARDING_STATUS(userId));
+    cache.invalidate(CACHE_KEYS.CONSENT_CENTER(userId, "all"));
+    cache.invalidate(CACHE_KEYS.RIA_ROSTER_SUMMARY(userId));
+  }
+
+  static onMarketplaceVisibilityChanged(userId: string): void {
+    const cache = CacheService.getInstance();
+    cache.invalidate(CACHE_KEYS.PERSONA_STATE(userId));
+    cache.invalidate(CACHE_KEYS.RIA_ONBOARDING_STATUS(userId));
+    cache.invalidatePattern("marketplace_rias_");
+    cache.invalidatePattern("marketplace_investors_");
   }
 
   /**

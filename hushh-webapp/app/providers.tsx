@@ -16,7 +16,6 @@ import { CSSProperties, ReactNode, useEffect, useMemo, useRef } from "react";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/lib/firebase";
 import { VaultProvider } from "@/lib/vault/vault-context";
-import { NavigationProvider } from "@/lib/navigation/navigation-context";
 import { StepProgressProvider } from "@/lib/progress/step-progress-context";
 import { StepProgressBar } from "@/components/app-ui/step-progress-bar";
 import { CacheProvider } from "@/lib/cache/cache-context";
@@ -41,6 +40,7 @@ import {
 import { getKaiChromeState } from "@/lib/navigation/kai-chrome-state";
 import { cn } from "@/lib/utils";
 import { PersonaBootstrapRedirect } from "@/components/iam/persona-bootstrap-redirect";
+import { PersonaProvider } from "@/lib/persona/persona-context";
 
 interface ProvidersProps {
   children: ReactNode;
@@ -68,10 +68,8 @@ export function Providers({ children }: ProvidersProps) {
           ? "calc(var(--top-tabs-h) + var(--top-tabs-gap))"
           : "0px",
         "--top-systembar-row-gap": topShellMetrics.hasTabs ? "4px" : "6px",
-        "--top-fade-active": topShellMetrics.hasTabs ? "24px" : "8px",
-        "--top-content-pad": topShellMetrics.hasTabs
-          ? "var(--top-glass-h)"
-          : "calc(var(--top-shell-h) + 2px)",
+        "--top-fade-active": topShellMetrics.hasTabs ? "24px" : "22px",
+        "--top-content-pad": "var(--top-glass-h)",
         "--kai-route-content-gap": topShellMetrics.hasTabs ? "20px" : "10px",
         "--kai-route-content-gap-sm": topShellMetrics.hasTabs ? "24px" : "14px",
         "--app-top-shell-visible": topShellMetrics.shellVisible ? "1" : "0",
@@ -130,11 +128,11 @@ export function Providers({ children }: ProvidersProps) {
         {/* Step-based progress bar at top of viewport */}
         <StepProgressBar />
         <AuthProvider>
-          <PersonaBootstrapRedirect />
           <CacheProvider>
-            <VaultProvider>
-              <ConsentNotificationProvider>
-                <NavigationProvider>
+            <PersonaProvider>
+              <PersonaBootstrapRedirect />
+              <VaultProvider>
+                <ConsentNotificationProvider>
                   {/* Flex container for proper scroll behavior */}
                   <div
                     className="flex flex-col flex-1 min-h-0"
@@ -221,9 +219,9 @@ export function Providers({ children }: ProvidersProps) {
                       top: "calc(var(--top-inset, 0px) + 12px)",
                     }}
                   />
-                </NavigationProvider>
-              </ConsentNotificationProvider>
-            </VaultProvider>
+                </ConsentNotificationProvider>
+              </VaultProvider>
+            </PersonaProvider>
           </CacheProvider>
         </AuthProvider>
       </StepProgressProvider>

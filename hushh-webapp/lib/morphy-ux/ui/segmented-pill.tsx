@@ -11,6 +11,7 @@ export type SegmentedPillOption = {
   label: string;
   icon?: LucideIcon;
   badge?: number;
+  tone?: "default" | "accent";
   disabled?: boolean;
   dataTourId?: string;
 };
@@ -77,7 +78,7 @@ export const SegmentedPill = React.forwardRef<HTMLDivElement, SegmentedPillProps
         role="radiogroup"
         aria-label={ariaLabel}
         className={cn(
-          "relative grid items-center rounded-full bg-muted/80 backdrop-blur-3xl shadow-2xl ring-1 ring-black/5 border border-white/10 dark:border-white/5",
+          "relative grid items-center rounded-full border border-border/70 bg-muted/75 shadow-sm backdrop-blur-xl",
           styles.container,
           className
         )}
@@ -88,7 +89,7 @@ export const SegmentedPill = React.forwardRef<HTMLDivElement, SegmentedPillProps
         <div
           aria-hidden
           data-segment-indicator
-          className="pointer-events-none absolute left-1 top-1 bottom-1 rounded-full bg-zinc-900 text-zinc-50 shadow-sm ring-1 ring-black/10 dark:bg-zinc-50 dark:text-zinc-900 dark:ring-white/20 transition-transform duration-500 ease-[cubic-bezier(0.25,1,0.5,1)]"
+          className="pointer-events-none absolute left-1 top-1 bottom-1 rounded-full bg-foreground text-background shadow-sm ring-1 ring-border/70 transition-transform duration-500 ease-[cubic-bezier(0.25,1,0.5,1)]"
           style={{
             width: `calc((100% - 0.5rem) / ${Math.max(options.length, 1)})`,
             transform: `translateX(calc(${activeIndex * 100}% + var(--segment-drag-x, 0px)))`,
@@ -97,6 +98,7 @@ export const SegmentedPill = React.forwardRef<HTMLDivElement, SegmentedPillProps
         {options.map((option) => {
           const isActive = option.value === value;
           const isDisabled = !!option.disabled;
+          const isAccent = option.tone === "accent";
           return (
             <button
               key={option.value}
@@ -115,8 +117,10 @@ export const SegmentedPill = React.forwardRef<HTMLDivElement, SegmentedPillProps
                 styles.button,
                 styles.gap,
                 isActive
-                  ? "text-zinc-50 dark:text-zinc-900"
-                  : "text-muted-foreground hover:text-foreground",
+                  ? "text-background"
+                  : isAccent
+                    ? "text-primary/85 hover:text-primary"
+                    : "text-foreground/75 hover:text-foreground",
                 isDisabled && "opacity-45"
               )}
             >

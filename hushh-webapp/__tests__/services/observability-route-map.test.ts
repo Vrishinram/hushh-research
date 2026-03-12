@@ -29,6 +29,9 @@ describe("observability route map", () => {
     expect(normalizeApiPathToTemplate("/api/ria/workspace/user_123")).toBe(
       "/api/ria/workspace/{investor_user_id}"
     );
+    expect(normalizeApiPathToTemplate("/api/consent/center?actor=ria&view=outgoing")).toBe(
+      "/api/consent/center"
+    );
   });
 
   it("redacts opaque IDs for unknown endpoints", () => {

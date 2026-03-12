@@ -20,34 +20,36 @@ gcloud builds submit --config=deploy/frontend.cloudbuild.yaml
 
 ---
 
-## 🧭 Environment Profiles (Dev/UAT/Prod)
+## 🧭 Runtime Profiles (Local/UAT-Remote/Prod-Remote)
 
 Use profile sources and activate one profile into the live local files:
 
 - Backend active file: `consent-protocol/.env`
 - Frontend active file: `hushh-webapp/.env.local`
 
-Profile sources (local only, not committed):
+Runtime profile sources (local only, not committed):
 
-- `consent-protocol/.env.dev.local`, `.env.uat.local`, `.env.prod.local`
-- `hushh-webapp/.env.dev.local`, `.env.uat.local`, `.env.prod.local`
+- `consent-protocol/.env.local-uatdb.local`, `.env.uat-remote.local`, `.env.prod-remote.local`
+- `hushh-webapp/.env.local-uatdb.local`, `.env.uat-remote.local`, `.env.prod-remote.local`
 
 Activation:
 
 ```bash
-bash scripts/env/use_profile.sh dev
-bash scripts/env/use_profile.sh uat
-bash scripts/env/use_profile.sh prod --confirm-prod-local
+bash scripts/env/bootstrap_profiles.sh
+bash scripts/env/use_profile.sh local-uatdb
+bash scripts/env/use_profile.sh uat-remote
+bash scripts/env/use_profile.sh prod-remote
 ```
 
 Makefile wrappers:
 
 ```bash
-make env-use ENV=dev
-make env-use ENV=uat
-make env-use ENV=prod CONFIRM_PROD_LOCAL=1
-make run-web ENV=uat
-make run-backend ENV=dev
+make local
+make uat
+make prod
+make local-web
+make uat-web
+make local-backend
 ```
 
 ### Blocking vs optional validation

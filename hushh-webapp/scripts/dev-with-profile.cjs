@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 
-const path = require("node:path");
-const readline = require("node:readline");
-const { spawn, spawnSync } = require("node:child_process");
+const path = require('node:path');
+const readline = require('node:readline');
+const { spawn, spawnSync } = require('node:child_process');
 
-const PROFILE_VALUES = ["dev", "uat", "prod"];
-const repoRoot = path.resolve(__dirname, "../..");
-const webRoot = path.resolve(__dirname, "..");
+const CANONICAL_PROFILES = ['local-uatdb', 'uat-remote', 'prod-remote'];
+
+const repoRoot = path.resolve(__dirname, '../..');
+const webRoot = path.resolve(__dirname, '..');
 
 function parseArgs(argv) {
   const passthrough = [];
@@ -14,15 +15,15 @@ function parseArgs(argv) {
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
-    if (arg === "--") {
+    if (arg === '--') {
       passthrough.push(...argv.slice(i + 1));
       break;
     }
-    if (arg.startsWith("--env=")) {
-      profile = arg.split("=", 2)[1] || null;
+    if (arg.startsWith('--profile=')) {
+      profile = arg.split('=', 2)[1] || null;
       continue;
     }
-    if (arg === "--env") {
+    if (arg === '--profile') {
       profile = argv[i + 1] || null;
       i += 1;
       continue;
@@ -34,9 +35,9 @@ function parseArgs(argv) {
 }
 
 function normalizeProfile(raw) {
-  const normalized = String(raw || "").trim().toLowerCase();
-  if (normalized === "development") return "dev";
-  if (PROFILE_VALUES.includes(normalized)) return normalized;
+  const normalized = String(raw || '').trim().toLowerCase();
+  if (!normalized) return null;
+  if (CANONICAL_PROFILES.includes(normalized)) return normalized;
   return null;
 }
 
@@ -47,23 +48,23 @@ function promptSelectProfile(defaultProfile) {
       output: process.stdout,
     });
 
-    const options = PROFILE_VALUES.map((profile, index) => {
-      const marker = profile === defaultProfile ? " (default)" : "";
+    const options = CANONICAL_PROFILES.map((profile, index) => {
+      const marker = profile === defaultProfile ? ' (default)' : '';
       return `  ${index + 1}) ${profile}${marker}`;
-    }).join("\n");
+    }).join('\n');
 
     rl.question(
-      `Select environment profile:\n${options}\nEnter 1/2/3 (or profile name): `,
+      `Select runtime profile:\n${options}\nEnter 1/2/3 (or profile name): `,
       (answer) => {
         rl.close();
-        const raw = String(answer || "").trim().toLowerCase();
+        const raw = String(answer || '').trim().toLowerCase();
         if (!raw) {
           resolve(defaultProfile);
           return;
         }
         const byIndex = Number.parseInt(raw, 10);
-        if (!Number.isNaN(byIndex) && byIndex >= 1 && byIndex <= PROFILE_VALUES.length) {
-          resolve(PROFILE_VALUES[byIndex - 1]);
+        if (!Number.isNaN(byIndex) && byIndex >= 1 && byIndex <= CANONICAL_PROFILES.length) {
+          resolve(CANONICAL_PROFILES[byIndex - 1]);
           return;
         }
         resolve(normalizeProfile(raw));
@@ -72,29 +73,11 @@ function promptSelectProfile(defaultProfile) {
   });
 }
 
-function promptProdConfirmation() {
-  return new Promise((resolve) => {
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-    });
-    rl.question("Type 'prod' to confirm local production profile activation: ", (answer) => {
-      rl.close();
-      resolve(String(answer || "").trim().toLowerCase() === "prod");
-    });
-  });
-}
-
 function activateProfile(profile) {
-  const scriptPath = path.join(repoRoot, "scripts/env/use_profile.sh");
-  const args = [scriptPath, profile];
-  if (profile === "prod") {
-    args.push("--confirm-prod-local");
-  }
-
-  const result = spawnSync("bash", args, {
+  const scriptPath = path.join(repoRoot, 'scripts/env/use_profile.sh');
+  const result = spawnSync('bash', [scriptPath, profile], {
     cwd: repoRoot,
-    stdio: "inherit",
+    stdio: 'inherit',
     env: process.env,
   });
 
@@ -105,56 +88,40 @@ function activateProfile(profile) {
 
 async function main() {
   const { profile: argProfile, passthrough } = parseArgs(process.argv.slice(2));
-  const envProfile = normalizeProfile(process.env.APP_PROFILE);
+  const envProfile = normalizeProfile(process.env.APP_RUNTIME_PROFILE);
   const requested = normalizeProfile(argProfile) || envProfile;
-  const defaultProfile = "dev";
+  const defaultProfile = 'local-uatdb';
 
   let profile = requested;
   if (!profile) {
     if (!process.stdin.isTTY || !process.stdout.isTTY) {
       profile = defaultProfile;
-      console.log(`No interactive TTY detected. Using profile: ${profile}`);
+      console.log(`No interactive TTY detected. Using runtime profile: ${profile}`);
     } else {
       profile = await promptSelectProfile(defaultProfile);
     }
   }
 
   if (!profile) {
-    console.error("Invalid environment profile. Use one of: dev, uat, prod");
+    console.error('Invalid runtime profile. Use one of: local-uatdb, uat-remote, prod-remote');
     process.exit(1);
-  }
-
-  if (profile === "prod") {
-    const nonInteractiveConfirmed =
-      String(process.env.APP_PROFILE_CONFIRM_PROD || "").trim().toLowerCase() === "prod";
-    if (!nonInteractiveConfirmed) {
-      if (!process.stdin.isTTY || !process.stdout.isTTY) {
-        console.error("Refusing prod profile activation without APP_PROFILE_CONFIRM_PROD=prod");
-        process.exit(1);
-      }
-      const confirmed = await promptProdConfirmation();
-      if (!confirmed) {
-        console.error("Production profile activation cancelled.");
-        process.exit(1);
-      }
-    }
   }
 
   activateProfile(profile);
 
-  const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
-  const args = ["run", "dev:next"];
+  const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  const args = ['run', 'dev:next'];
   if (passthrough.length > 0) {
-    args.push("--", ...passthrough);
+    args.push('--', ...passthrough);
   }
 
   const child = spawn(npmCmd, args, {
     cwd: webRoot,
-    stdio: "inherit",
+    stdio: 'inherit',
     env: process.env,
   });
 
-  child.on("exit", (code, signal) => {
+  child.on('exit', (code, signal) => {
     if (signal) {
       process.kill(process.pid, signal);
       return;
@@ -162,7 +129,7 @@ async function main() {
     process.exit(code || 0);
   });
 
-  child.on("error", (error) => {
+  child.on('error', (error) => {
     console.error(`Failed to launch Next.js dev server: ${error.message}`);
     process.exit(1);
   });

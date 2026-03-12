@@ -68,9 +68,7 @@ Pipfile.lock
 Thumbs.db
 CURSOR_TOOLS.md
 continue-dev-tools-usage.md
-/temp
-
-# Generated native/build artifacts
+/temp# Generated native/build artifacts
 hushh-webapp/.next/
 hushh-webapp/ios/build/
 hushh-webapp/ios/DerivedData/

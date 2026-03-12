@@ -66,9 +66,15 @@ References:
 ## Local Development
 
 ```bash
-cd hushh-webapp
 npm install
-npm run dev
+make local
+```
+
+Frontend-only against deployed backends:
+
+```bash
+make uat-web
+make prod-web
 ```
 
 ## Verification Commands

@@ -4,6 +4,7 @@ export const ROUTE_ID_VALUES = [
   "landing",
   "login",
   "logout",
+  "labs_profile_appearance",
   "profile",
   "consents",
   "marketplace",
@@ -30,6 +31,7 @@ export function resolveRouteId(pathname: string): RouteId {
   if (pathname === ROUTES.HOME) return "landing";
   if (pathname === ROUTES.LOGIN) return "login";
   if (pathname === ROUTES.LOGOUT) return "logout";
+  if (pathname === ROUTES.LABS_PROFILE_APPEARANCE) return "labs_profile_appearance";
   if (pathname === ROUTES.PROFILE) return "profile";
   if (pathname === ROUTES.CONSENTS) return "consents";
   if (pathname === ROUTES.MARKETPLACE) return "marketplace";
@@ -136,6 +138,18 @@ const API_TEMPLATE_RULES: Array<{ regex: RegExp; template: string }> = [
   {
     regex: /^\/api\/consent\/revoke(?:\?.*)?$/i,
     template: "/api/consent/revoke",
+  },
+  {
+    regex: /^\/api\/consent\/center(?:\?.*)?$/i,
+    template: "/api/consent/center",
+  },
+  {
+    regex: /^\/api\/consent\/requests(?:\?.*)?$/i,
+    template: "/api/consent/requests",
+  },
+  {
+    regex: /^\/api\/consent\/requests\/outgoing(?:\?.*)?$/i,
+    template: "/api/consent/requests/outgoing",
   },
   {
     regex: /^\/api\/account\/delete(?:\?.*)?$/i,
