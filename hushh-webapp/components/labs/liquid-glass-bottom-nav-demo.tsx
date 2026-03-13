@@ -10,10 +10,15 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 
+import {
+  LiquidGlassSceneProvider,
+  LiquidGlassSceneRoot,
+} from "@/components/labs/liquid-glass-scene";
+import { useLiquidGlassRendererMode } from "@/components/labs/liquid-glass-renderer-mode";
 import { useSpringValue } from "@/lib/labs/liquid-glass-core";
 import { cn } from "@/lib/utils";
 
-import { LiquidGlassFilter, glassBackdropStyle } from "./liquid-glass-filter";
+import { LiquidGlassBody, LiquidGlassFilter } from "./liquid-glass-filter";
 
 type NavSize = "small" | "medium" | "large";
 
@@ -90,9 +95,31 @@ export function LiquidGlassBottomNavDemo() {
   const [activeTab, setActiveTab] = useState("home");
   const [showBackgroundImage, setShowBackgroundImage] = useState(true);
   const [alwaysShowGlass, setAlwaysShowGlass] = useState(false);
+  const sceneStyle = useMemo(
+    () =>
+      showBackgroundImage
+        ? {
+            backgroundImage:
+              "url(https://images.unsplash.com/photo-1651784627380-58168977f4f9?q=80&w=987&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D)",
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            backgroundRepeat: "no-repeat",
+            backgroundAttachment: "scroll",
+          }
+        : {
+            backgroundImage:
+              "linear-gradient(to right, currentColor 1px, transparent 1px),linear-gradient(to bottom, currentColor 1px, transparent 1px),radial-gradient(120% 100% at 10% 0%, var(--bg1), var(--bg2))",
+            backgroundSize: "24px 24px, 24px 24px, 100% 100%",
+            backgroundPosition: "12px 12px, 12px 12px, 0 0",
+            backgroundRepeat: "repeat, repeat, no-repeat",
+            backgroundAttachment: "scroll",
+          },
+    [showBackgroundImage]
+  );
 
   return (
-    <section className="space-y-5">
+    <LiquidGlassSceneProvider sceneStyle={sceneStyle}>
+      <section className="space-y-5">
       <div className="flex flex-wrap justify-end gap-3">
         <label className="inline-flex items-center gap-2 rounded-full bg-black/5 px-3 py-1.5 text-sm font-medium text-black/60 transition-colors hover:bg-black/10 dark:bg-white/10 dark:text-white/60 dark:hover:bg-white/20">
           <input
@@ -116,44 +143,64 @@ export function LiquidGlassBottomNavDemo() {
 
       <div
         className={cn(
-          "relative -ml-4 h-[38rem] w-[calc(100%+32px)] overflow-hidden rounded-xl border border-black/10 text-black/5 transition-all duration-500 ease-in-out dark:border-white/10 dark:text-white/5",
-          showBackgroundImage ? "animate-bg-pan" : ""
+          "relative -ml-4 h-[38rem] w-[calc(100%+32px)] overflow-hidden rounded-xl border border-black/10 text-black/5 transition-all duration-500 ease-in-out dark:border-white/10 dark:text-white/5"
         )}
-        style={
-          showBackgroundImage
-            ? {
-                backgroundImage:
-                  "url(https://images.unsplash.com/photo-1651784627380-58168977f4f9?q=80&w=987&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D)",
-                backgroundSize: "cover",
-                backgroundPosition: "center",
-              }
-            : {
-                backgroundImage:
-                  "linear-gradient(to right, currentColor 1px, transparent 1px),linear-gradient(to bottom, currentColor 1px, transparent 1px),radial-gradient(120% 100% at 10% 0%, var(--bg1), var(--bg2))",
-                backgroundSize: "24px 24px, 24px 24px, 100% 100%",
-                backgroundPosition: "12px 12px, 12px 12px, 0 0",
-              }
-        }
       >
-        {showBackgroundImage ? (
-          <a
-            href="https://unsplash.com/@visaxslr"
-            target="_blank"
-            rel="noreferrer"
-            className="absolute left-3 top-3 inline-block text-[9px] uppercase tracking-wider text-white/40"
-          >
-            Photo by @visaxslr
-            <br />
-            on Unsplash
-          </a>
-        ) : null}
+        <LiquidGlassSceneRoot
+          className={cn("absolute inset-0", showBackgroundImage ? "animate-bg-pan" : "")}
+        >
+          {showBackgroundImage ? (
+            <>
+              <div className="absolute inset-0" />
+              <a
+                href="https://unsplash.com/@visaxslr"
+                target="_blank"
+                rel="noreferrer"
+                className="absolute left-3 top-3 inline-block text-[9px] uppercase tracking-wider text-white/40"
+              >
+                Photo by @visaxslr
+                <br />
+                on Unsplash
+              </a>
+            </>
+          ) : null}
 
-        <div className="mb-8 pt-14 text-center font-medium text-black/80 dark:text-white/80">
+          <div className="absolute inset-x-10 top-10 grid grid-cols-3 gap-4">
+            {["Watchlist", "Momentum", "Alerts"].map((label, index) => (
+              <div
+                key={label}
+                className="rounded-[2rem] border border-white/10 bg-black/20 px-5 py-4 backdrop-blur-[1px]"
+                style={{
+                  transform: `translateY(${index * 6}px)`,
+                }}
+              >
+                <div className="text-[10px] font-semibold uppercase tracking-[0.28em] text-white/46">
+                  {label}
+                </div>
+                <div className="mt-3 h-3 rounded-full bg-white/18" />
+                <div className="mt-2 h-3 w-4/5 rounded-full bg-white/10" />
+                <div className="mt-2 h-16 rounded-[1.5rem] bg-white/8" />
+              </div>
+            ))}
+          </div>
+
+          <div className="absolute inset-x-12 bottom-24 grid grid-cols-4 gap-4">
+            {Array.from({ length: 8 }).map((_, index) => (
+              <div
+                key={index}
+                className="h-20 rounded-[1.75rem] border border-white/8 bg-black/20"
+                style={{ opacity: 0.45 + (index % 4) * 0.08 }}
+              />
+            ))}
+          </div>
+        </LiquidGlassSceneRoot>
+
+        <div className="relative z-10 mb-8 pt-14 text-center font-medium text-black/80 dark:text-white/80">
           Active:{" "}
           <span className="font-bold uppercase tracking-[0.24em]">{activeTab}</span>
         </div>
 
-        <div className="flex h-[calc(100%-120px)] flex-col items-center justify-center gap-8">
+        <div className="relative z-10 flex h-[calc(100%-120px)] flex-col items-center justify-center gap-8">
           <LiquidGlassNav
             size="small"
             value={activeTab}
@@ -177,7 +224,8 @@ export function LiquidGlassBottomNavDemo() {
           />
         </div>
       </div>
-    </section>
+      </section>
+    </LiquidGlassSceneProvider>
   );
 }
 
@@ -194,6 +242,7 @@ function LiquidGlassNav({
   size: NavSize;
   alwaysShowGlass?: boolean;
 }) {
+  const rendererMode = useLiquidGlassRendererMode();
   const dimensions = SIZE_PRESETS[size];
   const sliderHeight = dimensions.height;
   const itemWidth = dimensions.itemWidth;
@@ -348,6 +397,7 @@ function LiquidGlassNav({
         <LiquidGlassFilter
           filterId={backgroundFilterId}
           enabled
+          mode={rendererMode}
           options={{
             width: sliderWidth,
             height: sliderHeight,
@@ -364,13 +414,15 @@ function LiquidGlassNav({
           }}
         />
 
-        <div
-          className="absolute inset-0 bg-[var(--glass-rgb)]/[var(--glass-bg-alpha)]"
-          style={glassBackdropStyle(backgroundFilterId, {
+        <LiquidGlassBody
+          filterId={backgroundFilterId}
+          mode={rendererMode}
+          className="absolute inset-0"
+          style={{
             borderRadius: sliderHeight / 2,
             boxShadow: "0 4px 20px rgba(0, 0, 0, 0.1)",
             overflow: "hidden",
-          })}
+          }}
         />
 
         <div className="absolute inset-0 z-30 flex">
@@ -391,7 +443,10 @@ function LiquidGlassNav({
         </div>
 
         <div
-          className="absolute z-40 cursor-pointer transition-transform duration-100 ease-out"
+          className={cn(
+            "absolute z-40 cursor-pointer",
+            rendererMode === "mirror" ? "" : "transition-transform duration-100 ease-out"
+          )}
           style={{
             height: thumbHeight,
             width: thumbWidth,
@@ -405,6 +460,7 @@ function LiquidGlassNav({
           <LiquidGlassFilter
             filterId={filterId}
             enabled
+            mode={rendererMode}
             options={{
               width: thumbWidth,
               height: thumbHeight,
@@ -420,16 +476,22 @@ function LiquidGlassNav({
               specularSaturation: 10,
             }}
           />
-          <div
+          <LiquidGlassBody
+            filterId={filterId}
+            mode={rendererMode}
+            compact
+            pressed={isActive}
             className={cn(
               "absolute inset-0 overflow-hidden",
-              !isActive ? "bg-[var(--glass-rgb)]/[var(--glass-bg-alpha)]" : ""
+              rendererMode === "reference" && !isActive
+                ? "bg-[var(--glass-rgb)]/[var(--glass-bg-alpha)]"
+                : ""
             )}
-            style={glassBackdropStyle(filterId, {
+            style={{
               borderRadius: thumbRadius,
               border: "1px solid rgba(255,255,255,0.08)",
               transition: "background-color 0.1s ease, box-shadow 0.1s ease",
-            })}
+            }}
           />
         </div>
 

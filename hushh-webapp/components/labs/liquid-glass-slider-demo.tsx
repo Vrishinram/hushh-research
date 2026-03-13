@@ -2,9 +2,14 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 
+import {
+  LiquidGlassSceneProvider,
+  LiquidGlassSceneRoot,
+} from "@/components/labs/liquid-glass-scene";
+import { useLiquidGlassRendererMode } from "@/components/labs/liquid-glass-renderer-mode";
 import { useSpringValue } from "@/lib/labs/liquid-glass-core";
 
-import { LiquidGlassFilter, glassBackdropStyle } from "./liquid-glass-filter";
+import { LiquidGlassBody, LiquidGlassFilter } from "./liquid-glass-filter";
 
 type SliderSize = "small" | "medium" | "large";
 
@@ -54,25 +59,51 @@ export function LiquidGlassSliderDemo() {
   const [smallValue, setSmallValue] = useState(30);
   const [mediumValue, setMediumValue] = useState(50);
   const [largeValue, setLargeValue] = useState(70);
+  const sceneStyle = useMemo(
+    () => ({
+      backgroundImage:
+        "linear-gradient(to right, currentColor 1px, transparent 1px),linear-gradient(to bottom, currentColor 1px, transparent 1px),radial-gradient(120% 100% at 10% 0%, var(--bg1), var(--bg2))",
+      backgroundSize: "24px 24px, 24px 24px, 100% 100%",
+      backgroundPosition: "12px 12px, 12px 12px, 0 0",
+      backgroundRepeat: "repeat, repeat, no-repeat",
+      backgroundAttachment: "scroll",
+    }),
+    []
+  );
 
   return (
-    <section className="space-y-5">
-      <div
-        className="relative -ml-4 w-[calc(100%+32px)] rounded-xl border border-black/10 px-8 py-12 text-black/5 dark:border-white/10 dark:text-white/5"
-        style={{
-          backgroundImage:
-            "linear-gradient(to right, currentColor 1px, transparent 1px),linear-gradient(to bottom, currentColor 1px, transparent 1px),radial-gradient(120% 100% at 10% 0%, var(--bg1), var(--bg2))",
-          backgroundSize: "24px 24px, 24px 24px, 100% 100%",
-          backgroundPosition: "12px 12px, 12px 12px, 0 0",
-        }}
-      >
-        <div className="flex flex-col gap-10">
+    <LiquidGlassSceneProvider sceneStyle={sceneStyle}>
+      <section className="space-y-5">
+      <div className="relative -ml-4 w-[calc(100%+32px)] overflow-hidden rounded-xl border border-black/10 px-8 py-12 text-black/5 dark:border-white/10 dark:text-white/5">
+        <LiquidGlassSceneRoot className="absolute inset-0">
+          <div className="absolute inset-x-10 top-10 grid grid-cols-3 gap-4">
+            {Array.from({ length: 3 }).map((_, index) => (
+              <div
+                key={index}
+                className="h-24 rounded-[2rem] border border-white/10 bg-black/16"
+                style={{ opacity: 0.42 + index * 0.06 }}
+              />
+            ))}
+          </div>
+          <div className="absolute inset-x-10 bottom-10 grid grid-cols-5 gap-3">
+            {Array.from({ length: 10 }).map((_, index) => (
+              <div
+                key={index}
+                className="h-14 rounded-[1.5rem] border border-white/8 bg-white/8"
+                style={{ opacity: 0.24 + (index % 5) * 0.06 }}
+              />
+            ))}
+          </div>
+        </LiquidGlassSceneRoot>
+
+        <div className="relative z-10 flex flex-col gap-10">
           <SliderField label="Full Width (Large)" value={largeValue} onValueChange={setLargeValue} size="large" />
           <SliderField label="Medium Container (Medium)" value={mediumValue} onValueChange={setMediumValue} size="medium" />
           <SliderField label="Small Container (Small)" value={smallValue} onValueChange={setSmallValue} size="small" />
         </div>
       </div>
-    </section>
+      </section>
+    </LiquidGlassSceneProvider>
   );
 }
 
@@ -113,6 +144,7 @@ function LiquidGlassSlider({
   max?: number;
   disabled?: boolean;
 }) {
+  const rendererMode = useLiquidGlassRendererMode();
   const dimensions = SIZE_PRESETS[size];
   const filterId = `liquid-slider-${useId().replace(/:/g, "-")}`;
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -217,6 +249,7 @@ function LiquidGlassSlider({
       <LiquidGlassFilter
         filterId={filterId}
         enabled
+        mode={rendererMode}
         options={{
           width: dimensions.thumbWidth,
           height: dimensions.thumbHeight,
@@ -233,12 +266,14 @@ function LiquidGlassSlider({
         }}
       />
 
-      <button
-        type="button"
-        className={
+        <button
+          type="button"
+          className={
           disabled
             ? `absolute ${CONTROL_RESET_CLASS} cursor-not-allowed`
-            : `absolute ${CONTROL_RESET_CLASS} cursor-pointer transition-transform duration-150 ease-out`
+            : rendererMode === "mirror"
+              ? `absolute ${CONTROL_RESET_CLASS} cursor-pointer`
+              : `absolute ${CONTROL_RESET_CLASS} cursor-pointer transition-transform duration-150 ease-out`
         }
         style={{
           height: dimensions.thumbHeight,
@@ -259,14 +294,16 @@ function LiquidGlassSlider({
         }}
       >
         <div className="relative h-full w-full">
-          <div
+          <LiquidGlassBody
+            filterId={filterId}
+            mode={rendererMode}
+            pressed={dragging}
             className="absolute inset-0 overflow-hidden"
             style={{
               borderRadius: dimensions.thumbRadius,
               backgroundColor: `rgba(255,255,255,${backgroundOpacity})`,
               boxShadow: "0 3px 14px rgba(0,0,0,0.1)",
               border: "1px solid rgba(255,255,255,0.08)",
-              ...glassBackdropStyle(filterId),
             }}
           />
         </div>

@@ -9,9 +9,14 @@ import {
   useState,
 } from "react";
 
+import {
+  LiquidGlassSceneProvider,
+  LiquidGlassSceneRoot,
+} from "@/components/labs/liquid-glass-scene";
+import { useLiquidGlassRendererMode } from "@/components/labs/liquid-glass-renderer-mode";
 import { cn } from "@/lib/utils";
 
-import { LiquidGlassFilter, glassBackdropStyle } from "./liquid-glass-filter";
+import { LiquidGlassBody, LiquidGlassFilter } from "./liquid-glass-filter";
 
 const CONTROL_RESET_CLASS =
   "appearance-none border-0 bg-transparent p-0 m-0 outline-none shadow-none";
@@ -81,9 +86,31 @@ const SIZE_PRESETS: Record<
 export function LiquidGlassSearchDemo() {
   const [query, setQuery] = useState("");
   const [showBackgroundImage, setShowBackgroundImage] = useState(false);
+  const sceneStyle = useMemo(
+    () =>
+      showBackgroundImage
+        ? {
+            backgroundImage:
+              "url(https://images.unsplash.com/photo-1651784627380-58168977f4f9?q=80&w=987&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D)",
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            backgroundRepeat: "no-repeat",
+            backgroundAttachment: "scroll",
+          }
+        : {
+            backgroundImage:
+              "linear-gradient(to right, currentColor 1px, transparent 1px),linear-gradient(to bottom, currentColor 1px, transparent 1px),radial-gradient(120% 100% at 10% 0%, var(--bg1), var(--bg2))",
+            backgroundSize: "24px 24px, 24px 24px, 100% 100%",
+            backgroundPosition: "12px 12px, 12px 12px, 0 0",
+            backgroundRepeat: "repeat, repeat, no-repeat",
+            backgroundAttachment: "scroll",
+          },
+    [showBackgroundImage]
+  );
 
   return (
-    <section className="space-y-5">
+    <LiquidGlassSceneProvider sceneStyle={sceneStyle}>
+      <section className="space-y-5">
       <div className="flex justify-end px-4">
         <label className="inline-flex items-center gap-2 rounded-full bg-black/5 px-3 py-1.5 text-sm font-medium text-black/60 transition-colors hover:bg-black/10 dark:bg-white/10 dark:text-white/60 dark:hover:bg-white/20">
           <input
@@ -98,39 +125,48 @@ export function LiquidGlassSearchDemo() {
 
       <div
         className={cn(
-          "relative -ml-4 flex h-96 w-[calc(100%+32px)] items-center justify-center overflow-hidden rounded-xl border border-black/10 text-black/5 transition-all duration-500 ease-in-out dark:border-white/10 dark:text-white/5",
-          showBackgroundImage ? "animate-bg-pan" : ""
+          "relative -ml-4 flex h-96 w-[calc(100%+32px)] items-center justify-center overflow-hidden rounded-xl border border-black/10 text-black/5 transition-all duration-500 ease-in-out dark:border-white/10 dark:text-white/5"
         )}
-        style={
-          showBackgroundImage
-            ? {
-                backgroundImage:
-                  "url(https://images.unsplash.com/photo-1651784627380-58168977f4f9?q=80&w=987&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D)",
-                backgroundSize: "cover",
-                backgroundPosition: "center",
-              }
-            : {
-                backgroundImage:
-                  "linear-gradient(to right, currentColor 1px, transparent 1px),linear-gradient(to bottom, currentColor 1px, transparent 1px),radial-gradient(120% 100% at 10% 0%, var(--bg1), var(--bg2))",
-                backgroundSize: "24px 24px, 24px 24px, 100% 100%",
-                backgroundPosition: "12px 12px, 12px 12px, 0 0",
-              }
-        }
       >
-        {showBackgroundImage ? (
-          <a
-            href="https://unsplash.com/@visaxslr"
-            target="_blank"
-            rel="noreferrer"
-            className="absolute left-3 top-3 inline-block text-[9px] uppercase tracking-wider text-white/40"
-          >
-            Photo by @visaxslr
-            <br />
-            on Unsplash
-          </a>
-        ) : null}
+        <LiquidGlassSceneRoot
+          className={cn("absolute inset-0", showBackgroundImage ? "animate-bg-pan" : "")}
+        >
+          {showBackgroundImage ? (
+            <a
+              href="https://unsplash.com/@visaxslr"
+              target="_blank"
+              rel="noreferrer"
+              className="absolute left-3 top-3 inline-block text-[9px] uppercase tracking-wider text-white/40"
+            >
+              Photo by @visaxslr
+              <br />
+              on Unsplash
+            </a>
+          ) : null}
 
-        <div className="w-[420px] max-w-[90%]">
+          <div className="absolute inset-x-16 top-12 flex items-center justify-between">
+            <div className="rounded-[2rem] border border-white/10 bg-black/18 px-5 py-4 text-white/62">
+              <div className="text-[10px] uppercase tracking-[0.28em]">Search Scene</div>
+              <div className="mt-3 h-3 w-28 rounded-full bg-white/14" />
+            </div>
+            <div className="rounded-[2rem] border border-white/10 bg-white/10 px-5 py-4 text-white/62">
+              <div className="text-[10px] uppercase tracking-[0.28em]">Live Results</div>
+              <div className="mt-3 h-3 w-24 rounded-full bg-white/16" />
+            </div>
+          </div>
+
+          <div className="absolute inset-x-20 bottom-14 grid grid-cols-3 gap-4">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <div
+                key={index}
+                className="h-20 rounded-[1.75rem] border border-white/8 bg-black/16"
+                style={{ opacity: 0.4 + (index % 3) * 0.09 }}
+              />
+            ))}
+          </div>
+        </LiquidGlassSceneRoot>
+
+        <div className="relative z-10 w-[420px] max-w-[90%]">
           <LiquidGlassSearchBar
             value={query}
             onValueChange={setQuery}
@@ -140,12 +176,13 @@ export function LiquidGlassSearchDemo() {
         </div>
 
         {query ? (
-          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 rounded-full bg-white/20 px-4 py-2 text-sm font-medium text-black/80 backdrop-blur dark:bg-black/20 dark:text-white/80">
+          <div className="absolute bottom-6 left-1/2 z-10 -translate-x-1/2 rounded-full bg-white/20 px-4 py-2 text-sm font-medium text-black/80 backdrop-blur dark:bg-black/20 dark:text-white/80">
             Query: <span className="font-bold">{query}</span>
           </div>
         ) : null}
       </div>
-    </section>
+      </section>
+    </LiquidGlassSceneProvider>
   );
 }
 
@@ -160,6 +197,7 @@ function LiquidGlassSearchBar({
   placeholder: string;
   size: SearchSize;
 }) {
+  const rendererMode = useLiquidGlassRendererMode();
   const dimensions = SIZE_PRESETS[size];
   const inputFilterId = `${useId().replace(/:/g, "-")}-input`;
   const orbFilterId = `${useId().replace(/:/g, "-")}-orb`;
@@ -251,7 +289,7 @@ function LiquidGlassSearchBar({
     <div className="relative flex w-full select-none items-center" style={{ height: dimensions.height }}>
       <div
         ref={inputContainerRef}
-        className="absolute inset-0 transition-all duration-300 ease-[cubic-bezier(0.25,0.8,0.25,1)]"
+        className="absolute inset-0 transition-[transform] duration-300 ease-[cubic-bezier(0.25,0.8,0.25,1)]"
         style={{
           zIndex: 10,
           transform: isExpanded
@@ -260,18 +298,25 @@ function LiquidGlassSearchBar({
           transformOrigin: "center center",
         }}
       >
-        <LiquidGlassFilter filterId={inputFilterId} enabled options={inputFilterOptions} />
+        <LiquidGlassFilter
+          filterId={inputFilterId}
+          enabled
+          options={inputFilterOptions}
+          mode={rendererMode}
+        />
 
-        <div
-          className="absolute inset-0 z-0 overflow-hidden transition-all duration-300"
-          style={glassBackdropStyle(inputFilterId, {
+        <LiquidGlassBody
+          filterId={inputFilterId}
+          mode={rendererMode}
+          className="absolute inset-0 z-0 overflow-hidden transition-[box-shadow,background-color,border-color] duration-300"
+          style={{
             borderRadius: dimensions.radius,
             backgroundColor: "rgba(255,255,255,0.05)",
             border: "1px solid rgba(255,255,255,0.08)",
             boxShadow: isExpanded
               ? "0 4px 24px rgba(0,0,0,0.1)"
               : "0 2px 10px rgba(0,0,0,0.05)",
-          })}
+          }}
         />
 
         <div
@@ -326,18 +371,27 @@ function LiquidGlassSearchBar({
           inputRef.current?.focus();
         }}
       >
-        <LiquidGlassFilter filterId={orbFilterId} enabled options={orbFilterOptions} />
+        <LiquidGlassFilter
+          filterId={orbFilterId}
+          enabled
+          options={orbFilterOptions}
+          mode={rendererMode}
+        />
 
         <div className="relative h-full w-full">
-          <div
+          <LiquidGlassBody
+            filterId={orbFilterId}
+            mode={rendererMode}
+            compact
+            pressed={showCloseOrb}
             className="absolute inset-0 z-10 overflow-hidden"
-            style={glassBackdropStyle(orbFilterId, {
+            style={{
               borderRadius: dimensions.radius,
               backgroundColor: "rgba(255,255,255,0.05)",
               border: "1px solid rgba(255,255,255,0.08)",
               boxShadow:
                 "0 4px 15px rgba(0,0,0,0.1), inset 0 0 5px rgba(255,255,255,0.1)",
-            })}
+            }}
           />
 
           <div className="absolute inset-0 z-20 flex items-center justify-center text-black/60 dark:text-white/70">
