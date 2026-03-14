@@ -1,16 +1,12 @@
 # Route Contracts
 
-> Governance for Next.js proxy routes and their tri-flow counterparts.
+> Governance for Next.js proxy routes, native plugin parity, and app navigation truth.
 
-Hushh uses a contract manifest to keep the API surface honest:
+Hushh uses a contract manifest to keep the declared runtime surface aligned across:
 
-- Every Next.js API route under `hushh-webapp/app/api/**/route.ts` must be declared in `hushh-webapp/route-contracts.json`, or explicitly allowlisted.
-- Each contract can assert:
-  - Backend router prefix + paths exist (simple source checks against FastAPI files)
-  - Native plugin files exist (TS + iOS + Android)
-  - TS plugin exports include required method names
-
-This supports the repo's north-star invariants: **Tri-Flow**, **consent-first boundaries**, and **auditability**.
+- Next.js API route handlers under `hushh-webapp/app/api/**/route.ts`
+- backend router prefixes and path families
+- Capacitor TypeScript, iOS, and Android plugin surfaces
 
 ## Files
 
@@ -20,52 +16,73 @@ This supports the repo's north-star invariants: **Tri-Flow**, **consent-first bo
   - `cd hushh-webapp && npm run verify:routes`
   - `cd hushh-webapp && npm run verify:capacitor:routes`
 
-## Canonical App Routes (Current)
+## Canonical App Routes
 
-Keep navigation contract aligned with `hushh-webapp/lib/navigation/routes.ts`:
+Keep navigation documentation aligned with `hushh-webapp/lib/navigation/routes.ts`:
 
 - `/`
 - `/login`
+- `/logout`
+- `/labs/profile-appearance`
+- `/profile`
+- `/consents`
+- `/marketplace`
+- `/marketplace/ria`
+- `/ria`
+- `/ria/onboarding`
+- `/ria/clients`
+- `/ria/requests`
+- `/ria/settings`
+- `/kai`
 - `/kai/onboarding`
 - `/kai/import`
-- `/kai`
 - `/kai/dashboard`
+- `/kai/analysis`
+- `/kai/optimize`
 
-Legacy alias routes and legacy nav surfaces (for example, `agent-nav`) must not be reintroduced into primary navigation contracts.
+Implemented route families that are not represented as named constants but still belong to the live app surface:
+
+- `/marketplace/ria/[riaId]`
+- `/ria/workspace/[clientId]`
+
+Legacy navigation surfaces and aliases must not be reintroduced without updating both `routes.ts` and this reference.
 
 ## When To Update `route-contracts.json`
 
 Update the manifest whenever you:
 
-- Add a new Next.js API route under `hushh-webapp/app/api/`
-- Change a backend router prefix or path
-- Add/rename a Capacitor plugin method that must exist in TS/iOS/Android
+- add a new Next.js API route under `hushh-webapp/app/api/`
+- change a backend router prefix or supported backend path family
+- add, remove, or rename a Capacitor plugin method that must exist in TS, iOS, and Android
+- intentionally retire an old proxy or plugin surface
 
-## Contract Shape (High Level)
+## Contract Shape
 
-Each entry under `contracts[]` typically includes:
+Each `contracts[]` entry typically includes:
 
-- `id`: stable identifier (used in error messages)
-- `webRouteFile` or `webRouteFiles`: repo-relative path(s) to Next.js `route.ts`
-- `backend` (optional):
-  - `file`: FastAPI router module file path
-  - `routerPrefix`: `APIRouter(prefix="...")` value
-  - `paths`: list of route path strings (without the prefix)
-- `native` (optional):
-  - `tsPluginFile`: TS `registerPlugin(...)` export file
-  - `iosPluginFile`: Swift plugin file
-  - `androidPluginFile`: Kotlin plugin file
-  - `requiredMethodNames`: method names expected to exist in the TS plugin file
+- `id`: stable identifier used in verification errors
+- `webRouteFile` or `webRouteFiles`: repo-relative Next.js `route.ts` files
+- `backend`:
+  - `file`: FastAPI router module path
+  - `routerPrefix`: declared `APIRouter(prefix="...")`
+  - `paths`: supported path family list relative to the prefix
+- `native`:
+  - `tsPluginFile`: TypeScript plugin export
+  - `iosPluginFile`: Swift plugin
+  - `androidPluginFile`: Kotlin plugin
+  - `requiredMethodNames`: TS methods that must exist
 
-## Allowlisting (Use Sparingly)
+## Allowlisting
 
-`allowlistedWebRouteFiles` is for routes that are intentionally not governed by a contract (for example: web-only utilities or special-case configuration routes).
+`allowlistedWebRouteFiles` is reserved for intentional exceptions such as web-only utilities.
 
 Default stance:
-- If a route is part of a tri-flow feature, add a real `contracts[]` entry.
-- Use the allowlist only when you can justify why a contract should not exist.
 
-## Relationship To API Contracts
+- tri-flow features should use a real contract entry
+- removed legacy routes should be deleted, not allowlisted
+- wildcard proxies should be constrained to supported backend paths
 
-- `docs/reference/architecture/api-contracts.md` documents the endpoint surface (what exists and how to call it).
-- `route-contracts.json` is a governance manifest that prevents drift and undeclared routes in `hushh-webapp/app/api/`.
+## Relationship To Other Docs
+
+- [api-contracts.md](./api-contracts.md) describes the API surface itself.
+- `route-contracts.json` is a guardrail that prevents undeclared route drift.

@@ -282,7 +282,10 @@ function LiquidGlassNav({
   const thumbStartXRef = useRef(targetThumbX);
   const hideGlassTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const metrics = useSceneMetrics(containerRef);
+  const thumbRef = useRef<HTMLDivElement>(null);
+  
+  const containerMetrics = useSceneMetrics(containerRef);
+  const thumbMetrics = useSceneMetrics(thumbRef);
 
   useEffect(() => {
     if (pointerDown) return;
@@ -419,26 +422,67 @@ function LiquidGlassNav({
       paintLabBackdrop(ctx, {
         width: env.width,
         height: env.height,
-        offsetX: metrics.x + springTargetX,
-        offsetY: metrics.y + thumbTop,
-        sceneWidth: metrics.width,
-        sceneHeight: metrics.height,
+        offsetX: thumbMetrics.x,
+        offsetY: thumbMetrics.y,
+        sceneWidth: thumbMetrics.width,
+        sceneHeight: thumbMetrics.height,
         padding: env.padding,
         image: backgroundImage,
       });
-      ctx.fillStyle = showBackgroundImage ? "rgba(8, 10, 16, 0.32)" : "rgba(8, 10, 16, 0.16)";
+
+      // Subtle depth tint - significantly reduced to avoid "black blob" effect
+      ctx.fillStyle = showBackgroundImage ? "rgba(8, 10, 16, 0.08)" : "rgba(8, 10, 16, 0.04)";
       ctx.fillRect(-100, -100, env.width + 200, env.height + 200);
+
       ctx.save();
+      // Translate back by the local spring amount for substrate rendering
       ctx.translate(-springTargetX, -thumbTop);
       paintNavSubstrate(ctx, {
         width: sliderWidth,
         height: sliderHeight,
         radius: sliderHeight / 2,
-        emphasis: showBackgroundImage ? 1.18 : 1,
+        emphasis: showBackgroundImage ? 1.1 : 1,
       });
       ctx.restore();
     },
-    [backgroundImage, metrics.x, metrics.y, metrics.width, metrics.height, showBackgroundImage, sliderHeight, sliderWidth, springTargetX, thumbTop]
+    [backgroundImage, thumbMetrics.x, thumbMetrics.y, thumbMetrics.width, thumbMetrics.height, showBackgroundImage, sliderHeight, sliderWidth, springTargetX, thumbTop]
+  );
+
+  const backgroundFilterOptions = useMemo(
+    () => ({
+      width: sliderWidth,
+      height: sliderHeight,
+      radius: sliderHeight / 2,
+      bezelWidth: dimensions.backgroundBezelWidth,
+      glassThickness: 190,
+      refractiveIndex: 1.3,
+      bezelType: "convex_squircle" as const,
+      shape: "pill" as const,
+      blur: 2,
+      scaleRatio: 0.4,
+      specularOpacity: 1,
+      specularSaturation: 19,
+    }),
+    [dimensions.backgroundBezelWidth, sliderHeight, sliderWidth]
+  );
+
+  const paintBarMirrorScene = useCallback(
+    (ctx: CanvasRenderingContext2D, env: { width: number; height: number; scale: number; padding?: number }) => {
+      paintLabBackdrop(ctx, {
+        width: env.width,
+        height: env.height,
+        offsetX: containerMetrics.x,
+        offsetY: containerMetrics.y,
+        sceneWidth: containerMetrics.width,
+        sceneHeight: containerMetrics.height,
+        padding: env.padding,
+        image: backgroundImage,
+      });
+      // Very subtle bar tint
+      ctx.fillStyle = showBackgroundImage ? "rgba(8, 10, 16, 0.12)" : "rgba(8, 10, 16, 0.06)";
+      ctx.fillRect(-100, -100, env.width + 200, env.height + 200);
+    },
+    [backgroundImage, containerMetrics.x, containerMetrics.y, containerMetrics.width, containerMetrics.height, showBackgroundImage]
   );
 
   return (
@@ -447,7 +491,7 @@ function LiquidGlassNav({
       className="inline-block select-none touch-none"
       style={{
         transform: isActive ? "scale(1.05)" : "scale(1)",
-        transition: rendererMode === "mirror" ? "none" : "transform 0.1s ease-out",
+        transition: "transform 0.1s ease-out",
       }}
     >
         <div
@@ -464,20 +508,7 @@ function LiquidGlassNav({
                 filterId={backgroundFilterId}
                 enabled
                 mode={rendererMode}
-                options={{
-                  width: sliderWidth,
-                  height: sliderHeight,
-                  radius: sliderHeight / 2,
-                  bezelWidth: dimensions.backgroundBezelWidth,
-                  glassThickness: 190,
-                  refractiveIndex: 1.3,
-                  bezelType: "convex_squircle",
-                  shape: "pill",
-                  blur: 2,
-                  scaleRatio: 0.4,
-                  specularOpacity: 1,
-                  specularSaturation: 19,
-                }}
+                options={backgroundFilterOptions}
               />
 
               <LiquidGlassBody
@@ -492,16 +523,26 @@ function LiquidGlassNav({
               />
             </>
           ) : (
-            <div
-              className="absolute inset-0 overflow-hidden"
-              style={{
-                borderRadius: sliderHeight / 2,
-              }}
-            >
-              <div className="absolute inset-0">
-                <NavBaseSubstrate width={sliderWidth} height={sliderHeight} />
-              </div>
-            </div>
+            <>
+              <LiquidGlassFilter
+                filterId={backgroundFilterId}
+                enabled
+                mode={rendererMode}
+                options={backgroundFilterOptions}
+              />
+              <LiquidGlassBody
+                filterId={backgroundFilterId}
+                mode={rendererMode}
+                mirrorOptions={backgroundFilterOptions}
+                mirrorScene={paintBarMirrorScene}
+                className="absolute inset-0"
+                style={{
+                  borderRadius: sliderHeight / 2,
+                  boxShadow: "0 4px 20px rgba(0, 0, 0, 0.1)",
+                  overflow: "hidden",
+                }}
+              />
+            </>
           )}
 
           <div className="absolute inset-0 z-30 flex">
@@ -522,9 +563,10 @@ function LiquidGlassNav({
           </div>
 
           <div
+            ref={thumbRef}
             className={cn(
               "absolute z-40 cursor-pointer",
-              rendererMode === "mirror" ? "" : "transition-transform duration-100 ease-out"
+              "transition-transform duration-100 ease-out"
             )}
             style={{
               height: thumbHeight,

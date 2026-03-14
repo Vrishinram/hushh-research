@@ -190,8 +190,6 @@
       "id": "worldModelProxy",
       "webRouteFiles": [
         "hushh-webapp/app/api/world-model/[...path]/route.ts",
-        "hushh-webapp/app/api/world-model/domains/route.ts",
-        "hushh-webapp/app/api/world-model/domains/[userId]/route.ts",
         "hushh-webapp/app/api/world-model/metadata/[userId]/route.ts",
         "hushh-webapp/app/api/world-model/scopes/[userId]/route.ts",
         "hushh-webapp/app/api/world-model/store-domain/route.ts"
@@ -201,6 +199,7 @@
         "routerPrefix": "/api/world-model",
         "paths": [
           "/metadata/{user_id}",
+          "/scopes/{user_id}",
           "/store-domain",
           "/data/{user_id}",
           "/domain-data/{user_id}/{domain}"
@@ -212,9 +211,11 @@
         "androidPluginFile": "hushh-webapp/android/app/src/main/java/com/hushh/app/plugins/WorldModel/WorldModelPlugin.kt",
         "requiredMethodNames": [
           "getMetadata",
-          "getIndex",
-          "getAttributes",
-          "getUserDomains"
+          "getAvailableScopes",
+          "getEncryptedData",
+          "storeDomainData",
+          "getDomainData",
+          "clearDomain"
         ]
       }
     },

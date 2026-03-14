@@ -4,7 +4,15 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const repoRoot = path.resolve(__dirname, "..");
-const docRoots = ["docs", "consent-protocol/docs", "hushh-webapp/docs"];
+const docTargets = [
+  "readme.md",
+  "getting_started.md",
+  "TESTING.md",
+  "contributing.md",
+  "docs",
+  "consent-protocol/docs",
+  "hushh-webapp/docs",
+];
 const pathPrefixes = ["docs/", "consent-protocol/", "hushh-webapp/", "scripts/", "deploy/", "data/"];
 const fileLikeExt = /\.(md|ts|tsx|js|cjs|py|sh|yml|yaml|json|txt)$/i;
 
@@ -12,9 +20,15 @@ function normalize(p) {
   return p.replace(/\\/g, "/");
 }
 
-function walkMarkdown(relRoot) {
-  const fullRoot = path.join(repoRoot, relRoot);
-  if (!fs.existsSync(fullRoot)) return [];
+function walkMarkdown(relTarget) {
+  const fullTarget = path.join(repoRoot, relTarget);
+  if (!fs.existsSync(fullTarget)) return [];
+  const stat = fs.statSync(fullTarget);
+
+  if (stat.isFile()) {
+    return relTarget.endsWith(".md") ? [normalize(relTarget)] : [];
+  }
+
   const out = [];
 
   const walk = (dir) => {
@@ -30,7 +44,7 @@ function walkMarkdown(relRoot) {
     }
   };
 
-  walk(fullRoot);
+  walk(fullTarget);
   return out;
 }
 
@@ -92,7 +106,7 @@ function resolveCodePath(baseFile, token) {
 }
 
 function main() {
-  const mdFiles = [...new Set(docRoots.flatMap((root) => walkMarkdown(root)))].sort();
+  const mdFiles = [...new Set(docTargets.flatMap((target) => walkMarkdown(target)))].sort();
   const errors = [];
 
   for (const relFile of mdFiles) {

@@ -357,9 +357,7 @@ function LiquidGlassSwitch({
           className={
             disabled
               ? `absolute ${CONTROL_RESET_CLASS} cursor-not-allowed`
-              : rendererMode === "mirror"
-                ? `absolute ${CONTROL_RESET_CLASS}`
-                : `absolute ${CONTROL_RESET_CLASS} transition-transform duration-100 ease-out`
+              : `absolute ${CONTROL_RESET_CLASS} transition-transform duration-100 ease-out`
           }
           style={{
             height: thumbHeight,
@@ -379,6 +377,7 @@ function LiquidGlassSwitch({
               state={visualState}
               mirrorOptions={thumbFilterOptions}
               mirrorScene={paintMirrorScene}
+              opaqueBackground={`rgba(255,255,255,${backgroundOpacity})`}
               className="absolute inset-0 overflow-hidden"
               style={{
                 borderRadius: thumbRadius,

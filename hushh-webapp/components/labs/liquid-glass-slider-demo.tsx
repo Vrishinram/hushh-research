@@ -342,9 +342,7 @@ function LiquidGlassSlider({
         className={
           disabled
             ? `absolute ${CONTROL_RESET_CLASS} cursor-not-allowed`
-            : rendererMode === "mirror"
-              ? `absolute ${CONTROL_RESET_CLASS} cursor-pointer`
-              : `absolute ${CONTROL_RESET_CLASS} cursor-pointer transition-transform duration-150 ease-out`
+            : `absolute ${CONTROL_RESET_CLASS} cursor-pointer transition-transform duration-150 ease-out`
         }
         style={{
           height: dimensions.thumbHeight,
@@ -372,6 +370,7 @@ function LiquidGlassSlider({
             state={visualState}
             mirrorOptions={thumbFilterOptions}
             mirrorScene={paintMirrorScene}
+            opaqueBackground={`rgba(255,255,255,${backgroundOpacity})`}
             className="absolute inset-0 overflow-hidden"
             style={{
               borderRadius: dimensions.thumbRadius,

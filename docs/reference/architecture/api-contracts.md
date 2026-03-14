@@ -27,7 +27,7 @@ POST /api/consent/vault-owner-token  (Firebase Bearer)
 | Firebase ID Token     | Identity verification only       | 1 hour   | `Bearer <firebase-id-token>`   |
 | VAULT_OWNER Token     | Consent + identity for all data  | 24 hours | `Bearer <vault-owner-token>`   |
 | Agent Scoped Token    | Delegated MCP agent access       | 7 days   | `Bearer <consent-token>`       |
-| Developer Token       | External API access              | N/A      | In request body                 |
+| Developer Token       | External API access              | N/A      | `X-MCP-Developer-Token` or request body |
 
 ---
 
@@ -39,9 +39,6 @@ POST /api/consent/vault-owner-token  (Firebase Bearer)
 | ------ | ---- | ----------- |
 | GET | `/health` | Detailed health check with agent list |
 | GET | `/api/kai/health` | Kai subsystem health |
-| GET | `/api/v1` | Developer API root (non-production only; `410` in production) |
-| GET | `/api/v1/list-scopes` | List all available consent scopes (non-production only; `410` in production) |
-| GET | `/api/v1/user-scopes/{user_id}` | Discover dynamic user scopes filtered by developer-approved scopes (requires developer token; non-production only; `410` in production) |
 | GET | `/api/investors/search?q={name}` | Fuzzy search investors by name |
 | GET | `/api/investors/{investor_id}` | Full investor profile by ID |
 | GET | `/api/investors/cik/{cik}` | Investor profile by SEC CIK |
@@ -51,6 +48,15 @@ POST /api/consent/vault-owner-token  (Firebase Bearer)
 | POST | `/api/validate-token` | Validate a consent token |
 | GET | `/api/app-config/review-mode` | Review mode toggle (enabled only) |
 | POST | `/api/app-config/review-mode/session` | Mint Firebase custom token for `REVIEWER_UID` when review mode enabled |
+
+### Developer API (Developer Token / Developer API Enabled)
+
+| Method | Path | Description |
+| ------ | ---- | ----------- |
+| GET | `/api/v1` | Developer API root summary (`410` when developer API disabled) |
+| GET | `/api/v1/list-scopes` | Generic dynamic scope catalog (`410` when developer API disabled) |
+| GET | `/api/v1/user-scopes/{user_id}` | Discover dynamic user scopes for one user (requires `X-MCP-Developer-Token`) |
+| POST | `/api/v1/request-consent` | Create or reuse consent for one discovered scope (requires developer token) |
 
 ### Debug (Dev Only)
 
@@ -196,8 +202,8 @@ Security invariant:
 
 | Method | Path | Replacement |
 | ------ | ---- | ----------- |
-| POST | `/api/v1/food-data` | `GET /api/world-model/domain-data/{uid}/food` |
-| POST | `/api/v1/professional-data` | `GET /api/world-model/domain-data/{uid}/professional` |
+| POST | `/api/v1/food-data` | `GET /api/world-model/domain-data/{uid}/{discovered_domain}` after runtime domain discovery, or the publishable flow `/api/v1/user-scopes/{uid}` → `/api/v1/request-consent` → `/api/consent/data` |
+| POST | `/api/v1/professional-data` | `GET /api/world-model/domain-data/{uid}/{discovered_domain}` after runtime domain discovery, or the publishable flow `/api/v1/user-scopes/{uid}` → `/api/v1/request-consent` → `/api/consent/data` |
 | DELETE | `/api/world-model/attributes/{uid}/{domain}/{key}` | Client-side BYOK operation |
 | POST | `/api/kai/decision/store` | `POST /api/world-model/store-domain` with domain=`financial` |
 | GET | `/api/kai/decision/{id}` | `GET /api/kai/decisions/{user_id}` |
@@ -297,20 +303,28 @@ No silent success is emitted on terminal failures.
 External developers (MCP agents, third-party apps) use the `/api/v1` endpoints:
 
 ```
-1. POST /api/v1/request-consent
-   Body: { user_id, scope, agent_id, developer_token, description }
+1. GET /api/v1/user-scopes/{user_id}
+   Header: X-MCP-Developer-Token: <token>
+   → Returns: { user_id, available_domains, scopes }
+
+2. POST /api/v1/request-consent
+   Body: { user_id, scope, agent_id, developer_token, reason }
    → Returns: { request_id, status: "pending" }
 
-2. User receives FCM notification → approves in app
+3. User receives FCM notification → approves in app
 
-3. POST /api/validate-token
+4. POST /api/validate-token
    Body: { token: "<consent-token>" }
    → Returns: { valid, user_id, scope, expires_at }
 
-4. GET /api/consent/data?token=<consent-token>
+5. GET /api/consent/data?token=<consent-token>
    → Returns: { ciphertext, iv, tag, export_key }
    → Developer decrypts with export_key
 ```
+
+For MCP hosts, the recommended consumption surface is:
+
+`discover_user_domains` → `request_consent` → `check_consent_status` → `get_scoped_data`
 
 Production policy:
 - All `/api/v1/*` endpoints return `410` with:

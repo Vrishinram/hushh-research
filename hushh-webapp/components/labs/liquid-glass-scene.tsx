@@ -139,18 +139,40 @@ export function useSceneMetrics(elementRef: React.RefObject<HTMLElement | null>)
     const element = elementRef.current;
     if (!scene || !element) return;
 
+    let frameId: number;
+
     const update = () => {
       const sceneRect = scene.getBoundingClientRect();
       const elRect = element.getBoundingClientRect();
-      setMetrics({
-        x: elRect.left - sceneRect.left,
-        y: elRect.top - sceneRect.top,
-        width: sceneRect.width,
-        height: sceneRect.height,
+      
+      const newX = elRect.left - sceneRect.left;
+      const newY = elRect.top - sceneRect.top;
+      const newWidth = sceneRect.width;
+      const newHeight = sceneRect.height;
+
+      setMetrics((prev) => {
+        if (
+          Math.abs(prev.x - newX) > 0.5 ||
+          Math.abs(prev.y - newY) > 0.5 ||
+          Math.abs(prev.width - newWidth) > 0.5 ||
+          Math.abs(prev.height - newHeight) > 0.5
+        ) {
+          return {
+            x: newX,
+            y: newY,
+            width: newWidth,
+            height: newHeight,
+          };
+        }
+        return prev;
       });
+
+      frameId = requestAnimationFrame(update);
     };
 
-    update();
+    frameId = requestAnimationFrame(update);
+
+    return () => cancelAnimationFrame(frameId);
   }, [context.sceneRootRef, elementRef, context.sceneVersion]);
 
   return metrics;

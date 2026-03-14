@@ -35,6 +35,10 @@ const OPERATIONAL_DOC_TARGETS = [
 ];
 
 const FIRST_PARTY_DOC_TARGETS = [
+  "readme.md",
+  "getting_started.md",
+  "TESTING.md",
+  "contributing.md",
   "docs",
   "consent-protocol/docs",
   "hushh-webapp/docs",
@@ -53,10 +57,23 @@ const GENERATED_ARTIFACT_DIRS = [
 const REQUIRED_CANONICAL_ROUTES = {
   HOME: "/",
   LOGIN: "/login",
+  LOGOUT: "/logout",
+  LABS_PROFILE_APPEARANCE: "/labs/profile-appearance",
+  PROFILE: "/profile",
+  CONSENTS: "/consents",
+  MARKETPLACE: "/marketplace",
+  MARKETPLACE_RIA_PROFILE: "/marketplace/ria",
+  RIA_HOME: "/ria",
+  RIA_ONBOARDING: "/ria/onboarding",
+  RIA_CLIENTS: "/ria/clients",
+  RIA_REQUESTS: "/ria/requests",
+  RIA_SETTINGS: "/ria/settings",
   KAI_HOME: "/kai",
   KAI_ONBOARDING: "/kai/onboarding",
   KAI_IMPORT: "/kai/import",
   KAI_DASHBOARD: "/kai/dashboard",
+  KAI_ANALYSIS: "/kai/analysis",
+  KAI_OPTIMIZE: "/kai/optimize",
 };
 
 const REQUIRED_OPERATIONAL_MARKERS = [
@@ -97,6 +114,18 @@ const REMOVED_SCRIPT_REFERENCES = [
 const REMOVED_FILE_REFERENCES = [
   "scripts/test-ci-simulation.sh",
   "scripts/ci-simulate.sh",
+];
+
+const STALE_DOC_REFERENCE_PATTERNS = [
+  "docs/reference/ci.md",
+  "docs/reference/route_contracts.md",
+  "docs/reference/architecture.md",
+  "docs/reference/consent_protocol.md",
+  "docs/reference/database_service_layer.md",
+  "docs/reference/developer_api.md",
+  "docs/guides/mobile_development.md",
+  "docs/technical/",
+  "docs/business/",
 ];
 
 function fail(message) {
@@ -240,6 +269,25 @@ function verifyNoRemovedFileReferences(files) {
     fail(`Stale file references found in docs:\n${offenders.map((x) => `- ${x}`).join("\n")}`);
   } else {
     ok("Docs do not reference removed helper scripts");
+  }
+}
+
+function verifyNoStaleDocReferences(files) {
+  const offenders = [];
+
+  for (const file of files) {
+    const src = read(file);
+    for (const staleRef of STALE_DOC_REFERENCE_PATTERNS) {
+      if (src.includes(staleRef)) {
+        offenders.push(`${file}: stale doc reference "${staleRef}"`);
+      }
+    }
+  }
+
+  if (offenders.length) {
+    fail(`Stale doc references found:\n${offenders.map((x) => `- ${x}`).join("\n")}`);
+  } else {
+    ok("Docs do not reference deleted legacy doc paths");
   }
 }
 
@@ -410,7 +458,8 @@ function main() {
   scanSpeculativeOperationalContent(operationalDocs);
   verifyNoRemovedScriptReferences(firstPartyDocs);
   verifyNoRemovedFileReferences(firstPartyDocs);
-  verifyDocPathReferences(operationalDocs);
+  verifyNoStaleDocReferences(firstPartyDocs);
+  verifyDocPathReferences(firstPartyDocs);
   verifyCanonicalRouteContract(operationalDocs);
   verifyRequiredOperationalMarkers();
   verifyNoGeneratedArtifacts();

@@ -121,18 +121,18 @@ function useImageAsset(url: string | null) {
 function stateOpticalMix(state: LiquidGlassMirrorVisualState) {
   switch (state) {
     case "pressed":
-      return { shadow: 0.08, specular: 1.12, displacement: 1.04 };
+      return { shadow: 0.0, specular: 0.0, displacement: 1.04 };
     case "dragging":
-      return { shadow: 0.07, specular: 1.02, displacement: 1.02 };
+      return { shadow: 0.0, specular: 0.0, displacement: 1.02 };
     case "held":
-      return { shadow: 0.06, specular: 1.26, displacement: 0.92 };
+      return { shadow: 0.0, specular: 0.0, displacement: 0.92 };
     case "settling":
-      return { shadow: 0.06, specular: 1.12, displacement: 0.96 };
+      return { shadow: 0.0, specular: 0.0, displacement: 0.96 };
     case "active":
-      return { shadow: 0.05, specular: 1.18, displacement: 0.9 };
+      return { shadow: 0.0, specular: 0.0, displacement: 0.9 };
     case "idle":
     default:
-      return { shadow: 0.04, specular: 1.1, displacement: 0.88 };
+      return { shadow: 0.0, specular: 0.0, displacement: 0.88 };
   }
 }
 

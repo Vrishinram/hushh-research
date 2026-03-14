@@ -1,413 +1,263 @@
 # Architecture
 
-> System-level technical architecture for the Hushh Personal Agent platform.
+> Current runtime architecture for the Hushh monorepo.
 
 ---
 
-## System Diagram
+## System Shape
 
+```text
+Web / iOS / Android clients
+  -> Next.js route handlers or Capacitor plugins
+  -> FastAPI backend
+  -> service layer
+  -> PostgreSQL / external services
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                              CLIENT LAYER                               │
-│                                                                         │
-│  ┌──────────────────────────────────────────────────────────────────┐   │
-│  │ Next.js 16 / React 19 / Capacitor 8                             │   │
-│  │ ┌──────────┐ ┌───────────┐ ┌──────────────┐ ┌───────────────┐  │   │
-│  │ │ Vault    │ │ Kai       │ │ Portfolio    │ │ Consent       │  │   │
-│  │ │ Context  │ │ Dashboard │ │ Manager      │ │ Notifications │  │   │
-│  │ └────┬─────┘ └─────┬─────┘ └──────┬───────┘ └───────┬───────┘  │   │
-│  │      └──────────────┴──────────────┴─────────────────┘          │   │
-│  │                        Service Layer                             │   │
-│  │                    (ApiService / Zustand)                        │   │
-│  └────────────────────────────┬─────────────────────────────────────┘   │
-│           WEB: Next.js Proxy  │  NATIVE: Capacitor Plugin              │
-└───────────────────────────────┼─────────────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                           BACKEND LAYER                                 │
-│                                                                         │
-│  ┌──────────────────────────────────────────────────────────────────┐   │
-│  │ FastAPI (Python 3.13) on Cloud Run                               │   │
-│  │                                                                  │   │
-│  │  ┌────────────┐   ┌──────────────┐   ┌──────────────────────┐   │   │
-│  │  │ API Routes │──▶│ Service Layer│──▶│ DatabaseClient       │   │   │
-│  │  │ (consent,  │   │ (World Model,│   │ (SQLAlchemy +        │   │   │
-│  │  │  kai, wm)  │   │  Consent DB, │   │  Supabase Pooler)    │   │   │
-│  │  └────────────┘   │  Chat DB,    │   └──────────┬───────────┘   │   │
-│  │                    │  Renaissance)│              │               │   │
-│  │  ┌────────────┐   └──────────────┘              │               │   │
-│  │  │ Agents     │                                  │               │   │
-│  │  │ (ADK +     │   ┌──────────────┐              ▼               │   │
-│  │  │  Hushh     │──▶│ Operons      │   ┌──────────────────────┐   │   │
-│  │  │  Security) │   │ (calculators,│   │ PostgreSQL           │   │   │
-│  │  └────────────┘   │  fetchers,   │   │ (Supabase)           │   │   │
-│  │                    │  llm, etc.)  │   └──────────────────────┘   │   │
-│  │  ┌────────────┐   └──────────────┘                              │   │
-│  │  │ MCP Server │                                                  │   │
-│  │  └────────────┘                                                  │   │
-│  └──────────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+
+Core invariants:
+
+1. BYOK: user-private payloads stay encrypted client-side.
+2. Consent-first: data access is token-gated and audited.
+3. Tri-flow: web, iOS, and Android stay contract-aligned.
+4. Canonical private data plane: world-model data remains the user-private storage boundary.
 
 ---
 
-## Backend: consent-protocol
+## Backend: `consent-protocol/`
 
-**Runtime**: Python 3.13, FastAPI, Uvicorn, Cloud Run
+Runtime: Python 3.13, FastAPI, Uvicorn, Cloud Run.
 
-### Route Organization
+### Registered Router Surface
 
-All endpoints live in `api/routes/`. Each module is a FastAPI `APIRouter` registered in `server.py`.
+All live routers are registered in `consent-protocol/server.py`.
 
-| Router Module       | Prefix              | Purpose                                  |
-| -------------------- | -------------------- | ---------------------------------------- |
-| `health`            | `/health`, `/kai/health` | Liveness probes                      |
-| `consent`           | `/api/consent`       | Token issuance, approval, revocation     |
-| `kai/__init__`      | `/api/kai`           | Chat, streaming, analysis, preferences   |
-| `world_model`       | `/api/world-model`   | Domain data CRUD, index, scopes          |
-| `notifications`     | `/api/notifications` | FCM push token registration              |
-| `developer`         | `/api/v1`            | External developer consent flow          |
-| `agents`            | `/api/agents`        | Agent card discovery                     |
-| `session`           | `/api`               | Kai session management                   |
-| `sync`              | `/api/sync`          | Offline-to-online sync                   |
-| `account`           | `/api/account`       | Account deletion                         |
-| `db_proxy`          | `/db`                | Renaissance universe queries             |
+| Router Module | Prefix | Purpose |
+| --- | --- | --- |
+| `health` | `/`, `/health`, `/kai/health`, app-config health helpers | liveness, readiness, app-review config |
+| `agents` | `/api/agents` | agent discovery and related agent endpoints |
+| `consent` | `/api/consent` | consent requests, grants, revocation, history |
+| `session` | `/api` | session and lookup helpers used by app/auth flows |
+| `developer` | `/api/v1` | developer API surface |
+| `db_proxy` | `/db` | database proxy endpoints used by specific native flows |
+| `sse` | `/api/consent/events` and related SSE endpoints | realtime consent events |
+| `notifications` | `/api/notifications` | push token registration and notification support |
+| `kai` | `/api/kai` | Kai chat, analysis, portfolio, streaming, decisions |
+| `investors` | `/api/investors` | investor discovery/profile surface |
+| `tickers` | `/api/tickers` | ticker search and holdings sync helpers |
+| `identity` | compatibility identity endpoints | compatibility shims for identity flows |
+| `world_model` | `/api/world-model` | store-domain, data, domain-data, metadata, scopes, context |
+| `account` | `/api/account` | account deletion and management |
+| `iam` | `/api/iam` | IAM actor and policy surface |
+| `ria` | `/api/ria` | advisor onboarding and workspace flows |
+| `marketplace` | `/api/marketplace` | marketplace discovery and publishing |
+| `invites` | `/api/invites` | invite issuance and redemption |
+| `debug_firebase` | `/api/_debug/*` in non-production only | local/debug-only auth diagnostics |
+
+Not currently registered:
+
+- no live `/api/sync` router
+- no `api/routes/kai/preferences.py` module
+
+### World-Model Runtime Surface
+
+The backend router is the authoritative world-model contract. Current supported path families include:
+
+- `POST /api/world-model/store-domain`
+- `GET /api/world-model/data/{user_id}`
+- `GET|DELETE /api/world-model/domain-data/{user_id}/{domain}`
+- `POST /api/world-model/reconcile/{user_id}`
+- `DELETE /api/world-model/attributes/{user_id}/{domain}/{attribute_key}` returning legacy-removal behavior
+- `GET /api/world-model/metadata/{user_id}`
+- `GET /api/world-model/domain-registry`
+- `GET /api/world-model/scopes/{user_id}`
+- `POST /api/world-model/get-context`
+
+Removed legacy read surfaces such as `/index`, `/attributes`, `/domains`, `/portfolio`, and `/portfolios` are not part of the supported contract.
 
 ### Service Layer
 
-**Rule**: API routes never access the database directly. All DB operations go through service classes.
+Routes do not access the database directly. Database access flows through service classes.
 
-```
-API Route → Service (validates consent) → DatabaseClient → PostgreSQL
-```
-
-| Service                | File                                          | Purpose                                   |
-| ---------------------- | --------------------------------------------- | ----------------------------------------- |
-| `WorldModelService`   | `hushh_mcp/services/world_model_service.py`   | Unified user data: store, retrieve, index |
-| `ConsentDBService`    | `hushh_mcp/services/consent_db.py`            | Consent audit trail, token lookup         |
-| `ChatDBService`       | `hushh_mcp/services/chat_db_service.py`       | Kai chat history persistence              |
-| `UniverseListService` | `hushh_mcp/services/universe_list_service.py` | Generic abstraction for system and future RIA security lists |
-| `RenaissanceService`  | `hushh_mcp/services/renaissance_service.py`   | Investable universe data                  |
-| `PushTokensService`   | `hushh_mcp/services/push_tokens_service.py`   | FCM push token CRUD                       |
-| `DomainRegistryService` | `hushh_mcp/services/domain_registry_service.py` | Domain metadata registry               |
-
-### Agent Architecture
-
-Hub-and-spoke model built on Google ADK with Hushh security wrapper.
-
-```
-User Request
-    │
-    ▼
-OrchestratorAgent (Hub)
-    │  ── intent detection ──
-    ▼
-KaiAgent (Spoke)
-    │  ── consent validated at entry ──
-    ├── perform_fundamental_analysis  (@hushh_tool)
-    ├── perform_sentiment_analysis    (@hushh_tool)
-    └── perform_valuation_analysis    (@hushh_tool)
-         │  ── consent re-validated per tool ──
-         ▼
-    Operons (calculators, fetchers, LLM, analysis)
-         │
-         ▼
-    Structured Response (DecisionCard / SSE stream)
+```text
+FastAPI route -> service -> DatabaseClient / external adapter -> PostgreSQL or remote API
 ```
 
-Four-layer dependency stack (the **DNA Model**):
+Representative services:
 
-| Layer      | Responsibility                        | DB Access | Consent Check  |
-| ---------- | ------------------------------------- | --------- | -------------- |
-| **Agent**  | Orchestrate tools, enforce consent    | No        | At entry       |
-| **Tool**   | LLM-callable function (`@hushh_tool`) | No        | Per invocation |
-| **Operon** | Business logic (pure or impure)       | No        | If impure      |
-| **Service**| Database operations                   | Yes       | Validated upstream |
+- `WorldModelService`
+- `ConsentDBService`
+- `ChatDBService`
+- `UniverseListService`
+- `RenaissanceService`
+- `PushTokensService`
+- `DomainRegistryService`
 
-### Directory Structure
+### Backend Directory Layout
 
-```
+```text
 consent-protocol/
-├── server.py                     # FastAPI app, CORS, rate limiting
-├── consent_db.py                 # DatabaseClient singleton
-├── api/
-│   ├── middleware.py              # Rate limiting, auth helpers
-│   └── routes/                    # All endpoint routers
-│       ├── consent.py
-│       ├── world_model.py
-│       ├── notifications.py
-│       ├── kai/                   # Kai sub-routers
-│       │   ├── __init__.py        # Router aggregation
-│       │   ├── chat.py
-│       │   ├── stream.py
-│       │   ├── preferences.py
-│       │   └── portfolio.py
-│       └── ...
-├── hushh_mcp/
-│   ├── hushh_adk/                 # Security-wrapped ADK
-│   │   ├── core.py                # HushhAgent base class
-│   │   ├── tools.py               # @hushh_tool decorator
-│   │   ├── context.py             # HushhContext (contextvars)
-│   │   └── manifest.py            # AgentManifest + ManifestLoader
-│   ├── agents/
-│   │   ├── orchestrator/          # Intent routing
-│   │   └── kai/                   # Financial analysis
-│   │       ├── agent.py           # KaiAgent(HushhAgent)
-│   │       ├── agent.yaml         # Manifest
-│   │       ├── tools.py           # @hushh_tool wrappers
-│   │       ├── fundamental_agent.py
-│   │       ├── sentiment_agent.py
-│   │       ├── valuation_agent.py
-│   │       └── debate_engine.py
-│   ├── operons/kai/               # Business logic
-│   │   ├── calculators.py         # Pure math (10+ functions)
-│   │   ├── fetchers.py            # External data (SEC, yfinance, news)
-│   │   ├── analysis.py            # Analysis orchestrators
-│   │   ├── llm.py                 # Gemini integration
-│   │   └── storage.py             # Encrypted vault operations
-│   ├── services/                  # Database access layer
-│   ├── consent/                   # Token crypto, scope helpers
-│   └── config.py                  # Environment config
-├── db/migrations/                 # SQL migration files
-└── mcp_modules/                   # MCP server tools
+  server.py
+  consent_db.py
+  api/
+    middlewares/
+    routes/
+      account.py
+      agents.py
+      consent.py
+      db_proxy.py
+      debug_firebase.py
+      developer.py
+      health.py
+      iam.py
+      identity.py
+      investors.py
+      invites.py
+      marketplace.py
+      notifications.py
+      ria.py
+      session.py
+      sse.py
+      tickers.py
+      world_model.py
+      kai/
+        __init__.py
+        analyze.py
+        chat.py
+        consent.py
+        decisions.py
+        health.py
+        market_insights.py
+        portfolio.py
+        stream.py
+  hushh_mcp/
+    agents/
+    consent/
+    hushh_adk/
+    operons/
+    services/
+  db/
+    migrations/
+  mcp_modules/
+  docs/
 ```
 
 ---
 
-## Frontend: hushh-webapp
+## Frontend: `hushh-webapp/`
 
-**Runtime**: Next.js 16, React 19, TailwindCSS, Capacitor 8
+Runtime: Next.js 16 App Router, React 19, Tailwind CSS, Capacitor 8.
 
-### Route Architecture (Persona Shell)
+### App Route Contract
 
-Current route contract:
+Current app-level navigation targets are defined in `hushh-webapp/lib/navigation/routes.ts`:
 
-- `/` -> public marketing onboarding (intro + preview)
-- `/login` -> auth only
-- `/kai/onboarding` -> questionnaire + persona (first-time and vault-backed continuity)
-- `/kai/import` -> portfolio connect/import flow
-- `/kai` -> investor market home
-- `/kai/dashboard` -> portfolio analytics view
-- `/kai/analysis` -> investor analysis workflow
-- `/kai/optimize` -> investor optimization workflow
-- `/marketplace` -> shared discovery surface for investor + RIA
-- `/consents` -> shared workflow hub for requests, grants, history, invites, and future developer/MCP access
-- `/profile` -> shared account and persona settings
-- `/ria/onboarding` -> advisor onboarding and verification
-- `/ria/clients` -> advisor relationship roster
-- `/ria/workspace/[clientId]` -> advisor client workspace
+- `/`
+- `/login`
+- `/logout`
+- `/labs/profile-appearance`
+- `/profile`
+- `/consents`
+- `/marketplace`
+- `/marketplace/ria`
+- `/ria`
+- `/ria/onboarding`
+- `/ria/clients`
+- `/ria/requests`
+- `/ria/settings`
+- `/kai`
+- `/kai/onboarding`
+- `/kai/import`
+- `/kai/dashboard`
+- `/kai/analysis`
+- `/kai/optimize`
 
-Flow orchestration:
+Additional implemented route families outside the constant map include:
 
-1. Auth success resolves via `PostAuthRouteService`.
-2. `KaiOnboardingGuard` enforces onboarding completion before non-onboarding `/kai/*`.
-3. `VaultLockGuard` enforces unlock only when a vault exists.
-4. `KaiFlow` route mode controls import vs dashboard behavior.
-5. Top shell title reflects actor context (`Investor` or `RIA`), while route purpose moves into the page body.
+- `/marketplace/ria/[riaId]`
+- `/ria/workspace/[clientId]`
 
-### Vault Security UX Architecture
+### Tri-Flow Delivery
 
-- `VaultFlow` is the unified create/unlock/recovery surface.
-- Encryption at rest is mandatory; plaintext mode is not supported.
-- Passphrase + recovery wrappers are required for every vault.
-- Optional quick-unlock wrappers (native biometric/web PRF passkey) wrap the same vault DEK.
-- `VaultMethodService` is the single method-switch API for frontend flows.
-- `VaultMethodPrompt` is a post-login, skippable upsell for passphrase users when quick methods are available.
-- Profile route exposes method management through the same service path.
+Product features that cross the backend boundary are expected to preserve parity across:
 
-### Bottom Nav Tour Architecture
+- web: Next.js route handlers under `app/api/**`
+- iOS: Swift Capacitor plugins
+- Android: Kotlin Capacitor plugins
 
-- `/kai` can show first-time guided tour for bottom nav tabs.
-- Local temporary state:
-  - `kai_nav_tour_v1:${userId}` (Capacitor Preferences)
-- Canonical cross-device state:
-  - `financial.profile.onboarding.nav_tour_completed_at`
-  - `financial.profile.onboarding.nav_tour_skipped_at`
-- Sync occurs through onboarding sync bridge once vault context is available.
-
-### Stack
-
-| Layer            | Technology                          | Purpose                         |
-| ---------------- | ----------------------------------- | ------------------------------- |
-| Framework        | Next.js 16 (App Router)            | Pages, API proxies, SSR         |
-| UI               | React 19 + TailwindCSS             | Components                      |
-| Design System    | Shadcn UI + Morphy-UX              | Component library + extensions  |
-| State            | Zustand (memory-only)              | Session state, no persistence   |
-| Charts           | Recharts + Shadcn ChartContainer   | Financial data visualization    |
-| Animation        | GSAP                               | Motion and transitions          |
-| Toast            | Sonner                             | Notification toasts             |
-| Native           | Capacitor 8                        | iOS + Android builds            |
-
-### Tri-Flow Architecture
-
-Every feature must work identically on Web, iOS, and Android.
-
-```
-Component → Service → [Web: Next.js Proxy | Native: Capacitor Plugin] → Backend
+```text
+Component -> service layer -> web route handler or native plugin -> backend
 ```
 
-**Rule**: No `fetch()` in components. All API calls go through `ApiService` which detects the platform and routes accordingly.
+Components should not own backend fetch orchestration directly.
 
-| Platform | Path                                     |
-| -------- | ---------------------------------------- |
-| Web      | Component → ApiService → `/api/...` → Backend |
-| iOS      | Component → ApiService → Swift Plugin → Backend |
-| Android  | Component → ApiService → Kotlin Plugin → Backend |
+### Frontend Directory Layout
 
-### Directory Structure
-
-```
+```text
 hushh-webapp/
-├── app/                          # Next.js App Router pages
-│   ├── kai/                      # Kai feature pages
-│   │   └── dashboard/
-│   │       ├── page.tsx          # Main dashboard
-│   │       ├── analysis/         # Stock analysis
-│   │       └── manage/           # Portfolio management
-│   └── api/                      # Next.js proxy routes
-├── components/
-│   ├── kai/                      # Kai-specific components
-│   ├── consent/                  # Consent UI + notification provider
-│   └── ui/                       # Shadcn primitives
-├── lib/
-│   ├── services/                 # ApiService, KaiService
-│   ├── vault/                    # VaultContext (BYOK, memory-only)
-│   ├── firebase/                 # Auth context
-│   ├── notifications/            # FCM service
-│   ├── morphy-ux/                # Design system extensions
-│   ├── stores/                   # Zustand stores
-│   └── utils/                    # Portfolio normalization, helpers
-├── ios/App/App/Plugins/          # Swift native plugins
-└── android/.../plugins/          # Kotlin native plugins
+  app/
+    api/
+    consents/
+    kai/
+      analysis/
+      dashboard/
+      import/
+      onboarding/
+      optimize/
+    labs/
+      profile-appearance/
+    login/
+    logout/
+    marketplace/
+      ria/
+        [riaId]/
+    profile/
+    ria/
+      clients/
+      onboarding/
+      requests/
+      settings/
+      workspace/
+        [clientId]/
+  components/
+  ios/App/App/Plugins/
+  android/app/src/main/java/.../plugins/
+  lib/
+    agents/
+    api/
+    auth/
+    capacitor/
+    consent/
+    firebase/
+    kai/
+    navigation/
+    notifications/
+    observability/
+    services/
+    stores/
+    streaming/
+    vault/
+  docs/
 ```
 
 ---
 
-## Database: Supabase (PostgreSQL)
+## Data Boundary
 
-Connection: SQLAlchemy with Supabase Session Pooler. No ORM models -- raw SQL through `DatabaseClient`.
+Runtime data is split into:
 
-### Runtime Tables (Core + IAM)
+- relational operational state in PostgreSQL
+- encrypted user-private payloads in the world-model data plane
+- public/shared marketplace, IAM, and system-curated datasets in relational tables
 
-| Table                       | Purpose                                     | Encrypted |
-| --------------------------- | ------------------------------------------- | --------- |
-| `vault_keys`                | Vault header (hash, primary method, recovery wrapper) | Partial   |
-| `vault_key_wrappers`        | Enrolled unlock wrappers per method         | Partial   |
-| `world_model_data`          | User-owned encrypted private content        | Yes       |
-| `world_model_index_v2`      | Sanitized metadata for MCP scoping          | No        |
-| `domain_registry`           | Available data domains (food, financial...) | No        |
-| `consent_audit`             | Canonical token/request/grant audit trail   | No        |
-| `consent_exports`           | Encrypted exports for MCP consumption       | Yes       |
-| `user_push_tokens`          | FCM push tokens per user/platform           | No        |
-| `kai_market_cache_entries`  | Server-side market payload cache entries    | No        |
-| `tickers`                   | Ticker master and enrichment metadata       | No        |
-| `renaissance_universe`      | System-curated benchmark security list      | No        |
-| `renaissance_screening_criteria` | System-curated screening rubric         | No        |
-| `renaissance_avoid`         | System-curated excluded securities          | No        |
-| `actor_profiles`            | Canonical actor identity + persisted persona state | No   |
-| `ria_profiles`              | Advisor compliance/profile record           | No        |
-| `ria_firms`                 | Advisor firm registry                       | No        |
-| `ria_firm_memberships`      | Advisor-to-firm membership projection       | No        |
-| `ria_verification_events`   | Verification audit trail                    | No        |
-| `advisor_investor_relationships` | Derived operational relationship state  | No        |
-| `ria_client_invites`        | Pre-consent advisor acquisition workflow    | No        |
-| `consent_scope_templates`   | Consent scope template catalog              | No        |
-| `marketplace_public_profiles` | Public discovery projection               | No        |
-| `runtime_persona_state`     | Transitional setup continuity only          | No        |
-
-See [World Model](../../../consent-protocol/docs/reference/world-model.md) for detailed schema.
-
-### Data Boundary
-
-1. Relational tables own identity, workflow, compliance, public discovery, and query-heavy shared datasets.
-2. `world_model_data` and `world_model_index_v2` remain the only user-private data plane.
-3. RIA does not introduce a second private data plane. Private RIA uploads and preferences follow the same world-model boundary as investor-private data.
-4. `runtime_persona_state` is transitional compatibility state. `actor_profiles.last_active_persona` is the long-term canonical persisted persona state.
-
-### Shared Security List Model
-
-1. `renaissance_*` remains the current system-curated benchmark dataset.
-2. New advisor-owned stock templates must not clone Renaissance tables per RIA.
-3. Future custom lists should use:
-   - relational registry + parsed member tables for queryable metadata
-   - world-model storage for raw uploaded private files and parser configuration
-4. `UniverseListService` is the abstraction seam for converging system-curated and future advisor-owned list types.
-
-### RPCs (Core + Optional)
-
-Runtime can use optional RPC accelerators when present, but world-model reads/writes include fallback paths when RPCs are unavailable.
-
-| Function                              | Runtime Role |
-| ------------------------------------- | ------------ |
-| `get_user_world_model_metadata`       | Preferred metadata read helper for world-model summaries |
-| `update_world_model_data_timestamp`   | Timestamp maintenance helper |
-| `consent_audit_notify`                | Consent-audit trigger helper |
-
-Optional migration/legacy functions such as `merge_domain_summary` and `remove_domain_summary_key` are not assumed to exist in every runtime database.
+The world-model boundary is the only supported private data plane for investor and RIA user-owned content.
 
 ---
 
-## Infrastructure
+## Operational References
 
-### Cloud Run
-
-- **Service**: `consent-protocol` on Google Cloud Run
-- **Region**: `us-east1`
-- **Port**: 8000
-- **Min instances**: 0 (scale to zero)
-- **Max instances**: 10
-
-### CI/CD
-
-GitHub Actions workflow (`.github/workflows/ci.yml`) with path-filtered jobs:
-
-| Job              | Trigger                        | Checks                                   |
-| ---------------- | ------------------------------ | ---------------------------------------- |
-| `secret-scan`    | Every push/PR/merge queue      | `gitleaks` OSS CLI on event commit range |
-| `web-check`      | `hushh-webapp/**` changes      | Typecheck, lint, design/investor-language verification, build, audit budget, `test:ci` |
-| `protocol-check` | `consent-protocol/**` changes  | Ruff, mypy, pytest                       |
-| `integration-check` | Frontend or backend changes | Route contract verification               |
-| `subtree-sync-check` | Every push/PR/merge queue   | Upstream subtree drift warning            |
-| `ci-status`      | Always (final gate)            | Fails if any required job failed          |
-
-Manual trigger: Actions > Tri-Flow CI > scope: `frontend` / `backend` / `all`.  
-Coverage: push and PR on all branches, plus merge queue (`main`).
-
-### GCP Secrets
-
-| Secret                    | Used By  |
-| ------------------------- | -------- |
-| `GOOGLE_API_KEY`          | Backend  |
-| `DB_USER` / `DB_PASSWORD` / `DB_HOST` | Backend |
-| `CONSENT_TOKEN_SECRET`    | Backend  |
-| `FIREBASE_*`              | Frontend |
-| `NEXT_PUBLIC_FIREBASE_VAPID_KEY` | Frontend |
-
----
-
-## Security Invariants
-
-These rules are non-negotiable across the entire codebase:
-
-1. **BYOK (Bring Your Own Key)**: Vault keys never touch the server. Backend stores ciphertext only. Decryption happens exclusively on the client.
-
-2. **Consent-First**: All data access requires a valid consent token. Even vault owners use `VAULT_OWNER` tokens -- no bypasses.
-
-3. **Credential Memory-Only**: Sensitive credentials (vault key and VAULT_OWNER token) stay in React memory. Some non-sensitive UI/cache data may use browser storage.
-
-4. **Tri-Flow Parity**: Every feature works on Web, iOS, and Android. No `fetch()` in components -- `ApiService` routes to the correct platform path.
-
-5. **Double Consent Validation**: Consent is checked at Agent entry (`HushhAgent.run()`) AND at each tool invocation (`@hushh_tool` decorator). Belt and suspenders.
-
-6. **Audit Everything**: Every token operation is recorded in `consent_audit`. Every tool invocation is logged with `user_id`.
-
----
-
-## See Also
-
-- [World Model](../../../consent-protocol/docs/reference/world-model.md) -- Two-table encryption architecture
-- [API Contracts](./api-contracts.md) -- Every endpoint documented
-- [Kai Agents](../../../consent-protocol/docs/reference/kai-agents.md) -- Financial analysis system
-- [Agent Development](../../../consent-protocol/docs/reference/agent-development.md) -- Building new agents
-- [Consent Protocol](../../../consent-protocol/docs/reference/consent-protocol.md) -- Token model and security
+- API contract detail: [api-contracts.md](./api-contracts.md)
+- route governance: [route-contracts.md](./route-contracts.md)
+- DB/runtime fact sheet: [runtime-db-fact-sheet.md](./runtime-db-fact-sheet.md)
+- env and secrets contract: [../operations/env-and-secrets.md](../operations/env-and-secrets.md)
+- backend world-model reference: [../../../consent-protocol/docs/reference/world-model.md](../../../consent-protocol/docs/reference/world-model.md)
+- backend consent reference: [../../../consent-protocol/docs/reference/consent-protocol.md](../../../consent-protocol/docs/reference/consent-protocol.md)

@@ -113,6 +113,7 @@ export function LiquidGlassBody({
   children,
   mirrorOptions,
   mirrorScene,
+  opaqueBackground,
 }: {
   filterId: string;
   mode: LiquidGlassRendererMode;
@@ -124,6 +125,9 @@ export function LiquidGlassBody({
   children?: ReactNode;
   mirrorOptions?: LiquidFilterOptions;
   mirrorScene?: LiquidGlassMirrorScenePainter;
+  /** When set, renders a fully opaque background layer OVER the canvas refraction.
+   *  Use for elements that must appear solid (e.g. Switch / Slider thumbs). */
+  opaqueBackground?: string;
 }) {
   if (mode === "reference") {
     return (
@@ -138,15 +142,12 @@ export function LiquidGlassBody({
 
   const resolvedState = state ?? (pressed ? "pressed" : compact ? "active" : "idle");
 
-  // Extract the backgroundColor from the resolved style so we can layer it
-  // between the canvas and the highlight.
   const resolvedStyle = resolveMirrorGlassContainerStyle(style ?? {}, { compact, pressed, state: resolvedState });
-  const { backgroundColor: bgColor, ...containerStyleWithoutBg } = resolvedStyle;
 
   return (
     <div
       className={className}
-      style={containerStyleWithoutBg}
+      style={resolvedStyle}
     >
       {mirrorOptions && mirrorScene ? (
         <LiquidGlassCanvasLens
@@ -156,12 +157,12 @@ export function LiquidGlassBody({
           className="absolute inset-0"
         />
       ) : null}
-      {bgColor ? (
+      {opaqueBackground ? (
         <div
           style={{
             position: "absolute",
             inset: 0,
-            backgroundColor: bgColor as string,
+            backgroundColor: opaqueBackground,
             borderRadius: "inherit",
             pointerEvents: "none",
           }}

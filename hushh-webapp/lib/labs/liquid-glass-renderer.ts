@@ -17,55 +17,67 @@ type MirrorGlassStyleOptions = {
 
 function resolveMirrorState({ compact, pressed, state }: MirrorGlassStyleOptions) {
   const resolvedState = state ?? (pressed ? "pressed" : "idle");
+
+  // ── body fill ──────────────────────────────────────────────
+  // Keep this near-zero. The canvas refraction already carries the visual.
+  // Any white fill here adds to the "milky" appearance.
   const bodyFill = compact
     ? {
-        idle: 0.06,
-        active: 0.07,
-        pressed: 0.09,
-        dragging: 0.10,
-        held: 0.08,
-        settling: 0.07,
+        idle: 0.0,
+        active: 0.005,
+        pressed: 0.01,
+        dragging: 0.01,
+        held: 0.005,
+        settling: 0.005,
       }
     : {
-        idle: 0.08,
-        active: 0.09,
-        pressed: 0.11,
-        dragging: 0.12,
-        held: 0.10,
-        settling: 0.09,
+        idle: 0.0,
+        active: 0.005,
+        pressed: 0.01,
+        dragging: 0.012,
+        held: 0.008,
+        settling: 0.005,
       };
+
+  // ── edge border ────────────────────────────────────────────
+  // Subtle edge definition (Chrome uses SVG bezel, we use a border)
   const edge = {
-    idle: 0.18,
-    active: 0.19,
-    pressed: 0.22,
-    dragging: 0.22,
-    held: 0.2,
-    settling: 0.19,
+    idle: 0.10,
+    active: 0.11,
+    pressed: 0.14,
+    dragging: 0.14,
+    held: 0.12,
+    settling: 0.11,
   } satisfies Record<LiquidGlassMirrorVisualState, number>;
+
+  // ── outer shadow ───────────────────────────────────────────
   const shadow = {
-    idle: 0.11,
-    active: 0.12,
-    pressed: 0.15,
-    dragging: 0.16,
-    held: 0.14,
-    settling: 0.12,
+    idle: 0.08,
+    active: 0.09,
+    pressed: 0.12,
+    dragging: 0.13,
+    held: 0.11,
+    settling: 0.09,
   } satisfies Record<LiquidGlassMirrorVisualState, number>;
+
+  // ── specular cap ───────────────────────────────────────────
+  // Very subtle highlight – the specular map on the canvas handles most of this.
   const cap = compact
     ? {
-        idle: 0.08,
-        active: 0.10,
-        pressed: 0.07,
-        dragging: 0.05,
-        held: 0.10,
-        settling: 0.08,
+        idle: 0.03,
+        active: 0.04,
+        pressed: 0.025,
+        dragging: 0.02,
+        held: 0.04,
+        settling: 0.03,
       }
     : {
-        idle: 0.14,
-        active: 0.16,
-        pressed: 0.10,
-        dragging: 0.08,
-        held: 0.18,
-        settling: 0.12,
+        idle: 0.04,
+        active: 0.05,
+        pressed: 0.03,
+        dragging: 0.025,
+        held: 0.06,
+        settling: 0.04,
       };
 
   return {
@@ -105,19 +117,16 @@ export function resolveMirrorGlassContainerStyle(
 
   return {
     ...base,
-    backgroundColor:
-      typeof base.backgroundColor === "string"
-        ? base.backgroundColor
-        : `rgba(255, 255, 255, ${fillOpacity})`,
+    backgroundColor: fillOpacity > 0
+      ? `rgba(255, 255, 255, ${fillOpacity})`
+      : "transparent",
     border:
       typeof base.border === "string"
         ? base.border
         : `1px solid rgba(255, 255, 255, ${edgeOpacity})`,
     boxShadow: [
       existingShadow,
-      `0 8px 24px rgba(0, 0, 0, ${shadowOpacity})`,
-      "inset 0 1px 0 rgba(255, 255, 255, 0.08)",
-      "inset 0 -1px 0 rgba(255, 255, 255, 0.025)",
+      `0 6px 20px rgba(0, 0, 0, ${shadowOpacity})`,
     ]
       .filter(Boolean)
       .join(", "),
@@ -135,26 +144,20 @@ export function resolveMirrorGlassContainerStyle(
 }
 
 export function resolveMirrorHighlightStyle(options: MirrorGlassStyleOptions = {}): CSSProperties {
-  const { resolvedState, capOpacity } = resolveMirrorState(options);
-  const topOpacity =
-    resolvedState === "dragging" || resolvedState === "pressed"
-      ? 0.04
-      : options.compact
-        ? 0.035
-        : 0.05;
-  const rimOpacity =
-    resolvedState === "dragging" || resolvedState === "pressed" ? 0.04 : 0.03;
-  const causticOpacity =
-    resolvedState === "dragging" || resolvedState === "pressed" ? 0.02 : 0.01;
+  const { capOpacity } = resolveMirrorState(options);
+
+  // Keep highlights extremely subtle — the canvas specular map already provides
+  // the reflective sheen. Any white gradients here compound into milkiness.
+  const topOpacity = capOpacity * 0.3;
+  const rimOpacity = capOpacity * 0.15;
 
   return {
     position: "absolute",
     inset: 0,
     backgroundImage: [
-      `radial-gradient(68% 34% at 50% 12%, rgba(255,255,255,${capOpacity}) 0%, rgba(255,255,255,${capOpacity * 0.3}) 26%, rgba(255,255,255,0) 58%)`,
-      `linear-gradient(180deg, rgba(255,255,255,${topOpacity}) 0%, rgba(255,255,255,0.03) 24%, rgba(255,255,255,0) 58%)`,
-      `radial-gradient(100% 90% at 22% 12%, rgba(255,255,255,${rimOpacity}) 0%, rgba(255,255,255,0) 60%)`,
-      `linear-gradient(90deg, rgba(255,255,255,${causticOpacity}) 0%, rgba(255,255,255,0.008) 18%, rgba(255,255,255,0) 42%)`,
+      `radial-gradient(68% 34% at 50% 12%, rgba(255,255,255,${capOpacity}) 0%, rgba(255,255,255,${capOpacity * 0.2}) 26%, rgba(255,255,255,0) 58%)`,
+      `linear-gradient(180deg, rgba(255,255,255,${topOpacity}) 0%, rgba(255,255,255,0) 40%)`,
+      `radial-gradient(100% 80% at 22% 12%, rgba(255,255,255,${rimOpacity}) 0%, rgba(255,255,255,0) 50%)`,
     ].join(", "),
     mixBlendMode: "screen",
     pointerEvents: "none",

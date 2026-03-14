@@ -23,6 +23,42 @@ Define one durable documentation model across:
 4. Do not duplicate source-of-truth content across homes; link instead.
 5. Put AI strategy/runtime planning in `docs/reference/ai/` unless it is backend- or frontend-only.
 
+## Root Entrypoint Rules
+
+Root docs are not full source-of-truth specs, but they must retain a minimum useful surface.
+
+Required baseline:
+
+1. `readme.md` must keep repo orientation value:
+   - short product/system explainer
+   - current stack or runtime overview
+   - quick-start bootstrap
+   - docs/community entry links
+2. `getting_started.md` must keep one-screen bootstrap value:
+   - what the developer is bootstrapping
+   - minimal first-run commands
+   - clear redirect to the canonical setup guide
+3. `TESTING.md` must keep:
+   - core testing principles
+   - current command surface
+   - where tests broadly live
+4. `contributing.md` must keep:
+   - engineering invariants
+   - local contributor bootstrap
+   - PR/change expectations
+
+Allowed in root docs:
+
+1. timeless orientation
+2. presentation/community links
+3. concise contributor guidance
+
+Not allowed in root docs:
+
+1. stale runtime specifics that duplicate canonical docs
+2. outdated route/env/test inventory
+3. deleted path references kept for historical convenience
+
 ## Required Quality Gates
 
 1. `npm run verify:docs` (runtime/doc parity gate)
