@@ -4,17 +4,16 @@ Use this lightweight checklist instead of expanding automated test coverage.
 
 ## 0) Route/System Audit
 1. Run:
-   - `python scripts/ops/kai-system-audit.py --api-base http://localhost:8000 --web-base http://localhost:3000`
-2. Confirm output files:
-   - `temp/kai-system-audit-<timestamp>.json`
-   - `temp/kai-system-audit-<timestamp>.md`
-3. Verify required Kai API routes/methods are present in OpenAPI.
-4. Verify frontend route probes pass for:
+   - open local OpenAPI and confirm required Kai API routes exist
+   - manually visit the key Kai routes below
+ 2. Verify required Kai API routes/methods are present in OpenAPI.
+ 3. Verify frontend route probes pass for:
    - `/kai/import`
    - `/kai`
+   - `/kai/plaid/oauth/return`
    - `/kai/dashboard`
-   - `/kai/dashboard/analysis`
-   - `/kai/dashboard/portfolio-health`
+   - `/kai/analysis`
+   - `/kai/optimize`
 
 ## 1) Fresh User Import Flow
 1. Sign in with a user that has no `financial` domain.
@@ -24,11 +23,8 @@ Use this lightweight checklist instead of expanding automated test coverage.
 
 ## 2) World Model Integrity
 1. Run:
-   - `node scripts/ops/audit-world-model-user.mjs --userId <uid> --passphrase '<passphrase>'`
-2. Verify output files:
-   - `temp/world-model-audit-<uid>.json`
-   - `temp/world-model-audit-<uid>.md`
-3. Confirm:
+   - manual spot-check via Kai dashboard and `/api/world-model/metadata/{user_id}` in the API docs or local API client
+2. Confirm:
    - blob domains align with index/registry,
    - `financial` canonical summary count is non-zero when holdings exist,
    - debate context readiness is `true`.
@@ -58,6 +54,12 @@ Use this lightweight checklist instead of expanding automated test coverage.
 2. Confirm canonical Kai routes exist in mobile static export mapping.
 3. Confirm stream, token guard, and cache-first behavior match web expectations.
 
-## 7) Web-Only Behavior Validation
+## 7) Plaid Brokerage Guardrails
+1. Confirm `Statement` remains editable.
+2. Confirm `Plaid` remains read-only.
+3. Confirm `Combined` remains comparison-only and cannot launch Debate or Optimize directly.
+4. If webhook target changed after prior connections, do a one-time operator maintenance pass using Plaid's `/item/webhook/update`.
+
+## 8) Web-Only Behavior Validation
 1. Confirm web-only plugins/features remain explicitly documented.
 2. Confirm no UI/route dependency assumes native-only plugin behavior on web.

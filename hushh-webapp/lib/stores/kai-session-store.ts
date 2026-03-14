@@ -13,12 +13,15 @@
  */
 
 import { create } from "zustand";
+import type { PortfolioSource } from "@/lib/kai/brokerage/portfolio-sources";
 
 interface AnalysisParams {
   ticker: string;
   userId: string;
   riskProfile: string;
   userContext?: Record<string, unknown>;
+  portfolioSource?: PortfolioSource;
+  portfolioContext?: Record<string, unknown> | null;
 }
 
 interface LosersInput {
@@ -29,6 +32,9 @@ interface LosersInput {
   holdings?: Array<Record<string, unknown>>;
   forceOptimize?: boolean;
   hadBelowThreshold?: boolean;
+  portfolioSource?: PortfolioSource;
+  portfolioContext?: Record<string, unknown> | null;
+  sourceMetadata?: Record<string, unknown> | null;
 }
 
 interface KaiSessionState {

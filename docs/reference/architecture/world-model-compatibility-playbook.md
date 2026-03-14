@@ -36,18 +36,12 @@ Never persist sensitive payload objects in index summaries:
 ### Operational Commands
 
 - User audit:
-```bash
-node scripts/ops/audit-world-model-user.mjs --userId <uid> --passphrase '<passphrase>'
-```
+  - verify `/api/world-model/metadata/{user_id}` and the relevant encrypted domain path via your local API client or app runtime
+  - confirm index summaries, available domains, and the live Kai dashboard agree on counts and readiness
 
 - Financial cleanup/reconcile (supports dry-run):
 ```bash
 python scripts/ops/reconcile_financial_domain.py --user-id <uid> --passphrase '<passphrase>'
-```
-
-- System route/runtime audit:
-```bash
-python scripts/ops/kai-system-audit.py --api-base http://localhost:8000 --web-base http://localhost:3000
 ```
 
 ## Symbol Normalization Trust Tiers

@@ -213,7 +213,6 @@ cd hushh-webapp && npm run verify:parity
 cd hushh-webapp && npm run verify:capacitor:routes
 cd hushh-webapp && npm run verify:cache
 cd hushh-webapp && npm run verify:docs
-python scripts/ops/kai-system-audit.py --api-base http://localhost:8000 --web-base http://localhost:3000
 python scripts/ops/verify-env-secrets-parity.py --project hushh-pda --region us-central1 --backend-service consent-protocol --frontend-service hushh-webapp
 bash scripts/verify-pre-launch.sh
 ```

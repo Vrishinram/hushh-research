@@ -26,6 +26,15 @@
           "/analyze/run/active",
           "/analyze/run/{run_id}/stream",
           "/analyze/run/{run_id}/cancel",
+          "/plaid/status/{user_id}",
+          "/plaid/link-token",
+          "/plaid/link-token/update",
+          "/plaid/oauth/resume",
+          "/plaid/exchange-public-token",
+          "/plaid/refresh",
+          "/plaid/refresh/{run_id}",
+          "/plaid/source",
+          "/plaid/webhook",
           "/portfolio/import",
           "/portfolio/import/stream",
           "/portfolio/summary/{user_id}",
@@ -454,7 +463,10 @@
       ],
       "serviceFiles": [
         "hushh-webapp/lib/services/world-model-service.ts",
-        "hushh-webapp/lib/services/api-service.ts"
+        "hushh-webapp/lib/services/api-service.ts",
+        "hushh-webapp/lib/kai/brokerage/plaid-link-loader.ts",
+        "hushh-webapp/lib/kai/brokerage/plaid-oauth-session.ts",
+        "hushh-webapp/lib/kai/brokerage/plaid-portfolio-service.ts"
       ],
       "apiContractIds": [
         "kaiProxy",
@@ -471,17 +483,36 @@
       ]
     },
     {
+      "id": "kaiPlaidOauthReturnPage",
+      "pageFile": "hushh-webapp/app/kai/plaid/oauth/return/page.tsx",
+      "serviceFiles": [
+        "hushh-webapp/lib/kai/brokerage/plaid-oauth-session.ts",
+        "hushh-webapp/lib/kai/brokerage/plaid-link-loader.ts",
+        "hushh-webapp/lib/kai/brokerage/plaid-portfolio-service.ts",
+        "hushh-webapp/lib/services/vault-service.ts"
+      ],
+      "apiContractIds": [
+        "kaiProxy",
+        "vaultOwnerToken"
+      ]
+    },
+    {
       "id": "kaiDashboardPage",
       "pageFile": "hushh-webapp/app/kai/dashboard/page.tsx",
       "componentFiles": [
         "hushh-webapp/components/kai/kai-flow.tsx",
         "hushh-webapp/components/kai/views/dashboard-master-view.tsx",
-        "hushh-webapp/components/kai/kai-command-bar-global.tsx"
+        "hushh-webapp/components/kai/kai-command-bar-global.tsx",
+        "hushh-webapp/components/kai/portfolio-source-switcher.tsx",
+        "hushh-webapp/components/kai/cards/transaction-activity.tsx"
       ],
       "serviceFiles": [
         "hushh-webapp/lib/services/world-model-service.ts",
         "hushh-webapp/lib/services/api-service.ts",
-        "hushh-webapp/lib/kai/ticker-universe-cache.ts"
+        "hushh-webapp/lib/kai/ticker-universe-cache.ts",
+        "hushh-webapp/lib/kai/brokerage/plaid-link-loader.ts",
+        "hushh-webapp/lib/kai/brokerage/plaid-oauth-session.ts",
+        "hushh-webapp/lib/kai/brokerage/plaid-portfolio-service.ts"
       ],
       "apiContractIds": [
         "kaiProxy",

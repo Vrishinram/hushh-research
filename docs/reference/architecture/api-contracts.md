@@ -122,6 +122,27 @@ POST /api/consent/vault-owner-token  (Firebase Bearer)
 | POST | `/api/kai/portfolio/analyze-losers` | Analyze losers vs Renaissance |
 | POST | `/api/kai/portfolio/analyze-losers/stream` | Streaming losers analysis (SSE, deterministic config, cash-excluded investable universe) |
 
+#### Kai Plaid Brokerage Connectivity
+
+Plaid is the read-only brokerage connectivity layer for Kai. It supports Link/OAuth, holdings, investment transactions, refresh, and connection health. It does not place trades.
+
+| Method | Path | Description |
+| ------ | ---- | ----------- |
+| GET | `/api/kai/plaid/status/{user_id}` | Load Plaid aggregate status, active source, items, holdings, and transactions summary |
+| POST | `/api/kai/plaid/link-token` | Create a new Plaid Link token for investment connectivity |
+| POST | `/api/kai/plaid/link-token/update` | Create an update-mode Plaid Link token for reconnect/add-account flows |
+| POST | `/api/kai/plaid/oauth/resume` | Resume a web OAuth Link flow using an active opaque resume session |
+| POST | `/api/kai/plaid/exchange-public-token` | Exchange Plaid `public_token`, sync holdings + investment transactions, and aggregate the read-only source |
+| POST | `/api/kai/plaid/refresh` | Start a manual refresh run for one or more connected Plaid Items |
+| GET | `/api/kai/plaid/refresh/{run_id}` | Inspect a Plaid refresh run status |
+| POST | `/api/kai/plaid/source` | Persist the active Kai portfolio source (`statement`, `plaid`, `combined`) |
+| POST | `/api/kai/plaid/webhook` | Receive Plaid webhook updates for holdings refresh and item health |
+
+Operational note:
+
+- webhook URLs are supplied to Plaid during Link token creation via backend configuration, not dashboard allowlisting
+- if `PLAID_WEBHOOK_URL` changes after Items exist, existing Items need a one-time `/item/webhook/update` maintenance pass
+
 #### Kai Analysis
 
 | Method | Path | Description |
@@ -154,6 +175,12 @@ Frontend reads/writes these fields through the centralized onboarding/profile fl
 | Method | Path | Description |
 | ------ | ---- | ----------- |
 | DELETE | `/api/account/delete` | Delete user account and all data |
+
+Reserved future surface:
+
+- broker execution will live under a separate `/api/kai/brokers/*` or `/api/kai/execution/*` family
+- no live-trading routes exist today
+- trade execution will require distinct consent scopes, approval, and audit logging
 
 #### Vault Key Metadata (Setup/Get)
 

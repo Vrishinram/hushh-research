@@ -24,7 +24,17 @@ Notes:
 | Import quality gate | import stream terminal | canonical SSE envelope | `/api/kai/portfolio/import/stream` | terminal `quality_gate` + `quality_report_v2` diagnostics | emits terminal `aborted` on strict validation failure (no silent success) |
 | Dashboard render + holdings manage fusion | `/kai/dashboard?tab=overview|holdings` | `DashboardDataMapper`, `ManagePortfolioView`, `CacheService` | optional refresh via `/api/world-model/*` and market APIs | reads encrypted domain via vault key | cache-first with metadata/domain reconciliation |
 | Dashboard profile picks | `/kai/dashboard` profile picks card | `ApiService.getDashboardProfilePicks` | `/api/kai/dashboard/profile-picks/{user_id}` | no new persistence (derived response) | quote-backed, risk-profile aware additive payload |
-| Debate context usage | `/kai/dashboard/analysis` + stream views | `ApiService.streamKaiAnalysis` | `/api/kai/analyze/stream` | decision persisted under `financial.analysis.decisions` | context derived from index summaries + optional decrypted domain fields |
+| Debate context usage | `/kai/analysis` + stream views | `ApiService.streamKaiAnalysis` | `/api/kai/analyze/stream` | decision persisted under `financial.analysis.decisions` | context derived from index summaries + optional decrypted domain fields |
+
+### 2b) Plaid Brokerage Connect -> Read-Only Source -> Dashboard/Debate/Optimize
+
+| Step | Route/UI | Web Service Layer | Backend Route | Persistence | Cache / Sync |
+| --- | --- | --- | --- | --- | --- |
+| Link token + OAuth start | `/kai/import`, `/kai/dashboard` | `PlaidPortfolioService.createLinkToken`, brokerage Link loader, opaque session helper | `/api/kai/plaid/link-token`, `/api/kai/plaid/link-token/update` | `kai_plaid_link_sessions` | session-scoped opaque resume id only |
+| OAuth return + resume | `/kai/plaid/oauth/return` | callback page + fresh `VAULT_OWNER` issuance | `/api/kai/plaid/oauth/resume`, `/api/kai/plaid/exchange-public-token` | `kai_plaid_link_sessions` -> `kai_plaid_items` | no vault key persistence; Link resumed with `receivedRedirectUri` |
+| Holdings + investment transactions sync | dashboard source switcher / refresh actions | `PlaidPortfolioService`, `usePortfolioSources` | `/api/kai/plaid/status/{user_id}`, `/api/kai/plaid/refresh`, `/api/kai/plaid/refresh/{run_id}` | `kai_plaid_items`, `kai_plaid_refresh_runs`, `kai_portfolio_source_preferences` | background task center polls active refresh runs |
+| Webhook-driven update | public webhook receiver | Next proxy -> backend Plaid service | `/api/kai/plaid/webhook` | server-side Plaid item snapshots | dashboard freshness and sync status update on reload |
+| Portfolio source selection | dashboard / analysis / optimize entry | `usePortfolioSources`, `kai-session-store` | `/api/kai/plaid/source` | active source preference row + derived `financial` source metadata | statement editable, Plaid immutable, Combined comparison-only |
 
 ### 3) Kai Home (`/kai`) -> Token Guard -> Market Cache -> Providers
 
@@ -68,9 +78,16 @@ Notes:
 - Source domain: encrypted `financial` + index summary
 - Profile picks API: `consent-protocol/api/routes/kai/portfolio.py` (`/api/kai/dashboard/profile-picks/{user_id}`)
 
-### `/kai/dashboard/analysis`
+### `/kai/plaid/oauth/return`
+- UI: `hushh-webapp/app/kai/plaid/oauth/return/page.tsx`
+- Session helper: `hushh-webapp/lib/kai/brokerage/plaid-oauth-session.ts`
+- Backend route: `consent-protocol/api/routes/kai/plaid.py`
+- Backend service: `consent-protocol/hushh_mcp/services/plaid_portfolio_service.py`
+- Persistence: `kai_plaid_link_sessions`
+
+### `/kai/analysis`
 - UI stream consumer: `hushh-webapp/components/kai/debate-stream-view.tsx`
-- Route contract: `hushh-webapp/app/kai/dashboard/analysis/page.tsx` (`tab=history|summary|debate`, `debate_id=<stream_id>`)
+- Route contract: `hushh-webapp/app/kai/analysis/page.tsx` (`debate_id=<stream_id>`)
 - Decision card: `hushh-webapp/components/kai/views/decision-card.tsx`
 - Backend stream: `consent-protocol/api/routes/kai/stream.py`
 - Debate engine: `consent-protocol/hushh_mcp/agents/kai/debate_engine.py`

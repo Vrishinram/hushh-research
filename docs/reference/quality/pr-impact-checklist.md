@@ -45,7 +45,6 @@ Mandatory impact mapping for any change touching Kai, world model, routes, or mo
   - [ ] `npm run verify:capacitor:routes`
   - [ ] `npm run verify:cache`
   - [ ] `npm run verify:docs`
-  - [ ] `python scripts/ops/kai-system-audit.py --api-base ... --web-base ...`
 ```
 
 ## Review Rules

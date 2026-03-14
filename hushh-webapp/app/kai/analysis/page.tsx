@@ -583,6 +583,8 @@ export default function KaiAnalysisPage() {
                     riskProfile={analysisParams?.riskProfile || "balanced"}
                     vaultOwnerToken={vaultOwnerToken || ""}
                     vaultKey={vaultKey}
+                    portfolioContextOverride={analysisParams?.portfolioContext || null}
+                    portfolioSource={analysisParams?.portfolioSource}
                     onClose={handleCloseLiveDebate}
                     onDecisionSaved={handleLiveDecisionSaved}
                     showHeader={false}
@@ -595,6 +597,8 @@ export default function KaiAnalysisPage() {
                     riskProfile={analysisParams?.riskProfile || "balanced"}
                     vaultOwnerToken={vaultOwnerToken || ""}
                     vaultKey={vaultKey}
+                    portfolioContextOverride={analysisParams?.portfolioContext || null}
+                    portfolioSource={analysisParams?.portfolioSource}
                     onClose={handleCloseLiveDebate}
                     onDecisionSaved={handleLiveDecisionSaved}
                     showHeader={false}
@@ -606,6 +610,8 @@ export default function KaiAnalysisPage() {
                     riskProfile={analysisParams.riskProfile}
                     vaultOwnerToken={vaultOwnerToken || ""}
                     vaultKey={vaultKey}
+                    portfolioContextOverride={analysisParams?.portfolioContext || null}
+                    portfolioSource={analysisParams?.portfolioSource}
                     onClose={handleCloseLiveDebate}
                     onDecisionSaved={handleLiveDecisionSaved}
                     showHeader={false}

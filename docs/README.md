@@ -27,12 +27,15 @@ For repo setup, see [`readme.md`](../readme.md) and [`getting_started.md`](../ge
 | Review Investor + RIA IAM architecture and policy | [reference/iam/README.md](./reference/iam/README.md) |
 | Follow docs governance and naming rules | [reference/operations/docs-governance.md](./reference/operations/docs-governance.md) |
 | Understand Kai runtime dependencies | [reference/kai/kai-interconnection-map.md](./reference/kai/kai-interconnection-map.md) |
+| Understand Kai brokerage connectivity and execution boundary | [reference/kai/kai-brokerage-connectivity-architecture.md](./reference/kai/kai-brokerage-connectivity-architecture.md) |
 | Run Kai impact/risk checks | [reference/kai/kai-change-impact-matrix.md](./reference/kai/kai-change-impact-matrix.md) |
 | Implement/verify streaming contracts | [reference/streaming/streaming-contract.md](./reference/streaming/streaming-contract.md) |
 | Follow design system rules | [reference/quality/design-system.md](./reference/quality/design-system.md) |
 | Validate PR impact checklist | [reference/quality/pr-impact-checklist.md](./reference/quality/pr-impact-checklist.md) |
 | Get started quickly | [guides/getting-started.md](./guides/getting-started.md) |
+| Activate and test Plaid end to end | [guides/plaid-activation-and-testing.md](./guides/plaid-activation-and-testing.md) |
 | Build mobile/native | [guides/mobile.md](./guides/mobile.md) |
+| Review planned broker execution architecture | [vision/kai/broker-execution-future-state.md](./vision/kai/broker-execution-future-state.md) |
 | Read backend-specific docs | [consent-protocol/docs/README.md](../consent-protocol/docs/README.md) |
 | Read frontend/native docs | [hushh-webapp/docs/README.md](../hushh-webapp/docs/README.md) |
 

@@ -36,6 +36,7 @@ Keep navigation documentation aligned with `hushh-webapp/lib/navigation/routes.t
 - `/kai`
 - `/kai/onboarding`
 - `/kai/import`
+- `/kai/plaid/oauth/return`
 - `/kai/dashboard`
 - `/kai/analysis`
 - `/kai/optimize`

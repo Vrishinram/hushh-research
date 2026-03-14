@@ -20,6 +20,7 @@ export const ROUTES = {
   KAI_HOME: "/kai",
   KAI_ONBOARDING: "/kai/onboarding",
   KAI_IMPORT: "/kai/import",
+  KAI_PLAID_OAUTH_RETURN: "/kai/plaid/oauth/return",
   KAI_DASHBOARD: "/kai/dashboard",
   KAI_ANALYSIS: "/kai/analysis",
   KAI_OPTIMIZE: "/kai/optimize",

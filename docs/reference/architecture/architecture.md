@@ -127,13 +127,18 @@ consent-protocol/
         decisions.py
         health.py
         market_insights.py
+        plaid.py
         portfolio.py
         stream.py
   hushh_mcp/
     agents/
     consent/
     hushh_adk/
+    integrations/
+      plaid/
     operons/
+      kai/
+        brokerage.py
     services/
   db/
     migrations/
@@ -167,6 +172,7 @@ Current app-level navigation targets are defined in `hushh-webapp/lib/navigation
 - `/kai`
 - `/kai/onboarding`
 - `/kai/import`
+- `/kai/plaid/oauth/return`
 - `/kai/dashboard`
 - `/kai/analysis`
 - `/kai/optimize`
@@ -229,6 +235,7 @@ hushh-webapp/
     consent/
     firebase/
     kai/
+      brokerage/
     navigation/
     notifications/
     observability/

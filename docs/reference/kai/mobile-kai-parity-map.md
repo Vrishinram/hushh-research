@@ -8,9 +8,10 @@ Route-level and feature-level parity contract for Kai on Web, iOS, and Android.
 | --- | --- | --- | --- | --- |
 | `/kai/import` | Yes | Yes | Yes | `npm run verify:capacitor:routes` + runtime audit |
 | `/kai` | Yes | Yes | Yes | `npm run verify:capacitor:routes` + runtime audit |
+| `/kai/plaid/oauth/return` | Yes | Yes | Yes | `npm run verify:capacitor:routes` + runtime audit |
 | `/kai/dashboard` | Yes | Yes | Yes | `npm run verify:capacitor:routes` + runtime audit |
-| `/kai/dashboard/analysis` | Yes | Yes | Yes | `npm run verify:capacitor:routes` + runtime audit |
-| `/kai/dashboard/portfolio-health` | Yes | Yes | Yes | `npm run verify:capacitor:routes` + runtime audit |
+| `/kai/analysis` | Yes | Yes | Yes | `npm run verify:capacitor:routes` + runtime audit |
+| `/kai/optimize` | Yes | Yes | Yes | `npm run verify:capacitor:routes` + runtime audit |
 
 ## Feature-Level Parity
 
@@ -36,7 +37,6 @@ Route-level and feature-level parity contract for Kai on Web, iOS, and Android.
 ```bash
 cd hushh-webapp && npm run verify:parity
 cd hushh-webapp && npm run verify:capacitor:routes
-python scripts/ops/kai-system-audit.py --api-base http://localhost:8000 --web-base http://localhost:3000
 ```
 
 ## Failure Interpretation

@@ -25,6 +25,7 @@ import { KaiProfileService } from "@/lib/services/kai-profile-service";
 import { WorldModelService } from "@/lib/services/world-model-service";
 import { cn } from "@/lib/utils";
 import { toInvestorMessage, toInvestorStreamText } from "@/lib/copy/investor-language";
+import type { PortfolioSource } from "@/lib/kai/brokerage/portfolio-sources";
 import {
   DebateRunManagerService,
   type DebateRunTask,
@@ -414,6 +415,8 @@ interface DebateStreamViewProps {
   vaultOwnerToken: string;
   vaultKey?: string;
   runId?: string;
+  portfolioContextOverride?: Record<string, unknown> | null;
+  portfolioSource?: PortfolioSource;
   onClose: () => void;
   onDecisionSaved?: (entry: AnalysisHistoryEntry) => void;
   showHeader?: boolean;
@@ -637,6 +640,8 @@ export function DebateStreamView({
   vaultOwnerToken,
   vaultKey,
   runId,
+  portfolioContextOverride,
+  portfolioSource,
   onClose,
   onDecisionSaved,
   showHeader = true,
@@ -1224,7 +1229,10 @@ export function DebateStreamView({
         }
       }
 
-      let portfolioContext = extractDebatePortfolioContext(userId);
+      let portfolioContext =
+        portfolioContextOverride && typeof portfolioContextOverride === "object"
+          ? portfolioContextOverride
+          : extractDebatePortfolioContext(userId);
       if (!hasRequiredDebateContext(portfolioContext) && vaultKey) {
         try {
           const fullBlob = await WorldModelService.loadFullBlob({
@@ -1251,9 +1259,17 @@ export function DebateStreamView({
       }
 
       if (portfolioContext) {
+        const sourceTag =
+          portfolioSource ||
+          (portfolioContext.source_metadata &&
+          typeof portfolioContext.source_metadata === "object" &&
+          typeof (portfolioContext.source_metadata as Record<string, unknown>).source_type === "string"
+            ? ((portfolioContext.source_metadata as Record<string, unknown>).source_type as PortfolioSource)
+            : undefined);
         context = {
           ...(context || {}),
           ...portfolioContext,
+          portfolio_source: sourceTag,
         };
       }
 
@@ -1360,6 +1376,8 @@ export function DebateStreamView({
     };
   }, [
     applyEnvelope,
+    portfolioContextOverride,
+    portfolioSource,
     reloadNonce,
     resetState,
     riskProfileProp,
