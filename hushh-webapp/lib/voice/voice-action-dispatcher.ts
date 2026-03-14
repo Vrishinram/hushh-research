@@ -95,12 +95,7 @@ export async function dispatchVoiceToolCall(input: VoiceDispatchInput): Promise<
       return;
     }
 
-    const explicitConfirm =
-      toolCall.args.confirm === true &&
-      (typeof window === "undefined" ||
-        window.confirm(`Stop active analysis for ${activeTask.ticker}?`));
-
-    if (!explicitConfirm) {
+    if (toolCall.args.confirm !== true) {
       toast.info("Cancel request not confirmed.");
       console.info("[VOICE_UI] dispatch_result=cancel_active_analysis not_confirmed");
       return;

@@ -4,6 +4,51 @@ export const dynamic = "force-dynamic";
 
 import { getPythonApiUrl } from "@/app/api/_utils/backend";
 
+type VoiceProxyTimingState = {
+  turnStartMs: number;
+  lastStageMs: number;
+};
+
+const voiceProxyTimingByTurn = new Map<string, VoiceProxyTimingState>();
+
+function emitProxyVoiceStage(
+  turnId: string,
+  stage: string,
+  metadata: Record<string, unknown> = {},
+  options?: { finalize?: boolean }
+) {
+  if (!turnId) return;
+  const nowMs = Date.now();
+  const existing = voiceProxyTimingByTurn.get(turnId);
+  if (!existing) {
+    voiceProxyTimingByTurn.set(turnId, {
+      turnStartMs: nowMs,
+      lastStageMs: nowMs,
+    });
+  }
+  const current = voiceProxyTimingByTurn.get(turnId)!;
+  const sincePrevMs = existing ? Math.max(0, nowMs - existing.lastStageMs) : 0;
+  const sinceTurnStartMs = Math.max(0, nowMs - current.turnStartMs);
+  voiceProxyTimingByTurn.set(turnId, {
+    turnStartMs: current.turnStartMs,
+    lastStageMs: nowMs,
+  });
+
+  const payload = {
+    turn_id: turnId,
+    timestamp: new Date().toISOString(),
+    stage,
+    since_prev_ms: sincePrevMs,
+    since_turn_start_ms: sinceTurnStartMs,
+    ...metadata,
+  };
+  console.info("[KAI_VOICE_TRACE_PROXY]", payload);
+
+  if (options?.finalize) {
+    voiceProxyTimingByTurn.delete(turnId);
+  }
+}
+
 /**
  * Kai Catch-All Proxy
  *
@@ -46,7 +91,22 @@ async function proxyRequest(request: NextRequest, params: { path: string[] }) {
   // Debug: Check if Authorization header is present
   const authHeader = request.headers.get("authorization");
   const acceptHeader = request.headers.get("accept");
+  const voiceTurnIdHeader = request.headers.get("x-voice-turn-id");
   const contentType = request.headers.get("content-type") || "";
+  const isVoiceRoute = path.startsWith("voice/");
+  const voiceTraceTurnId = isVoiceRoute
+    ? (voiceTurnIdHeader || `vturn_proxy_${Date.now().toString(16)}`).slice(0, 128)
+    : null;
+
+  if (voiceTraceTurnId) {
+    emitProxyVoiceStage(voiceTraceTurnId, "proxy_received", {
+      method: request.method,
+      route: `/api/kai/${path}`,
+      content_type: contentType || null,
+      has_auth_header: Boolean(authHeader),
+    });
+  }
+
   console.log(`[Kai API] Proxying ${request.method} ${path}`);
   console.log(`[Kai API] Authorization header present: ${!!authHeader}`);
   console.log(`[Kai API] Content-Type: ${contentType}`);
@@ -60,6 +120,9 @@ async function proxyRequest(request: NextRequest, params: { path: string[] }) {
     }
     if (acceptHeader) {
       headers.set("Accept", acceptHeader);
+    }
+    if (voiceTurnIdHeader) {
+      headers.set("X-Voice-Turn-Id", voiceTurnIdHeader.slice(0, 128));
     }
 
     let body: BodyInit | undefined;
@@ -79,6 +142,20 @@ async function proxyRequest(request: NextRequest, params: { path: string[] }) {
       body = await request.text();
     }
 
+    if (voiceTraceTurnId) {
+      emitProxyVoiceStage(voiceTraceTurnId, "proxy_forwarded", {
+        method: request.method,
+        route: `/api/kai/${path}`,
+        target_url: url,
+        body_mode:
+          request.method === "GET" || request.method === "DELETE"
+            ? "none"
+            : contentType.includes("multipart/form-data")
+              ? "multipart_form_data"
+              : "json_text",
+      });
+    }
+
     const response = await fetch(url, {
       method: request.method,
       headers: headers,
@@ -87,6 +164,21 @@ async function proxyRequest(request: NextRequest, params: { path: string[] }) {
 
     // Check for SSE stream response
     const responseContentType = response.headers.get("content-type");
+    if (voiceTraceTurnId) {
+      const shouldFinalize = path === "voice/tts" || response.status >= 400;
+      emitProxyVoiceStage(
+        voiceTraceTurnId,
+        "proxy_response_received",
+        {
+          method: request.method,
+          route: `/api/kai/${path}`,
+          status: response.status,
+          response_content_type: responseContentType || null,
+        },
+        { finalize: shouldFinalize }
+      );
+    }
+
     if (responseContentType?.includes("text/event-stream")) {
       console.log(`[Kai API] SSE stream detected, passing through`);
       // Return SSE stream directly without parsing
@@ -124,6 +216,19 @@ async function proxyRequest(request: NextRequest, params: { path: string[] }) {
 
     return NextResponse.json(data);
   } catch (error) {
+    if (voiceTraceTurnId) {
+      emitProxyVoiceStage(
+        voiceTraceTurnId,
+        "proxy_response_received",
+        {
+          method: request.method,
+          route: `/api/kai/${path}`,
+          status: 500,
+          error: String(error),
+        },
+        { finalize: true }
+      );
+    }
     console.error(`[Kai API] Internal Error proxying to ${url}:`, error);
     return NextResponse.json(
       { error: "Internal Proxy Error", details: String(error) },

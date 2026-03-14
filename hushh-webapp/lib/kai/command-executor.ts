@@ -112,6 +112,11 @@ export function executeKaiCommand(input: ExecuteKaiCommandInput): ExecuteKaiComm
     return { status: "executed" };
   }
 
+  if (command === "import") {
+    router.push(ROUTES.KAI_IMPORT);
+    return { status: "executed" };
+  }
+
   if (command === "history") {
     router.push(getHistoryTarget(params));
     return { status: "executed" };

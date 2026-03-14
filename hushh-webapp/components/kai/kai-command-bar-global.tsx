@@ -13,8 +13,11 @@ import { WorldModelService } from "@/lib/services/world-model-service";
 import { executeKaiCommand } from "@/lib/kai/command-executor";
 import type { KaiCommandAction } from "@/lib/kai/kai-command-types";
 import { useNavigation } from "@/lib/navigation/navigation-context";
-import { dispatchVoiceToolCall } from "@/lib/voice/voice-action-dispatcher";
+import { DebateRunManagerService } from "@/lib/services/debate-run-manager";
+import { AppBackgroundTaskService } from "@/lib/services/app-background-task-service";
+import { executeVoiceResponse } from "@/lib/voice/voice-response-executor";
 import { useVoiceSession } from "@/lib/voice/voice-session-store";
+import type { AppRuntimeState, VoiceMemoryHint, VoiceResponse } from "@/lib/voice/voice-types";
 
 function toBoolean(value: unknown): boolean | undefined {
   if (typeof value === "boolean") return value;
@@ -44,19 +47,65 @@ function computeAnalyzeEligibilityFromHolding(holding: Record<string, unknown>):
   return false;
 }
 
+function deriveRouteScreen(pathname: string): { screen: string; subview?: string | null } {
+  const normalizedPath = String(pathname || "").split("?")[0];
+  if (!normalizedPath) {
+    return { screen: "unknown", subview: null };
+  }
+  if (normalizedPath === "/kai" || normalizedPath.startsWith("/kai/home")) {
+    return { screen: "home", subview: null };
+  }
+  if (normalizedPath.startsWith("/kai/dashboard")) {
+    const segments = normalizedPath.split("/").filter(Boolean);
+    return { screen: "dashboard", subview: segments[2] || null };
+  }
+  if (normalizedPath.startsWith("/kai/analysis")) {
+    return { screen: "analysis", subview: null };
+  }
+  if (normalizedPath.startsWith("/kai/import")) {
+    return { screen: "import", subview: null };
+  }
+  if (normalizedPath.startsWith("/kai/optimize")) {
+    return { screen: "optimize", subview: null };
+  }
+  if (normalizedPath.startsWith("/consents")) {
+    return { screen: "consents", subview: null };
+  }
+  if (normalizedPath.startsWith("/profile")) {
+    return { screen: "profile", subview: null };
+  }
+  if (normalizedPath.startsWith("/kai")) {
+    const segments = normalizedPath.split("/").filter(Boolean);
+    return { screen: "kai", subview: segments[1] || null };
+  }
+  return { screen: "app", subview: null };
+}
+
 export function KaiCommandBarGlobal() {
   const router = useRouter();
   const pathname = usePathname();
   const { user, loading } = useAuth();
-  const { isVaultUnlocked, vaultOwnerToken, vaultKey } = useVault();
+  const { isVaultUnlocked, vaultOwnerToken, vaultKey, tokenExpiresAt } = useVault();
   const { handleBack } = useNavigation();
   const setAnalysisParams = useKaiSession((s) => s.setAnalysisParams);
   const busyOperations = useKaiSession((s) => s.busyOperations);
   const analysisParams = useKaiSession((s) => s.analysisParams);
-  const { lastTranscript, lastToolName, lastTicker, setLastVoiceTurn } = useVoiceSession();
+  const { lastToolName, lastTicker, setLastVoiceTurn } = useVoiceSession();
   const cache = useMemo(() => CacheService.getInstance(), []);
   const [hasPortfolioData, setHasPortfolioData] = useState(false);
+  const [ttsPlaying, setTtsPlaying] = useState(false);
+  const [backgroundTaskState, setBackgroundTaskState] = useState(() =>
+    AppBackgroundTaskService.getState()
+  );
   const chromeState = useMemo(() => getKaiChromeState(pathname), [pathname]);
+  const userId = user?.uid ?? "";
+
+  useEffect(() => {
+    const unsubscribe = AppBackgroundTaskService.subscribe((state) => {
+      setBackgroundTaskState(state);
+    });
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
     if (!user?.uid) {
@@ -194,28 +243,109 @@ export function KaiCommandBarGlobal() {
     return Array.from(deduped.values());
   }, [cache, user?.uid]);
 
-  const userId = user?.uid ?? "";
-  // Command palette is hidden only during loading/review overlays.
-  const voiceContext = useMemo(
+  const signedIn = Boolean(user?.uid);
+  const tokenAvailable = Boolean(vaultOwnerToken);
+  const tokenValid = Boolean(vaultOwnerToken) && (!tokenExpiresAt || tokenExpiresAt > Date.now());
+  const voiceAvailable = signedIn && isVaultUnlocked && tokenAvailable && tokenValid;
+  const onVaultScreen = pathname?.startsWith("/kai") ?? false;
+  const voiceVisibilityMode: "enabled" | "disabled" | "hidden" = voiceAvailable
+    ? "enabled"
+    : onVaultScreen
+      ? "disabled"
+      : "hidden";
+  const voiceUnavailableReason = voiceAvailable
+    ? undefined
+    : !signedIn
+      ? "Sign in to use voice"
+      : "Unlock your vault to use voice";
+
+  const activeAnalysisTask = useMemo(() => {
+    if (!userId) return null;
+    return DebateRunManagerService.getActiveTaskForUser(userId);
+  }, [analysisParams?.ticker, busyOperations, userId]);
+
+  const runningImportTask = useMemo(() => {
+    if (!userId) return null;
+    return (
+      backgroundTaskState.tasks.find(
+        (task) =>
+          task.userId === userId &&
+          task.kind === "portfolio_import_stream" &&
+          task.status === "running" &&
+          !task.dismissedAt
+      ) || null
+    );
+  }, [backgroundTaskState.tasks, userId]);
+
+  const routeInfo = useMemo(() => deriveRouteScreen(pathname || ""), [pathname]);
+  const appRuntimeState = useMemo<AppRuntimeState>(
     () => ({
-      route: pathname,
-      busy_operations: Object.keys(busyOperations),
-      stock_analysis_active: Boolean(busyOperations["stock_analysis_active"]),
-      last_tool_name: lastToolName,
-      last_ticker: lastTicker,
-      last_transcript: lastTranscript,
-      current_ticker: analysisParams?.ticker || null,
-      has_portfolio_data: hasPortfolioData,
+      auth: {
+        signed_in: signedIn,
+        user_id: userId || null,
+      },
+      vault: {
+        unlocked: isVaultUnlocked,
+        token_available: tokenAvailable,
+        token_valid: tokenValid,
+      },
+      route: {
+        pathname: pathname || "",
+        screen: routeInfo.screen,
+        subview: routeInfo.subview ?? null,
+      },
+      runtime: {
+        analysis_active:
+          Boolean(busyOperations["stock_analysis_active"]) ||
+          Boolean(activeAnalysisTask && activeAnalysisTask.status === "running"),
+        analysis_ticker: activeAnalysisTask?.ticker || analysisParams?.ticker || null,
+        analysis_run_id: activeAnalysisTask?.runId || null,
+        import_active:
+          Boolean(busyOperations["portfolio_import_stream"]) || Boolean(runningImportTask),
+        import_run_id: runningImportTask?.taskId || null,
+        busy_operations: Object.keys(busyOperations).filter((name) => busyOperations[name] === true),
+      },
+      portfolio: {
+        has_portfolio_data: hasPortfolioData,
+      },
+      voice: {
+        available: voiceAvailable,
+        tts_playing: ttsPlaying,
+        last_tool_name: lastToolName,
+        last_ticker: lastTicker,
+      },
     }),
     [
+      activeAnalysisTask,
       analysisParams?.ticker,
       busyOperations,
       hasPortfolioData,
+      isVaultUnlocked,
       lastTicker,
       lastToolName,
-      lastTranscript,
       pathname,
+      routeInfo.screen,
+      routeInfo.subview,
+      runningImportTask,
+      signedIn,
+      tokenAvailable,
+      tokenValid,
+      ttsPlaying,
+      userId,
+      voiceAvailable,
     ]
+  );
+
+  const voiceContext = useMemo(
+    () => ({
+      route: pathname,
+      stock_analysis_active: appRuntimeState.runtime.analysis_active,
+      last_tool_name: lastToolName,
+      last_ticker: lastTicker,
+      current_ticker: appRuntimeState.runtime.analysis_ticker || null,
+      has_portfolio_data: hasPortfolioData,
+    }),
+    [appRuntimeState.runtime.analysis_active, appRuntimeState.runtime.analysis_ticker, hasPortfolioData, lastTicker, lastToolName, pathname]
   );
 
   const runKaiCommand = (command: KaiCommandAction, params?: Record<string, unknown>) => {
@@ -248,36 +378,48 @@ export function KaiCommandBarGlobal() {
       onCommand={(command, params) => {
         runKaiCommand(command, params);
       }}
-      onVoiceToolCall={async (toolCall, transcript) => {
-        console.info("[VOICE_UI] onVoiceToolCall_received=", toolCall, "transcript=", transcript);
-        const tickerFromTool =
-          toolCall.tool_name === "execute_kai_command" &&
-          toolCall.args.command === "analyze" &&
-          toolCall.args.params?.symbol
-            ? toolCall.args.params.symbol
-            : null;
-        setLastVoiceTurn({
-          transcript,
-          toolName: toolCall.tool_name,
-          ticker: tickerFromTool,
-        });
-        await dispatchVoiceToolCall({
-          toolCall,
+      onVoiceResponse={async (payload: {
+        transcript: string;
+        response: VoiceResponse;
+        memory?: VoiceMemoryHint;
+      }) => {
+        const outcome = await executeVoiceResponse({
+          response: payload.response,
           userId,
           vaultOwnerToken: vaultOwnerToken || undefined,
           vaultKey: vaultKey || undefined,
           router,
           handleBack,
           executeKaiCommand: () =>
-            toolCall.tool_name === "execute_kai_command"
-              ? runKaiCommand(toolCall.args.command, toolCall.args.params)
+            payload.response.kind === "execute" &&
+            payload.response.tool_call.tool_name === "execute_kai_command"
+              ? runKaiCommand(
+                  payload.response.tool_call.args.command,
+                  payload.response.tool_call.args.params
+                )
               : { status: "invalid", reason: "not_execute_tool" },
           setAnalysisParams,
         });
+
+        if (outcome.shortTermMemoryWrite) {
+          setLastVoiceTurn({
+            transcript: payload.transcript,
+            toolName: outcome.toolName,
+            ticker: outcome.ticker,
+            responseKind: outcome.responseKind,
+          });
+        }
+
+        return outcome;
       }}
       hasPortfolioData={hasPortfolioData}
       userId={userId}
       vaultOwnerToken={vaultOwnerToken || undefined}
+      voiceAvailable={voiceAvailable}
+      voiceVisibilityMode={voiceVisibilityMode}
+      voiceUnavailableReason={voiceUnavailableReason}
+      onTtsPlayingChange={setTtsPlaying}
+      appRuntimeState={appRuntimeState}
       voiceContext={voiceContext}
       portfolioTickers={portfolioTickers}
     />

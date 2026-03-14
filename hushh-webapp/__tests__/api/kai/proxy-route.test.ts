@@ -35,6 +35,7 @@ describe("/api/kai/[...path] proxy", () => {
       method: "POST",
       headers: {
         Authorization: "Bearer vault_owner_token",
+        "X-Voice-Turn-Id": "vturn_test_abc",
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ user_id: "user_123", message: "hello" }),
@@ -52,6 +53,7 @@ describe("/api/kai/[...path] proxy", () => {
     const headers = options?.headers as Headers;
     expect(headers.get("Authorization")).toBe("Bearer vault_owner_token");
     expect(headers.get("Content-Type")).toBe("application/json");
+    expect(headers.get("X-Voice-Turn-Id")).toBe("vturn_test_abc");
   });
 
   it("forwards Authorization for import multipart path without overriding multipart content-type", async () => {

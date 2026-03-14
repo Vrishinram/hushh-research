@@ -1,0 +1,57 @@
+{
+  "captured_at": 1773365723.6345928,
+  "turns": [
+    {
+      "turn_id": "vturn_probe_1_aaa540debb",
+      "input_text": "Open dashboard",
+      "transcript": "",
+      "response_kind": null,
+      "response_message": "",
+      "stt_status": 401,
+      "plan_status": 401,
+      "tts_status": 401,
+      "durations_ms": {
+        "stt_request_ms": 2610.5,
+        "plan_request_ms": 58.4,
+        "tts_request_ms": 43.7,
+        "total_turn_ms": 2712.6
+      },
+      "server_metrics": {
+        "stt_elapsed_ms": null,
+        "stt_openai_http_ms": null,
+        "plan_elapsed_ms": null,
+        "plan_openai_http_ms": null,
+        "tts_audio_chars": 0,
+        "tts_model": null,
+        "tts_voice": null,
+        "tts_format": null
+      }
+    },
+    {
+      "turn_id": "vturn_probe_2_538977580b",
+      "input_text": "Explain this screen",
+      "transcript": "",
+      "response_kind": null,
+      "response_message": "",
+      "stt_status": 401,
+      "plan_status": 401,
+      "tts_status": 401,
+      "durations_ms": {
+        "stt_request_ms": 44.1,
+        "plan_request_ms": 38.8,
+        "tts_request_ms": 45.3,
+        "total_turn_ms": 128.2
+      },
+      "server_metrics": {
+        "stt_elapsed_ms": null,
+        "stt_openai_http_ms": null,
+        "plan_elapsed_ms": null,
+        "plan_openai_http_ms": null,
+        "tts_audio_chars": 0,
+        "tts_model": null,
+        "tts_voice": null,
+        "tts_format": null
+      }
+    }
+  ]
+}

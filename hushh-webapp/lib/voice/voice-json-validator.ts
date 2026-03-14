@@ -1,19 +1,23 @@
 import type { KaiCommandAction } from "@/lib/kai/kai-command-types";
-import type { VoiceToolCall } from "@/lib/voice/voice-types";
+import type {
+  VoiceMemoryHint,
+  VoicePlanPayload,
+  VoiceResponse,
+  VoiceToolCall,
+} from "@/lib/voice/voice-types";
 
 const ALLOWED_COMMANDS = new Set<KaiCommandAction>([
   "analyze",
   "optimize",
+  "import",
   "consent",
   "profile",
   "history",
   "dashboard",
   "home",
 ]);
+export const VOICE_PLAN_NORMALIZATION_VERSION = "2026-03-13-stabilize-a";
 const COMMAND_ALIASES: Record<string, KaiCommandAction> = {
-  analysis: "history",
-  analysis_section: "history",
-  analysis_history: "history",
   market: "home",
   market_section: "home",
   kai: "home",
@@ -21,6 +25,8 @@ const COMMAND_ALIASES: Record<string, KaiCommandAction> = {
   kai_home: "home",
   consents: "consent",
   portfolio: "dashboard",
+  imports: "import",
+  import_section: "import",
 };
 
 const ALLOWED_EXECUTE_ARG_KEYS = new Set(["command", "params"]);
@@ -28,6 +34,10 @@ const ALLOWED_EXECUTE_PARAM_KEYS = new Set(["symbol", "focus", "tab"]);
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
 export function validateVoiceToolCall(input: unknown): VoiceToolCall | null {
@@ -75,8 +85,7 @@ export function validateVoiceToolCall(input: unknown): VoiceToolCall | null {
 
     if (typeof args.command !== "string") return null;
     const rawCommand = args.command.trim().toLowerCase().replace(/\s+/g, "_");
-    const command = (COMMAND_ALIASES[rawCommand] || rawCommand) as KaiCommandAction;
-    if (!ALLOWED_COMMANDS.has(command)) return null;
+    let command = (COMMAND_ALIASES[rawCommand] || rawCommand) as KaiCommandAction;
 
     const normalized: {
       symbol?: string;
@@ -112,6 +121,8 @@ export function validateVoiceToolCall(input: unknown): VoiceToolCall | null {
       }
     }
 
+    if (!ALLOWED_COMMANDS.has(command)) return null;
+
     if (command === "analyze" && !normalized.symbol) {
       return null;
     }
@@ -126,4 +137,160 @@ export function validateVoiceToolCall(input: unknown): VoiceToolCall | null {
   }
 
   return null;
+}
+
+function ensureSpeakTrue(input: unknown): true | null {
+  return input === true ? true : null;
+}
+
+function validateVoiceMemoryHint(input: unknown): VoiceMemoryHint | undefined {
+  if (!isPlainObject(input)) return undefined;
+  if (typeof input.allow_durable_write !== "boolean") return undefined;
+  return { allow_durable_write: input.allow_durable_write };
+}
+
+export function validateVoiceResponse(input: unknown): VoiceResponse | null {
+  if (!isPlainObject(input)) return null;
+  if (typeof input.kind !== "string") return null;
+  if (typeof input.message !== "string" || !input.message.trim()) return null;
+  if (!ensureSpeakTrue(input.speak)) return null;
+
+  const message = input.message.trim();
+
+  if (input.kind === "blocked") {
+    if (input.reason !== "auth_required" && input.reason !== "vault_required") return null;
+    return {
+      kind: "blocked",
+      reason: input.reason,
+      message,
+      speak: true,
+    };
+  }
+
+  if (input.kind === "clarify") {
+    if (
+      input.reason !== "stt_unusable" &&
+      input.reason !== "ticker_ambiguous" &&
+      input.reason !== "ticker_unknown"
+    ) {
+      return null;
+    }
+    if (
+      input.candidate !== undefined &&
+      input.candidate !== null &&
+      typeof input.candidate !== "string"
+    ) {
+      return null;
+    }
+    return {
+      kind: "clarify",
+      reason: input.reason,
+      message,
+      candidate: typeof input.candidate === "string" ? input.candidate : input.candidate ?? undefined,
+      speak: true,
+    };
+  }
+
+  if (input.kind === "already_running") {
+    if (input.task !== "analysis" && input.task !== "import") return null;
+    if (
+      input.ticker !== undefined &&
+      input.ticker !== null &&
+      typeof input.ticker !== "string"
+    ) {
+      return null;
+    }
+    if (
+      input.run_id !== undefined &&
+      input.run_id !== null &&
+      typeof input.run_id !== "string"
+    ) {
+      return null;
+    }
+    return {
+      kind: "already_running",
+      task: input.task,
+      ticker: typeof input.ticker === "string" ? input.ticker : input.ticker ?? undefined,
+      run_id: typeof input.run_id === "string" ? input.run_id : input.run_id ?? undefined,
+      message,
+      speak: true,
+    };
+  }
+
+  if (input.kind === "execute") {
+    const validatedToolCall = validateVoiceToolCall(input.tool_call);
+    if (!validatedToolCall) return null;
+    return {
+      kind: "execute",
+      tool_call: validatedToolCall,
+      message,
+      speak: true,
+    };
+  }
+
+  if (input.kind === "background_started") {
+    if (input.task !== "analysis") return null;
+    if (typeof input.ticker !== "string" || !input.ticker.trim()) return null;
+    if (typeof input.run_id !== "string" || !input.run_id.trim()) return null;
+    return {
+      kind: "background_started",
+      task: "analysis",
+      ticker: input.ticker.trim().toUpperCase(),
+      run_id: input.run_id.trim(),
+      message,
+      speak: true,
+    };
+  }
+
+  if (input.kind === "speak_only") {
+    return {
+      kind: "speak_only",
+      message,
+      speak: true,
+    };
+  }
+
+  return null;
+}
+
+export function validateVoicePlanPayload(input: unknown): VoicePlanPayload | null {
+  if (!isPlainObject(input)) return null;
+  const response = validateVoiceResponse(input.response);
+  if (!response) return null;
+
+  const payload: VoicePlanPayload = {
+    response,
+  };
+
+  const toolCall = validateVoiceToolCall(input.tool_call);
+  if (toolCall) {
+    payload.tool_call = toolCall;
+  }
+
+  const memory = validateVoiceMemoryHint(input.memory);
+  if (memory) {
+    payload.memory = memory;
+  }
+
+  if (typeof input.elapsed_ms === "number") {
+    payload.elapsed_ms = input.elapsed_ms;
+  }
+  if (typeof input.openai_http_ms === "number") {
+    payload.openai_http_ms = input.openai_http_ms;
+  }
+  if (typeof input.model === "string") {
+    payload.model = input.model;
+  }
+
+  return payload;
+}
+
+export function normalizeClarifyToolCall(question: string, options?: string[]): VoiceToolCall {
+  return {
+    tool_name: "clarify",
+    args: {
+      question: question.trim(),
+      options: isStringArray(options) ? options : undefined,
+    },
+  };
 }

@@ -25,6 +25,7 @@ import { HushhVault, HushhAuth, HushhConsent, HushhNotifications } from "@/lib/c
 import { Kai, PORTFOLIO_STREAM_EVENT, KAI_STREAM_EVENT } from "@/lib/capacitor/kai";
 import { isKaiStreamEnvelope, type KaiStreamEnvelope } from "@/lib/streaming/kai-stream-types";
 import { AuthService } from "@/lib/services/auth-service";
+import type { AppRuntimeState } from "@/lib/voice/voice-types";
 
 const getEnvBackendUrl = (): string => {
   return (process.env.NEXT_PUBLIC_BACKEND_URL || "").trim().replace(/\/$/, "");
@@ -101,6 +102,44 @@ export const getDirectBackendUrl = (): string => {
 
   return getEnvBackendUrl();
 };
+
+type VoiceTransportMode = {
+  mode: "nextjs_proxy" | "direct_backend";
+  reason:
+    | "native_platform"
+    | "missing_backend_url"
+    | "explicit_proxy"
+    | "explicit_direct"
+    | "dev_local_default_direct"
+    | "proxy_default";
+  backendUrl?: string;
+};
+
+function getVoiceTransportMode(): VoiceTransportMode {
+  if (Capacitor.isNativePlatform()) {
+    return { mode: "nextjs_proxy", reason: "native_platform" };
+  }
+  const backend = getEnvBackendUrl();
+  if (!backend) {
+    return { mode: "nextjs_proxy", reason: "missing_backend_url" };
+  }
+  const explicitProxy =
+    String(process.env.NEXT_PUBLIC_VOICE_FORCE_PROXY || "").toLowerCase() === "true";
+  if (explicitProxy) {
+    return { mode: "nextjs_proxy", reason: "explicit_proxy", backendUrl: backend };
+  }
+  const explicitDirect =
+    String(process.env.NEXT_PUBLIC_VOICE_DIRECT_BACKEND || "").toLowerCase() === "true";
+  if (explicitDirect) {
+    return { mode: "direct_backend", reason: "explicit_direct", backendUrl: backend };
+  }
+  const backendHost = hostFromUrl(backend);
+  const isDev = process.env.NODE_ENV !== "production";
+  if (isDev && isLocalNativeHost(backendHost)) {
+    return { mode: "direct_backend", reason: "dev_local_default_direct", backendUrl: backend };
+  }
+  return { mode: "nextjs_proxy", reason: "proxy_default", backendUrl: backend };
+}
 
 /**
  * Platform-aware fetch wrapper
@@ -239,6 +278,56 @@ async function apiFetch(
     return response;
   } finally {
     trackEnd?.();
+  }
+}
+
+async function voiceFetch(path: string, options: RequestInit = {}): Promise<Response> {
+  const transport = getVoiceTransportMode();
+  if (transport.mode !== "direct_backend") {
+    console.info(
+      `[VOICE_NET] transport=nextjs-proxy route=${path} reason=${transport.reason}`
+    );
+    return apiFetch(path, options);
+  }
+
+  const backend = transport.backendUrl || getEnvBackendUrl();
+  const url = `${backend}${path}`;
+  const mergedHeaders: Record<string, string> = {};
+  if (!(options.body instanceof FormData)) {
+    mergedHeaders["Content-Type"] = "application/json";
+  }
+
+  if (options.headers) {
+    if (options.headers instanceof Headers) {
+      options.headers.forEach((value, key) => {
+        mergedHeaders[key] = value;
+      });
+    } else if (Array.isArray(options.headers)) {
+      for (const [key, value] of options.headers) {
+        mergedHeaders[String(key)] = String(value);
+      }
+    } else {
+      for (const [key, value] of Object.entries(options.headers)) {
+        if (value === undefined || value === null) continue;
+        mergedHeaders[key] = String(value);
+      }
+    }
+  }
+
+  console.info(
+    `[VOICE_NET] transport=direct-backend route=${path} reason=${transport.reason} url=${url}`
+  );
+  try {
+    return await fetch(url, {
+      ...options,
+      headers: mergedHeaders,
+    });
+  } catch (error) {
+    console.warn(
+      `[VOICE_NET] transport=direct-backend failed route=${path}; falling back to nextjs-proxy`,
+      error
+    );
+    return apiFetch(path, options);
   }
 }
 
@@ -516,6 +605,10 @@ export class ApiService {
     return getDirectBackendUrl();
   }
 
+  static getVoiceTransportMode(): VoiceTransportMode {
+    return getVoiceTransportMode();
+  }
+
   // ==================== Kai Voice ====================
 
   static async transcribeKaiVoice(data: {
@@ -524,6 +617,7 @@ export class ApiService {
     audioBlob: Blob;
     mimeType?: string;
     filename?: string;
+    voiceTurnId?: string;
   }): Promise<Response> {
     const extFromMime = (mime: string) => {
       if (mime.includes("webm")) return "webm";
@@ -540,12 +634,52 @@ export class ApiService {
     form.append("user_id", data.userId);
     form.append("audio_file", data.audioBlob, filename);
 
-    return apiFetch("/api/kai/voice/stt", {
+    return voiceFetch("/api/kai/voice/stt", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${data.vaultOwnerToken}`,
+        ...(data.voiceTurnId ? { "X-Voice-Turn-Id": data.voiceTurnId } : {}),
       },
       body: form,
+    });
+  }
+
+  static async understandKaiVoice(data: {
+    userId: string;
+    vaultOwnerToken: string;
+    audioBlob: Blob;
+    context?: Record<string, unknown>;
+    appState?: AppRuntimeState;
+    mimeType?: string;
+    filename?: string;
+    voiceTurnId?: string;
+    signal?: AbortSignal;
+  }): Promise<Response> {
+    const extFromMime = (mime: string) => {
+      if (mime.includes("webm")) return "webm";
+      if (mime.includes("wav")) return "wav";
+      if (mime.includes("mp4") || mime.includes("m4a")) return "m4a";
+      if (mime.includes("mpeg") || mime.includes("mp3")) return "mp3";
+      return "webm";
+    };
+
+    const mimeType = data.mimeType || data.audioBlob.type || "audio/webm";
+    const ext = extFromMime(mimeType);
+    const filename = data.filename || `kai-voice.${ext}`;
+    const form = new FormData();
+    form.append("user_id", data.userId);
+    form.append("audio_file", data.audioBlob, filename);
+    form.append("context_json", JSON.stringify(data.context || {}));
+    form.append("app_state_json", JSON.stringify(data.appState || {}));
+
+    return voiceFetch("/api/kai/voice/understand", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${data.vaultOwnerToken}`,
+        ...(data.voiceTurnId ? { "X-Voice-Turn-Id": data.voiceTurnId } : {}),
+      },
+      body: form,
+      signal: data.signal,
     });
   }
 
@@ -554,16 +688,20 @@ export class ApiService {
     vaultOwnerToken: string;
     transcript: string;
     context?: Record<string, unknown>;
+    appState?: AppRuntimeState;
+    voiceTurnId?: string;
   }): Promise<Response> {
-    return apiFetch("/api/kai/voice/plan", {
+    return voiceFetch("/api/kai/voice/plan", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${data.vaultOwnerToken}`,
+        ...(data.voiceTurnId ? { "X-Voice-Turn-Id": data.voiceTurnId } : {}),
       },
       body: JSON.stringify({
         user_id: data.userId,
         transcript: data.transcript,
         context: data.context || {},
+        app_state: data.appState,
       }),
     });
   }
@@ -573,17 +711,21 @@ export class ApiService {
     vaultOwnerToken: string;
     text: string;
     voice?: string;
+    voiceTurnId?: string;
+    signal?: AbortSignal;
   }): Promise<Response> {
-    return apiFetch("/api/kai/voice/tts", {
+    return voiceFetch("/api/kai/voice/tts", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${data.vaultOwnerToken}`,
+        ...(data.voiceTurnId ? { "X-Voice-Turn-Id": data.voiceTurnId } : {}),
       },
       body: JSON.stringify({
         user_id: data.userId,
         text: data.text,
         voice: data.voice,
       }),
+      signal: data.signal,
     });
   }
 

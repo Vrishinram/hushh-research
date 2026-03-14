@@ -1,0 +1,161 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@capacitor/core", () => ({
+  Capacitor: {
+    isNativePlatform: () => false,
+    getPlatform: () => "web",
+  },
+  CapacitorHttp: {
+    request: vi.fn(),
+  },
+}));
+
+vi.mock("@/lib/capacitor", () => ({
+  HushhVault: {},
+  HushhAuth: {},
+  HushhConsent: {},
+  HushhNotifications: {},
+}));
+
+vi.mock("@/lib/capacitor/kai", () => ({
+  Kai: {},
+  PORTFOLIO_STREAM_EVENT: "portfolio_stream",
+  KAI_STREAM_EVENT: "kai_stream",
+}));
+
+vi.mock("@/lib/services/auth-service", () => ({
+  AuthService: {
+    getIdToken: vi.fn().mockResolvedValue("firebase_token"),
+  },
+}));
+
+describe("ApiService voice planning contract", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("sends app_state payload to /api/kai/voice/plan", async () => {
+    const { ApiService } = await import("@/lib/services/api-service");
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+
+    await ApiService.planKaiVoiceIntent({
+      userId: "user_1",
+      vaultOwnerToken: "vault_token",
+      transcript: "Analyze NVDA",
+      context: { route: "/kai/analysis" },
+      voiceTurnId: "vturn_test_123",
+      appState: {
+        auth: { signed_in: true, user_id: "user_1" },
+        vault: { unlocked: true, token_available: true, token_valid: true },
+        route: { pathname: "/kai/analysis", screen: "analysis", subview: null },
+        runtime: {
+          analysis_active: false,
+          analysis_ticker: null,
+          analysis_run_id: null,
+          import_active: false,
+          import_run_id: null,
+          busy_operations: [],
+        },
+        portfolio: { has_portfolio_data: true },
+        voice: {
+          available: true,
+          tts_playing: false,
+          last_tool_name: "clarify",
+          last_ticker: null,
+        },
+      },
+    });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [url, request] = fetchSpy.mock.calls[0] ?? [];
+    expect(url).toBe("/api/kai/voice/plan");
+    const headers = request?.headers as Record<string, string>;
+    expect(headers.Authorization).toBe("Bearer vault_token");
+    expect(headers["X-Voice-Turn-Id"]).toBe("vturn_test_123");
+    const body = JSON.parse(String(request?.body || "{}")) as Record<string, unknown>;
+    expect(body.user_id).toBe("user_1");
+    expect(body.transcript).toBe("Analyze NVDA");
+    expect(body).toHaveProperty("app_state");
+  });
+
+  it("forwards voice turn id header for STT and TTS requests", async () => {
+    const { ApiService } = await import("@/lib/services/api-service");
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+
+    await ApiService.transcribeKaiVoice({
+      userId: "user_1",
+      vaultOwnerToken: "vault_token",
+      audioBlob: new Blob(["abc"], { type: "audio/webm" }),
+      voiceTurnId: "vturn_stt_1",
+    });
+    await ApiService.synthesizeKaiVoice({
+      userId: "user_1",
+      vaultOwnerToken: "vault_token",
+      text: "hello",
+      voiceTurnId: "vturn_tts_1",
+    });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    const [, sttRequest] = fetchSpy.mock.calls[0] ?? [];
+    const [, ttsRequest] = fetchSpy.mock.calls[1] ?? [];
+    const sttHeaders = sttRequest?.headers as Record<string, string>;
+    const ttsHeaders = ttsRequest?.headers as Record<string, string>;
+    expect(sttHeaders["X-Voice-Turn-Id"]).toBe("vturn_stt_1");
+    expect(ttsHeaders["X-Voice-Turn-Id"]).toBe("vturn_tts_1");
+  });
+
+  it("sends combined understand payload to /api/kai/voice/understand", async () => {
+    const { ApiService } = await import("@/lib/services/api-service");
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+
+    await ApiService.understandKaiVoice({
+      userId: "user_1",
+      vaultOwnerToken: "vault_token",
+      audioBlob: new Blob(["abc"], { type: "audio/webm" }),
+      voiceTurnId: "vturn_understand_1",
+      context: { route: "/kai" },
+      appState: {
+        auth: { signed_in: true, user_id: "user_1" },
+        vault: { unlocked: true, token_available: true, token_valid: true },
+        route: { pathname: "/kai", screen: "home", subview: null },
+        runtime: {
+          analysis_active: false,
+          analysis_ticker: null,
+          analysis_run_id: null,
+          import_active: false,
+          import_run_id: null,
+          busy_operations: [],
+        },
+        portfolio: { has_portfolio_data: true },
+        voice: {
+          available: true,
+          tts_playing: false,
+          last_tool_name: null,
+          last_ticker: null,
+        },
+      },
+    });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [url, request] = fetchSpy.mock.calls[0] ?? [];
+    expect(url).toBe("/api/kai/voice/understand");
+    const headers = request?.headers as Record<string, string>;
+    expect(headers.Authorization).toBe("Bearer vault_token");
+    expect(headers["X-Voice-Turn-Id"]).toBe("vturn_understand_1");
+  });
+});

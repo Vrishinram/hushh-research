@@ -1,10 +1,16 @@
 import json
 import logging
 import os
+import re
 import time
+from collections.abc import Callable
+from difflib import get_close_matches
 from typing import Any
 
 import httpx
+
+from hushh_mcp.services.symbol_master_service import get_symbol_master_service
+from hushh_mcp.services.ticker_cache import ticker_cache
 
 logger = logging.getLogger(__name__)
 
@@ -29,21 +35,582 @@ _ALLOWED_COMMANDS = {
     "home",
 }
 _ALLOWED_HISTORY_TABS = {"history", "debate", "summary", "transcript"}
+_PLANNER_NORMALIZATION_VERSION = "2026-03-13-stabilize-a"
 _COMMAND_ALIASES = {
-    "analysis": "history",
-    "analysis_section": "history",
-    "analysis_history": "history",
-    "history_section": "history",
     "market": "home",
     "market_section": "home",
     "kai": "home",
     "kai_section": "home",
     "kai_home": "home",
     "consents": "consent",
+    "consesns": "consent",
+    "consense": "consent",
+    "concent": "consent",
+    "consets": "consent",
     "consent_section": "consent",
     "portfolio": "dashboard",
     "portfolio_section": "dashboard",
+    "profiel": "profile",
+    "profle": "profile",
+    "dash_board": "dashboard",
+    "dashbord": "dashboard",
 }
+_ALLOWED_CONTEXT_KEYS = {
+    "route",
+    "stock_analysis_active",
+    "last_tool_name",
+    "last_ticker",
+    "current_ticker",
+    "has_portfolio_data",
+}
+_UNCLEAR_STT_MESSAGE = "I couldn\u2019t understand what you said, please repeat."
+_MIN_ACTIONABLE_CHARS = 2
+_TICKER_PATTERN_RE = re.compile(r"^[A-Z][A-Z0-9.\-]{0,5}$")
+_ANALYZE_TARGET_RE = re.compile(
+    r"^\s*(?:analyze|analyse)\s+(?:stock|ticker|company|for|on|about)?\s*(?P<target>.+?)\s*$",
+    re.IGNORECASE,
+)
+_ANALYZE_NOUN_TARGET_RE = re.compile(
+    r"^\s*(?:start|run|begin|do|open)?\s*(?:the\s+)?analysis(?:\s+(?:for|of|on|about))\s+(?P<target>.+?)\s*$",
+    re.IGNORECASE,
+)
+_FILLER_WORDS = {
+    "uh",
+    "um",
+    "hmm",
+    "huh",
+    "ah",
+    "eh",
+    "noise",
+    "static",
+    "hello",
+    "hey",
+}
+_COMPANY_ALIAS_TO_TICKER = {
+    "google": "GOOGL",
+    "alphabet": "GOOGL",
+    "facebook": "META",
+    "meta": "META",
+    "apple": "AAPL",
+    "microsoft": "MSFT",
+    "amazon": "AMZN",
+    "nvidia": "NVDA",
+    "tesla": "TSLA",
+    "netflix": "NFLX",
+    "amd": "AMD",
+    "advanced micro devices": "AMD",
+}
+_STATUS_QUERY_KEYWORDS = (
+    "what is happening",
+    "what's happening",
+    "status",
+    "running right now",
+    "what is running",
+    "active tasks",
+)
+_SCREEN_EXPLAIN_KEYWORDS = (
+    "what is on my screen",
+    "what's on my screen",
+    "what is going on on my screen",
+    "what is going on my screen",
+    "what is going on on the screen",
+    "what is going on the screen",
+    "what is happening here",
+    "explain this screen",
+    "explain this page",
+)
+_IMPORT_INTENT_KEYWORDS = (
+    "import",
+    "upload statement",
+    "upload a statement",
+    "scan statement",
+    "portfolio import",
+)
+_RESUME_INTENT_KEYWORDS = (
+    "resume",
+    "continue analysis",
+    "open active analysis",
+)
+_CANCEL_INTENT_KEYWORDS = (
+    "cancel analysis",
+    "stop analysis",
+    "stop the analysis",
+)
+_NAV_COMMAND_KEYWORDS = (
+    ("dashboard", "dashboard"),
+    ("portfolio", "dashboard"),
+    ("analysis history", "history"),
+    ("open history", "history"),
+    ("history tab", "history"),
+    ("history", "history"),
+    ("home", "home"),
+    ("market", "home"),
+    ("profile", "profile"),
+    ("consent", "consent"),
+    ("consents", "consent"),
+    ("optimize", "optimize"),
+)
+_SCREEN_ACTION_HINTS = {
+    "home": "You can ask me to open dashboard, profile, consents, or start analysis for a ticker.",
+    "dashboard": "You can ask me to explain positions, open profile, or start analysis for a ticker.",
+    "analysis": "You can ask me to start analysis for a ticker, resume active analysis, or cancel analysis.",
+    "import": "You can ask me to open import, check import status, or resume analysis.",
+    "profile": "You can ask me to open dashboard, consents, or explain profile signals.",
+    "consent": "You can ask me to review consent signals or navigate back to dashboard.",
+    "history": "You can ask me to open a different history tab, resume analysis, or go back.",
+}
+_DESTRUCTIVE_INTENT_KEYWORDS = (
+    "delete account",
+    "delete my account",
+    "remove account",
+    "erase account",
+    "delete imported data",
+    "erase imported data",
+    "wipe my data",
+    "clear all data",
+)
+
+
+def _parse_model_candidates(raw: str | None, *, default_models: list[str]) -> list[str]:
+    source = raw.strip() if isinstance(raw, str) else ""
+    candidates = source.split(",") if source else default_models
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for item in candidates:
+        model = str(item or "").strip()
+        if not model or model in seen:
+            continue
+        seen.add(model)
+        normalized.append(model)
+    return normalized or ["gpt-4o-mini"]
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return str(raw).strip().lower() in {"1", "true", "yes", "on", "enabled"}
+
+
+def _prioritize_tts_models(
+    parsed_models: list[str],
+    *,
+    configured_model: str,
+    prefer_quality: bool,
+) -> list[str]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+
+    def _add(model_name: str) -> None:
+        normalized = str(model_name or "").strip()
+        if not normalized or normalized in seen:
+            return
+        seen.add(normalized)
+        ordered.append(normalized)
+
+    if prefer_quality:
+        _add("gpt-4o-tts")
+    _add(configured_model)
+    for model in parsed_models:
+        _add(model)
+    _add("gpt-4o-mini-tts")
+    return ordered or ["gpt-4o-mini-tts"]
+
+
+def _is_retryable_model_error(status_code: int, payload: Any) -> bool:
+    if status_code not in {400, 403, 404}:
+        return False
+    detail = (_extract_openai_error(payload) or "").lower()
+    if not detail:
+        return False
+    keywords = (
+        "model",
+        "not found",
+        "does not exist",
+        "not available",
+        "not permitted",
+        "access",
+    )
+    return any(key in detail for key in keywords)
+
+
+async def _post_with_model_fallback(
+    *,
+    url: str,
+    headers: dict[str, str],
+    candidate_models: list[str],
+    body_builder: Callable[[str], dict[str, Any]],
+) -> tuple[httpx.Response, dict[str, Any], int, str]:
+    last_response: httpx.Response | None = None
+    last_payload: dict[str, Any] = {}
+    last_elapsed_ms = 0
+    last_model = candidate_models[0] if candidate_models else "unknown"
+
+    async with httpx.AsyncClient(timeout=45.0) as client:
+        for index, model_name in enumerate(candidate_models):
+            request_kwargs = body_builder(model_name)
+            started_at = time.perf_counter()
+            response = await client.post(
+                url,
+                headers=headers,
+                **request_kwargs,
+            )
+            elapsed_ms = int((time.perf_counter() - started_at) * 1000)
+            payload = response.json() if response.content else {}
+
+            if response.status_code < 400:
+                return response, payload, elapsed_ms, model_name
+
+            last_response = response
+            last_payload = payload
+            last_elapsed_ms = elapsed_ms
+            last_model = model_name
+
+            should_retry = (
+                index < len(candidate_models) - 1
+                and _is_retryable_model_error(response.status_code, payload)
+            )
+            if should_retry:
+                logger.warning(
+                    "[VOICE_MODEL_FALLBACK] model=%s status=%s error=%s next_model=%s",
+                    model_name,
+                    response.status_code,
+                    _extract_openai_error(payload),
+                    candidate_models[index + 1],
+                )
+                continue
+
+            return response, payload, elapsed_ms, model_name
+
+    if last_response is None:
+        raise VoiceServiceError(500, "Voice model selection failed before request")
+    return last_response, last_payload, last_elapsed_ms, last_model
+
+
+def _compact_context(value: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    compact: dict[str, Any] = {}
+    for key in _ALLOWED_CONTEXT_KEYS:
+        if key not in value:
+            continue
+        raw = value.get(key)
+        if isinstance(raw, bool):
+            compact[key] = raw
+            continue
+        if raw is None:
+            compact[key] = None
+            continue
+        if isinstance(raw, (int, float)):
+            compact[key] = raw
+            continue
+        text = str(raw).strip()
+        if not text:
+            continue
+        compact[key] = text[:64]
+    return compact
+
+
+def _coerce_bool(value: Any, *, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    return default
+
+
+def _coerce_str(value: Any, *, default: str = "") -> str:
+    if value is None:
+        return default
+    text = str(value).strip()
+    return text or default
+
+
+def _coerce_str_or_none(value: Any) -> str | None:
+    text = _coerce_str(value)
+    return text or None
+
+
+def _coerce_str_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    out: list[str] = []
+    for item in value:
+        text = _coerce_str(item)
+        if text:
+            out.append(text)
+    return out
+
+
+def _contains_any(lowered_text: str, keywords: tuple[str, ...]) -> bool:
+    return any(keyword in lowered_text for keyword in keywords)
+
+
+def _is_screen_explain_intent(lowered_text: str) -> bool:
+    if _contains_any(lowered_text, _SCREEN_EXPLAIN_KEYWORDS):
+        return True
+    return bool(
+        re.search(
+            r"\bwhat(?:'s| is)\s+(?:going on|happening)\s+(?:on\s+)?(?:my|the)\s+screen\b",
+            lowered_text,
+        )
+    )
+
+
+def _build_screen_explain_message(
+    *,
+    app_state: dict[str, Any] | None,
+    legacy_context: dict[str, Any],
+) -> str:
+    runtime_state = app_state.get("runtime") if isinstance(app_state, dict) else {}
+    portfolio_state = app_state.get("portfolio") if isinstance(app_state, dict) else {}
+    route_state = app_state.get("route") if isinstance(app_state, dict) else {}
+    screen = _coerce_str(route_state.get("screen")) if isinstance(route_state, dict) else ""
+    pathname = _coerce_str(route_state.get("pathname")) if isinstance(route_state, dict) else ""
+    subview = _coerce_str_or_none(route_state.get("subview")) if isinstance(route_state, dict) else None
+    if not screen:
+        screen = _coerce_str(legacy_context.get("screen"))
+    if not pathname:
+        pathname = _coerce_str(legacy_context.get("route"))
+    has_portfolio_data = _coerce_bool(
+        portfolio_state.get("has_portfolio_data")
+        if isinstance(portfolio_state, dict)
+        else legacy_context.get("has_portfolio_data"),
+        default=False,
+    )
+    analysis_active = _coerce_bool(
+        runtime_state.get("analysis_active")
+        if isinstance(runtime_state, dict)
+        else legacy_context.get("stock_analysis_active"),
+        default=False,
+    )
+    analysis_ticker = _coerce_str_or_none(
+        runtime_state.get("analysis_ticker") if isinstance(runtime_state, dict) else legacy_context.get("current_ticker")
+    )
+    import_active = _coerce_bool(
+        runtime_state.get("import_active") if isinstance(runtime_state, dict) else False,
+        default=False,
+    )
+    busy_ops = _coerce_str_list(runtime_state.get("busy_operations") if isinstance(runtime_state, dict) else [])
+
+    if screen and pathname:
+        location_line = f"You are on the {screen} screen ({pathname})."
+    elif screen:
+        location_line = f"You are on the {screen} screen."
+    elif pathname:
+        location_line = f"You are on {pathname}."
+    else:
+        location_line = "You are in Kai."
+
+    if subview:
+        location_line = f"{location_line[:-1]} with the {subview} view active."
+
+    task_parts: list[str] = []
+    if analysis_active:
+        ticker_label = analysis_ticker or "an active ticker"
+        task_parts.append(f"Analysis is currently running for {ticker_label}.")
+    if import_active:
+        task_parts.append("A portfolio import is currently running.")
+    if not task_parts:
+        task_parts.append(
+            "No long-running analysis or import task is active right now."
+        )
+    if busy_ops:
+        task_parts.append(f"Current busy operations: {', '.join(busy_ops[:3])}.")
+
+    actions_hint = _SCREEN_ACTION_HINTS.get(screen.lower()) if screen else None
+    if not actions_hint:
+        actions_hint = "You can ask me to explain this view, open another section, or start analysis."
+    if not has_portfolio_data:
+        actions_hint = (
+            f"{actions_hint} Your portfolio data appears limited, so insights may be partial."
+        )
+
+    return " ".join([location_line, *task_parts, actions_hint])
+
+
+def _is_likely_english(text: str) -> bool:
+    alpha_total = sum(1 for ch in text if ch.isalpha())
+    if alpha_total == 0:
+        return True
+    ascii_alpha = sum(1 for ch in text if ch.isascii() and ch.isalpha())
+    return (ascii_alpha / alpha_total) >= 0.65
+
+
+def _is_transcript_unusable(transcript: str) -> bool:
+    clean = _coerce_str(transcript)
+    if not clean:
+        return True
+    if len(re.sub(r"[^a-zA-Z0-9]+", "", clean)) < _MIN_ACTIONABLE_CHARS:
+        return True
+    if not _is_likely_english(clean):
+        return True
+    tokens = [token for token in re.split(r"[\s,.;:!?]+", clean.lower()) if token]
+    if not tokens:
+        return True
+    if len(tokens) <= 2 and all(token in _FILLER_WORDS for token in tokens):
+        return True
+    return False
+
+
+def _extract_analyze_target(transcript: str) -> str | None:
+    clean_transcript = _coerce_str(transcript)
+    if not clean_transcript:
+        return None
+    normalized_transcript = re.sub(
+        r"^\s*(?:(?:can|could|would)\s+you(?:\s+please)?|please|hey|hi|hello|bro|kai)\b[\s,!?-]*",
+        "",
+        clean_transcript,
+        flags=re.IGNORECASE,
+    )
+    normalized_transcript = re.sub(
+        r"^\s*please\b[\s,!?-]*",
+        "",
+        normalized_transcript,
+        flags=re.IGNORECASE,
+    )
+    match = _ANALYZE_TARGET_RE.match(normalized_transcript)
+    if not match:
+        match = _ANALYZE_NOUN_TARGET_RE.match(normalized_transcript)
+    if not match:
+        return None
+    target = _coerce_str(match.group("target"))
+    target = re.sub(r"[’']s\b", "", target, flags=re.IGNORECASE)
+    target = re.sub(r"\b(stock|stocks|ticker|company|share|shares)\b", "", target, flags=re.IGNORECASE)
+    target = re.sub(
+        r"(?:\b(?:for me|please|right now|now|today|thanks|thank you)\b[\s,.;:!?]*)+$",
+        "",
+        target,
+        flags=re.IGNORECASE,
+    )
+    target = re.sub(r"\s+", " ", target).strip(" .,!?:;")
+    return target
+
+
+def _resolve_ticker_target(target: str) -> dict[str, Any]:
+    query = _coerce_str(target)
+    if not query:
+        return {"kind": "unknown", "candidate": None, "matches": []}
+
+    normalized_query = re.sub(r"\s+", " ", query).strip()
+    uppercase_query = normalized_query.upper()
+    symbol_master = get_symbol_master_service()
+
+    if _TICKER_PATTERN_RE.match(uppercase_query):
+        classification = symbol_master.classify(uppercase_query)
+        metadata = symbol_master.get_ticker_metadata(uppercase_query)
+        if classification.tradable and metadata is not None:
+            return {"kind": "exact", "ticker": classification.symbol}
+
+    alias_key = normalized_query.lower()
+    alias_ticker = _COMPANY_ALIAS_TO_TICKER.get(alias_key)
+    if alias_ticker:
+        return {"kind": "exact", "ticker": alias_ticker}
+
+    if not ticker_cache.loaded:
+        try:
+            ticker_cache.load_from_db()
+        except Exception:
+            logger.warning("[VOICE_RESOLVE] ticker cache load failed", exc_info=True)
+
+    rows = ticker_cache.search(normalized_query, limit=5)
+    tickers = [str(row.get("ticker") or "").upper() for row in rows if row.get("ticker")]
+    tickers = [ticker for ticker in tickers if ticker]
+
+    if len(tickers) == 1:
+        return {"kind": "candidate", "candidate": tickers[0], "matches": tickers}
+    if len(tickers) > 1:
+        titles = [str(row.get("title") or "").strip().lower() for row in rows]
+        close = get_close_matches(alias_key, titles, n=1, cutoff=0.92)
+        if close:
+            idx = titles.index(close[0])
+            return {
+                "kind": "candidate",
+                "candidate": str(rows[idx].get("ticker") or "").upper(),
+                "matches": tickers,
+            }
+        return {"kind": "ambiguous", "candidate": None, "matches": tickers}
+
+    return {"kind": "unknown", "candidate": None, "matches": []}
+
+
+def _normalize_runtime_state(app_state: dict[str, Any] | None, *, legacy_context: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(app_state, dict):
+        return {
+            "analysis_active": _coerce_bool(legacy_context.get("stock_analysis_active"), default=False),
+            "analysis_ticker": _coerce_str_or_none(legacy_context.get("current_ticker")),
+            "analysis_run_id": None,
+            "import_active": False,
+            "import_run_id": None,
+            "busy_operations": [],
+            "complete": False,
+        }
+    runtime = app_state.get("runtime")
+    if not isinstance(runtime, dict):
+        return {
+            "analysis_active": False,
+            "analysis_ticker": None,
+            "analysis_run_id": None,
+            "import_active": False,
+            "import_run_id": None,
+            "busy_operations": [],
+            "complete": False,
+        }
+    complete = (
+        isinstance(runtime.get("analysis_active"), bool)
+        and isinstance(runtime.get("import_active"), bool)
+        and isinstance(runtime.get("busy_operations"), list)
+    )
+    return {
+        "analysis_active": _coerce_bool(runtime.get("analysis_active"), default=False),
+        "analysis_ticker": _coerce_str_or_none(runtime.get("analysis_ticker")),
+        "analysis_run_id": _coerce_str_or_none(runtime.get("analysis_run_id")),
+        "import_active": _coerce_bool(runtime.get("import_active"), default=False),
+        "import_run_id": _coerce_str_or_none(runtime.get("import_run_id")),
+        "busy_operations": _coerce_str_list(runtime.get("busy_operations")),
+        "complete": complete,
+    }
+
+
+def _normalize_voice_gate(
+    app_state: dict[str, Any] | None,
+    *,
+    user_id: str,
+    legacy_context: dict[str, Any],
+) -> dict[str, Any]:
+    if not isinstance(app_state, dict):
+        return {
+            "signed_in": True,
+            "user_id": user_id,
+            "vault_unlocked": True,
+            "token_available": True,
+            "token_valid": True,
+            "voice_available": True,
+            "source": "legacy",
+        }
+
+    auth = app_state.get("auth") if isinstance(app_state.get("auth"), dict) else {}
+    vault = app_state.get("vault") if isinstance(app_state.get("vault"), dict) else {}
+    voice = app_state.get("voice") if isinstance(app_state.get("voice"), dict) else {}
+
+    if not auth and not vault:
+        return {
+            "signed_in": True,
+            "user_id": user_id,
+            "vault_unlocked": True,
+            "token_available": True,
+            "token_valid": True,
+            "voice_available": True,
+            "source": "legacy",
+        }
+
+    return {
+        "signed_in": _coerce_bool(auth.get("signed_in"), default=False),
+        "user_id": _coerce_str_or_none(auth.get("user_id")),
+        "vault_unlocked": _coerce_bool(vault.get("unlocked"), default=False),
+        "token_available": _coerce_bool(vault.get("token_available"), default=False),
+        "token_valid": _coerce_bool(vault.get("token_valid"), default=False),
+        "voice_available": _coerce_bool(voice.get("available"), default=False),
+        "source": "app_state",
+    }
 
 
 class VoiceServiceError(Exception):
@@ -56,9 +623,61 @@ class VoiceServiceError(Exception):
 class VoiceIntentService:
     def __init__(self) -> None:
         self.api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
-        self.stt_model = (os.getenv("OPENAI_VOICE_STT_MODEL") or "gpt-4o-mini-transcribe").strip()
-        self.intent_model = (os.getenv("OPENAI_VOICE_INTENT_MODEL") or "gpt-4.1-mini").strip()
-        self.tts_model = (os.getenv("OPENAI_VOICE_TTS_MODEL") or "gpt-4o-mini-tts").strip()
+        self.stt_models = _parse_model_candidates(
+            os.getenv("OPENAI_VOICE_STT_MODELS"),
+            default_models=[
+                os.getenv("OPENAI_VOICE_STT_MODEL") or "gpt-4o-mini-transcribe",
+                "whisper-1",
+            ],
+        )
+        self.intent_models = _parse_model_candidates(
+            os.getenv("OPENAI_VOICE_INTENT_MODELS"),
+            default_models=[
+                os.getenv("OPENAI_VOICE_INTENT_MODEL") or "gpt-4.1-nano",
+                "gpt-4o-mini",
+                "gpt-4.1-mini",
+            ],
+        )
+        configured_tts_model = (os.getenv("OPENAI_VOICE_TTS_MODEL") or "").strip()
+        parsed_tts_models = _parse_model_candidates(
+            os.getenv("OPENAI_VOICE_TTS_MODELS"),
+            default_models=[
+                "gpt-4o-tts",
+                configured_tts_model or "gpt-4o-mini-tts",
+                "gpt-4o-mini-tts",
+            ],
+        )
+        self.tts_prefer_quality = _env_bool("OPENAI_VOICE_TTS_PREFER_QUALITY", default=True)
+        self.tts_models = _prioritize_tts_models(
+            parsed_tts_models,
+            configured_model=configured_tts_model,
+            prefer_quality=self.tts_prefer_quality,
+        )
+        self.tts_model = self.tts_models[0]
+        self.tts_last_success_model: str | None = None
+        self.tts_default_voice = (
+            os.getenv("OPENAI_VOICE_TTS_DEFAULT_VOICE") or "alloy"
+        ).strip() or "alloy"
+        self.tts_format = (os.getenv("OPENAI_VOICE_TTS_FORMAT") or "mp3").strip() or "mp3"
+        logger.info(
+            (
+                "[VOICE_MODEL_CONFIG] stt_models=%s planner_models=%s "
+                "tts_models=%s tts_prefer_quality=%s tts_voice=%s tts_format=%s"
+            ),
+            self.stt_models,
+            self.intent_models,
+            self.tts_models,
+            self.tts_prefer_quality,
+            self.tts_default_voice,
+            self.tts_format,
+        )
+
+    def _ordered_tts_model_candidates(self) -> list[str]:
+        candidates = list(self.tts_models)
+        if self.tts_last_success_model and self.tts_last_success_model in candidates:
+            candidates.remove(self.tts_last_success_model)
+            candidates.insert(0, self.tts_last_success_model)
+        return candidates
 
     def _require_api_key(self) -> None:
         if not self.api_key:
@@ -75,7 +694,7 @@ class VoiceIntentService:
         audio_bytes: bytes,
         filename: str,
         content_type: str,
-    ) -> str:
+    ) -> tuple[str, int, str]:
         started_at = time.perf_counter()
         self._require_api_key()
         if not audio_bytes:
@@ -84,19 +703,15 @@ class VoiceIntentService:
         files = {
             "file": (filename, audio_bytes, content_type or "application/octet-stream"),
         }
-        data = {
-            "model": self.stt_model,
-        }
-
-        async with httpx.AsyncClient(timeout=45.0) as client:
-            response = await client.post(
-                _OPENAI_TRANSCRIBE_URL,
-                headers=self._headers(),
-                data=data,
-                files=files,
-            )
-
-        payload = response.json() if response.content else {}
+        response, payload, openai_http_ms, model_used = await _post_with_model_fallback(
+            url=_OPENAI_TRANSCRIBE_URL,
+            headers=self._headers(),
+            candidate_models=self.stt_models,
+            body_builder=lambda model_name: {
+                "data": {"model": model_name},
+                "files": files,
+            },
+        )
         if response.status_code >= 400:
             detail = _extract_openai_error(payload) or "STT request failed"
             raise VoiceServiceError(502, detail)
@@ -106,12 +721,17 @@ class VoiceIntentService:
             raise VoiceServiceError(422, "No transcript returned from STT")
         elapsed_ms = int((time.perf_counter() - started_at) * 1000)
         logger.info(
-            "[VOICE_STT] status=ok model=%s elapsed_ms=%s transcript_chars=%s",
-            self.stt_model,
+            (
+                "[VOICE_STT] status=ok model=%s elapsed_ms=%s openai_http_ms=%s "
+                "audio_bytes=%s transcript_chars=%s"
+            ),
+            model_used,
             elapsed_ms,
+            openai_http_ms,
+            len(audio_bytes),
             len(transcript),
         )
-        return transcript
+        return transcript, openai_http_ms, model_used
 
     async def plan_intent(
         self,
@@ -119,7 +739,7 @@ class VoiceIntentService:
         transcript: str,
         user_id: str,
         context: dict[str, Any] | None,
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, Any], int, str]:
         started_at = time.perf_counter()
         self._require_api_key()
         clean_transcript = str(transcript or "").strip()
@@ -127,52 +747,56 @@ class VoiceIntentService:
             raise VoiceServiceError(422, "Transcript is empty")
 
         tools = _build_tools_schema()
-        context_payload = context or {}
+        context_payload = _compact_context(context)
 
-        payload = {
-            "model": self.intent_model,
-            "temperature": 0,
-            "max_tokens": 180,
-            "tool_choice": "required",
-            "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "You are Kai voice intent planner. Return exactly one tool call from the provided "
-                        "tool list. Never return free text. Use only provided enum values and argument shapes. "
-                        "Canonical mapping rules: "
-                        "'analysis section' => execute_kai_command(command='history'). "
-                        "'market section' or 'kai section' => execute_kai_command(command='home'). "
-                        "'dashboard section' or 'portfolio section' => execute_kai_command(command='dashboard'). "
-                        "'consents section' => execute_kai_command(command='consent'). "
-                        "Use tab='history' for explicit 'analysis history'."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": json.dumps(
+        system_prompt = (
+            "You are Kai voice intent planner. Output exactly one tool call from provided tools. "
+            "Never output plain text. "
+            "Important: speech-to-text may contain misspellings/homophones. Infer the intended destination "
+            "for navigation requests like go to / take me to / open / navigate to, even if text is imperfect. "
+            "Navigation target mapping: "
+            "dashboard|portfolio => execute_kai_command(command='dashboard'); "
+            "history|analysis history|analysis tab => execute_kai_command(command='history'); "
+            "market|kai|home => execute_kai_command(command='home'); "
+            "consent|consents|similar sounding consent words => execute_kai_command(command='consent'); "
+            "profile => execute_kai_command(command='profile'). "
+            "For 'analyze <company_or_symbol>' always use execute_kai_command(command='analyze', params.symbol='<SYMBOL>'). "
+            "If likely ticker is uncertain, return clarify."
+        )
+
+        response, result, openai_http_ms, model_used = await _post_with_model_fallback(
+            url=_OPENAI_CHAT_URL,
+            headers={
+                **self._headers(),
+                "Content-Type": "application/json",
+            },
+            candidate_models=self.intent_models,
+            body_builder=lambda model_name: {
+                "json": {
+                    "model": model_name,
+                    "temperature": 0,
+                    "max_tokens": 80,
+                    "tool_choice": "required",
+                    "messages": [
                         {
-                            "user_id": user_id,
-                            "transcript": clean_transcript,
-                            "context": context_payload,
-                        }
-                    ),
-                },
-            ],
-            "tools": tools,
-        }
-
-        async with httpx.AsyncClient(timeout=45.0) as client:
-            response = await client.post(
-                _OPENAI_CHAT_URL,
-                headers={
-                    **self._headers(),
-                    "Content-Type": "application/json",
-                },
-                json=payload,
-            )
-
-        result = response.json() if response.content else {}
+                            "role": "system",
+                            "content": system_prompt,
+                        },
+                        {
+                            "role": "user",
+                            "content": json.dumps(
+                                {
+                                    "user_id": user_id,
+                                    "transcript": clean_transcript,
+                                    "context": context_payload,
+                                }
+                            ),
+                        },
+                    ],
+                    "tools": tools,
+                }
+            },
+        )
         if response.status_code >= 400:
             detail = _extract_openai_error(result) or "Intent planning request failed"
             raise VoiceServiceError(502, detail)
@@ -182,9 +806,14 @@ class VoiceIntentService:
         if not validated:
             elapsed_ms = int((time.perf_counter() - started_at) * 1000)
             logger.warning(
-                "[VOICE_PLAN] status=clarify elapsed_ms=%s transcript=%r raw_tool_call=%s",
+                (
+                    "[VOICE_PLAN] status=clarify model=%s elapsed_ms=%s openai_http_ms=%s "
+                    "transcript_chars=%s raw_tool_call=%s"
+                ),
+                model_used,
                 elapsed_ms,
-                clean_transcript,
+                openai_http_ms,
+                len(clean_transcript),
                 tool_call,
             )
             return {
@@ -193,48 +822,483 @@ class VoiceIntentService:
                     "question": "I could not map that safely. Please repeat your request.",
                     "options": ["Analyze a stock", "Open dashboard", "Open profile"],
                 },
-            }
+            }, openai_http_ms, model_used
         elapsed_ms = int((time.perf_counter() - started_at) * 1000)
         logger.info(
-            "[VOICE_PLAN] status=ok model=%s elapsed_ms=%s transcript=%r tool_call=%s",
-            self.intent_model,
+            (
+                "[VOICE_PLAN] status=ok model=%s elapsed_ms=%s openai_http_ms=%s "
+                "transcript_chars=%s tool_call=%s"
+            ),
+            model_used,
             elapsed_ms,
-            clean_transcript,
+            openai_http_ms,
+            len(clean_transcript),
             validated,
         )
-        return validated
+        return validated, openai_http_ms, model_used
+
+    @staticmethod
+    def _build_response(
+        *,
+        kind: str,
+        message: str,
+        reason: str | None = None,
+        task: str | None = None,
+        ticker: str | None = None,
+        run_id: str | None = None,
+        candidate: str | None = None,
+        tool_call: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        response: dict[str, Any] = {
+            "kind": kind,
+            "message": _coerce_str(message),
+            "speak": True,
+        }
+        if reason:
+            response["reason"] = reason
+        if task:
+            response["task"] = task
+        if ticker:
+            response["ticker"] = ticker
+        if run_id:
+            response["run_id"] = run_id
+        if candidate:
+            response["candidate"] = candidate
+        if tool_call:
+            response["tool_call"] = tool_call
+        return response
+
+    @staticmethod
+    def _memory_hint_from_response(response: dict[str, Any]) -> dict[str, Any]:
+        kind = _coerce_str(response.get("kind"))
+        reason = _coerce_str_or_none(response.get("reason"))
+        allow = True
+        if kind == "blocked":
+            allow = False
+        if kind == "clarify" and reason in {"stt_unusable", "ticker_ambiguous", "ticker_unknown"}:
+            allow = False
+        return {"allow_durable_write": allow}
+
+    @staticmethod
+    def _legacy_tool_call_for_response(response: dict[str, Any]) -> dict[str, Any]:
+        tool_call = response.get("tool_call")
+        if isinstance(tool_call, dict):
+            return tool_call
+        message = _coerce_str(response.get("message")) or _UNCLEAR_STT_MESSAGE
+        return {"tool_name": "clarify", "args": {"question": message}}
+
+    async def _plan_intent_with_llm_v1(
+        self,
+        *,
+        transcript: str,
+        user_id: str,
+        context_payload: dict[str, Any],
+        runtime_state: dict[str, Any],
+    ) -> tuple[dict[str, Any] | None, int, str]:
+        self._require_api_key()
+        tools = _build_tools_schema()
+        system_prompt = (
+            "You are Kai voice intent planner. "
+            "Use English-only behavior for V1. "
+            "Return exactly one tool call from provided tools and never output plain text."
+        )
+
+        response, result, openai_http_ms, model_used = await _post_with_model_fallback(
+            url=_OPENAI_CHAT_URL,
+            headers={**self._headers(), "Content-Type": "application/json"},
+            candidate_models=self.intent_models,
+            body_builder=lambda model_name: {
+                "json": {
+                    "model": model_name,
+                    "temperature": 0,
+                    "max_tokens": 80,
+                    "tool_choice": "required",
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {
+                            "role": "user",
+                            "content": json.dumps(
+                                {
+                                    "user_id": user_id,
+                                    "transcript": transcript,
+                                    "context": context_payload,
+                                    "runtime": runtime_state,
+                                }
+                            ),
+                        },
+                    ],
+                    "tools": tools,
+                }
+            },
+        )
+        if response.status_code >= 400:
+            detail = _extract_openai_error(result) or "Intent planning request failed"
+            raise VoiceServiceError(502, detail)
+        raw_tool_call = _extract_first_tool_call(result)
+        validated = _validate_tool_call(raw_tool_call)
+        return validated, openai_http_ms, model_used
+
+    async def plan_voice_response(
+        self,
+        *,
+        transcript: str,
+        user_id: str,
+        app_state: dict[str, Any] | None,
+        context: dict[str, Any] | None,
+        active_analysis: dict[str, Any] | None = None,
+        active_import: dict[str, Any] | None = None,
+    ) -> tuple[dict[str, Any], int, str]:
+        clean_transcript = _coerce_str(transcript)
+        context_payload = _compact_context(context)
+        runtime_state = _normalize_runtime_state(app_state, legacy_context=context_payload)
+        gate_state = _normalize_voice_gate(app_state, user_id=user_id, legacy_context=context_payload)
+
+        if _is_transcript_unusable(clean_transcript):
+            response = self._build_response(
+                kind="clarify",
+                reason="stt_unusable",
+                message=_UNCLEAR_STT_MESSAGE,
+            )
+            response["memory"] = self._memory_hint_from_response(response)
+            response["tool_call"] = self._legacy_tool_call_for_response(response)
+            return response, 0, "deterministic"
+
+        if not gate_state.get("signed_in"):
+            response = self._build_response(
+                kind="blocked",
+                reason="auth_required",
+                message="Sign in to use voice.",
+            )
+            response["memory"] = self._memory_hint_from_response(response)
+            response["tool_call"] = self._legacy_tool_call_for_response(response)
+            return response, 0, "deterministic"
+
+        if (
+            not gate_state.get("vault_unlocked")
+            or not gate_state.get("token_available")
+            or not gate_state.get("token_valid")
+            or not gate_state.get("voice_available")
+        ):
+            response = self._build_response(
+                kind="blocked",
+                reason="vault_required",
+                message="Unlock your vault to use voice.",
+            )
+            response["memory"] = self._memory_hint_from_response(response)
+            response["tool_call"] = self._legacy_tool_call_for_response(response)
+            return response, 0, "deterministic"
+
+        active_analysis_ticker = _coerce_str_or_none(
+            (active_analysis or {}).get("ticker")
+            or runtime_state.get("analysis_ticker")
+            or context_payload.get("current_ticker")
+        )
+        active_analysis_run_id = _coerce_str_or_none(
+            (active_analysis or {}).get("run_id") or runtime_state.get("analysis_run_id")
+        )
+        has_active_analysis = bool(active_analysis or runtime_state.get("analysis_active"))
+
+        active_import_run_id = _coerce_str_or_none(
+            (active_import or {}).get("run_id") or runtime_state.get("import_run_id")
+        )
+        has_active_import = bool(active_import or runtime_state.get("import_active"))
+
+        lowered = clean_transcript.lower()
+
+        if _contains_any(lowered, _DESTRUCTIVE_INTENT_KEYWORDS):
+            response = self._build_response(
+                kind="speak_only",
+                message="That action is not available in voice.",
+            )
+            response["memory"] = {"allow_durable_write": False}
+            response["tool_call"] = self._legacy_tool_call_for_response(response)
+            return response, 0, "deterministic"
+
+        if _is_screen_explain_intent(lowered):
+            message = _build_screen_explain_message(app_state=app_state, legacy_context=context_payload)
+            response = self._build_response(kind="speak_only", message=message)
+            response["memory"] = self._memory_hint_from_response(response)
+            response["tool_call"] = self._legacy_tool_call_for_response(response)
+            return response, 0, "deterministic"
+
+        if _contains_any(lowered, _STATUS_QUERY_KEYWORDS):
+            if has_active_analysis and active_analysis_ticker:
+                message = f"Analysis for {active_analysis_ticker} is currently running."
+            elif has_active_import:
+                message = "A portfolio import is currently running."
+            else:
+                message = "No analysis or import is currently running."
+            response = self._build_response(kind="speak_only", message=message)
+            response["memory"] = self._memory_hint_from_response(response)
+            response["tool_call"] = self._legacy_tool_call_for_response(response)
+            return response, 0, "deterministic"
+
+        analyze_target = _extract_analyze_target(clean_transcript)
+        if analyze_target is not None:
+            if has_active_analysis:
+                ticker_label = active_analysis_ticker or "unknown ticker"
+                response = self._build_response(
+                    kind="already_running",
+                    task="analysis",
+                    ticker=active_analysis_ticker,
+                    run_id=active_analysis_run_id,
+                    message=f"Analysis is already running for {ticker_label}.",
+                )
+                response["memory"] = self._memory_hint_from_response(response)
+                response["tool_call"] = self._legacy_tool_call_for_response(response)
+                return response, 0, "deterministic"
+
+            if not runtime_state.get("complete") and gate_state.get("source") == "app_state":
+                response = self._build_response(
+                    kind="speak_only",
+                    message="I couldn't verify app state right now. Please try again.",
+                )
+                response["memory"] = self._memory_hint_from_response(response)
+                response["tool_call"] = self._legacy_tool_call_for_response(response)
+                return response, 0, "deterministic"
+
+            resolution = _resolve_ticker_target(analyze_target)
+            if resolution.get("kind") == "exact":
+                symbol = _coerce_str(resolution.get("ticker")).upper()
+                tool_call = {
+                    "tool_name": "execute_kai_command",
+                    "args": {"command": "analyze", "params": {"symbol": symbol}},
+                }
+                response = self._build_response(
+                    kind="execute",
+                    message=f"Starting analysis for {symbol}.",
+                    tool_call=tool_call,
+                )
+                response["memory"] = self._memory_hint_from_response(response)
+                return response, 0, "deterministic"
+
+            if resolution.get("kind") == "candidate":
+                candidate = _coerce_str(resolution.get("candidate")).upper()
+                response = self._build_response(
+                    kind="clarify",
+                    reason="ticker_unknown",
+                    candidate=candidate,
+                    message=f"I don't know this company. Did you mean {candidate}?",
+                )
+                response["memory"] = self._memory_hint_from_response(response)
+                response["tool_call"] = self._legacy_tool_call_for_response(response)
+                return response, 0, "deterministic"
+
+            if resolution.get("kind") == "ambiguous":
+                response = self._build_response(
+                    kind="clarify",
+                    reason="ticker_ambiguous",
+                    message="I found multiple matches. Please say the stock ticker.",
+                )
+                response["memory"] = self._memory_hint_from_response(response)
+                response["tool_call"] = self._legacy_tool_call_for_response(response)
+                return response, 0, "deterministic"
+
+            response = self._build_response(
+                kind="clarify",
+                reason="ticker_unknown",
+                message="I couldn't identify that company. Please repeat the company or stock ticker.",
+            )
+            response["memory"] = self._memory_hint_from_response(response)
+            response["tool_call"] = self._legacy_tool_call_for_response(response)
+            return response, 0, "deterministic"
+
+        if re.search(r"\b(start|begin|run|do)\b.*\banalysis\b", lowered):
+            response = self._build_response(
+                kind="clarify",
+                reason="ticker_unknown",
+                message="Please say the stock ticker you want to analyze.",
+            )
+            response["memory"] = self._memory_hint_from_response(response)
+            response["tool_call"] = self._legacy_tool_call_for_response(response)
+            return response, 0, "deterministic"
+
+        if _contains_any(lowered, _IMPORT_INTENT_KEYWORDS):
+            if has_active_import:
+                response = self._build_response(
+                    kind="already_running",
+                    task="import",
+                    run_id=active_import_run_id,
+                    message="An import is already running.",
+                )
+                response["memory"] = self._memory_hint_from_response(response)
+                response["tool_call"] = self._legacy_tool_call_for_response(response)
+                return response, 0, "deterministic"
+            response = self._build_response(
+                kind="speak_only",
+                message="Open the import screen to start a new statement import.",
+            )
+            response["memory"] = self._memory_hint_from_response(response)
+            response["tool_call"] = self._legacy_tool_call_for_response(response)
+            return response, 0, "deterministic"
+
+        if _contains_any(lowered, _RESUME_INTENT_KEYWORDS):
+            if not has_active_analysis:
+                response = self._build_response(
+                    kind="speak_only",
+                    message="No active analysis is running right now.",
+                )
+                response["memory"] = self._memory_hint_from_response(response)
+                response["tool_call"] = self._legacy_tool_call_for_response(response)
+                return response, 0, "deterministic"
+            response = self._build_response(
+                kind="execute",
+                message="Resuming your active analysis.",
+                tool_call={"tool_name": "resume_active_analysis", "args": {}},
+            )
+            response["memory"] = self._memory_hint_from_response(response)
+            return response, 0, "deterministic"
+
+        if _contains_any(lowered, _CANCEL_INTENT_KEYWORDS):
+            if not has_active_analysis:
+                response = self._build_response(
+                    kind="speak_only",
+                    message="No active analysis is running right now.",
+                )
+                response["memory"] = self._memory_hint_from_response(response)
+                response["tool_call"] = self._legacy_tool_call_for_response(response)
+                return response, 0, "deterministic"
+            response = self._build_response(
+                kind="execute",
+                message="Cancelling your active analysis.",
+                tool_call={"tool_name": "cancel_active_analysis", "args": {"confirm": True}},
+            )
+            response["memory"] = self._memory_hint_from_response(response)
+            return response, 0, "deterministic"
+
+        if "go back" in lowered or lowered.strip() == "back":
+            response = self._build_response(
+                kind="execute",
+                message="Going back.",
+                tool_call={"tool_name": "navigate_back", "args": {}},
+            )
+            response["memory"] = self._memory_hint_from_response(response)
+            return response, 0, "deterministic"
+
+        for keyword, command in _NAV_COMMAND_KEYWORDS:
+            if keyword in lowered:
+                response = self._build_response(
+                    kind="execute",
+                    message=f"Opening {command}.",
+                    tool_call={"tool_name": "execute_kai_command", "args": {"command": command}},
+                )
+                response["memory"] = self._memory_hint_from_response(response)
+                return response, 0, "deterministic"
+
+        tool_call, openai_http_ms, model_used = await self._plan_intent_with_llm_v1(
+            transcript=clean_transcript,
+            user_id=user_id,
+            context_payload=context_payload,
+            runtime_state=runtime_state,
+        )
+
+        validated = _validate_tool_call(tool_call)
+        if not validated:
+            response = self._build_response(
+                kind="clarify",
+                reason="stt_unusable",
+                message=_UNCLEAR_STT_MESSAGE,
+            )
+            response["memory"] = self._memory_hint_from_response(response)
+            response["tool_call"] = self._legacy_tool_call_for_response(response)
+            return response, openai_http_ms, model_used
+
+        if validated["tool_name"] == "execute_kai_command":
+            command = _coerce_str(validated["args"].get("command"))
+            params = validated["args"].get("params") if isinstance(validated["args"], dict) else {}
+            if command == "analyze" and has_active_analysis:
+                ticker_label = active_analysis_ticker or "unknown ticker"
+                response = self._build_response(
+                    kind="already_running",
+                    task="analysis",
+                    ticker=active_analysis_ticker,
+                    run_id=active_analysis_run_id,
+                    message=f"Analysis is already running for {ticker_label}.",
+                )
+                response["memory"] = self._memory_hint_from_response(response)
+                response["tool_call"] = self._legacy_tool_call_for_response(response)
+                return response, openai_http_ms, model_used
+            if command == "analyze" and not _coerce_str((params or {}).get("symbol")):
+                response = self._build_response(
+                    kind="clarify",
+                    reason="ticker_unknown",
+                    message="Please say the stock ticker you want to analyze.",
+                )
+                response["memory"] = self._memory_hint_from_response(response)
+                response["tool_call"] = self._legacy_tool_call_for_response(response)
+                return response, openai_http_ms, model_used
+
+        response = self._build_response(
+            kind="execute",
+            message="Working on that now.",
+            tool_call=validated,
+        )
+        response["memory"] = self._memory_hint_from_response(response)
+        return response, openai_http_ms, model_used
 
     async def synthesize_speech(
         self,
         *,
         text: str,
         voice: str,
-    ) -> tuple[str, str]:
+    ) -> tuple[str, str, dict[str, str]]:
         self._require_api_key()
         clean_text = str(text or "").strip()
         if not clean_text:
             raise VoiceServiceError(422, "Text is required for TTS")
-
-        payload = {
-            "model": self.tts_model,
-            "input": clean_text,
-            "voice": str(voice or "alloy").strip() or "alloy",
-            "format": "mp3",
-        }
+        selected_voice = str(voice or self.tts_default_voice).strip() or self.tts_default_voice
+        selected_model = self.tts_model
+        response: httpx.Response | None = None
+        error_payload: dict[str, Any] = {}
+        candidate_models = self._ordered_tts_model_candidates()
 
         async with httpx.AsyncClient(timeout=45.0) as client:
-            response = await client.post(
-                _OPENAI_TTS_URL,
-                headers={
-                    **self._headers(),
-                    "Content-Type": "application/json",
-                },
-                json=payload,
-            )
+            for idx, model_name in enumerate(candidate_models):
+                selected_model = model_name
+                payload = {
+                    "model": model_name,
+                    "input": clean_text,
+                    "voice": selected_voice,
+                    "format": self.tts_format,
+                }
+                candidate_response = await client.post(
+                    _OPENAI_TTS_URL,
+                    headers={
+                        **self._headers(),
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
+                )
+                if candidate_response.status_code < 400:
+                    response = candidate_response
+                    break
+
+                maybe_payload = candidate_response.json() if candidate_response.content else {}
+                should_retry = (
+                    idx < len(candidate_models) - 1
+                    and _is_retryable_model_error(candidate_response.status_code, maybe_payload)
+                )
+                if should_retry:
+                    logger.warning(
+                        "[VOICE_MODEL_FALLBACK] tts_model=%s status=%s error=%s next_model=%s",
+                        model_name,
+                        candidate_response.status_code,
+                        _extract_openai_error(maybe_payload),
+                        candidate_models[idx + 1],
+                    )
+                    continue
+
+                response = candidate_response
+                error_payload = maybe_payload
+                break
+
+        if response is None:
+            raise VoiceServiceError(502, "TTS request failed")
 
         if response.status_code >= 400:
-            payload = response.json() if response.content else {}
-            detail = _extract_openai_error(payload) or "TTS request failed"
+            if not error_payload:
+                error_payload = response.json() if response.content else {}
+            detail = _extract_openai_error(error_payload) or "TTS request failed"
             raise VoiceServiceError(502, detail)
 
         import base64
@@ -242,7 +1306,13 @@ class VoiceIntentService:
         audio_b64 = base64.b64encode(response.content or b"").decode("utf-8")
         if not audio_b64:
             raise VoiceServiceError(502, "TTS response was empty")
-        return audio_b64, "audio/mpeg"
+        self.tts_last_success_model = selected_model
+        mime_type = "audio/mpeg" if self.tts_format == "mp3" else f"audio/{self.tts_format}"
+        return audio_b64, mime_type, {
+            "model": selected_model,
+            "voice": selected_voice,
+            "format": self.tts_format,
+        }
 
 
 def _extract_openai_error(payload: Any) -> str | None:
@@ -433,8 +1503,6 @@ def _validate_tool_call(value: Any) -> dict[str, Any] | None:
             return None
         normalized_command = command.strip().lower().replace(" ", "_")
         command = _COMMAND_ALIASES.get(normalized_command, normalized_command)
-        if command not in _ALLOWED_COMMANDS:
-            return None
 
         out_params: dict[str, Any] = {}
         raw_params = args.get("params")
@@ -461,6 +1529,9 @@ def _validate_tool_call(value: Any) -> dict[str, Any] | None:
                 if tab not in _ALLOWED_HISTORY_TABS:
                     return None
                 out_params["tab"] = tab
+
+        if command not in _ALLOWED_COMMANDS:
+            return None
 
         if command == "analyze" and "symbol" not in out_params:
             return None

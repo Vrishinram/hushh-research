@@ -463,3 +463,83 @@ def test_fixture_auth_header_helper_returns_bearer(vault_owner_auth_headers):
     headers = vault_owner_auth_headers(user_id="fixture_user")
     assert headers["Authorization"].startswith("Bearer ")
     assert len(headers["Authorization"]) > len("Bearer ")
+
+
+class TestKaiVoiceRoutes:
+    def test_voice_plan_missing_token_returns_401(self, client):
+        response = client.post(
+            "/api/kai/voice/plan",
+            json={"user_id": "user_a", "transcript": "open dashboard"},
+        )
+        assert response.status_code == 401
+
+    def test_voice_plan_invalid_token_returns_401(self, client):
+        response = client.post(
+            "/api/kai/voice/plan",
+            json={"user_id": "user_a", "transcript": "open dashboard"},
+            headers=_auth("invalid_token"),
+        )
+        assert response.status_code == 401
+
+    def test_voice_plan_user_mismatch_returns_403(self, client, vault_owner_token_for_user):
+        token = vault_owner_token_for_user("user_a")
+        response = client.post(
+            "/api/kai/voice/plan",
+            json={"user_id": "user_b", "transcript": "open dashboard"},
+            headers=_auth(token),
+        )
+        assert response.status_code == 403
+
+    def test_voice_plan_valid_token_passes_auth_gate(self, client, vault_owner_token_for_user):
+        token = vault_owner_token_for_user("user_a")
+        response = client.post(
+            "/api/kai/voice/plan",
+            json={"user_id": "user_a", "transcript": "open dashboard"},
+            headers=_auth(token),
+        )
+        assert response.status_code not in {401, 403}
+
+    def test_voice_stt_missing_token_returns_401(self, client):
+        response = client.post(
+            "/api/kai/voice/stt",
+            data={"user_id": "user_a"},
+            files={"audio_file": ("voice.webm", b"\x00\x01", "audio/webm")},
+        )
+        assert response.status_code == 401
+
+    def test_voice_understand_missing_token_returns_401(self, client):
+        response = client.post(
+            "/api/kai/voice/understand",
+            data={"user_id": "user_a"},
+            files={"audio_file": ("voice.webm", b"\x00\x01", "audio/webm")},
+        )
+        assert response.status_code == 401
+
+    def test_voice_understand_invalid_token_returns_401(self, client):
+        response = client.post(
+            "/api/kai/voice/understand",
+            data={"user_id": "user_a"},
+            files={"audio_file": ("voice.webm", b"\x00\x01", "audio/webm")},
+            headers=_auth("invalid_token"),
+        )
+        assert response.status_code == 401
+
+    def test_voice_understand_user_mismatch_returns_403(self, client, vault_owner_token_for_user):
+        token = vault_owner_token_for_user("user_a")
+        response = client.post(
+            "/api/kai/voice/understand",
+            data={"user_id": "user_b"},
+            files={"audio_file": ("voice.webm", b"\x00\x01", "audio/webm")},
+            headers=_auth(token),
+        )
+        assert response.status_code == 403
+
+    def test_voice_understand_valid_token_passes_auth_gate(self, client, vault_owner_token_for_user):
+        token = vault_owner_token_for_user("user_a")
+        response = client.post(
+            "/api/kai/voice/understand",
+            data={"user_id": "user_a"},
+            files={"audio_file": ("voice.webm", b"\x00\x01", "audio/webm")},
+            headers=_auth(token),
+        )
+        assert response.status_code not in {401, 403}
