@@ -31,7 +31,12 @@ export function RiaPageShell({
   className?: string;
 }) {
   return (
-    <main className={cn("mx-auto w-full max-w-5xl px-4 pb-28 pt-4 sm:px-6", className)}>
+    <main
+      className={cn(
+        "mx-auto w-full max-w-5xl px-4 pb-28 pt-[var(--kai-view-top-gap,16px)] sm:px-6",
+        className
+      )}
+    >
       <PageHeader
         eyebrow={eyebrow}
         title={title}

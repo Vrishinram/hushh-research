@@ -38,7 +38,6 @@ import {
   useKaiBottomChromeVisibility,
 } from "@/lib/navigation/kai-bottom-chrome-visibility";
 import { getKaiChromeState } from "@/lib/navigation/kai-chrome-state";
-import { cn } from "@/lib/utils";
 import { PersonaBootstrapRedirect } from "@/components/iam/persona-bootstrap-redirect";
 import { PersonaProvider } from "@/lib/persona/persona-context";
 
@@ -67,18 +66,26 @@ export function Providers({ children }: ProvidersProps) {
         "--top-tabs-total": topShellMetrics.hasTabs
           ? "calc(var(--top-tabs-h) + var(--top-tabs-gap))"
           : "0px",
-        "--top-systembar-row-gap": topShellMetrics.hasTabs ? "4px" : "6px",
+        "--top-systembar-row-gap": topShellMetrics.hasTabs ? "2px" : "0px",
         "--top-fade-active": topShellMetrics.hasTabs ? "24px" : "22px",
-        "--top-content-pad": "var(--top-glass-h)",
+        "--top-content-pad": "var(--top-shell-reserved-height)",
         "--kai-route-content-gap": topShellMetrics.hasTabs ? "20px" : "10px",
         "--kai-route-content-gap-sm": topShellMetrics.hasTabs ? "24px" : "14px",
         "--app-top-shell-visible": topShellMetrics.shellVisible ? "1" : "0",
         "--app-top-has-tabs": topShellMetrics.hasTabs ? "1" : "0",
         "--app-top-offset-mode":
           topShellMetrics.contentOffsetMode === "fullscreen-flow" ? "fullscreen-flow" : "normal",
-        "--app-scroll-bottom-pad": chromeState.hideCommandBar
+        "--bottom-chrome-stack-height": chromeState.hideCommandBar
           ? "var(--app-bottom-inset)"
           : "calc(var(--app-bottom-inset) + var(--kai-command-fixed-ui))",
+        "--bottom-chrome-full-height": chromeState.hideCommandBar
+          ? "calc(var(--app-bottom-inset) + var(--bottom-chrome-fade-overscan))"
+          : "calc(var(--app-bottom-inset) + var(--kai-command-fixed-ui) + var(--bottom-chrome-fade-overscan))",
+        "--bottom-chrome-search-height": chromeState.hideCommandBar
+          ? "calc(var(--app-bottom-inset) + var(--bottom-chrome-fade-overscan))"
+          : "calc(var(--app-safe-area-bottom-effective) + var(--app-bottom-chrome-lift) + var(--kai-command-fixed-ui) + var(--bottom-chrome-fade-overscan))",
+        "--bottom-chrome-visual-height": "var(--bottom-chrome-full-height)",
+        "--app-scroll-bottom-pad": "var(--bottom-chrome-stack-height)",
       } as CSSProperties),
     [
       chromeState.hideCommandBar,
@@ -88,7 +95,7 @@ export function Providers({ children }: ProvidersProps) {
     ]
   );
   const showSharedBottomChromeGlass = topShellMetrics.shellVisible && !isFullscreenTopFlow;
-  const { hidden: hideBottomChromeGlass, progress: hideBottomChromeGlassProgress } = useKaiBottomChromeVisibility(
+  const { progress: hideBottomChromeGlassProgress } = useKaiBottomChromeVisibility(
     showSharedBottomChromeGlass
   );
   const pageRef = useRef<HTMLDivElement | null>(null);
@@ -146,29 +153,18 @@ export function Providers({ children }: ProvidersProps) {
                         showSharedBottomChromeGlass && vault?.isVaultUnlocked ? (
                           <div
                             aria-hidden
-                            className={cn(
-                              "pointer-events-none fixed inset-x-0 bottom-0 z-[108] transform-gpu",
-                              hideBottomChromeGlass ? "opacity-0" : "opacity-100"
-                            )}
-                            style={{
-                              transform: `translate3d(0, calc(${100 * hideBottomChromeGlassProgress}% + ${10 * hideBottomChromeGlassProgress}px), 0)`,
-                              opacity: Math.max(0, 1 - hideBottomChromeGlassProgress),
-                            } as CSSProperties}
+                            className="pointer-events-none fixed inset-x-0 bottom-0 z-[108]"
                           >
                             <div
-                              className="h-[calc(var(--app-bottom-inset)+var(--kai-command-fixed-ui)+36px)] w-full bar-glass"
+                              className="w-full bar-glass bar-glass-bottom"
                               style={
                                 {
-                                  "--app-bar-glass-bg-light": "rgba(255, 255, 255, 0.5)",
-                                  "--app-bar-glass-bg-dark": "rgba(10, 12, 16, 0.74)",
-                                  "--app-bar-glass-blur": "8px",
-                                  "--app-bar-border-top": "1px solid rgba(255, 255, 255, 0.26)",
-                                  "--app-bar-shadow":
-                                    "inset 0 1px 0 rgba(255,255,255,0.18), 0 -14px 30px rgba(0,0,0,0.18)",
-                                  maskImage:
-                                    "linear-gradient(to top, black 0%, black 62%, rgba(0, 0, 0, 0.95) 76%, rgba(0, 0, 0, 0.72) 88%, rgba(0, 0, 0, 0.36) 95%, transparent 100%)",
-                                  WebkitMaskImage:
-                                    "linear-gradient(to top, black 0%, black 62%, rgba(0, 0, 0, 0.95) 76%, rgba(0, 0, 0, 0.72) 88%, rgba(0, 0, 0, 0.36) 95%, transparent 100%)",
+                                  height: `calc(var(--bottom-chrome-full-height) - (${hideBottomChromeGlassProgress} * var(--app-bottom-fixed-ui)))`,
+                                  "--app-bar-glass-bg-light": "rgba(255, 255, 255, 0.46)",
+                                  "--app-bar-glass-bg-dark": "rgba(10, 12, 16, 0.64)",
+                                  "--app-bar-glass-blur": "2px",
+                                  "--app-bar-shadow": "none",
+                                  "--app-bar-mask-overscan": "30px",
                                 } as CSSProperties
                               }
                             />
@@ -202,7 +198,7 @@ export function Providers({ children }: ProvidersProps) {
                         <div
                           aria-hidden
                           className="w-full shrink-0"
-                          style={{ height: "var(--top-content-pad)" }}
+                          style={{ height: "var(--top-shell-reserved-height)" }}
                         />
                       ) : null}
                       <div

@@ -238,8 +238,12 @@ export const CACHE_KEYS = {
   KAI_PROFILE: (userId: string) => `kai_profile_${userId}`,
   ANALYSIS_HISTORY: (userId: string) => `analysis_history_${userId}`,
   STOCK_CONTEXT: (userId: string, ticker: string) => `stock_context_${userId}_${ticker}`,
-  KAI_MARKET_HOME: (userId: string, symbolsKey: string, daysBack: number) =>
-    `kai_market_home_${userId}_${symbolsKey}_${daysBack}`,
+  KAI_MARKET_HOME: (
+    userId: string,
+    symbolsKey: string,
+    daysBack: number,
+    pickSource: string = "default"
+  ) => `kai_market_home_${userId}_${symbolsKey}_${daysBack}_${pickSource}`,
   KAI_DASHBOARD_PROFILE_PICKS: (userId: string, symbolsKey: string, limit: number) =>
     `kai_dashboard_profile_picks_${userId}_${symbolsKey}_${limit}`,
   MARKETPLACE_RIAS_SEARCH: (queryKey: string) => `marketplace_rias_${queryKey}`,

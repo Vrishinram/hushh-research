@@ -1,5 +1,6 @@
 "use client";
 
+import { CacheSyncService } from "@/lib/cache/cache-sync-service";
 import { ApiService } from "@/lib/services/api-service";
 import type {
   PlaidPortfolioStatusResponse,
@@ -136,7 +137,9 @@ export class PlaidPortfolioService {
       );
       throw new Error(detail);
     }
-    return (await response.json()) as PlaidPortfolioStatusResponse;
+    const payload = (await response.json()) as PlaidPortfolioStatusResponse;
+    CacheSyncService.onPlaidSourceProjected(params.userId);
+    return payload;
   }
 
   static async refresh(params: {

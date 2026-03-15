@@ -112,6 +112,14 @@ export class UnlockWarmOrchestrator {
     { completedAt: number; result: UnlockWarmResult }
   >();
 
+  static invalidateForUser(userId: string): void {
+    for (const key of this.recentResultBySignature.keys()) {
+      if (key.startsWith(`${userId}:`)) {
+        this.recentResultBySignature.delete(key);
+      }
+    }
+  }
+
   static async awaitInFlightForUser(
     userId: string,
     timeoutMs = 2_000
@@ -227,7 +235,7 @@ export class UnlockWarmOrchestrator {
 
     if (warmPriority === "market" && shouldWarmMarket) {
       try {
-        const defaultMarketKey = CACHE_KEYS.KAI_MARKET_HOME(params.userId, "default", 7);
+        const defaultMarketKey = CACHE_KEYS.KAI_MARKET_HOME(params.userId, "default", 7, "default");
         const cachedDefault = cache.get(defaultMarketKey);
         if (cachedDefault) {
           result.kaiMarketWarmed = true;
@@ -268,7 +276,7 @@ export class UnlockWarmOrchestrator {
     if (warmPriority === "market" && shouldWarmMarket && !result.kaiMarketWarmed) {
       try {
         const symbolsKey = toSymbolsKey(symbols);
-        const cacheKey = CACHE_KEYS.KAI_MARKET_HOME(params.userId, symbolsKey, 7);
+        const cacheKey = CACHE_KEYS.KAI_MARKET_HOME(params.userId, symbolsKey, 7, "default");
         const cached = cache.get(cacheKey);
         if (cached) {
           result.kaiMarketWarmed = true;
@@ -281,7 +289,7 @@ export class UnlockWarmOrchestrator {
           });
           cache.set(cacheKey, kaiHome, WARM_CACHE_TTL_MS);
           if (symbols.length === 0) {
-            cache.set(CACHE_KEYS.KAI_MARKET_HOME(params.userId, "default", 7), kaiHome, WARM_CACHE_TTL_MS);
+            cache.set(CACHE_KEYS.KAI_MARKET_HOME(params.userId, "default", 7, "default"), kaiHome, WARM_CACHE_TTL_MS);
           }
           result.kaiMarketWarmed = true;
         }
@@ -427,7 +435,7 @@ export class UnlockWarmOrchestrator {
 
     if (shouldWarmMarket && (!result.kaiMarketWarmed || symbols.length > 0)) {
       const symbolsKey = toSymbolsKey(symbols);
-      const cacheKey = CACHE_KEYS.KAI_MARKET_HOME(params.userId, symbolsKey, 7);
+      const cacheKey = CACHE_KEYS.KAI_MARKET_HOME(params.userId, symbolsKey, 7, "default");
       const cached = cache.get(cacheKey);
       if (cached) {
         result.kaiMarketWarmed = true;
@@ -442,7 +450,7 @@ export class UnlockWarmOrchestrator {
         });
         cache.set(cacheKey, kaiHome, WARM_CACHE_TTL_MS);
         if (symbols.length === 0) {
-          cache.set(CACHE_KEYS.KAI_MARKET_HOME(params.userId, "default", 7), kaiHome, WARM_CACHE_TTL_MS);
+          cache.set(CACHE_KEYS.KAI_MARKET_HOME(params.userId, "default", 7, "default"), kaiHome, WARM_CACHE_TTL_MS);
         }
         result.kaiMarketWarmed = true;
       } catch (error) {

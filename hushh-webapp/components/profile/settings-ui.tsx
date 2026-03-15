@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { ChevronRight } from "lucide-react";
+import { Slot } from "radix-ui";
 
 import {
   Drawer,
@@ -114,7 +115,9 @@ export function SettingsGroup({
 }
 
 export function SettingsRow({
+  asChild = false,
   icon,
+  leading,
   title,
   description,
   trailing,
@@ -125,7 +128,9 @@ export function SettingsRow({
   stackTrailingOnMobile = false,
   className,
 }: {
+  asChild?: boolean;
   icon?: LucideIcon;
+  leading?: ReactNode;
   title: ReactNode;
   description?: ReactNode;
   trailing?: ReactNode;
@@ -136,8 +141,9 @@ export function SettingsRow({
   stackTrailingOnMobile?: boolean;
   className?: string;
 }) {
-  const isInteractive = typeof onClick === "function" && !disabled;
+  const isInteractive = !disabled && (typeof onClick === "function" || asChild);
   const shouldStackTrailing = stackTrailingOnMobile && Boolean(trailing) && !chevron;
+  const Comp = asChild ? Slot.Root : onClick ? "button" : "div";
   const content = (
     <>
       <div
@@ -146,7 +152,9 @@ export function SettingsRow({
           shouldStackTrailing ? "items-start sm:items-center" : "items-center"
         )}
       >
-        {icon ? (
+        {leading ? (
+          <span className="inline-flex shrink-0 self-center">{leading}</span>
+        ) : icon ? (
           <span
             className={cn(
               "inline-flex h-8 w-8 shrink-0 items-center justify-center self-center rounded-2xl bg-muted/65 text-muted-foreground sm:h-10 sm:w-10",
@@ -157,18 +165,18 @@ export function SettingsRow({
           </span>
         ) : null}
         <div className="min-w-0 flex-1 space-y-0.5">
-          <p
+          <div
             className={cn(
               "text-sm font-medium tracking-tight text-foreground [overflow-wrap:anywhere] sm:text-[15px]",
               tone === "destructive" && "text-destructive"
             )}
           >
             {title}
-          </p>
+          </div>
           {description ? (
-            <p className="text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere] sm:text-[13px]">
+            <div className="text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere] sm:text-[13px]">
               {description}
-            </p>
+            </div>
           ) : null}
         </div>
       </div>
@@ -205,21 +213,26 @@ export function SettingsRow({
     className
   );
 
-  if (onClick) {
-    return (
-      <button type="button" onClick={onClick} disabled={disabled} className={sharedClassName}>
-        {content}
+  return (
+    <Comp
+      {...(!asChild && onClick
+        ? { type: "button" as const, onClick, disabled }
+        : !asChild
+          ? { "aria-disabled": disabled || undefined }
+          : {})}
+      className={sharedClassName}
+    >
+      {content}
+      {isInteractive ? (
         <MaterialRipple
           variant="none"
           effect="fade"
           disabled={disabled}
           className="z-[2]"
         />
-      </button>
-    );
-  }
-
-  return <div className={sharedClassName}>{content}</div>;
+      ) : null}
+    </Comp>
+  );
 }
 
 export function SettingsDetailPanel({

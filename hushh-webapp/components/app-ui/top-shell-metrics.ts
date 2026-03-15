@@ -82,6 +82,6 @@ export function resolveTopShellMetrics(pathname: string): TopShellMetrics {
 
 export function resolveTopShellHeight(pathname: string): string {
   return resolveTopShellMetrics(pathname).shellVisible
-    ? "var(--top-shell-h)"
+    ? "var(--top-shell-reserved-height)"
     : "0px";
 }

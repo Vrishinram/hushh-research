@@ -2,6 +2,8 @@
 
 This document is the canonical contract for Apple-like settings surfaces in Hushh. The current reference implementation is the Profile page and its shared primitives in `hushh-webapp/components/profile/settings-ui.tsx`.
 
+For broader page-shell, header, and content-surface rules beyond settings, use [App Surface Design System](./app-surface-design-system.md).
+
 ## Design Intent
 
 The settings experience should feel:
@@ -92,6 +94,8 @@ Rules:
 2. Ripple is allowed only on actionable controls and rows.
 3. Icons should inherit the same emphasis as text in active or highlighted states.
 4. Chevrons remain right-aligned and vertically centered.
+5. Actionable cards are treated the same way as actionable rows: if a card is clickable, the whole card owns one ripple surface.
+6. Decorative icon choices must be semantically grounded. Do not default to generic `Sparkles` for onboarding, optimization, AI, or premium states unless the feature meaning is explicitly “sparkle” or celebratory.
 
 ## Responsive Rules
 
@@ -130,6 +134,8 @@ Rules:
 3. Open dense workflows in drawers or sheets.
 4. Use a right-aligned `Switch` for binary settings like visibility.
 5. Keep row actions visually balanced with the left icon block.
+6. Center the left icon against the full title-plus-subtitle block so it spans the whole heading unit, not just the first line.
+7. Add `MaterialRipple` to every actionable card surface, not only buttons.
 
 ### Don’t
 
@@ -138,6 +144,7 @@ Rules:
 3. Don’t put long helper paragraphs directly inside root groups.
 4. Don’t let trailing controls wrap below the row unless the design explicitly calls for it.
 5. Don’t edit shadcn registry primitives for app-specific styling logic.
+6. Don’t use generic sparkle icons as the fallback symbol for “smart”, “optimize”, or onboarding states.
 
 ## Implementation Reference
 

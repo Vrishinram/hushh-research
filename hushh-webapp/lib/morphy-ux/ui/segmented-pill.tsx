@@ -26,6 +26,7 @@ type SegmentedPillProps = {
   onValueChange: (value: string) => void;
   size?: SegmentedPillSize;
   layout?: SegmentedPillLayout;
+  hitArea?: "segment" | "content";
   className?: string;
   ariaLabel?: string;
 };
@@ -76,6 +77,7 @@ export const SegmentedPill = React.forwardRef<HTMLDivElement, SegmentedPillProps
       onValueChange,
       size = "default",
       layout = "inline",
+      hitArea = "segment",
       className,
       ariaLabel = "Segmented selector",
     },
@@ -95,7 +97,7 @@ export const SegmentedPill = React.forwardRef<HTMLDivElement, SegmentedPillProps
         role="radiogroup"
         aria-label={ariaLabel}
         className={cn(
-          "relative grid items-center rounded-full border border-border/70 bg-muted/75 shadow-sm backdrop-blur-xl",
+          "pointer-events-none relative grid items-center rounded-full border border-border/70 bg-muted/75 shadow-sm backdrop-blur-xl",
           isStacked ? styles.stackedContainer : styles.container,
           className
         )}
@@ -116,7 +118,7 @@ export const SegmentedPill = React.forwardRef<HTMLDivElement, SegmentedPillProps
           const isActive = option.value === value;
           const isDisabled = !!option.disabled;
           const isAccent = option.tone === "accent";
-          return (
+          const button = (
             <button
               key={option.value}
               type="button"
@@ -131,6 +133,8 @@ export const SegmentedPill = React.forwardRef<HTMLDivElement, SegmentedPillProps
               }}
               className={cn(
                 "relative z-10 flex min-w-0 items-center justify-center overflow-hidden rounded-full text-center transition-[color,opacity,transform] duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] disabled:cursor-not-allowed",
+                "pointer-events-auto",
+                hitArea === "content" ? "w-fit flex-none self-center" : "w-full",
                 isStacked ? "flex-col" : "flex-row",
                 isStacked ? styles.stackedButton : styles.button,
                 isStacked ? styles.stackedGap : styles.gap,
@@ -140,9 +144,9 @@ export const SegmentedPill = React.forwardRef<HTMLDivElement, SegmentedPillProps
                     ? "text-primary/85 hover:text-primary"
                     : "text-foreground/75 hover:text-foreground",
                 isDisabled && "opacity-45"
-                )}
-              >
-                {option.icon || (typeof option.badge === "number" && option.badge > 0) ? (
+              )}
+            >
+              {option.icon || (typeof option.badge === "number" && option.badge > 0) ? (
                 <span className="relative flex shrink-0 items-center justify-center">
                   {option.icon ? (
                     <Icon
@@ -177,6 +181,22 @@ export const SegmentedPill = React.forwardRef<HTMLDivElement, SegmentedPillProps
               />
             </button>
           );
+
+          if (hitArea === "content") {
+            return (
+              <div
+                key={option.value}
+                className={cn(
+                  "relative z-10 flex min-w-0 items-center justify-center",
+                  isStacked && "py-0.5"
+                )}
+              >
+                {button}
+              </div>
+            );
+          }
+
+          return button;
         })}
       </div>
     );

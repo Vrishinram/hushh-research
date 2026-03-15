@@ -101,3 +101,24 @@ import { Icon } from "@/lib/morphy-ux/ui";
 
 <Icon icon={Shield} size="sm" className="text-primary" />;
 ```
+
+## Pattern: Actionable Surface Rows
+Use `SettingsRow` for clickable list rows across the app, not only on Profile.
+
+```tsx
+import { SettingsRow } from "@/components/profile/settings-ui";
+
+<SettingsRow
+  leading={<span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl">AAPL</span>}
+  title="Apple"
+  description="AAPL • Technology • BUY"
+  trailing="$214.75"
+  chevron
+  onClick={() => openDetail()}
+/>;
+```
+
+Rules:
+1. The whole row owns hover, press, and ripple.
+2. Inner text blocks must not create a second hover state.
+3. Use `asChild` for link rows so anchors inherit the same interaction contract.

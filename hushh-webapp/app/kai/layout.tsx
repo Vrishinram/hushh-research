@@ -29,7 +29,6 @@ export default function KaiLayout({
   const onImportRoute = pathname.startsWith("/kai/import");
   const onPlaidOauthReturnRoute = pathname === ROUTES.KAI_PLAID_OAUTH_RETURN;
   const shouldEnableMethodPrompt = !onOnboardingRoute && !onImportRoute && !onPlaidOauthReturnRoute;
-  const applyTopRouteGap = !onOnboardingRoute;
 
   useEffect(() => {
     if (onOnboardingRoute || onImportRoute) return;
@@ -48,12 +47,7 @@ export default function KaiLayout({
   const shell = (
     <div className="flex min-h-screen flex-col [--morphy-glass-accent-a:rgba(148,163,184,0.08)] [--morphy-glass-accent-b:rgba(226,232,240,0.08)] dark:[--morphy-glass-accent-a:rgba(63,63,70,0.16)] dark:[--morphy-glass-accent-b:rgba(82,82,91,0.14)]">
       <main
-        className={[
-          "flex-1 pb-0 [--kai-view-top-gap:0px]",
-          applyTopRouteGap ? "pt-[var(--kai-route-content-gap,26px)] sm:pt-[var(--kai-route-content-gap-sm,32px)]" : "",
-        ]
-          .filter(Boolean)
-          .join(" ")}
+        className="flex-1 pb-0 [--kai-view-top-gap:0px]"
       >
         {children}
       </main>

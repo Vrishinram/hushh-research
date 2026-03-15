@@ -103,6 +103,43 @@ export interface RiaRequestRecord {
   subject_headline?: string | null;
 }
 
+export interface RiaRequestScopeMetadata {
+  scope: string;
+  label: string;
+  description: string;
+  kind: string;
+  summary_only: boolean;
+}
+
+export interface RiaRequestScopeTemplate {
+  template_id: string;
+  template_name: string;
+  description?: string | null;
+  default_duration_hours: number;
+  max_duration_hours: number;
+  scopes: RiaRequestScopeMetadata[];
+}
+
+export interface RiaRequestBundleRecord {
+  bundle_id: string;
+  bundle_label: string;
+  subject_user_id?: string | null;
+  subject_display_name?: string | null;
+  subject_headline?: string | null;
+  status: string;
+  issued_at?: number | null;
+  expires_at?: number | null;
+  request_count: number;
+  requests: Array<{
+    request_id: string;
+    scope: string;
+    action: string;
+    issued_at?: number | null;
+    expires_at?: number | null;
+    scope_metadata?: RiaRequestScopeMetadata;
+  }>;
+}
+
 export interface RiaInviteRecord {
   invite_id: string;
   invite_token: string;
@@ -120,6 +157,29 @@ export interface RiaInviteRecord {
   target_investor_user_id?: string | null;
   accepted_by_user_id?: string | null;
   accepted_request_id?: string | null;
+}
+
+export interface RiaPickUploadRecord {
+  upload_id: string;
+  label: string;
+  status: string;
+  source_filename?: string | null;
+  row_count: number;
+  activated_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface RiaPickRow {
+  ticker: string;
+  company_name?: string | null;
+  sector?: string | null;
+  tier?: string | null;
+  tier_rank?: number | null;
+  conviction_weight?: number | null;
+  recommendation_bias?: string | null;
+  investment_thesis?: string | null;
+  fcf_billions?: number | null;
 }
 
 export interface RiaInviteResolution {
@@ -389,6 +449,24 @@ export class RiaService {
     return payload.items;
   }
 
+  static async listRequestBundles(idToken: string): Promise<RiaRequestBundleRecord[]> {
+    const response = await authFetch("/api/ria/request-bundles", {
+      method: "GET",
+      idToken,
+    });
+    const payload = await toJsonOrThrow<{ items: RiaRequestBundleRecord[] }>(response);
+    return payload.items;
+  }
+
+  static async listRequestScopes(idToken: string): Promise<RiaRequestScopeTemplate[]> {
+    const response = await authFetch("/api/ria/request-scopes", {
+      method: "GET",
+      idToken,
+    });
+    const payload = await toJsonOrThrow<{ items: RiaRequestScopeTemplate[] }>(response);
+    return payload.items;
+  }
+
   static async listInvites(idToken: string): Promise<RiaInviteRecord[]> {
     const response = await authFetch("/api/ria/invites", {
       method: "GET",
@@ -451,6 +529,32 @@ export class RiaService {
     return toJsonOrThrow(response);
   }
 
+  static async createRequestBundle(
+    idToken: string,
+    payload: {
+      subject_user_id: string;
+      scope_template_id: string;
+      selected_scopes: string[];
+      firm_id?: string;
+      reason?: string;
+    }
+  ): Promise<{
+    bundle_id: string;
+    bundle_label: string;
+    status: string;
+    request_count: number;
+    request_ids: string[];
+    selected_scopes: string[];
+    expires_at?: number | null;
+  }> {
+    const response = await authFetch("/api/ria/request-bundles", {
+      method: "POST",
+      idToken,
+      body: payload,
+    });
+    return toJsonOrThrow(response);
+  }
+
   static async getWorkspace(
     idToken: string,
     investorUserId: string
@@ -464,6 +568,12 @@ export class RiaService {
     total_attributes: number;
     relationship_status: string;
     scope: string;
+    granted_scopes?: Array<{
+      scope: string;
+      label: string;
+      expires_at?: number | string | null;
+      issued_at?: number | string | null;
+    }>;
     consent_expires_at?: number | string | null;
     updated_at?: string;
   }> {
@@ -474,6 +584,33 @@ export class RiaService {
         idToken,
       }
     );
+    return toJsonOrThrow(response);
+  }
+
+  static async listPicks(idToken: string): Promise<{
+    items: RiaPickUploadRecord[];
+    active_rows: RiaPickRow[];
+  }> {
+    const response = await authFetch("/api/ria/picks", {
+      method: "GET",
+      idToken,
+    });
+    return toJsonOrThrow(response);
+  }
+
+  static async uploadPicks(
+    idToken: string,
+    payload: {
+      csv_content: string;
+      source_filename?: string;
+      label?: string;
+    }
+  ): Promise<RiaPickUploadRecord> {
+    const response = await authFetch("/api/ria/picks", {
+      method: "POST",
+      idToken,
+      body: payload,
+    });
     return toJsonOrThrow(response);
   }
 

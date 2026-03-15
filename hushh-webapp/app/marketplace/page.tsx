@@ -2,9 +2,19 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { Building2, Search, UserRound } from "lucide-react";
 
+import { SectionHeader } from "@/components/app-ui/page-sections";
+import {
+  SettingsGroup,
+  SettingsRow,
+  SettingsSegmentedTabs,
+} from "@/components/profile/settings-ui";
 import { RiaPageShell, RiaSurface } from "@/components/ria/ria-page-shell";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/use-auth";
+import { Button } from "@/lib/morphy-ux/button";
 import { usePersonaState } from "@/lib/persona/persona-context";
 import { ROUTES } from "@/lib/navigation/routes";
 import {
@@ -128,39 +138,33 @@ export default function MarketplacePage() {
       title="Public discovery first. Private access only after consent."
       description="Marketplace cards expose verified public metadata only. Relationship actions stay persona-aware and never bypass the consent boundary."
     >
-      <RiaSurface>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => setTab("rias")}
-            className={`min-h-11 rounded-full px-4 text-sm font-medium ${
-              tab === "rias"
-                ? "bg-foreground text-background"
-                : "border border-border bg-background text-foreground"
-            }`}
-          >
-            Find RIAs
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab("investors")}
-            className={`min-h-11 rounded-full px-4 text-sm font-medium ${
-              tab === "investors"
-                ? "bg-foreground text-background"
-                : "border border-border bg-background text-foreground"
-            }`}
-          >
-            Find Investors
-          </button>
-        </div>
-
-        <input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder={tab === "rias" ? "Search RIAs by name" : "Search investors"}
-          className="mt-4 min-h-11 w-full rounded-2xl border border-border bg-background px-4 text-sm"
+      <section className="space-y-3">
+        <SectionHeader
+          eyebrow="Discovery"
+          title="Search public profiles before you open a relationship"
+          description="Use the same clean discovery surface for advisor and investor searches. Actions remain persona-aware and consent-safe."
+          icon={Search}
         />
-      </RiaSurface>
+        <RiaSurface className="space-y-4">
+          <SettingsSegmentedTabs
+            value={tab}
+            onValueChange={(value) => setTab(value as "rias" | "investors")}
+            options={[
+              { value: "rias", label: "Find RIAs" },
+              { value: "investors", label: "Find investors" },
+            ]}
+          />
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={tab === "rias" ? "Search RIAs by name" : "Search investors"}
+              className="min-h-11 rounded-2xl border-border/80 bg-background/80 pl-10 text-sm"
+            />
+          </div>
+        </RiaSurface>
+      </section>
 
       {loading ? <p className="text-sm text-muted-foreground">Loading marketplace…</p> : null}
       {iamUnavailable ? (
@@ -172,90 +176,120 @@ export default function MarketplacePage() {
       ) : null}
 
       {tab === "rias" ? (
-        <div className="grid gap-4 md:grid-cols-2">
-          {rias.map((ria) => (
-            <RiaSurface key={ria.id} className="p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-lg font-semibold text-foreground">{ria.display_name}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {ria.verification_status}
-                    {ria.headline ? ` · ${ria.headline}` : ""}
-                  </p>
-                </div>
-                <Link
-                  href={`${ROUTES.MARKETPLACE_RIA_PROFILE}/${encodeURIComponent(ria.id)}`}
-                  className="inline-flex min-h-11 items-center justify-center rounded-full border border-border bg-background px-4 text-sm font-medium text-foreground"
-                >
-                  Open profile
-                </Link>
-              </div>
-              {Array.isArray(ria.firms) && ria.firms.length > 0 ? (
-                <p className="mt-3 text-xs text-muted-foreground">
-                  {ria.firms.map((firm) => firm.legal_name).join(" · ")}
-                </p>
-              ) : null}
-            </RiaSurface>
-          ))}
-
-          {rias.length === 0 && !loading && !iamUnavailable ? (
-            <p className="text-sm text-muted-foreground">No RIA profiles found.</p>
-          ) : null}
-        </div>
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2">
-          {investors.map((investor) => {
-            const relationship = relationshipMap.get(investor.user_id);
-            return (
-              <RiaSurface key={investor.user_id} className="p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-lg font-semibold text-foreground">{investor.display_name}</p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {investor.headline || "Opt-in investor profile"}
-                    </p>
+        <section className="space-y-3">
+          <SectionHeader
+            eyebrow="Advisor directory"
+            title="RIA profiles"
+            description="Verified public metadata stays lightweight here so investors can browse before opening a deeper profile."
+            icon={Building2}
+          />
+          <SettingsGroup>
+            {rias.map((ria) => (
+              <SettingsRow
+                key={ria.id}
+                icon={Building2}
+                title={
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span>{ria.display_name}</span>
+                    <Badge variant="outline" className="border-border/70 bg-background/80 text-[10px] font-semibold uppercase text-muted-foreground">
+                      {ria.verification_status}
+                    </Badge>
                   </div>
-                  <span className="rounded-full border border-border/60 px-3 py-2 text-xs text-muted-foreground">
-                    {relationship?.status || "lead"}
-                  </span>
-                </div>
-                <p className="mt-3 text-sm text-muted-foreground">
-                  {investor.strategy_summary || investor.location_hint || "Public discovery metadata only."}
-                </p>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {isAuthenticated && currentPersona === "ria" ? (
+                }
+                description={
+                  <>
+                    <p>{ria.headline || "Verified public advisor profile"}</p>
+                    {Array.isArray(ria.firms) && ria.firms.length > 0 ? (
+                      <p className="mt-1">{ria.firms.map((firm) => firm.legal_name).join(" • ")}</p>
+                    ) : null}
+                  </>
+                }
+                trailing={
+                  <Button asChild variant="none" effect="fade" size="sm">
+                    <Link href={`${ROUTES.MARKETPLACE_RIA_PROFILE}/${encodeURIComponent(ria.id)}`}>
+                      Open profile
+                    </Link>
+                  </Button>
+                }
+              />
+            ))}
+            {rias.length === 0 && !loading && !iamUnavailable ? (
+              <div className="px-4 py-4 text-sm text-muted-foreground">
+                No RIA profiles found.
+              </div>
+            ) : null}
+          </SettingsGroup>
+        </section>
+      ) : (
+        <section className="space-y-3">
+          <SectionHeader
+            eyebrow="Investor directory"
+            title="Lead-friendly investor profiles"
+            description="Surface status, headline, and strategy cues first, then let RIA mode decide which relationship actions are available."
+            icon={UserRound}
+          />
+          <SettingsGroup>
+            {investors.map((investor) => {
+              const relationship = relationshipMap.get(investor.user_id);
+              return (
+                <SettingsRow
+                  key={investor.user_id}
+                  icon={UserRound}
+                  stackTrailingOnMobile
+                  title={
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span>{investor.display_name}</span>
+                      <Badge variant="outline" className="border-border/70 bg-background/80 text-[10px] font-semibold uppercase text-muted-foreground">
+                        {relationship?.status || "lead"}
+                      </Badge>
+                    </div>
+                  }
+                  description={
                     <>
-                      <button
-                        type="button"
-                        onClick={() => void createInvite(investor)}
-                        disabled={actionLoadingUserId === investor.user_id}
-                        className="inline-flex min-h-11 items-center justify-center rounded-full bg-foreground px-4 text-sm font-medium text-background disabled:opacity-60"
-                      >
-                        {actionLoadingUserId === investor.user_id ? "Inviting..." : "Invite"}
-                      </button>
-                      <Link
-                        href={`${ROUTES.CONSENTS}?view=pending&investor=${encodeURIComponent(
-                          investor.user_id
-                        )}`}
-                        className="inline-flex min-h-11 items-center justify-center rounded-full border border-border bg-background px-4 text-sm font-medium text-foreground"
-                      >
-                        Request access
-                      </Link>
+                      <p>{investor.headline || "Opt-in investor profile"}</p>
+                      <p className="mt-1">
+                        {investor.strategy_summary || investor.location_hint || "Public discovery metadata only."}
+                      </p>
                     </>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">
-                      View lead details after switching into RIA mode.
-                    </span>
-                  )}
-                </div>
-              </RiaSurface>
-            );
-          })}
-
-          {investors.length === 0 && !loading && !iamUnavailable ? (
-            <p className="text-sm text-muted-foreground">No investor profiles found.</p>
-          ) : null}
-        </div>
+                  }
+                  trailing={
+                    isAuthenticated && currentPersona === "ria" ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          variant="blue-gradient"
+                          effect="fill"
+                          size="sm"
+                          onClick={() => void createInvite(investor)}
+                          disabled={actionLoadingUserId === investor.user_id}
+                        >
+                          {actionLoadingUserId === investor.user_id ? "Inviting..." : "Invite"}
+                        </Button>
+                        <Button asChild variant="none" effect="fade" size="sm">
+                          <Link
+                            href={`${ROUTES.CONSENTS}?view=pending&investor=${encodeURIComponent(
+                              investor.user_id
+                            )}`}
+                          >
+                            Request access
+                          </Link>
+                        </Button>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">
+                        Switch to RIA mode to invite or request access.
+                      </span>
+                    )
+                  }
+                />
+              );
+            })}
+            {investors.length === 0 && !loading && !iamUnavailable ? (
+              <div className="px-4 py-4 text-sm text-muted-foreground">
+                No investor profiles found.
+              </div>
+            ) : null}
+          </SettingsGroup>
+        </section>
       )}
     </RiaPageShell>
   );

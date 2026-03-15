@@ -3,16 +3,19 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Clock3, MailPlus, UserRound } from "lucide-react";
 
 import {
   MetricTile,
   RiaCompatibilityState,
   RiaPageShell,
   RiaStatusPanel,
-  RiaSurface,
 } from "@/components/ria/ria-page-shell";
 import { SectionHeader } from "@/components/app-ui/page-sections";
+import { SettingsGroup, SettingsRow } from "@/components/profile/settings-ui";
+import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/use-auth";
+import { Button } from "@/lib/morphy-ux/button";
 import { usePersonaState } from "@/lib/persona/persona-context";
 import { ROUTES } from "@/lib/navigation/routes";
 import {
@@ -202,18 +205,12 @@ export default function RiaHomePage() {
       }
       actions={
         <>
-          <Link
-            href={ROUTES.RIA_CLIENTS}
-            className="inline-flex min-h-11 items-center justify-center rounded-full bg-foreground px-4 text-sm font-medium text-background"
-          >
-            Import or invite clients
-          </Link>
-          <Link
-            href={ROUTES.MARKETPLACE}
-            className="inline-flex min-h-11 items-center justify-center rounded-full border border-border/70 bg-background/60 px-4 text-sm font-medium text-foreground"
-          >
-            Browse marketplace investors
-          </Link>
+          <Button asChild variant="blue-gradient" effect="fill">
+            <Link href={ROUTES.RIA_REQUESTS}>Open request center</Link>
+          </Button>
+          <Button asChild variant="none" effect="fade">
+            <Link href={ROUTES.RIA_PICKS}>Manage picks</Link>
+          </Button>
         </>
       }
     >
@@ -287,29 +284,30 @@ export default function RiaHomePage() {
             eyebrow="Activity"
             title="Recent request movement"
             description="Keep the latest consent and request outcomes visible without burying them inside the roster."
+            icon={Clock3}
           />
-          <RiaSurface>
-            <div className="space-y-3">
+          <SettingsGroup>
               {requests.slice(0, 4).map((item) => (
-                <div
+                <SettingsRow
                   key={item.request_id}
-                  className="rounded-2xl border border-border/50 bg-background/60 p-3"
-                >
-                  <p className="text-sm font-medium text-foreground">
-                    {item.subject_display_name || "Investor"} · {describeRequestAction(item.action)}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {item.subject_headline || item.scope}
-                  </p>
-                </div>
+                  icon={Clock3}
+                  title={
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span>{item.subject_display_name || "Investor"}</span>
+                      <Badge variant="outline" className="border-border/70 bg-background/80 text-[10px] font-semibold text-muted-foreground">
+                        {describeRequestAction(item.action)}
+                      </Badge>
+                    </div>
+                  }
+                  description={item.subject_headline || item.scope}
+                />
               ))}
               {!loading && requests.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
                   No request activity yet. Start from clients or marketplace.
                 </p>
               ) : null}
-            </div>
-          </RiaSurface>
+          </SettingsGroup>
         </section>
       </div>
 
@@ -318,80 +316,77 @@ export default function RiaHomePage() {
           <SectionHeader
             eyebrow="Client roster"
             title="Latest relationship states"
+            icon={UserRound}
             actions={
-              <Link href={ROUTES.RIA_CLIENTS} className="text-sm font-medium text-primary">
-                View all
-              </Link>
+              <Button asChild variant="none" effect="fade" size="sm">
+                <Link href={ROUTES.RIA_CLIENTS}>View all</Link>
+              </Button>
             }
           />
-          <RiaSurface>
-            <div className="space-y-3">
+          <SettingsGroup>
               {clients.slice(0, 4).map((client) => (
-                <div
+                <SettingsRow
                   key={client.id}
-                  className="rounded-2xl border border-border/50 bg-background/60 p-3"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-medium text-foreground">
-                        {client.investor_display_name || client.investor_user_id || "Invited investor"}
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {client.status} · {client.next_action || "request_access"}
-                      </p>
+                  icon={UserRound}
+                  title={
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span>{client.investor_display_name || client.investor_user_id || "Invited investor"}</span>
+                      <Badge variant="outline" className="border-border/70 bg-background/80 text-[10px] font-semibold uppercase text-muted-foreground">
+                        {client.status.replace("_", " ")}
+                      </Badge>
                     </div>
-                    {client.investor_user_id ? (
-                      <Link
-                        href={`/ria/workspace/${encodeURIComponent(client.investor_user_id)}`}
-                        className="text-xs font-medium text-foreground/75"
-                      >
-                        Workspace
-                      </Link>
-                    ) : null}
-                  </div>
-                </div>
+                  }
+                  description={client.next_action || "request_access"}
+                  trailing={
+                    client.investor_user_id ? (
+                      <Button asChild variant="none" effect="fade" size="sm">
+                        <Link href={`/ria/workspace/${encodeURIComponent(client.investor_user_id)}`}>
+                          Workspace
+                        </Link>
+                      </Button>
+                    ) : undefined
+                  }
+                />
               ))}
               {!loading && clients.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
                   No active client relationships yet.
                 </p>
               ) : null}
-            </div>
-          </RiaSurface>
+          </SettingsGroup>
         </section>
 
         <section className="space-y-3">
           <SectionHeader
             eyebrow="Invite pipeline"
             title="Shared, accepted, and pending"
+            icon={MailPlus}
             actions={
-              <Link href={ROUTES.RIA_REQUESTS} className="text-sm font-medium text-primary">
-                View activity
-              </Link>
+              <Button asChild variant="none" effect="fade" size="sm">
+                <Link href={ROUTES.RIA_REQUESTS}>View activity</Link>
+              </Button>
             }
           />
-          <RiaSurface>
-            <div className="space-y-3">
+          <SettingsGroup>
               {invites.slice(0, 4).map((invite) => (
-                <div
+                <SettingsRow
                   key={invite.invite_id}
-                  className="rounded-2xl border border-border/50 bg-background/60 p-3"
-                >
-                  <p className="text-sm font-medium text-foreground">
-                    {invite.target_display_name || invite.target_email || invite.target_phone || "Share link"}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {invite.status} · {invite.delivery_channel || "share_link"}
-                  </p>
-                </div>
+                  icon={MailPlus}
+                  title={invite.target_display_name || invite.target_email || invite.target_phone || "Share link"}
+                  description={invite.delivery_channel || "share_link"}
+                  trailing={
+                    <Badge variant="outline" className="border-border/70 bg-background/80 text-[10px] font-semibold uppercase text-muted-foreground">
+                      {invite.status}
+                    </Badge>
+                  }
+                />
               ))}
               {!loading && invites.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
                   No invites sent yet.
                 </p>
               ) : null}
-            </div>
-          </RiaSurface>
+          </SettingsGroup>
         </section>
       </div>
     </RiaPageShell>

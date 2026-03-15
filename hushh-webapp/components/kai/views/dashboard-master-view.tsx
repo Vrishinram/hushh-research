@@ -17,6 +17,7 @@ import {
 import { toast } from "sonner";
 
 import { DataTable } from "@/components/app-ui/data-table";
+import { PageHeader } from "@/components/app-ui/page-sections";
 import { AssetAllocationDonut } from "@/components/kai/charts/asset-allocation-donut";
 import { GainLossDistributionChart } from "@/components/kai/charts/gain-loss-distribution-chart";
 import { HoldingsConcentrationChart } from "@/components/kai/charts/holdings-concentration-chart";
@@ -1655,6 +1656,13 @@ export function DashboardMasterView({
   if (!displayedPortfolio) {
     return (
       <div className="mx-auto w-full max-w-5xl space-y-6 overflow-x-hidden px-5 pb-6 pt-[var(--kai-view-top-gap,16px)] sm:px-8">
+        <PageHeader
+          eyebrow="Kai Portfolio"
+          title="Portfolio"
+          description="Switch between statement and Plaid sources, connect brokerages, and keep your investable context ready for debate."
+          icon={Building2}
+          accent="sky"
+        />
         <PortfolioSourceSwitcher
           activeSource={activeSource}
           availableSources={availableSources}
@@ -1698,6 +1706,13 @@ export function DashboardMasterView({
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-8 overflow-x-hidden px-5 pb-6 pt-[var(--kai-view-top-gap,16px)] sm:px-8">
+      <PageHeader
+        eyebrow="Kai Portfolio"
+        title="Portfolio"
+        description="Your active source, holdings context, and brokerage connections stay in sync here before you move into investments, debate, or optimization."
+        icon={Building2}
+        accent="sky"
+      />
       <PortfolioSourceSwitcher
         activeSource={activeSource}
         availableSources={availableSources}

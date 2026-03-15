@@ -47,7 +47,8 @@
           "/dashboard/profile-picks/{user_id}",
           "/portfolio/analyze-losers",
           "/portfolio/analyze-losers/stream",
-          "/market/insights/{user_id}"
+          "/market/insights/{user_id}",
+          "/stock-preview/{user_id}"
         ]
       },
       "native": {
@@ -701,7 +702,23 @@
     },
     {
       "id": "riaRequestsPage",
-      "pageFile": "hushh-webapp/app/ria/requests/page.tsx"
+      "pageFile": "hushh-webapp/app/ria/requests/page.tsx",
+      "serviceFiles": [
+        "hushh-webapp/lib/services/ria-service.ts"
+      ],
+      "apiContractIds": [
+        "riaProxy"
+      ]
+    },
+    {
+      "id": "riaPicksPage",
+      "pageFile": "hushh-webapp/app/ria/picks/page.tsx",
+      "serviceFiles": [
+        "hushh-webapp/lib/services/ria-service.ts"
+      ],
+      "apiContractIds": [
+        "riaProxy"
+      ]
     },
     {
       "id": "riaWorkspacePage",

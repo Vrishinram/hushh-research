@@ -97,5 +97,7 @@ Reference:
 1. `hushh-webapp/components/profile/settings-ui.tsx`
 2. `hushh-webapp/app/profile/page.tsx`
 3. [Profile Settings Design System](./profile-settings-design-system.md)
+4. [App Surface Design System](./app-surface-design-system.md)
+5. [App Surface Audit Matrix](./app-surface-audit-matrix.md)
 
 Use that companion doc when building any Apple-like settings surface so spacing, grouping, responsive behavior, and action-row semantics stay consistent.

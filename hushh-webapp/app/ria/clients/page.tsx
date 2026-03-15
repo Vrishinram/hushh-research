@@ -11,7 +11,9 @@ import {
   RiaSurface,
 } from "@/components/ria/ria-page-shell";
 import { SectionHeader } from "@/components/app-ui/page-sections";
+import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/use-auth";
+import { Button } from "@/lib/morphy-ux/button";
 import { usePersonaState } from "@/lib/persona/persona-context";
 import { ROUTES } from "@/lib/navigation/routes";
 import {
@@ -221,12 +223,9 @@ export default function RiaClientsPage() {
         )
       }
       actions={
-        <Link
-          href={ROUTES.MARKETPLACE}
-          className="inline-flex min-h-11 items-center justify-center rounded-full border border-border bg-background/60 px-4 text-sm font-medium text-foreground"
-        >
-          Find investors
-        </Link>
+        <Button asChild variant="none" effect="fade">
+          <Link href={ROUTES.MARKETPLACE}>Find investors</Link>
+        </Button>
       }
     >
       {iamUnavailable ? (
@@ -247,33 +246,30 @@ export default function RiaClientsPage() {
               />
               <RiaSurface>
                 <div className="space-y-3">
-                  <input
+                  <Input
                     value={inviteName}
                     onChange={(event) => setInviteName(event.target.value)}
-                    className="min-h-11 w-full rounded-2xl border border-border bg-background px-4 text-sm"
                     placeholder="Client name"
                   />
-                  <input
+                  <Input
                     value={inviteEmail}
                     onChange={(event) => setInviteEmail(event.target.value)}
-                    className="min-h-11 w-full rounded-2xl border border-border bg-background px-4 text-sm"
                     placeholder="Client email"
                   />
-                  <input
+                  <Input
                     value={invitePhone}
                     onChange={(event) => setInvitePhone(event.target.value)}
-                    className="min-h-11 w-full rounded-2xl border border-border bg-background px-4 text-sm"
                     placeholder="Client phone"
                   />
                   {error ? <p className="text-sm text-red-500">{error}</p> : null}
-                  <button
-                    type="button"
+                  <Button
+                    variant="blue-gradient"
+                    effect="fill"
                     onClick={() => void onCreateInvite()}
                     disabled={savingInvite || (!inviteName && !inviteEmail && !invitePhone)}
-                    className="inline-flex min-h-11 w-full items-center justify-center rounded-full bg-foreground px-4 text-sm font-medium text-background disabled:opacity-60"
                   >
                     {savingInvite ? "Creating invite..." : "Create invite link"}
-                  </button>
+                  </Button>
                   {lastCreatedInviteToken ? (
                     <div className="rounded-[22px] border border-primary/20 bg-primary/5 p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary/80">
@@ -282,13 +278,14 @@ export default function RiaClientsPage() {
                       <p className="mt-2 break-all text-sm text-foreground">
                         {buildInviteLink(lastCreatedInviteToken)}
                       </p>
-                      <button
-                        type="button"
+                      <Button
+                        variant="none"
+                        effect="fade"
                         onClick={() => void copyInviteLink(lastCreatedInviteToken, "latest")}
-                        className="mt-3 inline-flex min-h-11 items-center justify-center rounded-full border border-border bg-background px-4 text-sm font-medium text-foreground"
+                        className="mt-3"
                       >
                         {copiedInviteId === "latest" ? "Copied" : "Copy link"}
-                      </button>
+                      </Button>
                     </div>
                   ) : null}
                 </div>
@@ -304,18 +301,15 @@ export default function RiaClientsPage() {
                 <div className="flex flex-wrap gap-2">
                   {["all", "approved", "request_pending", "invited", "revoked", "expired"].map(
                     (value) => (
-                      <button
+                      <Button
                         key={value}
-                        type="button"
+                        variant={filter === value ? "blue-gradient" : "none"}
+                        effect={filter === value ? "fill" : "fade"}
+                        size="sm"
                         onClick={() => setFilter(value)}
-                        className={`min-h-11 rounded-full px-4 text-sm font-medium ${
-                          filter === value
-                            ? "bg-foreground text-background"
-                            : "border border-border bg-background text-foreground"
-                        }`}
                       >
                         {value.replace("_", " ")}
-                      </button>
+                      </Button>
                     )
                   )}
                 </div>
@@ -347,27 +341,24 @@ export default function RiaClientsPage() {
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {item.investor_user_id ? (
-                      <Link
-                        href={`/ria/workspace/${encodeURIComponent(item.investor_user_id)}`}
-                        className="inline-flex min-h-11 items-center justify-center rounded-full bg-foreground px-4 text-sm font-medium text-background"
-                      >
-                        Workspace
-                      </Link>
+                      <Button asChild variant="blue-gradient" effect="fill" size="sm">
+                        <Link href={`/ria/workspace/${encodeURIComponent(item.investor_user_id)}`}>
+                          Workspace
+                        </Link>
+                      </Button>
                     ) : null}
-                    <Link
-                      href={ROUTES.RIA_REQUESTS}
-                      className="inline-flex min-h-11 items-center justify-center rounded-full border border-border bg-background px-4 text-sm font-medium text-foreground"
-                    >
-                      Open activity
-                    </Link>
+                    <Button asChild variant="none" effect="fade" size="sm">
+                      <Link href={ROUTES.RIA_REQUESTS}>Open activity</Link>
+                    </Button>
                     {item.invite_token ? (
-                      <button
-                        type="button"
+                      <Button
+                        variant="none"
+                        effect="fade"
+                        size="sm"
                         onClick={() => void copyInviteLink(item.invite_token || "", String(item.id))}
-                        className="inline-flex min-h-11 items-center justify-center rounded-full border border-primary/25 bg-primary/5 px-4 text-sm font-medium text-primary"
                       >
                         {copiedInviteId === String(item.id) ? "Copied" : "Copy invite"}
-                      </button>
+                      </Button>
                     ) : null}
                   </div>
                 </div>

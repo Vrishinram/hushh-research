@@ -22,6 +22,7 @@ import {
   BriefcaseBusiness,
   Check,
   ChevronDown,
+  type LucideIcon,
   Loader2,
   LogOut,
   MoreHorizontal,
@@ -88,7 +89,22 @@ export function StatusBarBlur() { return null; }
 export function TopAppBarSpacer() { return null; }
 
 /* ── Helpers ───────────────────────────────────────────────────────── */
-function getTopBarTitle(pathname: string, activePersona: "investor" | "ria") {
+function getTopBarTitle(
+  pathname: string,
+  activePersona: "investor" | "ria"
+): {
+  label: string;
+  icon?: LucideIcon;
+  interactive: boolean;
+} | null {
+  if (pathname === ROUTES.KAI_ONBOARDING || pathname.startsWith(`${ROUTES.KAI_ONBOARDING}/`)) {
+    return { label: "Get started", interactive: false as const };
+  }
+
+  if (pathname === ROUTES.RIA_ONBOARDING || pathname.startsWith(`${ROUTES.RIA_ONBOARDING}/`)) {
+    return { label: "Set up RIA", interactive: false as const };
+  }
+
   const isPersonaShellRoute =
     pathname.startsWith(ROUTES.KAI_HOME) ||
     pathname.startsWith(ROUTES.RIA_HOME) ||
@@ -98,8 +114,8 @@ function getTopBarTitle(pathname: string, activePersona: "investor" | "ria") {
 
   if (isPersonaShellRoute) {
     return activePersona === "ria"
-      ? { label: "RIA", icon: BriefcaseBusiness }
-      : { label: "Investor", icon: UserRound };
+      ? { label: "RIA", icon: BriefcaseBusiness, interactive: true as const }
+      : { label: "Investor", icon: UserRound, interactive: true as const };
   }
   return null;
 }
@@ -189,22 +205,23 @@ export function TopAppBar({ className }: TopAppBarProps) {
   // Subscribe to scroll-direction store so top glass height follows tabs visibility.
   const { progress: tabsScrollHideProgress } = useKaiBottomChromeVisibility(showKaiTabs);
 
+  const topGlassHeight = useMemo(
+    () =>
+      showKaiTabs
+        ? `calc(var(--top-inset) + var(--top-systembar-row-gap, 0px) + var(--top-bar-h) + ((1 - ${tabsScrollHideProgress}) * var(--top-tabs-h)) + var(--top-fade-active))`
+        : "var(--top-shell-visual-height)",
+    [showKaiTabs, tabsScrollHideProgress]
+  );
+
   const topGlassStyle = useMemo<React.CSSProperties>(
     () => ({
-      height: showKaiTabs
-        ? `calc(var(--top-inset) + var(--top-systembar-row-gap, 0px) + var(--top-bar-h) + ((1 - ${tabsScrollHideProgress}) * var(--top-tabs-h)) + var(--top-fade-active))`
-        : "calc(var(--top-inset) + var(--top-systembar-row-gap, 0px) + var(--top-bar-h) + var(--top-fade-active))",
-      "--app-bar-glass-bg-light": "rgba(255, 255, 255, 0.64)",
-      "--app-bar-glass-bg-dark": "rgba(10, 12, 16, 0.82)",
-      "--app-bar-glass-blur": "12px",
-      "--app-bar-shadow":
-        "inset 0 1px 0 rgba(255,255,255,0.2), 0 16px 30px rgba(0,0,0,0.18)",
-      maskImage:
-        "linear-gradient(to bottom, black 0%, black 56%, rgba(0, 0, 0, 0.96) 70%, rgba(0, 0, 0, 0.78) 84%, rgba(0, 0, 0, 0.42) 94%, transparent 100%)",
-      WebkitMaskImage:
-        "linear-gradient(to bottom, black 0%, black 56%, rgba(0, 0, 0, 0.96) 70%, rgba(0, 0, 0, 0.78) 84%, rgba(0, 0, 0, 0.42) 94%, transparent 100%)",
-    }),
-    [showKaiTabs, tabsScrollHideProgress]
+      "--app-bar-glass-bg-light": "rgba(255, 255, 255, 0.46)",
+      "--app-bar-glass-bg-dark": "rgba(10, 12, 16, 0.64)",
+      "--app-bar-glass-blur": "2px",
+      "--app-bar-shadow": "none",
+      "--app-bar-mask-overscan": "30px",
+    } as React.CSSProperties),
+    []
   );
 
   if (hideChrome) return null;
@@ -213,92 +230,105 @@ export function TopAppBar({ className }: TopAppBarProps) {
     <div
       className={cn("fixed inset-x-0 top-0 z-50 pointer-events-none", className)}
     >
-      <div className="relative w-full overflow-hidden">
-        {/* ── Unified glass backdrop ───────────────────────────────── */}
+      <div
+        className="pointer-events-none relative w-full overflow-visible"
+        style={{ height: "var(--top-shell-reserved-height)" }}
+      >
         <div
           aria-hidden
-          className="absolute inset-x-0 top-0 bar-glass"
-          style={topGlassStyle}
-        />
-
-        {/* ── Interactive content layer ────────────────────────────── */}
-        <div
-          className="relative mx-auto w-full max-w-[540px] px-4 sm:px-6"
-          style={{ paddingTop: "calc(var(--top-inset) + var(--top-systembar-row-gap, 0px))" }}
+          className="pointer-events-none absolute inset-x-0 top-0 overflow-visible"
+          style={{ height: topGlassHeight }}
         >
+          <div className="h-full w-full bar-glass bar-glass-top" style={topGlassStyle} />
+        </div>
+
+        <div className="pointer-events-none relative mx-auto flex h-full w-full max-w-[540px] items-end px-4 sm:px-6">
           {/* Header row: actor title · actions */}
           <div
             data-testid="top-app-bar-row"
-            className="grid h-11 shrink-0 grid-cols-[44px_1fr_44px] items-center pointer-events-auto"
+            className="pointer-events-none relative h-[var(--top-bar-h)] w-full shrink-0"
           >
-            <div className="h-11 w-11" aria-hidden />
+            <div
+              className="pointer-events-none absolute left-0 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center"
+              aria-hidden
+            />
 
-            <div className="pointer-events-none flex min-w-0 items-center justify-center px-2">
+            <div className="pointer-events-none absolute left-1/2 top-1/2 inline-flex min-w-0 -translate-x-1/2 -translate-y-1/2 items-center justify-center">
               {centerTitle ? (
-                <div className="pointer-events-auto inline-flex w-auto max-w-fit flex-none">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        type="button"
-                        data-tour-id="nav-role-switch"
-                        className="group relative inline-flex w-auto max-w-fit flex-none items-center justify-center gap-2 overflow-hidden rounded-full px-3 py-1.5 text-base font-semibold tracking-tight text-foreground transition-colors hover:bg-muted/40 sm:text-lg"
-                        aria-label="Switch role"
-                      >
-                        <span className="relative z-10 inline-flex min-w-0 items-center gap-2">
-                          <Icon
-                            icon={switchingPersona ? Loader2 : centerTitle.icon}
-                            size="sm"
-                            className={cn(
-                              "shrink-0 text-current",
-                              switchingPersona ? "animate-spin" : ""
-                            )}
-                          />
-                          <span className="truncate">
-                            {switchingPersona
-                              ? `Switching to ${switchingPersona === "ria" ? "RIA" : "Investor"}`
-                              : centerTitle.label}
+                centerTitle.interactive ? (
+                  <div className="pointer-events-auto inline-flex w-fit max-w-fit items-center justify-center">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          data-tour-id="nav-role-switch"
+                          className="group relative inline-flex w-fit max-w-fit flex-none items-center justify-center gap-2 overflow-hidden rounded-full px-3 py-1.5 text-base font-semibold tracking-tight text-foreground transition-colors hover:bg-muted/40 sm:text-lg"
+                          aria-label="Switch role"
+                        >
+                          <span className="relative z-10 inline-flex min-w-0 items-center gap-2">
+                            <Icon
+                              icon={switchingPersona ? Loader2 : centerTitle.icon!}
+                              size="sm"
+                              className={cn(
+                                "shrink-0 text-current",
+                                switchingPersona ? "animate-spin" : ""
+                              )}
+                            />
+                            <span className="truncate">
+                              {switchingPersona
+                                ? `Switching to ${switchingPersona === "ria" ? "RIA" : "Investor"}`
+                                : centerTitle.label}
+                            </span>
+                            <ChevronDown className="h-4 w-4 shrink-0 text-current/70 transition-colors group-hover:text-current" />
                           </span>
-                          <ChevronDown className="h-4 w-4 shrink-0 text-current/70 transition-colors group-hover:text-current" />
-                        </span>
-                        <MaterialRipple variant="none" effect="fade" className="z-0" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="center" className="min-w-[200px]">
-                      <DropdownMenuItem
-                        onClick={() => void handlePersonaSelect("investor")}
-                        disabled={switchingPersona !== null}
-                        className="group"
-                      >
-                        <div className="relative z-10 flex min-w-0 items-center gap-2 text-current">
-                          <UserRound className="h-4 w-4 text-current" />
-                          <span>Investor</span>
-                        </div>
-                        {activePersona === "investor" ? (
-                          <Check className="ml-auto h-4 w-4 text-primary" />
-                        ) : null}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => void handlePersonaSelect("ria")}
-                        disabled={riaCapability === "disabled" || switchingPersona !== null}
-                        className="group"
-                      >
-                        <div className="relative z-10 flex min-w-0 items-center gap-2 text-current">
-                          <BriefcaseBusiness className="h-4 w-4 text-current" />
-                          <span>{riaCapability === "setup" ? "Set up RIA" : "RIA"}</span>
-                        </div>
-                        {switchingPersona === "ria" ? (
-                          <Loader2 className="ml-auto h-4 w-4 animate-spin text-primary" />
-                        ) : activePersona === "ria" ? (
-                          <Check className="ml-auto h-4 w-4 text-primary" />
-                        ) : null}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
+                          <MaterialRipple variant="none" effect="fade" className="z-0" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="center" className="min-w-[200px]">
+                        <DropdownMenuItem
+                          onClick={() => void handlePersonaSelect("investor")}
+                          disabled={switchingPersona !== null}
+                          className="group"
+                        >
+                          <div className="relative z-10 flex min-w-0 items-center gap-2 text-current">
+                            <UserRound className="h-4 w-4 text-current" />
+                            <span>Investor</span>
+                          </div>
+                          {activePersona === "investor" ? (
+                            <Check className="ml-auto h-4 w-4 text-primary" />
+                          ) : null}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => void handlePersonaSelect("ria")}
+                          disabled={riaCapability === "disabled" || switchingPersona !== null}
+                          className="group"
+                        >
+                          <div className="relative z-10 flex min-w-0 items-center gap-2 text-current">
+                            <BriefcaseBusiness className="h-4 w-4 text-current" />
+                            <span>{riaCapability === "setup" ? "Set up RIA" : "RIA"}</span>
+                          </div>
+                          {switchingPersona === "ria" ? (
+                            <Loader2 className="ml-auto h-4 w-4 animate-spin text-primary" />
+                          ) : activePersona === "ria" ? (
+                            <Check className="ml-auto h-4 w-4 text-primary" />
+                          ) : null}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                ) : (
+                  <div className="inline-flex min-w-0 items-center justify-center gap-2 rounded-full px-3 py-1.5 text-base font-semibold tracking-tight text-foreground sm:text-lg">
+                    {centerTitle.icon ? (
+                      <Icon icon={centerTitle.icon} size="sm" className="shrink-0 text-current" />
+                    ) : null}
+                    <span className="truncate">{centerTitle.label}</span>
+                  </div>
+                )
               ) : null}
             </div>
 
-            <div className="flex h-11 w-11 items-center justify-center">
+            <div className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2">
+              <div className="pointer-events-auto flex h-11 w-11 items-center justify-center">
               {showOnboardingActions ? (
                 <OnboardingRouteActions />
               ) : isVaultUnlocked ? (
@@ -306,9 +336,9 @@ export function TopAppBar({ className }: TopAppBarProps) {
               ) : (
                 <div className="h-11 w-11" aria-hidden />
               )}
+              </div>
             </div>
           </div>
-
         </div>
       </div>
     </div>

@@ -34,6 +34,7 @@ import {
   setOnboardingRequiredCookie,
 } from "@/lib/services/onboarding-route-cookie";
 import { trackEvent } from "@/lib/observability/client";
+import { MaterialRipple } from "@/lib/morphy-ux/material-ripple";
 
 type Stage = "loading" | "entry" | "wizard" | "persona";
 type OnboardingSource = "pre_vault" | "vault";
@@ -244,7 +245,7 @@ export default function KaiOnboardingPage() {
 
   if (stage === "entry") {
     return (
-      <div className="mx-auto flex min-h-[70vh] w-full max-w-4xl items-center px-5 py-8">
+      <div className="mx-auto flex min-h-[calc(100dvh-var(--top-shell-reserved-height,0px))] w-full max-w-4xl items-start px-5 pb-8 pt-[calc(var(--top-shell-reserved-height,0px)+16px)] sm:pt-[calc(var(--top-shell-reserved-height,0px)+20px)]">
         <div className="w-full space-y-6">
           <div className="text-center space-y-3">
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">
@@ -286,8 +287,9 @@ export default function KaiOnboardingPage() {
                   setSaving(false);
                 }
               }}
-              className="rounded-[28px] border border-border bg-card/80 p-6 text-left shadow-sm transition-colors hover:border-primary/40 hover:bg-card"
+              className="relative overflow-hidden rounded-[28px] border border-border bg-card/80 p-6 text-left shadow-sm transition-colors hover:border-primary/40 hover:bg-card"
             >
+              <MaterialRipple variant="blue" effect="fade" />
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary/80">
                 Investor
               </p>
@@ -324,8 +326,9 @@ export default function KaiOnboardingPage() {
                   setSaving(false);
                 }
               }}
-              className="rounded-[28px] border border-border bg-card/80 p-6 text-left shadow-sm transition-colors hover:border-primary/40 hover:bg-card disabled:cursor-not-allowed disabled:opacity-60"
+              className="relative overflow-hidden rounded-[28px] border border-border bg-card/80 p-6 text-left shadow-sm transition-colors hover:border-primary/40 hover:bg-card disabled:cursor-not-allowed disabled:opacity-60"
             >
+              <MaterialRipple variant="blue" effect="fade" disabled={saving || riaCapability === "disabled"} />
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary/80">
                 RIA
               </p>

@@ -3,7 +3,7 @@
 
 "use client";
 
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, type CSSProperties } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Activity,
@@ -30,7 +30,7 @@ import { activeKaiRouteTabFromPath } from "@/lib/navigation/kai-route-tabs";
 import { activeRiaRouteTabFromPath } from "@/lib/navigation/ria-route-tabs";
 import { useVault } from "@/lib/vault/vault-context";
 
-type InvestorNavKey = "market" | "dashboard" | "analysis" | "profile";
+type InvestorNavKey = "dashboard" | "market" | "analysis" | "profile";
 type RiaNavKey = "home" | "clients" | "activity" | "profile";
 type NavKey = InvestorNavKey | RiaNavKey;
 
@@ -138,16 +138,16 @@ export const Navbar = () => {
           ]
         : [
             {
-              value: "market",
-              label: "Market",
-              icon: Store,
-              dataTourId: "nav-market",
-            },
-            {
               value: "dashboard",
               label: "Portfolio",
               icon: LayoutDashboard,
               dataTourId: "nav-portfolio",
+            },
+            {
+              value: "market",
+              label: "Market",
+              icon: Store,
+              dataTourId: "nav-market",
             },
             {
               value: "analysis",
@@ -242,47 +242,36 @@ export const Navbar = () => {
       className={cn(
         "fixed inset-x-0 flex justify-center px-4 transform-gpu",
         isVaultUnlocked ? "z-[120]" : "z-[505]",
-        hideBottomChrome
-          ? "pointer-events-none opacity-0"
-          : "pointer-events-none opacity-100"
+        "pointer-events-none"
       )}
-      style={{
-        bottom:
-          "calc(max(var(--app-safe-area-bottom-effective), 0.75rem) + var(--app-bottom-chrome-lift, 0px))",
-        transform: `translate3d(0, calc(${100 * hideBottomChromeProgress}% + ${10 * hideBottomChromeProgress}px), 0)`,
-        opacity: Math.max(0, 1 - hideBottomChromeProgress),
-      }}
+      style={
+        {
+          bottom:
+            "calc(max(var(--app-safe-area-bottom-effective), 0.75rem) + var(--app-bottom-chrome-lift, 0px))",
+          transform:
+            "translate3d(0, calc(var(--bottom-chrome-progress, 0) * (var(--app-bottom-fixed-ui) + 10px)), 0)",
+          "--bottom-chrome-progress": String(hideBottomChromeProgress),
+        } as CSSProperties
+      }
     >
-      <div className="pointer-events-auto relative w-full max-w-[480px]">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-x-0 -bottom-2 h-[96px] overflow-hidden rounded-[30px] bar-glass"
-          hidden={!isVaultUnlocked}
-          style={
-            {
-              "--app-bar-glass-bg-light": "rgba(255, 255, 255, 0.38)",
-              "--app-bar-glass-bg-dark": "rgba(10, 12, 16, 0.58)",
-              "--app-bar-glass-blur": "9px",
-              "--app-bar-border-top": "0",
-              "--app-bar-shadow":
-                "inset 0 1px 0 rgba(255,255,255,0.12), 0 -10px 20px rgba(0,0,0,0.1)",
-              maskImage:
-                "linear-gradient(to top, black 0%, black 54%, rgba(0, 0, 0, 0.92) 72%, rgba(0, 0, 0, 0.58) 86%, rgba(0, 0, 0, 0.24) 94%, transparent 100%)",
-              WebkitMaskImage:
-                "linear-gradient(to top, black 0%, black 54%, rgba(0, 0, 0, 0.92) 72%, rgba(0, 0, 0, 0.58) 86%, rgba(0, 0, 0, 0.24) 94%, transparent 100%)",
-            } as React.CSSProperties
-          }
-        />
+      <div
+        className={cn(
+          "relative w-full max-w-[480px]",
+          "pointer-events-none",
+          hideBottomChrome && "pointer-events-none"
+        )}
+      >
         <SegmentedPill
           ref={pillRef}
           size="compact"
           layout="stacked"
+          hitArea="content"
           value={activeNav}
           options={navOptions}
           onValueChange={navigateTo}
           ariaLabel="Main navigation"
           className={cn(
-            "pointer-events-auto relative z-10 w-full",
+            "relative z-10 w-full chrome-bottom-foreground",
             !isVaultUnlocked &&
               "!border-border/80 !bg-background/92 !backdrop-blur-none shadow-[0_10px_22px_rgba(15,23,42,0.08)] dark:!bg-background/94"
           )}

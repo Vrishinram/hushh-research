@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
+import { Shield } from "lucide-react";
 
 import {
   RiaCompatibilityState,
@@ -25,6 +26,12 @@ interface WorkspacePayload {
   total_attributes: number;
   relationship_status: string;
   scope: string;
+  granted_scopes?: Array<{
+    scope: string;
+    label: string;
+    expires_at?: number | string | null;
+    issued_at?: number | string | null;
+  }>;
   consent_expires_at?: number | string | null;
   updated_at?: string;
 }
@@ -119,9 +126,9 @@ export default function RiaWorkspacePage() {
                 tone: data.consent_expires_at ? "neutral" : "warning",
               },
               {
-                label: "Scope",
-                value: data.scope,
-                helper: "Approved access boundary",
+                label: "Granted scopes",
+                value: String(data.granted_scopes?.length || (data.scope ? 1 : 0)),
+                helper: "Approved portfolio access boundaries",
                 tone: "neutral",
               },
             ]}
@@ -184,6 +191,37 @@ export default function RiaWorkspacePage() {
               </p>
             </RiaSurface>
           </div>
+
+          <section className="space-y-3">
+            <SectionHeader
+              eyebrow="Granted scopes"
+              title="What this workspace is actually allowed to read"
+              description="Each scope inside the bundle is tracked independently, including its own expiry window."
+              icon={Shield}
+            />
+            <RiaSurface>
+              <div className="grid gap-3 md:grid-cols-2">
+                {(data.granted_scopes || []).map((scope) => (
+                  <div
+                    key={scope.scope}
+                    className="rounded-2xl border border-border/50 bg-background/60 p-4"
+                  >
+                    <p className="text-sm font-medium text-foreground">{scope.label || scope.scope}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{scope.scope}</p>
+                    <p className="mt-3 text-xs text-muted-foreground">
+                      Expires:{" "}
+                      {scope.expires_at ? new Date(scope.expires_at).toLocaleString() : "Not returned"}
+                    </p>
+                  </div>
+                ))}
+                {(data.granted_scopes || []).length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No explicit scope metadata was returned for this workspace.
+                  </p>
+                ) : null}
+              </div>
+            </RiaSurface>
+          </section>
 
           {!data.workspace_ready ? (
             <RiaSurface className="border-primary/30 bg-primary/5">

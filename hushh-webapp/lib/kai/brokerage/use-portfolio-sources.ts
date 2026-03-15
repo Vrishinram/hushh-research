@@ -33,6 +33,8 @@ import {
 } from "@/lib/kai/brokerage/financial-sources";
 import { AppBackgroundTaskService } from "@/lib/services/app-background-task-service";
 import { PlaidPortfolioService } from "@/lib/kai/brokerage/plaid-portfolio-service";
+import { CacheSyncService } from "@/lib/cache/cache-sync-service";
+import { UnlockWarmOrchestrator } from "@/lib/services/unlock-warm-orchestrator";
 import { WorldModelService } from "@/lib/services/world-model-service";
 
 interface UsePortfolioSourcesParams {
@@ -200,6 +202,21 @@ export function usePortfolioSources({
     };
   }, [userId, vaultKey, vaultOwnerToken]);
 
+  const refreshDerivedMarketCaches = useCallback(async () => {
+    if (!userId) return;
+    CacheSyncService.onPlaidSourceProjected(userId);
+    if (!vaultKey || !vaultOwnerToken) return;
+    await UnlockWarmOrchestrator.run({
+      userId,
+      vaultKey,
+      vaultOwnerToken,
+      routePath:
+        typeof window !== "undefined"
+          ? `${window.location.pathname}${window.location.search}`
+          : undefined,
+    }).catch(() => undefined);
+  }, [userId, vaultKey, vaultOwnerToken]);
+
   const reload = useCallback(async () => {
     if (!userId || !vaultOwnerToken) {
       startTransition(() => {
@@ -285,6 +302,7 @@ export function usePortfolioSources({
           });
           nextFullBlob = result.fullBlob;
           nextFinancial = toFinancialDomain(result.fullBlob.financial) ?? projectedFinancial;
+          await refreshDerivedMarketCaches();
         }
       }
 
@@ -353,6 +371,7 @@ export function usePortfolioSources({
   }, [
     initialStatementPortfolio,
     loadFinancialContext,
+    refreshDerivedMarketCaches,
     userId,
     vaultKey,
     vaultOwnerToken,
@@ -422,11 +441,20 @@ export function usePortfolioSources({
             expectedDataVersion,
             vaultOwnerToken,
           });
+          await refreshDerivedMarketCaches();
         }
       }
       await reload();
     },
-    [loadFinancialContext, plaidStatus, reload, userId, vaultKey, vaultOwnerToken]
+    [
+      loadFinancialContext,
+      plaidStatus,
+      refreshDerivedMarketCaches,
+      reload,
+      userId,
+      vaultKey,
+      vaultOwnerToken,
+    ]
   );
 
   const changeActiveStatementSnapshot = useCallback(
@@ -455,9 +483,10 @@ export function usePortfolioSources({
         expectedDataVersion,
         vaultOwnerToken,
       });
+      await refreshDerivedMarketCaches();
       await reload();
     },
-    [loadFinancialContext, reload, userId, vaultKey, vaultOwnerToken]
+    [loadFinancialContext, refreshDerivedMarketCaches, reload, userId, vaultKey, vaultOwnerToken]
   );
 
   const refreshPlaid = useCallback(
@@ -610,6 +639,7 @@ export function usePortfolioSources({
             refreshTracking.taskId,
             "Plaid brokerage data is up to date."
           );
+          void refreshDerivedMarketCaches();
         }
         setRefreshTracking(null);
       }
@@ -631,7 +661,7 @@ export function usePortfolioSources({
     return () => {
       window.clearInterval(timer);
     };
-  }, [plaidStatus, refreshTracking, reload]);
+  }, [plaidStatus, refreshDerivedMarketCaches, refreshTracking, reload]);
 
   return {
     isLoading,

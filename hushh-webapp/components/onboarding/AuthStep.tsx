@@ -297,7 +297,7 @@ export function AuthStep({
       <div
         className={
           compact
-            ? "mx-auto flex min-h-[100dvh] w-full max-w-md flex-col px-8 pt-[calc(16px+env(safe-area-inset-top))] pb-[var(--app-screen-footer-pad)]"
+            ? "mx-auto flex min-h-[100dvh] w-full max-w-md flex-col px-8 pt-[calc(16px+var(--app-safe-area-top-effective,0px))] pb-[var(--app-screen-footer-pad)]"
             : "mx-auto flex min-h-[100dvh] w-full max-w-md flex-col px-8 pt-10 pb-[var(--app-screen-footer-pad)]"
         }
       >

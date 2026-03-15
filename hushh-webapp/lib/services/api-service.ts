@@ -344,6 +344,48 @@ export interface KaiHomeRenaissanceItem {
   as_of: string | null;
 }
 
+export interface KaiHomePickSource {
+  id: string;
+  label: string;
+  kind: "default" | "ria";
+  state: "ready" | "pending" | "unavailable";
+  is_default: boolean;
+}
+
+export interface KaiStockPreviewQuote {
+  price: number | null;
+  change_pct: number | null;
+  as_of: string | null;
+  company_name: string;
+  sector?: string | null;
+  market_cap?: number | null;
+  volume?: number | null;
+  source_tags: string[];
+  degraded: boolean;
+}
+
+export interface KaiStockPreviewListMatch {
+  in_list: boolean;
+  source_id: string;
+  label: string;
+  company_name?: string | null;
+  sector?: string | null;
+  tier?: string | null;
+  tier_rank?: number | null;
+  conviction_weight?: number | null;
+  recommendation_bias?: string | null;
+  investment_thesis?: string | null;
+  fcf_billions?: number | null;
+}
+
+export interface KaiStockPreviewResponse {
+  symbol: string;
+  active_pick_source: string;
+  pick_sources: KaiHomePickSource[];
+  quote: KaiStockPreviewQuote;
+  list_match: KaiStockPreviewListMatch;
+}
+
 export interface KaiHomeMover {
   symbol: string;
   company_name: string;
@@ -461,6 +503,9 @@ export interface KaiHomeInsightsV2 {
   provider_status?: Record<string, string>;
   hero?: KaiHomeHero;
   watchlist?: KaiHomeWatchlistItem[];
+  pick_sources?: KaiHomePickSource[];
+  active_pick_source?: string;
+  pick_rows?: KaiHomeRenaissanceItem[];
   renaissance_list?: KaiHomeRenaissanceItem[];
   movers?: KaiHomeMovers;
   sector_rotation?: KaiHomeSectorItem[];
@@ -727,6 +772,7 @@ export class ApiService {
     encryptedIv?: string;
     encryptedTag?: string;
     exportKey?: string;
+    durationHours?: number;
   }): Promise<Response> {
     const requestId = data.requestId || data.token;
     const vaultOwnerToken = data.vaultOwnerToken;
@@ -795,6 +841,7 @@ export class ApiService {
         encryptedIv: data.encryptedIv,
         encryptedTag: data.encryptedTag,
         exportKey: data.exportKey,
+        durationHours: data.durationHours,
       }),
     });
     trackEvent("consent_action_result", {
@@ -2001,6 +2048,7 @@ export class ApiService {
     vaultOwnerToken: string;
     symbols?: string[];
     daysBack?: number;
+    pickSource?: string;
     signal?: AbortSignal;
   }): Promise<KaiHomeInsightsV2> {
     const startedAt = Date.now();
@@ -2010,6 +2058,9 @@ export class ApiService {
     }
     if (typeof data.daysBack === "number" && Number.isFinite(data.daysBack)) {
       query.set("days_back", String(data.daysBack));
+    }
+    if (typeof data.pickSource === "string" && data.pickSource.trim()) {
+      query.set("pick_source", data.pickSource.trim());
     }
     const suffix = query.toString() ? `?${query.toString()}` : "";
     const path = `/api/kai/market/insights/${data.userId}${suffix}`;
@@ -2031,6 +2082,32 @@ export class ApiService {
       throw new Error(`Failed to load market insights: ${response.status}`);
     }
     return (await response.json()) as KaiHomeInsightsV2;
+  }
+
+  static async getKaiStockPreview(data: {
+    userId: string;
+    symbol: string;
+    vaultOwnerToken: string;
+    pickSource?: string;
+    signal?: AbortSignal;
+  }): Promise<KaiStockPreviewResponse> {
+    const query = new URLSearchParams({
+      symbol: data.symbol.trim().toUpperCase(),
+    });
+    if (typeof data.pickSource === "string" && data.pickSource.trim()) {
+      query.set("pick_source", data.pickSource.trim());
+    }
+    const response = await apiFetch(`/api/kai/stock-preview/${data.userId}?${query.toString()}`, {
+      method: "GET",
+      signal: data.signal,
+      headers: {
+        Authorization: `Bearer ${data.vaultOwnerToken}`,
+      },
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to load stock preview: ${response.status}`);
+    }
+    return (await response.json()) as KaiStockPreviewResponse;
   }
 
   /**

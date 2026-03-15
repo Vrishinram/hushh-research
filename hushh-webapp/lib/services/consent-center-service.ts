@@ -30,6 +30,34 @@ export interface ConsentCenterEntry {
   metadata?: Record<string, unknown> | null;
 }
 
+export interface ConsentRequestorGroup {
+  id: string;
+  counterpart_type: "ria" | "investor" | "developer" | "self";
+  counterpart_id?: string | null;
+  counterpart_label?: string | null;
+  latest_request_at?: number | string | null;
+  status?: string | null;
+  request_count: number;
+  scopes: string[];
+  entries: ConsentCenterEntry[];
+}
+
+export interface SelfActivitySummary {
+  active_sessions: number;
+  recent_operations_24h: number;
+  last_activity_at?: number | string | null;
+  recent: Array<{
+    id: string;
+    agent_id?: string | null;
+    scope?: string | null;
+    action: string;
+    scope_description?: string | null;
+    issued_at?: number | string | null;
+    expires_at?: number | string | null;
+    metadata?: Record<string, unknown> | null;
+  }>;
+}
+
 export interface ConsentCenterSummary {
   incoming_requests: number;
   outgoing_requests: number;
@@ -76,6 +104,12 @@ export interface ConsentCenterResponse {
   history: ConsentCenterEntry[];
   invites: ConsentCenterEntry[];
   developer_requests: ConsentCenterEntry[];
+  requestor_groups: {
+    pending: ConsentRequestorGroup[];
+    active: ConsentRequestorGroup[];
+    previous: ConsentRequestorGroup[];
+  };
+  self_activity_summary?: SelfActivitySummary | null;
 }
 
 interface FetchCenterOptions {
@@ -130,6 +164,13 @@ export class ConsentCenterService {
       const message = payload.detail || payload.error || `Request failed: ${response.status}`;
       throw new Error(message);
     }
+
+    payload.requestor_groups = payload.requestor_groups || {
+      pending: [],
+      active: [],
+      previous: [],
+    };
+    payload.self_activity_summary = payload.self_activity_summary || null;
 
     cache.set(cacheKey, payload, CACHE_TTL.SHORT);
     cache.set(CACHE_KEYS.CONSENT_CENTER(userId, "all"), payload, CACHE_TTL.SHORT);

@@ -16,6 +16,7 @@ export const ROUTES = {
   RIA_ONBOARDING: "/ria/onboarding",
   RIA_CLIENTS: "/ria/clients",
   RIA_REQUESTS: "/ria/requests",
+  RIA_PICKS: "/ria/picks",
   RIA_SETTINGS: "/ria/settings",
   KAI_HOME: "/kai",
   KAI_ONBOARDING: "/kai/onboarding",

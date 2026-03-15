@@ -6,15 +6,16 @@ import {
   ArrowLeft,
   ArrowRight,
   BarChart3,
+  Building2,
   ChevronRight,
   Loader2,
   PieChart,
   RefreshCw,
-  Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 
 import { PortfolioSourceSwitcher } from "@/components/kai/portfolio-source-switcher";
+import { PageHeader } from "@/components/app-ui/page-sections";
 import { SettingsGroup, SettingsRow } from "@/components/profile/settings-ui";
 import { PlaidBrokerageSummarySection, PlaidInvestmentAccountsSection } from "@/components/kai/plaid/plaid-brokerage-sections";
 import { TransactionActivity } from "@/components/kai/cards/transaction-activity";
@@ -402,41 +403,36 @@ export function InvestmentsMasterView({
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-6 overflow-x-hidden px-5 pb-10 pt-[var(--kai-view-top-gap,16px)] sm:px-8">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="space-y-1">
-          <button
-            type="button"
-            className="inline-flex items-center gap-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-            onClick={() => router.push(ROUTES.KAI_PORTFOLIO)}
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            Back to portfolio
-          </button>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-[30px]">
-            Investments
-          </h1>
-          <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
-            Review the current source, connected brokerages, positions, and recent investment activity in one place.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="none" effect="fade" onClick={() => handleRefresh()}>
-            <RefreshCw
-              className={cn("mr-2 h-4 w-4", (isPlaidRefreshing || isLinkingPlaid) && "animate-spin")}
-            />
-            Refresh
-          </Button>
-          {isPlaidRefreshing ? (
-            <Button variant="none" effect="fade" onClick={() => handleCancelRefresh()}>
-              Cancel refresh
+      <PageHeader
+        eyebrow="Kai Investments"
+        title="Investments"
+        description="Review the current source, connected brokerages, positions, and recent investment activity in one place."
+        icon={Building2}
+        accent="emerald"
+        actions={
+          <>
+            <Button variant="none" effect="fade" onClick={() => router.push(ROUTES.KAI_PORTFOLIO)}>
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to portfolio
             </Button>
-          ) : null}
-          <Button variant="blue-gradient" effect="fill" onClick={handleOptimize}>
-            <Sparkles className="mr-2 h-4 w-4" />
-            Optimize current source
-          </Button>
-        </div>
-      </div>
+            <Button variant="none" effect="fade" onClick={() => handleRefresh()}>
+              <RefreshCw
+                className={cn("mr-2 h-4 w-4", (isPlaidRefreshing || isLinkingPlaid) && "animate-spin")}
+              />
+              Refresh
+            </Button>
+            {isPlaidRefreshing ? (
+              <Button variant="none" effect="fade" onClick={() => handleCancelRefresh()}>
+                Cancel refresh
+              </Button>
+            ) : null}
+            <Button variant="blue-gradient" effect="fill" onClick={handleOptimize}>
+              <ArrowRight className="mr-2 h-4 w-4" />
+              Optimize current source
+            </Button>
+          </>
+        }
+      />
 
       <PortfolioSourceSwitcher
         activeSource={activeSource}
@@ -588,7 +584,7 @@ export function InvestmentsMasterView({
           }
         />
         <SettingsRow
-          icon={Sparkles}
+          icon={ArrowRight}
           title="Analyze a holding from this source"
           description="Use the Analyze action beside a position above to launch the debate engine with this source context."
           trailing={<ArrowRight className="h-4 w-4 text-muted-foreground" />}
