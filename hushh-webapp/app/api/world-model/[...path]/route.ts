@@ -9,41 +9,6 @@ import {
 
 export const dynamic = "force-dynamic";
 
-const REMOVED_LEGACY_PREFIXES = new Set([
-  "index",
-  "attributes",
-  "domains",
-  "portfolio",
-  "portfolios",
-]);
-
-function resolveProxyPath(
-  path: string[],
-  method: "GET" | "POST" | "PUT" | "DELETE"
-): { backendPath: string } | { status: number; payload: Record<string, string> } {
-  const [first] = path;
-
-  if (first && REMOVED_LEGACY_PREFIXES.has(first)) {
-    return {
-      status: 410,
-      payload: { error: `Legacy world-model path "${first}" has been removed` },
-    };
-  }
-
-  if (path.length === 2 && first === "data" && method === "GET") {
-    return { backendPath: path.join("/") };
-  }
-
-  if (path.length === 3 && first === "domain-data" && (method === "GET" || method === "DELETE")) {
-    return { backendPath: path.join("/") };
-  }
-
-  return {
-    status: 404,
-    payload: { error: "Unsupported world-model proxy path" },
-  };
-}
-
 async function proxyWorldModelRequest(
   request: NextRequest,
   paramsPromise: Promise<{ path: string[] }>,
@@ -53,13 +18,9 @@ async function proxyWorldModelRequest(
 
   try {
     const { path } = await paramsPromise;
-    const resolved = resolveProxyPath(path, method);
-    if ("status" in resolved) {
-      return withRequestIdJson(requestId, resolved.payload, { status: resolved.status });
-    }
-
+    const pathStr = path.join("/");
     const query = request.nextUrl.search;
-    const backendUrl = `${getPythonApiUrl()}/api/world-model/${resolved.backendPath}${query}`;
+    const backendUrl = `${getPythonApiUrl()}/api/world-model/${pathStr}${query}`;
 
     const authHeader = request.headers.get("Authorization") || "";
     const headers = createUpstreamHeaders(requestId, {

@@ -572,7 +572,7 @@ The app follows a **Layered Navigation** model:
 | Level  | Description | Examples                      | Back Button        |
 | ------ | ----------- | ----------------------------- | ------------------ |
 | **1**  | Root Tabs   | `/kai`, `/consents`, `/profile` | Exit/Lock Dialog |
-| **2+** | Sub Pages   | `/kai/onboarding`, `/kai/import`, `/kai/dashboard` | Navigate to Parent |
+| **2+** | Sub Pages   | `/kai/onboarding`, `/kai/import`, `/kai/portfolio` | Navigate to Parent |
 
 ### Exit Dialog Security
 
@@ -662,7 +662,7 @@ For `CAPACITOR_BUILD=true` (`output: "export"`), treat App Router files as the o
 
 Required rule:
 - Do not depend on legacy alias redirects for mobile navigation.
-- Keep only canonical pages: `/`, `/login`, `/kai`, `/kai/onboarding`, `/kai/import`, `/kai/plaid/oauth/return`, `/kai/dashboard`.
+- Keep only canonical pages: `/`, `/login`, `/kai`, `/kai/onboarding`, `/kai/import`, `/kai/plaid/oauth/return`, `/kai/portfolio`.
 - Any removed alias route must stay removed from both `app/` and `next.config.ts`.
 
 ---

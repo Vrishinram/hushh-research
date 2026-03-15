@@ -8,6 +8,7 @@ export type PortfolioSyncStatus =
   | "running"
   | "completed"
   | "failed"
+  | "canceled"
   | "action_required"
   | "stale";
 
@@ -29,6 +30,14 @@ export interface PortfolioFreshness {
   institutionNames: string[];
   itemCount: number;
   accountCount: number;
+}
+
+export interface StatementSnapshotOption {
+  id: string;
+  label: string;
+  brokerage?: string | null;
+  statementPeriodEnd?: string | null;
+  importedAt?: string | null;
 }
 
 export interface PlaidRefreshRun {
@@ -91,6 +100,8 @@ export interface PlaidAggregateStatus {
   last_synced_at?: string | null;
   sync_status: PortfolioSyncStatus | string;
   portfolio_data?: PortfolioData | null;
+  projection_stale?: boolean;
+  projected_at?: string | null;
 }
 
 export interface PlaidPortfolioStatusResponse {

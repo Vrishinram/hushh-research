@@ -9,8 +9,7 @@ export default async function RiaRequestsAliasPage({
 }) {
   const resolved = await searchParams;
   const query = new URLSearchParams();
-  query.set("actor", "ria");
-  query.set("view", "outgoing");
+  query.set("view", "pending");
 
   for (const [key, value] of Object.entries(resolved)) {
     if (key === "actor" || key === "view") continue;

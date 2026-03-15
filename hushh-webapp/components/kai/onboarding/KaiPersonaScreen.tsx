@@ -82,7 +82,7 @@ export function KaiPersonaScreen(props: {
             </p>
 
             <Button size="lg" fullWidth onClick={props.onLaunchDashboard} showRipple>
-              Launch Dashboard
+              Open Portfolio
               <ArrowRight className="ml-2 h-5 w-5" />
             </Button>
 

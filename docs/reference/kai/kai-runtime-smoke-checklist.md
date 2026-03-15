@@ -11,7 +11,7 @@ Use this lightweight checklist instead of expanding automated test coverage.
    - `/kai/import`
    - `/kai`
    - `/kai/plaid/oauth/return`
-   - `/kai/dashboard`
+   - `/kai/portfolio`
    - `/kai/analysis`
    - `/kai/optimize`
 

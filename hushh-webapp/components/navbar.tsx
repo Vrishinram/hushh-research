@@ -28,6 +28,7 @@ import { morphyToast as toast } from "@/lib/morphy-ux/morphy";
 import { usePersonaState } from "@/lib/persona/persona-context";
 import { activeKaiRouteTabFromPath } from "@/lib/navigation/kai-route-tabs";
 import { activeRiaRouteTabFromPath } from "@/lib/navigation/ria-route-tabs";
+import { useVault } from "@/lib/vault/vault-context";
 
 type InvestorNavKey = "market" | "dashboard" | "analysis" | "profile";
 type RiaNavKey = "home" | "clients" | "activity" | "profile";
@@ -37,6 +38,7 @@ export const Navbar = () => {
   const pathname = usePathname();
   const router = useRouter();
   const { isAuthenticated } = useAuth();
+  const { isVaultUnlocked } = useVault();
   const { activePersona, riaEntryRoute } = usePersonaState();
   const pendingConsents = usePendingConsentCount();
   const pillRef = React.useRef<HTMLDivElement | null>(null);
@@ -143,9 +145,9 @@ export const Navbar = () => {
             },
             {
               value: "dashboard",
-              label: "Dashboard",
+              label: "Portfolio",
               icon: LayoutDashboard,
-              dataTourId: "nav-dashboard",
+              dataTourId: "nav-portfolio",
             },
             {
               value: "analysis",
@@ -238,7 +240,8 @@ export const Navbar = () => {
   return (
     <nav
       className={cn(
-        "fixed inset-x-0 z-[120] flex justify-center px-4 transform-gpu",
+        "fixed inset-x-0 flex justify-center px-4 transform-gpu",
+        isVaultUnlocked ? "z-[120]" : "z-[505]",
         hideBottomChrome
           ? "pointer-events-none opacity-0"
           : "pointer-events-none opacity-100"
@@ -250,16 +253,41 @@ export const Navbar = () => {
         opacity: Math.max(0, 1 - hideBottomChromeProgress),
       }}
     >
-      <SegmentedPill
-        ref={pillRef}
-        size="compact"
-        layout="stacked"
-        value={activeNav}
-        options={navOptions}
-        onValueChange={navigateTo}
-        ariaLabel="Main navigation"
-        className="pointer-events-auto w-full max-w-[480px]"
-      />
+      <div className="pointer-events-auto relative w-full max-w-[480px]">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 -bottom-2 h-[96px] overflow-hidden rounded-[30px] bar-glass"
+          hidden={!isVaultUnlocked}
+          style={
+            {
+              "--app-bar-glass-bg-light": "rgba(255, 255, 255, 0.38)",
+              "--app-bar-glass-bg-dark": "rgba(10, 12, 16, 0.58)",
+              "--app-bar-glass-blur": "9px",
+              "--app-bar-border-top": "0",
+              "--app-bar-shadow":
+                "inset 0 1px 0 rgba(255,255,255,0.12), 0 -10px 20px rgba(0,0,0,0.1)",
+              maskImage:
+                "linear-gradient(to top, black 0%, black 54%, rgba(0, 0, 0, 0.92) 72%, rgba(0, 0, 0, 0.58) 86%, rgba(0, 0, 0, 0.24) 94%, transparent 100%)",
+              WebkitMaskImage:
+                "linear-gradient(to top, black 0%, black 54%, rgba(0, 0, 0, 0.92) 72%, rgba(0, 0, 0, 0.58) 86%, rgba(0, 0, 0, 0.24) 94%, transparent 100%)",
+            } as React.CSSProperties
+          }
+        />
+        <SegmentedPill
+          ref={pillRef}
+          size="compact"
+          layout="stacked"
+          value={activeNav}
+          options={navOptions}
+          onValueChange={navigateTo}
+          ariaLabel="Main navigation"
+          className={cn(
+            "pointer-events-auto relative z-10 w-full",
+            !isVaultUnlocked &&
+              "!border-border/80 !bg-background/92 !backdrop-blur-none shadow-[0_10px_22px_rgba(15,23,42,0.08)] dark:!bg-background/94"
+          )}
+        />
+      </div>
     </nav>
   );
 };

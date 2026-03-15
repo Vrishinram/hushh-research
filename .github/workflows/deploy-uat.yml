@@ -33,6 +33,11 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Assert UAT branch contains latest main
+        run: bash scripts/ci/require-branch-contains-main.sh deploy_uat
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2

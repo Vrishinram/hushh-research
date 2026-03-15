@@ -50,19 +50,13 @@ import {
 } from "@/lib/kai/brokerage/plaid-oauth-session";
 import { PlaidPortfolioService } from "@/lib/kai/brokerage/plaid-portfolio-service";
 import { useAuth } from "@/hooks/use-auth";
-import { VaultFlow } from "@/components/vault/vault-flow";
+import { VaultUnlockDialog } from "@/components/vault/vault-unlock-dialog";
 import { Capacitor } from "@capacitor/core";
 import {
   getSessionItem,
   removeSessionItem,
   setSessionItem,
 } from "@/lib/utils/session-storage";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { toInvestorLoading, toInvestorStreamText } from "@/lib/copy/investor-language";
 
 // =============================================================================
@@ -3322,31 +3316,24 @@ export function KaiFlow({
       )}
 
       {user && (
-        <Dialog
+        <VaultUnlockDialog
+          user={user}
           open={vaultDialogOpen}
           onOpenChange={setVaultDialogOpen}
-        >
-          <DialogContent className="z-[520] w-[calc(100%-1rem)] max-h-[calc(100svh-1rem)] p-0 border border-border/60 bg-background shadow-2xl overflow-hidden sm:max-w-md">
-            <DialogTitle className="sr-only">Create or unlock Vault to import portfolio</DialogTitle>
-            <DialogDescription className="sr-only">
-              You need to create or unlock your Vault before importing your statement.
-            </DialogDescription>
-            <VaultFlow
-              user={user}
-              enableGeneratedDefault
-              onSuccess={() => {
-                setVaultDialogOpen(false);
-                if (pendingImportFile) {
-                  setResumeImportAfterVault(true);
-                  return;
-                }
-                if (pendingSchemaPreload) {
-                  setResumePreloadAfterVault(true);
-                }
-              }}
-            />
-          </DialogContent>
-        </Dialog>
+          title="Create or unlock Vault to import portfolio"
+          description="You need to create or unlock your Vault before importing your statement."
+          enableGeneratedDefault
+          onSuccess={() => {
+            setVaultDialogOpen(false);
+            if (pendingImportFile) {
+              setResumeImportAfterVault(true);
+              return;
+            }
+            if (pendingSchemaPreload) {
+              setResumePreloadAfterVault(true);
+            }
+          }}
+        />
       )}
     </div>
   );

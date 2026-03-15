@@ -380,7 +380,7 @@ export function KaiCommandPalette({
         <CommandGroup heading="Portfolio Actions">
           <CommandItem className={commandItemClass} onSelect={() => run("dashboard")}>
             <Icon icon={BarChart3} size="sm" className="mr-2 text-muted-foreground" />
-            Dashboard
+            Portfolio
           </CommandItem>
           {!isFiltering ? (
             <CommandItem className={commandItemClass} disabled>

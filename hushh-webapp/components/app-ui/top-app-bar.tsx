@@ -31,6 +31,7 @@ import {
 import { cn } from "@/lib/utils";
 import { usePathname, useRouter } from "next/navigation";
 import { Button } from "@/lib/morphy-ux/button";
+import { MaterialRipple } from "@/lib/morphy-ux/material-ripple";
 import { Icon } from "@/lib/morphy-ux/ui";
 import {
   DropdownMenu,
@@ -199,9 +200,9 @@ export function TopAppBar({ className }: TopAppBarProps) {
       "--app-bar-shadow":
         "inset 0 1px 0 rgba(255,255,255,0.2), 0 16px 30px rgba(0,0,0,0.18)",
       maskImage:
-        "linear-gradient(to bottom, rgba(0, 0, 0, 0.84) 0%, rgba(0, 0, 0, 0.96) 12%, black 28%, black 58%, rgba(0, 0, 0, 0.96) 74%, rgba(0, 0, 0, 0.8) 86%, rgba(0, 0, 0, 0.46) 94%, transparent 100%)",
+        "linear-gradient(to bottom, black 0%, black 56%, rgba(0, 0, 0, 0.96) 70%, rgba(0, 0, 0, 0.78) 84%, rgba(0, 0, 0, 0.42) 94%, transparent 100%)",
       WebkitMaskImage:
-        "linear-gradient(to bottom, rgba(0, 0, 0, 0.84) 0%, rgba(0, 0, 0, 0.96) 12%, black 28%, black 58%, rgba(0, 0, 0, 0.96) 74%, rgba(0, 0, 0, 0.8) 86%, rgba(0, 0, 0, 0.46) 94%, transparent 100%)",
+        "linear-gradient(to bottom, black 0%, black 56%, rgba(0, 0, 0, 0.96) 70%, rgba(0, 0, 0, 0.78) 84%, rgba(0, 0, 0, 0.42) 94%, transparent 100%)",
     }),
     [showKaiTabs, tabsScrollHideProgress]
   );
@@ -232,61 +233,68 @@ export function TopAppBar({ className }: TopAppBarProps) {
           >
             <div className="h-11 w-11" aria-hidden />
 
-            <div className="flex min-w-0 items-center justify-center px-2">
+            <div className="pointer-events-none flex min-w-0 items-center justify-center px-2">
               {centerTitle ? (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      type="button"
-                      data-tour-id="nav-role-switch"
-                      className="flex min-w-0 items-center justify-center gap-2 rounded-full px-3 py-1.5 text-base font-semibold tracking-tight text-foreground transition-colors hover:bg-muted/40 sm:text-lg"
-                      aria-label="Switch role"
-                    >
-                      <Icon
-                        icon={switchingPersona ? Loader2 : centerTitle.icon}
-                        size="sm"
-                        className={cn(
-                          "shrink-0 text-primary",
-                          switchingPersona ? "animate-spin" : ""
-                        )}
-                      />
-                      <span className="truncate">
-                        {switchingPersona
-                          ? `Switching to ${switchingPersona === "ria" ? "RIA" : "Investor"}`
-                          : centerTitle.label}
-                      </span>
-                      <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="center" className="min-w-[200px]">
-                    <DropdownMenuItem
-                      onClick={() => void handlePersonaSelect("investor")}
-                      disabled={switchingPersona !== null}
-                    >
-                      <div className="flex min-w-0 items-center gap-2">
-                        <UserRound className="h-4 w-4" />
-                        <span>Investor</span>
-                      </div>
-                      {activePersona === "investor" ? (
-                        <Check className="ml-auto h-4 w-4 text-primary" />
-                      ) : null}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => void handlePersonaSelect("ria")}
-                      disabled={riaCapability === "disabled" || switchingPersona !== null}
-                    >
-                      <div className="flex min-w-0 items-center gap-2">
-                        <BriefcaseBusiness className="h-4 w-4" />
-                        <span>{riaCapability === "setup" ? "Set up RIA" : "RIA"}</span>
-                      </div>
-                      {switchingPersona === "ria" ? (
-                        <Loader2 className="ml-auto h-4 w-4 animate-spin text-primary" />
-                      ) : activePersona === "ria" ? (
-                        <Check className="ml-auto h-4 w-4 text-primary" />
-                      ) : null}
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <div className="pointer-events-auto inline-flex w-auto max-w-fit flex-none">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        data-tour-id="nav-role-switch"
+                        className="group relative inline-flex w-auto max-w-fit flex-none items-center justify-center gap-2 overflow-hidden rounded-full px-3 py-1.5 text-base font-semibold tracking-tight text-foreground transition-colors hover:bg-muted/40 sm:text-lg"
+                        aria-label="Switch role"
+                      >
+                        <span className="relative z-10 inline-flex min-w-0 items-center gap-2">
+                          <Icon
+                            icon={switchingPersona ? Loader2 : centerTitle.icon}
+                            size="sm"
+                            className={cn(
+                              "shrink-0 text-current",
+                              switchingPersona ? "animate-spin" : ""
+                            )}
+                          />
+                          <span className="truncate">
+                            {switchingPersona
+                              ? `Switching to ${switchingPersona === "ria" ? "RIA" : "Investor"}`
+                              : centerTitle.label}
+                          </span>
+                          <ChevronDown className="h-4 w-4 shrink-0 text-current/70 transition-colors group-hover:text-current" />
+                        </span>
+                        <MaterialRipple variant="none" effect="fade" className="z-0" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="center" className="min-w-[200px]">
+                      <DropdownMenuItem
+                        onClick={() => void handlePersonaSelect("investor")}
+                        disabled={switchingPersona !== null}
+                        className="group"
+                      >
+                        <div className="relative z-10 flex min-w-0 items-center gap-2 text-current">
+                          <UserRound className="h-4 w-4 text-current" />
+                          <span>Investor</span>
+                        </div>
+                        {activePersona === "investor" ? (
+                          <Check className="ml-auto h-4 w-4 text-primary" />
+                        ) : null}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => void handlePersonaSelect("ria")}
+                        disabled={riaCapability === "disabled" || switchingPersona !== null}
+                        className="group"
+                      >
+                        <div className="relative z-10 flex min-w-0 items-center gap-2 text-current">
+                          <BriefcaseBusiness className="h-4 w-4 text-current" />
+                          <span>{riaCapability === "setup" ? "Set up RIA" : "RIA"}</span>
+                        </div>
+                        {switchingPersona === "ria" ? (
+                          <Loader2 className="ml-auto h-4 w-4 animate-spin text-primary" />
+                        ) : activePersona === "ria" ? (
+                          <Check className="ml-auto h-4 w-4 text-primary" />
+                        ) : null}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
               ) : null}
             </div>
 

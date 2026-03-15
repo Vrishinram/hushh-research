@@ -1,8 +1,19 @@
 "use client";
 
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { SegmentedPill } from "@/lib/morphy-ux/ui/segmented-pill";
-import type { PortfolioFreshness, PortfolioSource } from "@/lib/kai/brokerage/portfolio-sources";
+import type {
+  PortfolioFreshness,
+  PortfolioSource,
+  StatementSnapshotOption,
+} from "@/lib/kai/brokerage/portfolio-sources";
 import { Building2, Link2, RefreshCw, ScrollText } from "lucide-react";
 import { Button } from "@/lib/morphy-ux/button";
 
@@ -11,7 +22,11 @@ interface PortfolioSourceSwitcherProps {
   availableSources: PortfolioSource[];
   freshness?: PortfolioFreshness | null;
   onSourceChange: (source: PortfolioSource) => void;
+  statementSnapshots?: StatementSnapshotOption[];
+  activeStatementSnapshotId?: string | null;
+  onStatementSnapshotChange?: (snapshotId: string) => void;
   onRefreshPlaid?: () => void;
+  onCancelRefreshPlaid?: () => void;
   onManageConnections?: () => void;
   isRefreshing?: boolean;
 }
@@ -33,7 +48,11 @@ export function PortfolioSourceSwitcher({
   availableSources,
   freshness,
   onSourceChange,
+  statementSnapshots = [],
+  activeStatementSnapshotId = null,
+  onStatementSnapshotChange,
   onRefreshPlaid,
+  onCancelRefreshPlaid,
   onManageConnections,
   isRefreshing = false,
 }: PortfolioSourceSwitcherProps) {
@@ -52,6 +71,10 @@ export function PortfolioSourceSwitcher({
       tone: "accent" as const,
     },
   ];
+  const showStatementPicker =
+    activeSource === "statement" &&
+    statementSnapshots.length > 1 &&
+    typeof onStatementSnapshotChange === "function";
 
   return (
     <div className="space-y-3 rounded-[24px] border border-border/60 bg-background/80 p-4 shadow-sm backdrop-blur-xl">
@@ -90,14 +113,46 @@ export function PortfolioSourceSwitcher({
                 Refresh
               </Button>
             ) : null}
+            {onCancelRefreshPlaid && isRefreshing ? (
+              <Button variant="none" effect="fade" size="sm" onClick={onCancelRefreshPlaid}>
+                Cancel
+              </Button>
+            ) : null}
             {onManageConnections ? (
               <Button variant="none" effect="fade" size="sm" onClick={onManageConnections}>
-                Manage Connections
+                {(freshness?.itemCount || 0) > 0 ? "Connect Another Brokerage" : "Connect Plaid"}
               </Button>
             ) : null}
           </div>
         ) : null}
       </div>
+      {showStatementPicker ? (
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-0.5">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              Active Statement
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Choose which saved statement drives the editable portfolio.
+            </p>
+          </div>
+          <Select
+            value={activeStatementSnapshotId || statementSnapshots[0]?.id}
+            onValueChange={onStatementSnapshotChange}
+          >
+            <SelectTrigger size="sm" className="w-full min-w-0 sm:w-[260px]">
+              <SelectValue placeholder="Select statement" />
+            </SelectTrigger>
+            <SelectContent>
+              {statementSnapshots.map((snapshot) => (
+                <SelectItem key={snapshot.id} value={snapshot.id}>
+                  {snapshot.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      ) : null}
 
     </div>
   );

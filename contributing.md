@@ -15,6 +15,10 @@ This file is a repo-root contribution entrypoint. Detailed workflow rules live i
 - subtree workflow for `consent-protocol/`: [`docs/guides/subtree-sync.md`](./docs/guides/subtree-sync.md)
 - architecture and runtime map: [`docs/reference/architecture/architecture.md`](./docs/reference/architecture/architecture.md)
 - route governance and tri-flow contracts: [`docs/reference/architecture/route-contracts.md`](./docs/reference/architecture/route-contracts.md)
+- branch policy and release lanes: [`docs/reference/operations/branch-governance.md`](./docs/reference/operations/branch-governance.md)
+- CI policy: [`docs/reference/operations/ci.md`](./docs/reference/operations/ci.md)
+- coding-agent MCP tooling: [`docs/reference/operations/coding-agent-mcp.md`](./docs/reference/operations/coding-agent-mcp.md)
+- profile/settings design language: [`docs/reference/quality/profile-settings-design-system.md`](./docs/reference/quality/profile-settings-design-system.md)
 - package docs:
   - backend: [`consent-protocol/docs/README.md`](./consent-protocol/docs/README.md)
   - frontend/native: [`hushh-webapp/docs/README.md`](./hushh-webapp/docs/README.md)
@@ -37,6 +41,8 @@ If you touch `consent-protocol/`, treat the subtree sync flow as part of the cha
 
 ## Contribution Rules
 
+- Branch from `main` and target pull requests back to `main`.
+- Keep `deploy_uat` and `deploy` as release lanes that are promoted from `main`, not feature-development branches.
 - Keep runtime truth in canonical docs, not root markdown.
 - Maintain web, iOS, and Android parity for tri-flow features.
 - Treat consent boundaries and world-model contracts as hard constraints.

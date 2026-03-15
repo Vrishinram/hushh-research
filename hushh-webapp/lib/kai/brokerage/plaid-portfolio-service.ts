@@ -21,6 +21,42 @@ export interface PlaidRefreshResponse {
   runs: Array<Record<string, unknown>>;
 }
 
+async function extractPlaidError(response: Response, fallback: string): Promise<string> {
+  const raw = await response.text().catch(() => "");
+  try {
+    const payload = (raw ? JSON.parse(raw) : null) as
+      | {
+          detail?: string | Record<string, unknown> | null;
+          message?: string | null;
+          error?: string | null;
+          details?: string | null;
+        }
+      | null;
+    const detail =
+      payload?.detail && typeof payload.detail === "object" && !Array.isArray(payload.detail)
+        ? (payload.detail as Record<string, unknown>)
+        : null;
+    const detailPayload =
+      detail?.payload && typeof detail.payload === "object" && !Array.isArray(detail.payload)
+        ? (detail.payload as Record<string, unknown>)
+        : null;
+    const candidates = [
+      typeof detail?.display_message === "string" ? detail.display_message : null,
+      typeof detail?.message === "string" ? detail.message : null,
+      typeof detailPayload?.error_message === "string" ? detailPayload.error_message : null,
+      typeof payload?.message === "string" ? payload.message : null,
+      typeof payload?.error === "string" ? payload.error : null,
+      typeof payload?.details === "string" ? payload.details : null,
+      typeof payload?.detail === "string" ? payload.detail : null,
+      raw && !raw.trim().startsWith("<") ? raw : null,
+    ];
+    const message = candidates.find((candidate) => typeof candidate === "string" && candidate.trim());
+    return message?.trim() || fallback;
+  } catch {
+    return raw && !raw.trim().startsWith("<") ? raw.trim() : fallback;
+  }
+}
+
 export class PlaidPortfolioService {
   static async getStatus(params: {
     userId: string;
@@ -64,8 +100,11 @@ export class PlaidPortfolioService {
       }),
     });
     if (!response.ok) {
-      const detail = await response.text().catch(() => "");
-      throw new Error(`Failed to create Plaid link token: ${response.status} ${detail}`);
+      const detail = await extractPlaidError(
+        response,
+        "Plaid could not start the connection flow right now."
+      );
+      throw new Error(detail);
     }
     return (await response.json()) as PlaidLinkTokenResponse;
   }
@@ -91,8 +130,11 @@ export class PlaidPortfolioService {
       }),
     });
     if (!response.ok) {
-      const detail = await response.text().catch(() => "");
-      throw new Error(`Failed to exchange Plaid public token: ${response.status} ${detail}`);
+      const detail = await extractPlaidError(
+        response,
+        "Plaid could not finish connecting this brokerage."
+      );
+      throw new Error(detail);
     }
     return (await response.json()) as PlaidPortfolioStatusResponse;
   }
@@ -114,8 +156,11 @@ export class PlaidPortfolioService {
       }),
     });
     if (!response.ok) {
-      const detail = await response.text().catch(() => "");
-      throw new Error(`Failed to refresh Plaid connection: ${response.status} ${detail}`);
+      const detail = await extractPlaidError(
+        response,
+        "Plaid could not refresh this brokerage right now."
+      );
+      throw new Error(detail);
     }
     return (await response.json()) as PlaidRefreshResponse;
   }
@@ -137,8 +182,11 @@ export class PlaidPortfolioService {
       }),
     });
     if (!response.ok) {
-      const detail = await response.text().catch(() => "");
-      throw new Error(`Failed to resume Plaid OAuth: ${response.status} ${detail}`);
+      const detail = await extractPlaidError(
+        response,
+        "Plaid could not resume this brokerage connection."
+      );
+      throw new Error(detail);
     }
     return (await response.json()) as PlaidLinkTokenResponse;
   }
@@ -159,8 +207,39 @@ export class PlaidPortfolioService {
       }
     );
     if (!response.ok) {
-      const detail = await response.text().catch(() => "");
-      throw new Error(`Failed to fetch Plaid refresh run: ${response.status} ${detail}`);
+      const detail = await extractPlaidError(
+        response,
+        "Plaid refresh status is not available right now."
+      );
+      throw new Error(detail);
+    }
+    return (await response.json()) as { run: Record<string, unknown> };
+  }
+
+  static async cancelRefreshRun(params: {
+    userId: string;
+    runId: string;
+    vaultOwnerToken: string;
+  }): Promise<{ run: Record<string, unknown> }> {
+    const response = await ApiService.apiFetch(
+      `/api/kai/plaid/refresh/${encodeURIComponent(params.runId)}/cancel`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${params.vaultOwnerToken}`,
+        },
+        body: JSON.stringify({
+          user_id: params.userId,
+        }),
+      }
+    );
+    if (!response.ok) {
+      const detail = await extractPlaidError(
+        response,
+        "Plaid could not cancel this refresh right now."
+      );
+      throw new Error(detail);
     }
     return (await response.json()) as { run: Record<string, unknown> };
   }
@@ -182,8 +261,11 @@ export class PlaidPortfolioService {
       }),
     });
     if (!response.ok) {
-      const detail = await response.text().catch(() => "");
-      throw new Error(`Failed to update portfolio source preference: ${response.status} ${detail}`);
+      const detail = await extractPlaidError(
+        response,
+        "Kai could not switch the portfolio source."
+      );
+      throw new Error(detail);
     }
     return (await response.json()) as { user_id: string; active_source: PortfolioSource };
   }

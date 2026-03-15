@@ -24,6 +24,7 @@ import { PortfolioHistoryChart } from "@/components/kai/charts/portfolio-history
 import { SectorAllocationChart } from "@/components/kai/charts/sector-allocation-chart";
 import { StatementCashflowChart } from "@/components/kai/charts/statement-cashflow-chart";
 import { TransactionActivity } from "@/components/kai/cards/transaction-activity";
+import { PlaidBrokerageSummarySection } from "@/components/kai/plaid/plaid-brokerage-sections";
 import { HoldingRowActions } from "@/components/kai/holdings/holding-row-actions";
 import { EditHoldingModal } from "@/components/kai/modals/edit-holding-modal";
 import type { Holding as PortfolioHolding, PortfolioData } from "@/components/kai/types/portfolio";
@@ -377,12 +378,17 @@ export function DashboardMasterView({
     error: sourcesError,
     plaidStatus,
     statementPortfolio,
+    statementSnapshots,
+    activeStatementSnapshotId,
     activeSource,
     availableSources,
     activePortfolio,
     freshness,
+    isPlaidRefreshing,
     changeActiveSource,
+    changeActiveStatementSnapshot,
     refreshPlaid,
+    cancelPlaidRefresh,
     reload,
   } = usePortfolioSources({
     userId,
@@ -595,13 +601,78 @@ export function DashboardMasterView({
     [changeActiveSource]
   );
 
-  const handleRefreshPlaid = useCallback(() => {
-    void refreshPlaid().catch((error) => {
-      toast.error("Could not refresh Plaid.", {
-        description: error instanceof Error ? error.message : "Please try again.",
+  const handleRefreshPlaid = useCallback(
+    (itemId?: string) => {
+      void refreshPlaid(itemId)
+        .then((result) => {
+          if (result.status === "already_running") {
+            toast.info("A refresh is already in progress.", {
+              description: "Let it finish or cancel it first.",
+              action: result.runIds.length
+                ? {
+                    label: "Cancel",
+                    onClick: () => {
+                      void cancelPlaidRefresh({ itemId, runIds: result.runIds });
+                    },
+                  }
+                : undefined,
+            });
+            return;
+          }
+          if (result.status !== "started") return;
+          toast.message(
+            itemId
+              ? "Refreshing this brokerage in the background."
+              : "Refreshing your brokerage data in the background.",
+            {
+              description: "We’ll update this portfolio when it finishes.",
+              action: {
+                label: "Cancel",
+                onClick: () => {
+                  void cancelPlaidRefresh({ itemId, runIds: result.runIds });
+                },
+              },
+            }
+          );
+        })
+        .catch((error) => {
+          toast.error("Could not refresh Plaid.", {
+            description: error instanceof Error ? error.message : "Please try again.",
+          });
+        });
+    },
+    [cancelPlaidRefresh, refreshPlaid]
+  );
+
+  const handleCancelPlaidRefresh = useCallback(
+    (params?: { itemId?: string; runIds?: string[] }) => {
+      void cancelPlaidRefresh(params)
+        .then((result) => {
+          if (result.status === "noop") {
+            toast.info("No active Plaid refresh is running.");
+            return;
+          }
+          toast.success("Plaid refresh canceled.");
+        })
+        .catch((error) => {
+          toast.error("Could not cancel Plaid refresh.", {
+            description: error instanceof Error ? error.message : "Please try again.",
+          });
+        });
+    },
+    [cancelPlaidRefresh]
+  );
+
+  const handleStatementSnapshotChange = useCallback(
+    (snapshotId: string) => {
+      void changeActiveStatementSnapshot(snapshotId).catch((error) => {
+        toast.error("Could not switch statements.", {
+          description: error instanceof Error ? error.message : "Please try again.",
+        });
       });
-    });
-  }, [refreshPlaid]);
+    },
+    [changeActiveStatementSnapshot]
+  );
 
   const openPlaidLinkFlow = useCallback(
     async (itemId?: string) => {
@@ -631,7 +702,7 @@ export function DashboardMasterView({
             version: 1,
             userId,
             resumeSessionId: linkToken.resume_session_id,
-            returnPath: ROUTES.KAI_DASHBOARD,
+            returnPath: ROUTES.KAI_PORTFOLIO,
             startedAt: new Date().toISOString(),
           });
         }
@@ -691,8 +762,11 @@ export function DashboardMasterView({
         });
       } catch (error) {
         clearPlaidOAuthResumeSession();
-        toast.error("Could not open Plaid.", {
-          description: error instanceof Error ? error.message : "Please try again.",
+        toast.error(itemId ? "Could not update this Plaid connection." : "Could not start Plaid.", {
+          description:
+            error instanceof Error
+              ? error.message
+              : "Kai could not start the brokerage connection flow. Please try again.",
         });
       } finally {
         setIsLinkingPlaid(false);
@@ -1563,14 +1637,6 @@ export function DashboardMasterView({
     () => plaidStatus?.items || [],
     [plaidStatus]
   );
-  const isPlaidRefreshing = useMemo(
-    () =>
-      plaidItems.some((item) => {
-        const status = String(item.latest_refresh_run?.status || item.sync_status || "");
-        return status === "queued" || status === "running";
-      }),
-    [plaidItems]
-  );
   const sourceDisplayLabel = activeSource === "statement" ? "Statement" : "Plaid";
 
   if (isSourcesLoading && !displayedPortfolio) {
@@ -1594,7 +1660,11 @@ export function DashboardMasterView({
           availableSources={availableSources}
           freshness={freshness}
           onSourceChange={handleSourceChange}
-          onRefreshPlaid={hasPlaidConnections ? handleRefreshPlaid : undefined}
+          statementSnapshots={statementSnapshots}
+          activeStatementSnapshotId={activeStatementSnapshotId}
+          onStatementSnapshotChange={handleStatementSnapshotChange}
+          onRefreshPlaid={hasPlaidConnections ? () => handleRefreshPlaid() : undefined}
+          onCancelRefreshPlaid={isPlaidRefreshing ? () => handleCancelPlaidRefresh() : undefined}
           onManageConnections={plaidConfigured !== false ? () => void openPlaidLinkFlow() : undefined}
           isRefreshing={isPlaidRefreshing || isLinkingPlaid}
         />
@@ -1633,7 +1703,11 @@ export function DashboardMasterView({
         availableSources={availableSources}
         freshness={freshness}
         onSourceChange={handleSourceChange}
-        onRefreshPlaid={hasPlaidConnections ? handleRefreshPlaid : undefined}
+        statementSnapshots={statementSnapshots}
+        activeStatementSnapshotId={activeStatementSnapshotId}
+        onStatementSnapshotChange={handleStatementSnapshotChange}
+        onRefreshPlaid={hasPlaidConnections ? () => handleRefreshPlaid() : undefined}
+        onCancelRefreshPlaid={isPlaidRefreshing ? () => handleCancelPlaidRefresh() : undefined}
         onManageConnections={plaidConfigured !== false ? () => void openPlaidLinkFlow() : undefined}
         isRefreshing={isPlaidRefreshing || isLinkingPlaid}
       />
@@ -1727,6 +1801,14 @@ export function DashboardMasterView({
               <ArrowRight className="mr-2 h-4 w-4" />
               Optimize Portfolio
             </MorphyButton>
+            <MorphyButton
+              variant="none"
+              effect="fade"
+              onClick={() => router.push(ROUTES.KAI_INVESTMENTS)}
+            >
+              <Building2 className="mr-2 h-4 w-4" />
+              View Investments
+            </MorphyButton>
             {plaidConfigured !== false ? (
               <MorphyButton
                 variant="none"
@@ -1746,49 +1828,13 @@ export function DashboardMasterView({
         </CardContent>
       </Card>
 
-      {isPlaidView ? (
-        <Card variant="none" effect="glass" className="rounded-[24px]">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Plaid Connections</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {plaidItems.map((item) => (
-              <div
-                key={item.item_id}
-                className="flex flex-col gap-3 rounded-2xl border border-border/60 bg-background/70 p-4 lg:flex-row lg:items-center lg:justify-between"
-              >
-                <div>
-                  <p className="text-sm font-semibold">
-                    {item.institution_name || item.institution_id || "Connected brokerage"}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {item.accounts?.length || 0} account{(item.accounts?.length || 0) === 1 ? "" : "s"} • status {item.sync_status}
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <MorphyButton
-                    variant="none"
-                    effect="fade"
-                    size="sm"
-                    onClick={() => void refreshPlaid(item.item_id).catch(() => undefined)}
-                  >
-                    <RefreshCw className="mr-2 h-4 w-4" />
-                    Refresh
-                  </MorphyButton>
-                  <MorphyButton
-                    variant="none"
-                    effect="fade"
-                    size="sm"
-                    onClick={() => void openPlaidLinkFlow(item.item_id)}
-                  >
-                    Manage Connection
-                  </MorphyButton>
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      ) : null}
+      <PlaidBrokerageSummarySection
+        items={plaidItems}
+        onRefreshItem={(itemId) => handleRefreshPlaid(itemId)}
+        onCancelRefresh={(params) => handleCancelPlaidRefresh(params)}
+        onManageConnection={(itemId) => void openPlaidLinkFlow(itemId)}
+        onViewInvestments={() => router.push(ROUTES.KAI_INVESTMENTS)}
+      />
 
       <section className="space-y-4">
         {hasEquitySectorAllocation ? (
@@ -2220,7 +2266,7 @@ export function DashboardMasterView({
                 effect="fade"
                 size="sm"
                 fullWidth
-                onClick={handleRefreshPlaid}
+                onClick={() => handleRefreshPlaid()}
                 disabled={isPlaidRefreshing}
               >
                 <RefreshCw className={`mr-1 h-4 w-4 ${isPlaidRefreshing ? "animate-spin" : ""}`} />

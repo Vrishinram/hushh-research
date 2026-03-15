@@ -36,6 +36,9 @@ Expected local endpoints after boot:
 1. [`docs/guides/getting-started.md`](./docs/guides/getting-started.md) for local setup, runtime profiles, and launch commands.
 2. [`docs/reference/operations/env-and-secrets.md`](./docs/reference/operations/env-and-secrets.md) for the canonical `DB_*`, Firebase, and runtime environment contract.
 3. [`docs/reference/architecture/architecture.md`](./docs/reference/architecture/architecture.md) for the current system map.
+4. [`docs/reference/operations/branch-governance.md`](./docs/reference/operations/branch-governance.md) for branch lanes and deployment policy.
+5. [`docs/reference/operations/ci.md`](./docs/reference/operations/ci.md) for blocking CI and local parity.
+6. [`docs/reference/operations/coding-agent-mcp.md`](./docs/reference/operations/coding-agent-mcp.md) for coding-agent MCP tooling.
 
 ## Package Entry Points
 

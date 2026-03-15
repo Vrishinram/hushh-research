@@ -20,7 +20,7 @@ Core invariants:
 - `/kai/onboarding` -> onboarding questionnaire + persona
 - `/kai/import` -> import/connect flow + vault introduction
 - `/kai` -> signed-in info home + first-time bottom-nav tour
-- `/kai/dashboard` -> portfolio analytics/dashboard
+- `/kai/portfolio` -> portfolio analytics/dashboard
 
 Guard flow:
 - `KaiOnboardingGuard` blocks non-onboarding `/kai/*` when onboarding is incomplete.

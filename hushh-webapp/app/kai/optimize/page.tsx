@@ -272,13 +272,13 @@ export default function PortfolioHealthPage() {
       
       if (!input) {
         setLoading(false);
-        setError("No Optimize Portfolio context found. Please start from the Kai dashboard.");
+        setError("No Optimize Portfolio context found. Please start from the Kai portfolio.");
         return;
       }
 
       if (!user) {
         setLoading(false);
-        setError("Missing session context. Please return to Kai dashboard.");
+        setError("Missing session context. Please return to Kai portfolio.");
         return;
       }
 
@@ -615,7 +615,7 @@ export default function PortfolioHealthPage() {
             )}
           </div>
           <p className="mt-3 text-xs text-muted-foreground">
-            Optimize is using the active {sourceLabel.toLowerCase()} portfolio context selected from the Kai dashboard.
+            Optimize is using the active {sourceLabel.toLowerCase()} portfolio context selected from the Kai portfolio.
           </p>
         </CardContent>
       </Card>
@@ -705,9 +705,9 @@ export default function PortfolioHealthPage() {
                 size="default"
                 variant="blue-gradient"
                 effect="fade"
-                onClick={() => router.push("/kai/dashboard")}
+                onClick={() => router.push("/kai/portfolio")}
               >
-                Back to dashboard
+                Back to portfolio
               </Button>
             </div>
           </CardContent>

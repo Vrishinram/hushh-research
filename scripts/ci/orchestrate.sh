@@ -11,6 +11,7 @@ Environment flags:
 
 Description:
   Canonical CI stage orchestrator used by GitHub Actions and local CI wrappers.
+  The default "all" stage mirrors only the blocking CI surface.
 EOF
 }
 

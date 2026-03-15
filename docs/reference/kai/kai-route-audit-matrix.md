@@ -9,7 +9,7 @@ Operational matrix for runtime audits without expanding automated test suites.
 | `/kai/import` | `GET` | Import-first onboarding screen reachable |
 | `/kai` | `GET` | Home route reachable (full/onboarding chrome by state) |
 | `/kai/plaid/oauth/return` | `GET` | Plaid OAuth return page resumes Link without vault-key persistence |
-| `/kai/dashboard` | `GET` | Dashboard route reachable |
+| `/kai/portfolio` | `GET` | Portfolio route reachable |
 | `/kai/analysis` | `GET` | Analysis route reachable |
 | `/kai/optimize` | `GET` | Optimize route reachable |
 | `/api/kai/plaid/status/{user_id}` | `GET` | Plaid aggregate status and source metadata available |

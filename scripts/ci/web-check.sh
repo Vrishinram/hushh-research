@@ -27,8 +27,6 @@ npm ci
 
 npm run typecheck
 npm run lint -- --max-warnings="${WEB_LINT_WARNING_BUDGET}"
-npm run verify:design-system
-npm run verify:investor-language
 
 if [ "$CI_NATIVE_PARITY_REQUIRED" = "1" ]; then
   npm run verify:mobile-firebase

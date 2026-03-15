@@ -50,7 +50,7 @@ The frontend route split is intentional and must remain stable unless route cont
 - `/kai/import`: portfolio connection/import flow and vault introduction moment
 - `/kai/plaid/oauth/return`: Plaid OAuth callback/resume surface
 - `/kai`: signed-in live market home (token-gated, cache-first, degraded labels when providers are partial)
-- `/kai/dashboard`: portfolio analytics/dashboard (requires data, redirects to `/kai/import` when empty)
+- `/kai/portfolio`: portfolio analytics/dashboard (requires data, redirects to `/kai/import` when empty)
 - `/ria/*`: advisor workflow tree under the same product shell
 - `/marketplace`: shared discovery surface for investor + RIA
 - `/consents`: shared workflow hub for incoming/outgoing requests, grants, history, invites, and future MCP/developer access

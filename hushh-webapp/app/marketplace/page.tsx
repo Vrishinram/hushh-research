@@ -234,7 +234,7 @@ export default function MarketplacePage() {
                         {actionLoadingUserId === investor.user_id ? "Inviting..." : "Invite"}
                       </button>
                       <Link
-                        href={`${ROUTES.CONSENTS}?actor=ria&view=outgoing&investor=${encodeURIComponent(
+                        href={`${ROUTES.CONSENTS}?view=pending&investor=${encodeURIComponent(
                           investor.user_id
                         )}`}
                         className="inline-flex min-h-11 items-center justify-center rounded-full border border-border bg-background px-4 text-sm font-medium text-foreground"

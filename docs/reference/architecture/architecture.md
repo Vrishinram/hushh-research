@@ -173,7 +173,7 @@ Current app-level navigation targets are defined in `hushh-webapp/lib/navigation
 - `/kai/onboarding`
 - `/kai/import`
 - `/kai/plaid/oauth/return`
-- `/kai/dashboard`
+- `/kai/portfolio`
 - `/kai/analysis`
 - `/kai/optimize`
 

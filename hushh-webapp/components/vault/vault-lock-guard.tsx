@@ -9,7 +9,7 @@
  *
  * Flow:
  * - Auth ❌ → Redirect to login
- * - Auth ✅ + Vault ❌ → Show passphrase unlock dialog
+ * - Auth ✅ + Vault ❌ → Show unlock dialog
  * - Auth ✅ + Vault ✅ → Render children
  *
  * SECURITY MODEL (BYOK Compliant):
@@ -25,7 +25,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { useVault } from "@/lib/vault/vault-context";
 import { VaultService } from "@/lib/services/vault-service";
-import { VaultFlow } from "./vault-flow";
+import { VaultUnlockDialog } from "./vault-unlock-dialog";
 import { HushhLoader } from "@/components/app-ui/hushh-loader";
 import { useStepProgress } from "@/lib/progress/step-progress-context";
 
@@ -157,18 +157,16 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
 
   // User exists but vault is locked - show unlock dialog
   return (
-    <div className="flex min-h-[60vh] items-center justify-center p-3 sm:p-4">
-      <div className="w-full max-w-sm sm:max-w-md">
-        <VaultFlow
-          user={user}
-          enableGeneratedDefault
-          onSuccess={() => {
-            // Force a router refresh to ensure state update is picked up
-            // This handles potential race conditions on native
-            router.refresh(); 
-          }}
-        />
-      </div>
-    </div>
+    <VaultUnlockDialog
+      user={user}
+      open
+      dismissible={false}
+      enableGeneratedDefault
+      title="Unlock Vault"
+      description="Unlock your Vault to continue."
+      onSuccess={() => {
+        router.refresh();
+      }}
+    />
   );
 }

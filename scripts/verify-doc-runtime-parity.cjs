@@ -71,7 +71,7 @@ const REQUIRED_CANONICAL_ROUTES = {
   KAI_HOME: "/kai",
   KAI_ONBOARDING: "/kai/onboarding",
   KAI_IMPORT: "/kai/import",
-  KAI_DASHBOARD: "/kai/dashboard",
+  KAI_DASHBOARD: "/kai/portfolio",
   KAI_ANALYSIS: "/kai/analysis",
   KAI_OPTIMIZE: "/kai/optimize",
 };

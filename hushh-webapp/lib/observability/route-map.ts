@@ -19,6 +19,7 @@ export const ROUTE_ID_VALUES = [
   "kai_onboarding",
   "kai_import",
   "kai_dashboard",
+  "kai_investments",
   "kai_analysis",
   "kai_optimize",
   "kai_dashboard_legacy_redirect",
@@ -46,10 +47,15 @@ export function resolveRouteId(pathname: string): RouteId {
   if (pathname === ROUTES.KAI_ONBOARDING) return "kai_onboarding";
   if (pathname === ROUTES.KAI_IMPORT) return "kai_import";
   if (pathname === ROUTES.KAI_DASHBOARD) return "kai_dashboard";
+  if (pathname === ROUTES.KAI_INVESTMENTS) return "kai_investments";
   if (pathname === ROUTES.KAI_ANALYSIS) return "kai_analysis";
   if (pathname === ROUTES.KAI_OPTIMIZE) return "kai_optimize";
+  if (pathname === "/kai/dashboard") return "kai_dashboard_legacy_redirect";
 
   if (pathname.startsWith(`${ROUTES.KAI_DASHBOARD}/`)) {
+    return "kai_dashboard_legacy_redirect";
+  }
+  if (pathname.startsWith("/kai/dashboard/")) {
     return "kai_dashboard_legacy_redirect";
   }
 
@@ -90,6 +96,42 @@ const API_TEMPLATE_RULES: Array<{ regex: RegExp; template: string }> = [
   {
     regex: /^\/api\/kai\/portfolio\/summary\/[^/?]+(?:\?.*)?$/i,
     template: "/api/kai/portfolio/summary/{user_id}",
+  },
+  {
+    regex: /^\/api\/kai\/plaid\/status\/[^/?]+(?:\?.*)?$/i,
+    template: "/api/kai/plaid/status/{user_id}",
+  },
+  {
+    regex: /^\/api\/kai\/plaid\/link-token(?:\?.*)?$/i,
+    template: "/api/kai/plaid/link-token",
+  },
+  {
+    regex: /^\/api\/kai\/plaid\/link-token\/update(?:\?.*)?$/i,
+    template: "/api/kai/plaid/link-token/update",
+  },
+  {
+    regex: /^\/api\/kai\/plaid\/oauth\/resume(?:\?.*)?$/i,
+    template: "/api/kai/plaid/oauth/resume",
+  },
+  {
+    regex: /^\/api\/kai\/plaid\/exchange-public-token(?:\?.*)?$/i,
+    template: "/api/kai/plaid/exchange-public-token",
+  },
+  {
+    regex: /^\/api\/kai\/plaid\/refresh(?:\?.*)?$/i,
+    template: "/api/kai/plaid/refresh",
+  },
+  {
+    regex: /^\/api\/kai\/plaid\/refresh\/[^/?]+(?:\?.*)?$/i,
+    template: "/api/kai/plaid/refresh/{run_id}",
+  },
+  {
+    regex: /^\/api\/kai\/plaid\/refresh\/[^/?]+\/cancel(?:\?.*)?$/i,
+    template: "/api/kai/plaid/refresh/{run_id}/cancel",
+  },
+  {
+    regex: /^\/api\/kai\/plaid\/source(?:\?.*)?$/i,
+    template: "/api/kai/plaid/source",
   },
   {
     regex: /^\/api\/kai\/analyze\/run\/start(?:\?.*)?$/i,

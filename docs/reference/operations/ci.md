@@ -48,8 +48,11 @@ The `CI Status Gate` remains the single required status for branch protection an
 
 1. `scripts/ci/docs-parity-check.sh`
 2. `scripts/ci/subtree-sync-check.sh`
-3. Native parity checks (`verify:parity`, `verify:capacitor:*`) for native release lanes
-4. `scripts/ops/verify-env-secrets-parity.py` for release preflight and deployment readiness
+3. `npm run verify:design-system`
+4. `npm run verify:investor-language`
+5. Native parity checks (`verify:parity`, `verify:capacitor:*`) for native release lanes
+6. `scripts/ops/verify-env-secrets-parity.py` for release preflight and deployment readiness
+7. Broad full-suite pytest runs and Kai accuracy/compliance suites
 
 Do not add new CI/parity scripts without replacing or consolidating an existing check.
 
@@ -59,11 +62,14 @@ Do not add new CI/parity scripts without replacing or consolidating an existing 
 2. Every CI/helper script must have a clear owner (`frontend`, `backend`, or `platform`) in PR notes.
 3. Any CI scope expansion requires reviewer approval from the owning team.
 
-## Branch Divergence Clarity (UAT now, Prod later)
+## Branch Lanes
 
-1. `deploy_uat` currently carries newer analytics/auth-split expectations.
-2. Production branch rollout is intentionally deferred for those analytics keys until migration approval.
-3. CI should validate branch-local contracts; production analytics parity is handled as a separate migration packet, not mixed into day-to-day UAT delivery.
+1. `main` is the only integration branch for day-to-day development.
+2. `deploy_uat` is the UAT rollout lane and must contain the latest `main`.
+3. `deploy` is the production release lane and must contain the latest `main`.
+4. Production deploys are manual and handled by `.github/workflows/deploy-production.yml`, not by the main CI workflow.
+
+See [Branch Governance](./branch-governance.md).
 
 ---
 
@@ -90,8 +96,6 @@ Using a different Node or Python locally can cause â€œpass locally, fail in CIâ€
 | Install | `npm ci` | Yes |
 | TypeScript | `npm run typecheck` | Yes |
 | Lint | `npm run lint -- --max-warnings=${WEB_LINT_WARNING_BUDGET}` | Yes |
-| Design system | `npm run verify:design-system` | Yes |
-| Investor language | `npm run verify:investor-language` | Yes |
 | Build (web) | `npm run build` (Next.js) | Yes |
 | Security audit budget | `npm audit --json` + budget gate (`moderate/high/critical`) | Yes |
 | Tests | `npm run test:ci` (manifest-driven curated suites) | Yes |
@@ -116,7 +120,15 @@ Using a different Node or Python locally can cause â€œpass locally, fail in CIâ€
 | Install | `pip install -r requirements.txt` then `requirements-dev.txt` or pytest/mypy/ruff | Yes |
 | Lint | `python -m ruff check .` | Yes |
 | Type check | `python -m mypy --config-file pyproject.toml --ignore-missing-imports` | Yes |
-| Tests | `pytest tests/ -v --tb=short --cov=hushh_mcp --cov-report=xml --cov-report=term` | Yes |
+| Security | `python -m bandit -r hushh_mcp/ api/ -c pyproject.toml -ll` | Yes |
+| Tests | `bash scripts/run-test-ci.sh` (manifest-driven curated suites) | Yes |
+
+Blocking backend manifest:
+
+1. `consent-protocol/scripts/test-ci.manifest.txt`
+2. Keep this manifest small and stable.
+3. Full historical suites remain available through `make test`.
+4. Kai accuracy/compliance remains manual through `make accuracy`.
 
 **Test env (CI):**  
 `TESTING=true`, `SECRET_KEY`, and `VAULT_ENCRYPTION_KEY` are set in the workflow (see [ci.yml](../../../.github/workflows/ci.yml)).
@@ -196,8 +208,8 @@ If it exits 0, CI should pass. If it fails, fix the reported step before committ
 
 | Area | Commands (from repo root) |
 |------|----------------------------|
-| Frontend | `cd hushh-webapp && npm ci && npm run typecheck && npm run lint -- --max-warnings=0 && npm run verify:design-system && npm run verify:investor-language && npm run build && npm run test:ci` |
-| Backend | `cd consent-protocol && pip install -r requirements.txt -r requirements-dev.txt && ruff check . && mypy --config-file pyproject.toml --ignore-missing-imports && pytest tests/` |
+| Frontend | `cd hushh-webapp && npm ci && npm run typecheck && npm run lint -- --max-warnings=0 && npm run build && npm run test:ci` |
+| Backend | `cd consent-protocol && pip install -r requirements.txt -r requirements-dev.txt && ruff check . && mypy --config-file pyproject.toml --ignore-missing-imports && bandit -r hushh_mcp/ api/ -c pyproject.toml -ll && bash scripts/run-test-ci.sh` |
 | Integration | `cd hushh-webapp && npm ci && npm run verify:routes` |
 | All | `scripts/test-ci-local.sh` |
 

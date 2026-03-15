@@ -88,3 +88,14 @@ After regeneration:
 1. Re-run all verification commands.
 2. Keep Morphy wrappers compositional and API-stable.
 3. Update docs only when rules actually change.
+
+## Settings Surfaces
+The Profile page is the canonical settings implementation for the app.
+
+Reference:
+
+1. `hushh-webapp/components/profile/settings-ui.tsx`
+2. `hushh-webapp/app/profile/page.tsx`
+3. [Profile Settings Design System](./profile-settings-design-system.md)
+
+Use that companion doc when building any Apple-like settings surface so spacing, grouping, responsive behavior, and action-row semantics stay consistent.

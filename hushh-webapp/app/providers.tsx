@@ -15,7 +15,7 @@
 import { CSSProperties, ReactNode, useEffect, useMemo, useRef } from "react";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/lib/firebase";
-import { VaultProvider } from "@/lib/vault/vault-context";
+import { VaultContext, VaultProvider } from "@/lib/vault/vault-context";
 import { StepProgressProvider } from "@/lib/progress/step-progress-context";
 import { StepProgressBar } from "@/components/app-ui/step-progress-bar";
 import { CacheProvider } from "@/lib/cache/cache-context";
@@ -141,37 +141,41 @@ export function Providers({ children }: ProvidersProps) {
                   >
                     <Navbar />
                     <TopAppBar />
-                    {showSharedBottomChromeGlass ? (
-                      <div
-                        aria-hidden
-                        className={cn(
-                          "pointer-events-none fixed inset-x-0 bottom-0 z-[108] transform-gpu",
-                          hideBottomChromeGlass ? "opacity-0" : "opacity-100"
-                        )}
-                        style={{
-                          transform: `translate3d(0, calc(${100 * hideBottomChromeGlassProgress}% + ${10 * hideBottomChromeGlassProgress}px), 0)`,
-                          opacity: Math.max(0, 1 - hideBottomChromeGlassProgress),
-                        } as CSSProperties}
-                      >
-                        <div
-                          className="h-[calc(var(--app-bottom-inset)+var(--kai-command-fixed-ui)+36px)] w-full bar-glass"
-                          style={
-                            {
-                              "--app-bar-glass-bg-light": "rgba(255, 255, 255, 0.5)",
-                              "--app-bar-glass-bg-dark": "rgba(10, 12, 16, 0.74)",
-                              "--app-bar-glass-blur": "8px",
-                              "--app-bar-border-top": "1px solid rgba(255, 255, 255, 0.26)",
-                              "--app-bar-shadow":
-                                "inset 0 1px 0 rgba(255,255,255,0.18), 0 -14px 30px rgba(0,0,0,0.18)",
-                              maskImage:
-                                "linear-gradient(to top, rgba(0, 0, 0, 0.84) 0%, rgba(0, 0, 0, 0.96) 12%, black 28%, black 58%, rgba(0, 0, 0, 0.95) 74%, rgba(0, 0, 0, 0.74) 86%, rgba(0, 0, 0, 0.38) 94%, transparent 100%)",
-                              WebkitMaskImage:
-                                "linear-gradient(to top, rgba(0, 0, 0, 0.84) 0%, rgba(0, 0, 0, 0.96) 12%, black 28%, black 58%, rgba(0, 0, 0, 0.95) 74%, rgba(0, 0, 0, 0.74) 86%, rgba(0, 0, 0, 0.38) 94%, transparent 100%)",
-                            } as CSSProperties
-                          }
-                        />
-                      </div>
-                    ) : null}
+                    <VaultContext.Consumer>
+                      {(vault) =>
+                        showSharedBottomChromeGlass && vault?.isVaultUnlocked ? (
+                          <div
+                            aria-hidden
+                            className={cn(
+                              "pointer-events-none fixed inset-x-0 bottom-0 z-[108] transform-gpu",
+                              hideBottomChromeGlass ? "opacity-0" : "opacity-100"
+                            )}
+                            style={{
+                              transform: `translate3d(0, calc(${100 * hideBottomChromeGlassProgress}% + ${10 * hideBottomChromeGlassProgress}px), 0)`,
+                              opacity: Math.max(0, 1 - hideBottomChromeGlassProgress),
+                            } as CSSProperties}
+                          >
+                            <div
+                              className="h-[calc(var(--app-bottom-inset)+var(--kai-command-fixed-ui)+36px)] w-full bar-glass"
+                              style={
+                                {
+                                  "--app-bar-glass-bg-light": "rgba(255, 255, 255, 0.5)",
+                                  "--app-bar-glass-bg-dark": "rgba(10, 12, 16, 0.74)",
+                                  "--app-bar-glass-blur": "8px",
+                                  "--app-bar-border-top": "1px solid rgba(255, 255, 255, 0.26)",
+                                  "--app-bar-shadow":
+                                    "inset 0 1px 0 rgba(255,255,255,0.18), 0 -14px 30px rgba(0,0,0,0.18)",
+                                  maskImage:
+                                    "linear-gradient(to top, black 0%, black 62%, rgba(0, 0, 0, 0.95) 76%, rgba(0, 0, 0, 0.72) 88%, rgba(0, 0, 0, 0.36) 95%, transparent 100%)",
+                                  WebkitMaskImage:
+                                    "linear-gradient(to top, black 0%, black 62%, rgba(0, 0, 0, 0.95) 76%, rgba(0, 0, 0, 0.72) 88%, rgba(0, 0, 0, 0.36) 95%, transparent 100%)",
+                                } as CSSProperties
+                              }
+                            />
+                          </div>
+                        ) : null
+                      }
+                    </VaultContext.Consumer>
                     <PostAuthOnboardingSyncBridge />
                     <KaiCommandBarGlobal />
                     {/* Main scroll container: extends under fixed bar so content can scroll behind it; padding clears bar height */}

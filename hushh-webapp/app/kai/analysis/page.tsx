@@ -508,9 +508,9 @@ export default function KaiAnalysisPage() {
             <MorphyButton
               variant="none"
               effect="fade"
-              onClick={() => router.push("/kai/dashboard")}
+              onClick={() => router.push("/kai/portfolio")}
             >
-              Open Dashboard
+              Open Portfolio
             </MorphyButton>
           </div>
         </div>

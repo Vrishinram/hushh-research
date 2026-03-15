@@ -52,8 +52,19 @@ function resolveWarmPriority(routePath?: string | null): WarmPriority {
   const path = String(routePath || "").trim().toLowerCase();
   if (!path) return "default";
   if (path === "/kai" || path.startsWith("/kai?")) return "market";
-  if (path.startsWith("/kai/dashboard/analysis") || path.startsWith("/kai/analysis")) return "analysis";
-  if (path.startsWith("/kai/dashboard") || path.startsWith("/kai/optimize")) return "dashboard";
+  if (
+    path.startsWith("/kai/dashboard/analysis") ||
+    path.startsWith("/kai/analysis")
+  ) {
+    return "analysis";
+  }
+  if (
+    path.startsWith("/kai/portfolio") ||
+    path.startsWith("/kai/dashboard") ||
+    path.startsWith("/kai/optimize")
+  ) {
+    return "dashboard";
+  }
   if (path.startsWith("/consents")) return "consents";
   if (path.startsWith("/profile")) return "profile";
   return "default";

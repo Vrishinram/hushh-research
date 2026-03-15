@@ -44,8 +44,8 @@ const TOUR_STEPS = [
     icon: Store,
   },
   {
-    id: "nav-dashboard",
-    title: "Dashboard",
+    id: "nav-portfolio",
+    title: "Portfolio",
     description: "Jump straight to your portfolio view, sources, and current state.",
     icon: LayoutDashboard,
   },

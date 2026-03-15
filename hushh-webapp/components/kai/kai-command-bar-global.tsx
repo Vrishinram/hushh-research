@@ -189,7 +189,7 @@ export function KaiCommandBarGlobal() {
   }, [cache, user?.uid]);
 
   // Command palette is hidden only during loading/review overlays.
-  if (loading || !user || reviewScreenActive) {
+  if (loading || !user || reviewScreenActive || !isVaultUnlocked) {
     return null;
   }
 

@@ -1,130 +1,328 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/🤫_Hushh-Consent_First-blueviolet?style=for-the-badge" alt="Hushh"/>
+  <img src="https://img.shields.io/badge/🤫_Hushh-Personal_Agent-blueviolet?style=for-the-badge" alt="Hushh"/>
 </p>
 
 <h1 align="center">Hushh Research</h1>
 
 <p align="center">
-  <strong>Consent-first personal data infrastructure</strong><br/>
-  <em>Kai, IAM/RIA workflows, and the encrypted world-model data plane.</em>
+  <strong>Consent-First Personal Agent System</strong><br/>
+  <em>Your data. Your vault. Your agents.</em>
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Protocol-v2.0-success?style=flat-square" alt="Protocol"/>
-  <img src="https://img.shields.io/badge/Zero_Knowledge-Yes-green?style=flat-square" alt="Zero Knowledge"/>
-  <img src="https://img.shields.io/badge/Consent_First-Enforced-orange?style=flat-square" alt="Consent First"/>
-  <img src="https://img.shields.io/badge/Tri--Flow-Web%20%2B%20iOS%20%2B%20Android-1f6feb?style=flat-square" alt="Tri-Flow"/>
+  <img src="https://img.shields.io/badge/Encryption-AES--256--GCM-blue?style=flat-square" alt="Encryption"/>
+  <img src="https://img.shields.io/badge/Zero_Knowledge-✓-green?style=flat-square" alt="Zero Knowledge"/>
+  <img src="https://img.shields.io/badge/Consent_First-✓-orange?style=flat-square" alt="Consent First"/>
   <br/>
   <img src="https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js&logoColor=white" alt="Next.js"/>
   <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React"/>
-  <img src="https://img.shields.io/badge/Capacitor-8-1199EE?style=flat-square&logo=capacitor&logoColor=white" alt="Capacitor"/>
-  <img src="https://img.shields.io/badge/FastAPI-Python-009688?style=flat-square&logo=fastapi&logoColor=white" alt="FastAPI"/>
-  <img src="https://img.shields.io/badge/PostgreSQL-Operational-336791?style=flat-square&logo=postgresql&logoColor=white" alt="PostgreSQL"/>
+  <img src="https://img.shields.io/badge/Capacitor-Native-1199EE?style=flat-square&logo=capacitor&logoColor=white" alt="Capacitor"/>
+  <img src="https://img.shields.io/badge/Python-FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white" alt="FastAPI"/>
+  <br/>
+  <img src="https://img.shields.io/badge/MLX-Apple_Silicon-000000?style=flat-square&logo=apple&logoColor=white" alt="MLX"/>
+  <img src="https://img.shields.io/badge/AI-Gemini_Nano-4E86F6?style=flat-square&logo=google&logoColor=white" alt="Gemini Nano"/>
   <a href="https://discord.gg/fd38enfsH5"><img src="https://img.shields.io/badge/Discord-Join%20Us-7289da?style=flat-square&logo=discord&logoColor=white" alt="Discord"/></a>
 </p>
 
-<p align="center">
-  <a href="./docs/README.md">Docs</a> ·
-  <a href="./docs/guides/getting-started.md">Getting Started</a> ·
-  <a href="./consent-protocol/docs/README.md">Backend Docs</a> ·
-  <a href="./hushh-webapp/docs/README.md">Frontend Docs</a> ·
-  <a href="https://discord.gg/fd38enfsH5">Community</a>
-</p>
+---
 
-Consent-first personal data infrastructure for Kai, IAM/RIA workflows, and the encrypted world-model data plane.
+## 🤫 What is Hushh?
 
-## What Is Hushh?
+**Hushh** is a consent-first platform where AI agents work **for you**, not against you. Every data access requires cryptographic consent tokens—no backdoors, no bypasses, complete audit trails.
 
-Hushh is a consent-first system where user-owned data stays encrypted and every meaningful access path is gated by explicit runtime consent.
-
-```text
-Traditional AI:  user -> platform -> platform-owned data
-Hushh:           user -> encrypt -> vault/world-model -> token-gated access
+```
+Traditional AI:  You → Platform → (Platform owns your data)
+Hushh:           You → Encrypt → Vault → Token-Gated Agents
 ```
 
-Current repo scope centers on:
+### Why Consent-First Matters
 
-- Kai investor workflows
-- IAM and RIA onboarding, marketplace, and relationship management
-- consent issuance, approval, revocation, and audit
-- encrypted world-model storage and retrieval across web, iOS, and Android
+| Traditional Apps                | Hushh                           |
+| ------------------------------- | ------------------------------- |
+| Implied consent (buried in TOS) | Cryptographic consent tokens    |
+| Platform can access anytime     | Zero access without valid token |
+| No audit trail                  | Every access logged             |
+| Data on their servers           | Data encrypted on YOUR device   |
 
-## Quick Overview
+---
 
-| Layer | Current Stack | Role |
-| --- | --- | --- |
-| Frontend | Next.js 16, React 19, Tailwind, Capacitor 8 | web and native client surfaces |
-| Backend | FastAPI, Python 3.13 | consent, Kai, IAM/RIA, world-model APIs |
-| Data Plane | PostgreSQL + encrypted blobs | operational state plus private user data boundary |
-| Delivery Model | web + iOS + Android tri-flow | contract-aligned runtime paths |
+## 🔒 Security Architecture
 
-## Quick Start
+### Four-Layer Authentication (Correct Order)
+
+```
+Layer 1: Firebase Auth    → OAuth (ACCOUNT - who you are) [Always first]
+Layer 2: Vault Unlock     → Passphrase/Recovery Key (KNOWLEDGE)
+                            [Current: Passphrase + Recovery Key]
+                            [Future: FaceID/TouchID/Passkey primary, passphrase fallback]
+Layer 3: VAULT_OWNER Token → Cryptographic consent (DATA ACCESS)
+Layer 4: Agent Tokens     → Scoped permissions (OPERATIONS)
+```
+
+### Current Implementation
+
+**✅ Implemented Today:**
+
+- Firebase OAuth (Google Sign-In)
+- Passphrase-based vault unlock (PBKDF2)
+- Recovery key system (HRK-xxxx-xxxx-xxxx-xxxx)
+- VAULT_OWNER tokens for data access
+- Agent-scoped tokens for operations
+
+**🔜 Future Enhancements:**
+
+- WebAuthn/Passkey support
+- FaceID/TouchID direct integration
+- Biometric-only unlock (passphrase as fallback)
+
+### VAULT_OWNER Token (Consent-First)
+
+**Every vault data operation requires a VAULT_OWNER token:**
+
+- ✅ Read your food preferences → Token required
+- ✅ Write your professional profile → Token required
+- ✅ Access your Kai analysis history → Token required
+- ❌ No token = No access (even for encrypted data)
+
+**Token Lifecycle:**
+
+1. User unlocks vault → Backend issues VAULT_OWNER token
+2. Token stored in memory only (React Context)
+3. Backend reuses valid tokens (no duplicates)
+4. Token expires after 24 hours
+5. All operations logged to `consent_audit` table
+
+**Why this matters for compliance:**
+
+- **CCPA**: Cryptographic proof of user consent
+- **GDPR**: Explicit consent mechanism with audit trail
+- **SEC**: Complete access log for regulatory review
+
+---
+
+## 🏗️ Quick Overview
+
+| Layer        | Technology           | Purpose                          |
+| ------------ | -------------------- | -------------------------------- |
+| **Frontend** | Next.js 16, React 19 | Chat UI, Dashboard               |
+| **Protocol** | HushhMCP (Python)    | Consent tokens, TrustLinks       |
+| **Agents**   | FastAPI              | Food, Professional, Orchestrator |
+| **Storage**  | PostgreSQL + AES-256 | Encrypted vault                  |
+
+---
+
+## 🚀 Quick Start
+
+```bash
+# Clone
+git clone https://github.com/hushh-labs/hushh-research.git
+cd hushh-research
+
+# Install
+cd hushh-webapp && npm install
+cd ../consent-protocol && pip install -r requirements.txt
+cd ..
+
+# Full local stack against UAT-backed resources
+make local
+
+# Open http://localhost:3000
+```
+
+---
+
+## 📚 Documentation
+
+| Document                                                              | Description                |
+| --------------------------------------------------------------------- | -------------------------- |
+| [**🚀 Getting Started**](./getting_started.md)                        | Setup and run locally      |
+| [**📖 Documentation Index**](./docs/README.md)                        | Complete documentation hub |
+| [**👥 Contributor Guide**](./contributing.md)                         | Making your first contribution |
+| [**🏗️ Architecture**](./docs/reference/architecture/architecture.md)  | System design & flows      |
+| [**🔐 Consent Protocol**](./consent-protocol/docs/reference/consent-protocol.md) | Token lifecycle            |
+| [**🔧 Developer API**](./docs/reference/architecture/api-contracts.md) | API contract surface      |
+| [**💾 Database Schema**](./consent-protocol/db/migrations/COMBINED_MIGRATION.sql) | PostgreSQL tables          |
+
+---
+
+## 🔐 Core Concepts
+
+### 1. VAULT_OWNER Tokens (Master Consent)
+
+**The vault owner (you) accesses your own data using consent tokens:**
+
+```python
+# Backend issues token after vault unlock
+token = issue_token(
+    user_id="firebase_uid",
+    agent_id="self",
+    scope=ConsentScope.VAULT_OWNER,
+    expires_in_ms=24 * 60 * 60 * 1000  # 24 hours
+)
+
+# Every vault operation validates the token
+validate_vault_owner_token(token, user_id)
+# Checks: signature, expiry, scope, user_id match
+# Logs: All validations to consent_audit table
+```
+
+### 2. Agent-Scoped Tokens (Limited Access)
+
+```python
+# Agent Kai gets scoped token for analysis
+kai_token = issue_token(
+    user_id="firebase_uid",
+    agent_id="agent_kai",
+    scope="agent.kai.analyze",  # Limited to analysis only
+    expires_in_ms=7 * 24 * 60 * 60 * 1000  # 7 days
+)
+```
+
+### 3. Zero-Knowledge Encryption (BYOK)
+
+```
+Passphrase → PBKDF2 (100k iterations) → AES-256 Key
+                                          ↓
+                              Stored in browser memory only
+                              Server NEVER sees it
+```
+
+**Backend receives:** Encrypted ciphertext + consent token  
+**Backend validates:** Token (not data—it can't decrypt it)  
+**Backend stores:** Ciphertext only
+
+---
+
+## 📁 Structure
+
+```
+hushh-research/
+├── 🌐 hushh-webapp/           # Next.js Frontend + Capacitor
+│   ├── app/                   # App Router pages
+│   ├── components/            # React components
+│   ├── lib/
+│   │   ├── capacitor/         # Native plugins (iOS/Android)
+│   │   ├── services/          # Platform-aware API services
+│   │   └── vault/             # Client-side encryption
+│   ├── ios/                   # Native iOS (Swift)
+│   └── android/               # Native Android (Kotlin)
+│
+├── 🐍 consent-protocol/       # Python Backend + Protocol [GIT SUBTREE]
+│   ├── server.py              # FastAPI endpoints
+│   ├── hushh_mcp/
+│   │   ├── agents/            # Food, Professional, Kai
+│   │   ├── consent/           # Token issuance & validation
+│   │   └── vault/             # Encryption helpers
+│   └── db/                    # PostgreSQL migrations
+│
+└── 📚 docs/                   # Comprehensive documentation
+    ├── technical/             # Developer guides
+    ├── business/              # Product & market
+    └── vision/                # Long-term roadmap
+```
+
+### Git Subtree: consent-protocol
+
+The `consent-protocol/` directory is a **git subtree** linked to the upstream repository at [hushh-labs/consent-protocol](https://github.com/hushh-labs/consent-protocol). This is the single source of truth for the backend.
+
+**Why subtree (not submodule):**
+- Works as a normal directory -- no special checkout steps
+- All code is committed into the monorepo -- no broken references
+- CI, imports, and dev workflows work seamlessly
+- Other frontends can consume the upstream repo directly
+
+The subtree workflow source-of-truth lives in `consent-protocol/ops/monorepo/` (hooks/setup/make targets), and the root monorepo delegates to those scripts.
+
+---
+
+## 🔄 Developer Workflow
+
+This monorepo uses a `Makefile` for all common operations. Run `make help` to see all targets.
+
+**First-time setup:**
 
 ```bash
 git clone https://github.com/hushh-labs/hushh-research.git
 cd hushh-research
-make setup
-cd hushh-webapp && npm install
-cd ../consent-protocol
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-cd ..
-bash scripts/env/bootstrap_profiles.sh
-make local
+make setup              # Adds the consent-upstream remote
+make sync-protocol      # Pulls latest backend from upstream
 ```
 
-## Canonical Documentation
+### Frontend-Only Contributor
 
-This repository now follows a single-canonical-doc model:
-
-- Repo-wide references live in [`docs/`](./docs/README.md)
-- Backend and protocol references live in [`consent-protocol/docs/`](./consent-protocol/docs/README.md)
-- Frontend and native-client references live in [`hushh-webapp/docs/`](./hushh-webapp/docs/README.md)
-
-Root markdown files are entrypoints only. Detailed runtime, architecture, env, route, and test truth lives in those documentation homes.
-
-## Start Here
-
-If you are:
-
-- setting up the repo: [`docs/guides/getting-started.md`](./docs/guides/getting-started.md)
-- learning the system shape: [`docs/reference/architecture/architecture.md`](./docs/reference/architecture/architecture.md)
-- checking API and route governance: [`docs/reference/architecture/api-contracts.md`](./docs/reference/architecture/api-contracts.md) and [`docs/reference/architecture/route-contracts.md`](./docs/reference/architecture/route-contracts.md)
-- working on consent and world-model behavior: [`consent-protocol/docs/reference/consent-protocol.md`](./consent-protocol/docs/reference/consent-protocol.md) and [`consent-protocol/docs/reference/world-model.md`](./consent-protocol/docs/reference/world-model.md)
-- working on frontend/native parity: [`hushh-webapp/docs/README.md`](./hushh-webapp/docs/README.md)
-
-## Repository Scope
-
-Active product/runtime surfaces in this repo:
-
-- Kai investor workflows
-- IAM and RIA onboarding, marketplace, and relationship management
-- Consent token issuance, approval, revocation, and audit
-- Encrypted world-model storage and context retrieval
-- Web, iOS, and Android tri-flow delivery
-
-Historical or speculative product framing should live under [`docs/vision/`](./docs/vision/README.md), not in operational entrypoints.
-
-## Quick Orientation
-
-```text
-hushh-research/
-  docs/                # Cross-cutting architecture, ops, quality, vision
-  consent-protocol/    # FastAPI backend, consent protocol, MCP modules
-  hushh-webapp/        # Next.js web app and Capacitor native clients
-  scripts/             # Verification, CI, env/bootstrap, runtime helpers
+```bash
+make local-backend      # Start backend (terminal 1)
+make local-web          # Start frontend (terminal 2)
+# Commit normally -- consent-protocol/ is just a directory to you
 ```
 
-## Local Workflow
+### Backend-Only Contributor (Community)
 
-Use the maintained setup guide instead of duplicating instructions here:
+```bash
+# Clone the standalone repo directly:
+git clone https://github.com/hushh-labs/consent-protocol.git
+cd consent-protocol
+# Work entirely here, open PRs against this repo
+# Monorepo maintainers sync via: make sync-protocol
+```
 
-- repo setup and runtime profiles: [`docs/guides/getting-started.md`](./docs/guides/getting-started.md)
-- env and secret contract: [`docs/reference/operations/env-and-secrets.md`](./docs/reference/operations/env-and-secrets.md)
-- contribution workflow: [`contributing.md`](./contributing.md)
-- testing and CI entrypoints: [`TESTING.md`](./TESTING.md)
+### Full-Stack / Maintainer
 
-## Community
+```bash
+make sync-protocol      # Pull latest backend before starting work
+# ... work on both frontend and backend ...
+git add . && git commit -m "feat: ..."
+make push-protocol      # Push backend changes to upstream
+```
 
-- Discord: [discord.gg/fd38enfsH5](https://discord.gg/fd38enfsH5)
+### Golden Rules
+
+- `make sync-protocol` before starting backend-touching work
+- `make push-protocol` after merging PRs that modify `consent-protocol/`
+- Backend community PRs go to [hushh-labs/consent-protocol](https://github.com/hushh-labs/consent-protocol) directly
+- Monorepo maintainers sync upstream into the monorepo periodically
+
+---
+
+## 🎯 Platform Support
+
+| Platform             | Status        | Token Flow                          | Backend Access                |
+| -------------------- | ------------- | ----------------------------------- | ----------------------------- |
+| **Web (Browser)**    | ✅ Production | Dashboard → Next.js Proxy → Backend | Consent tokens via API routes |
+| **iOS (Native)**     | ✅ Production | Dashboard → Swift Plugin → Backend  | Direct with consent tokens    |
+| **Android (Native)** | ✅ Production | Dashboard → Kotlin Plugin → Backend | Direct with consent tokens    |
+
+All platforms enforce identical token validation—no platform bypasses.
+
+---
+
+## 👨‍💻 Meet the Founder
+
+**Manish Sainani** ([LinkedIn](https://www.linkedin.com/in/manishsainani/) | [X.com](https://x.com/manishsainani))
+_Founder & CEO, [hushh.ai](https://hushh.ai)_
+
+Manish is a former **Google Product Management Director**, where he spent 4+ years leading machine learning product initiatives. Prior to Google, he served as **Senior Director of Machine Learning Products at Splunk** and **Senior Program Manager at Microsoft**, work on Azure Machine Learning. He is the architect behind the **Consent-First** vision, dedicated to returning data sovereignty to the individual.
+
+---
+
+## 🤝 Contributing
+
+We welcome contributions! See our [Contributing Guide](./contributing.md) and [Getting Started Guide](./docs/guides/getting-started.md) for details.
+
+**Quick start:**
+1. Fork & clone the repository
+2. Run `make setup` to configure the upstream remote
+3. Run `make ci-local` to test CI checks locally
+4. Create a feature branch
+5. Make your changes
+6. Test CI locally again before committing
+7. Submit a pull request
+
+**Backend contributions:** Open PRs directly at [hushh-labs/consent-protocol](https://github.com/hushh-labs/consent-protocol). See the [Developer Workflow](#-developer-workflow) section above.
+
+---
+
+<p align="center">
+  <strong>🤫 Because your data should work for you.</strong>
+</p>

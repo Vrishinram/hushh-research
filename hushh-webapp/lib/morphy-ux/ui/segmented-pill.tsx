@@ -3,6 +3,7 @@
 import * as React from "react";
 import type { LucideIcon } from "lucide-react";
 
+import { MaterialRipple } from "@/lib/morphy-ux/material-ripple";
 import { cn } from "@/lib/utils";
 import { Icon } from "@/lib/morphy-ux/ui/icon";
 
@@ -129,7 +130,7 @@ export const SegmentedPill = React.forwardRef<HTMLDivElement, SegmentedPillProps
                 onValueChange(option.value);
               }}
               className={cn(
-                "relative z-10 flex min-w-0 items-center justify-center rounded-full text-center transition-[color,opacity,transform] duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] disabled:cursor-not-allowed",
+                "relative z-10 flex min-w-0 items-center justify-center overflow-hidden rounded-full text-center transition-[color,opacity,transform] duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] disabled:cursor-not-allowed",
                 isStacked ? "flex-col" : "flex-row",
                 isStacked ? styles.stackedButton : styles.button,
                 isStacked ? styles.stackedGap : styles.gap,
@@ -139,9 +140,9 @@ export const SegmentedPill = React.forwardRef<HTMLDivElement, SegmentedPillProps
                     ? "text-primary/85 hover:text-primary"
                     : "text-foreground/75 hover:text-foreground",
                 isDisabled && "opacity-45"
-              )}
-            >
-              {option.icon || (typeof option.badge === "number" && option.badge > 0) ? (
+                )}
+              >
+                {option.icon || (typeof option.badge === "number" && option.badge > 0) ? (
                 <span className="relative flex shrink-0 items-center justify-center">
                   {option.icon ? (
                     <Icon
@@ -168,6 +169,12 @@ export const SegmentedPill = React.forwardRef<HTMLDivElement, SegmentedPillProps
               >
                 {option.label}
               </span>
+              <MaterialRipple
+                variant={isAccent ? "link" : "none"}
+                effect={isAccent ? "glass" : "fade"}
+                disabled={isDisabled}
+                className="z-0"
+              />
             </button>
           );
         })}
