@@ -9,7 +9,7 @@ import {
   Share2,
   type LucideIcon,
 } from "lucide-react";
-import { toast } from "sonner";
+import { morphyToast as toast } from "@/lib/morphy-ux/morphy";
 
 import {
   Sheet,
