@@ -45,6 +45,7 @@ KAI_ROUTE_CONTRACT_PATHS = [
     "/analyze/run/{run_id}/stream",
     "/analyze/run/{run_id}/cancel",
     "/voice/stt",
+    "/voice/realtime/session",
     "/voice/understand",
     "/voice/plan",
     "/voice/tts",

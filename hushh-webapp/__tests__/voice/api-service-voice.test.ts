@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@capacitor/core", () => ({
   Capacitor: {
@@ -30,8 +30,18 @@ vi.mock("@/lib/services/auth-service", () => ({
 }));
 
 describe("ApiService voice planning contract", () => {
+  const originalEnv = { ...process.env };
+
   beforeEach(() => {
     vi.restoreAllMocks();
+    delete process.env.NEXT_PUBLIC_BACKEND_URL;
+    delete process.env.NEXT_PUBLIC_VOICE_DIRECT_BACKEND;
+    delete process.env.NEXT_PUBLIC_VOICE_FORCE_PROXY;
+    process.env.NODE_ENV = originalEnv.NODE_ENV;
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
   });
 
   it("sends app_state payload to /api/kai/voice/plan", async () => {
@@ -157,5 +167,61 @@ describe("ApiService voice planning contract", () => {
     const headers = request?.headers as Record<string, string>;
     expect(headers.Authorization).toBe("Bearer vault_token");
     expect(headers["X-Voice-Turn-Id"]).toBe("vturn_understand_1");
+  });
+
+  it("normalizes codec MIME and filename for voice uploads", async () => {
+    const { ApiService } = await import("@/lib/services/api-service");
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+
+    await ApiService.understandKaiVoice({
+      userId: "user_1",
+      vaultOwnerToken: "vault_token",
+      audioBlob: new Blob(["abc"], { type: "audio/webm;codecs=opus" }),
+      voiceTurnId: "vturn_understand_2",
+    });
+
+    const [, request] = fetchSpy.mock.calls[0] ?? [];
+    const form = request?.body as FormData;
+    const file = form.get("audio_file") as File | null;
+    expect(file?.type).toBe("audio/webm");
+    expect(file?.name).toBe("kai-voice.webm");
+  });
+
+  it("prefers direct backend transport for local backend in production mode", async () => {
+    process.env.NODE_ENV = "production";
+    process.env.NEXT_PUBLIC_BACKEND_URL = "http://localhost:8000";
+    const { ApiService } = await import("@/lib/services/api-service");
+    const mode = ApiService.getVoiceTransportMode();
+    expect(mode.mode).toBe("direct_backend");
+    expect(mode.reason).toBe("local_backend_default_direct");
+  });
+
+  it("creates realtime session via voice route with auth and turn id", async () => {
+    const { ApiService } = await import("@/lib/services/api-service");
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ client_secret: "ephemeral_secret", model: "gpt-realtime", voice: "alloy" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+
+    await ApiService.createKaiRealtimeSession({
+      userId: "user_1",
+      vaultOwnerToken: "vault_token",
+      voice: "alloy",
+      voiceTurnId: "vturn_realtime_1",
+    });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [url, request] = fetchSpy.mock.calls[0] ?? [];
+    expect(url).toBe("/api/kai/voice/realtime/session");
+    const headers = request?.headers as Record<string, string>;
+    expect(headers.Authorization).toBe("Bearer vault_token");
+    expect(headers["X-Voice-Turn-Id"]).toBe("vturn_realtime_1");
   });
 });

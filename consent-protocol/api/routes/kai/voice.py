@@ -7,6 +7,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+import httpx
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from pydantic import BaseModel, Field
 
@@ -173,8 +174,22 @@ def _trace_voice_stage(
     current["last_stage_ms"] = now_ms
 
     payload = {
+        # Compatibility field retained for existing parsers.
         "event": "kai_voice_stage_timing",
+        "event_name": stage,
         "turn_id": turn_id,
+        "layer": "backend",
+        "source": (
+            (metadata or {}).get("source")
+            if isinstance((metadata or {}).get("source"), str)
+            else "kai_voice_route"
+        ),
+        "route": (
+            (metadata or {}).get("route")
+            if isinstance((metadata or {}).get("route"), str)
+            else None
+        ),
+        "timestamp_iso": datetime.now(timezone.utc).isoformat(),
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "stage": stage,
         "since_prev_ms": since_prev_ms,
@@ -185,6 +200,34 @@ def _trace_voice_stage(
 
     if finalize:
         _VOICE_STAGE_TIMING.pop(turn_id, None)
+
+
+async def _ensure_client_connected(
+    request: Request,
+    *,
+    turn_id: str,
+    route: str,
+    stage: str = "request_aborted",
+    metadata: dict[str, Any] | None = None,
+    finalize: bool = True,
+) -> None:
+    if not await request.is_disconnected():
+        return
+    payload = {
+        "route": route,
+        "status": "aborted",
+        "error": "client_disconnected",
+        "client_disconnected": True,
+    }
+    if metadata:
+        payload.update(metadata)
+    _trace_voice_stage(
+        turn_id,
+        stage,
+        payload,
+        finalize=finalize,
+    )
+    raise HTTPException(status_code=499, detail="Client disconnected")
 
 
 class AppRuntimeAuth(BaseModel):
@@ -286,6 +329,22 @@ class VoiceTTSResponse(BaseModel):
     model: str
     voice: str
     format: str
+    fallback_attempted: bool = False
+    candidate_order: list[str] = Field(default_factory=list)
+    attempts: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class VoiceRealtimeSessionRequest(BaseModel):
+    user_id: str
+    voice: Optional[str] = None
+
+
+class VoiceRealtimeSessionResponse(BaseModel):
+    session_id: Optional[str] = None
+    client_secret: str
+    client_secret_expires_at: Optional[int] = None
+    model: str
+    voice: str
 
 
 class VoiceUnderstandResponse(BaseModel):
@@ -334,6 +393,91 @@ async def _resolve_active_import(user_id: str, app_state: dict[str, Any]) -> dic
     return None
 
 
+_VOICE_AUDIO_MIME_BY_EXT = {
+    ".webm": "audio/webm",
+    ".wav": "audio/wav",
+    ".m4a": "audio/mp4",
+    ".mp4": "audio/mp4",
+    ".mp3": "audio/mpeg",
+    ".mpeg": "audio/mpeg",
+    ".mpga": "audio/mpeg",
+}
+_VOICE_AUDIO_EXT_BY_MIME = {
+    "audio/webm": ".webm",
+    "audio/wav": ".wav",
+    "audio/mp4": ".m4a",
+    "audio/mpeg": ".mp3",
+}
+
+
+def _normalize_audio_mime(raw_mime: str | None) -> str:
+    raw = str(raw_mime or "").strip().lower()
+    base = raw.split(";", 1)[0].strip()
+    if base == "video/webm":
+        return "audio/webm"
+    if base == "audio/x-wav":
+        return "audio/wav"
+    if base in {"audio/mp4", "audio/m4a", "audio/x-m4a"}:
+        return "audio/mp4"
+    if base in {"audio/mp3", "audio/mpga"}:
+        return "audio/mpeg"
+    if base in _VOICE_AUDIO_EXT_BY_MIME:
+        return base
+    return ""
+
+
+def _detect_audio_mime_from_bytes(audio_bytes: bytes) -> str:
+    if not audio_bytes:
+        return ""
+    if len(audio_bytes) >= 12 and audio_bytes[:4] == b"RIFF" and audio_bytes[8:12] == b"WAVE":
+        return "audio/wav"
+    if audio_bytes[:4] == b"\x1a\x45\xdf\xa3":
+        return "audio/webm"
+    if audio_bytes[:3] == b"ID3":
+        return "audio/mpeg"
+    if len(audio_bytes) >= 2 and audio_bytes[:2] in {
+        b"\xff\xfb",
+        b"\xff\xf3",
+        b"\xff\xf2",
+    }:
+        return "audio/mpeg"
+    if len(audio_bytes) >= 12 and audio_bytes[4:8] == b"ftyp":
+        return "audio/mp4"
+    return ""
+
+
+def _audio_byte_signature(audio_bytes: bytes, *, prefix_len: int = 16) -> str:
+    if not audio_bytes:
+        return ""
+    return audio_bytes[: max(1, prefix_len)].hex()
+
+
+def _normalize_audio_upload_metadata(
+    *,
+    filename: str | None,
+    content_type: str | None,
+    mime_hint: str | None = None,
+    audio_bytes: bytes | None = None,
+) -> tuple[str, str]:
+    original_name = str(filename or "").strip() or "voice-input"
+    stem, ext = os.path.splitext(original_name)
+    ext = ext.lower()
+    normalized_mime = _normalize_audio_mime(content_type)
+    if not normalized_mime:
+        normalized_mime = _normalize_audio_mime(mime_hint)
+    if not normalized_mime:
+        normalized_mime = _VOICE_AUDIO_MIME_BY_EXT.get(ext, "")
+    if not normalized_mime:
+        normalized_mime = _detect_audio_mime_from_bytes(audio_bytes or b"")
+    if not normalized_mime:
+        normalized_mime = "audio/webm"
+
+    normalized_ext = _VOICE_AUDIO_EXT_BY_MIME.get(normalized_mime, ".webm")
+    safe_stem = (stem or "voice-input").strip() or "voice-input"
+    normalized_filename = f"{safe_stem}{normalized_ext}"
+    return normalized_filename, normalized_mime
+
+
 def _parse_optional_form_json(raw_value: str | None, *, field_name: str) -> dict[str, Any]:
     text = (raw_value or "").strip()
     if not text:
@@ -347,12 +491,215 @@ def _parse_optional_form_json(raw_value: str | None, *, field_name: str) -> dict
     return parsed
 
 
+def _error_text(error: Exception | HTTPException) -> str:
+    if isinstance(error, HTTPException):
+        detail = error.detail
+        if isinstance(detail, dict):
+            for key in ("debug_message", "message", "error", "detail"):
+                value = detail.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+        if isinstance(detail, str):
+            return detail.strip()
+        return str(detail)
+    if isinstance(error, VoiceServiceError):
+        return str(error.message).strip()
+    return str(error).strip()
+
+
+def _is_timeout_like(error: Exception | HTTPException, *, message: str | None = None) -> bool:
+    if isinstance(error, httpx.TimeoutException):
+        return True
+    if isinstance(error, TimeoutError):
+        return True
+    text = (message or _error_text(error)).strip().lower()
+    if not text:
+        return False
+    if "readtimeout" in text:
+        return True
+    return "timeout" in text or "timed out" in text
+
+
+def _stage_family(stage: str) -> str:
+    normalized = str(stage or "").strip().lower()
+    if normalized.startswith("stt"):
+        return "stt_upstream"
+    if normalized.startswith("planner"):
+        return "planner"
+    return "request"
+
+
+def _classify_understand_error(
+    *,
+    stage: str,
+    error: Exception | HTTPException,
+    status_hint: int | None = None,
+) -> tuple[int, dict[str, Any]]:
+    raw_message = _error_text(error) or "Voice understand request failed"
+    family = _stage_family(stage)
+    timeout_like = _is_timeout_like(error, message=raw_message)
+
+    if isinstance(error, HTTPException) and error.status_code == 499:
+        payload = {
+            "error_code": "client_aborted",
+            "error_stage": family,
+            "message": "Request was cancelled.",
+            "debug_message": raw_message,
+        }
+        return 499, payload
+
+    if family == "stt_upstream":
+        if timeout_like:
+            payload = {
+                "error_code": "stt_upstream_timeout",
+                "error_stage": "stt_upstream",
+                "message": "Speech recognition timed out. Please try again.",
+                "debug_message": raw_message,
+            }
+            return 504, payload
+        payload = {
+            "error_code": "stt_upstream_error",
+            "error_stage": "stt_upstream",
+            "message": "Speech recognition failed. Please try again.",
+            "debug_message": raw_message,
+        }
+        return status_hint or 502, payload
+
+    if family == "planner":
+        if timeout_like:
+            payload = {
+                "error_code": "planner_timeout",
+                "error_stage": "planner",
+                "message": "Planning timed out. Please try again.",
+                "debug_message": raw_message,
+            }
+            return 504, payload
+        payload = {
+            "error_code": "planner_error",
+            "error_stage": "planner",
+            "message": "Planning failed. Please try again.",
+            "debug_message": raw_message,
+        }
+        return status_hint or 502, payload
+
+    if timeout_like:
+        payload = {
+            "error_code": "request_timeout",
+            "error_stage": "request",
+            "message": "Voice request timed out. Please try again.",
+            "debug_message": raw_message,
+        }
+        return 504, payload
+
+    payload = {
+        "error_code": "request_error",
+        "error_stage": "request",
+        "message": "Voice request failed. Please try again.",
+        "debug_message": raw_message,
+    }
+    return status_hint or 500, payload
+
+
+@router.post("/voice/realtime/session", response_model=VoiceRealtimeSessionResponse)
+async def kai_voice_realtime_session(
+    request: Request,
+    http_response: Response,
+    body: VoiceRealtimeSessionRequest,
+    token_data: dict = Depends(require_vault_owner_token),
+):
+    turn_id = _resolve_voice_turn_id(request)
+    _set_voice_turn_id_header(http_response, turn_id)
+    _trace_voice_stage(
+        turn_id,
+        "backend_received",
+        {
+            "route": "/voice/realtime/session",
+            "method": "POST",
+        },
+    )
+
+    if token_data.get("user_id") != body.user_id:
+        _trace_voice_stage(
+            turn_id,
+            "response_sent",
+            {
+                "route": "/voice/realtime/session",
+                "status": "error",
+                "http_status": 403,
+                "error": "Token user_id does not match request user_id",
+            },
+            finalize=True,
+        )
+        raise HTTPException(status_code=403, detail="Token user_id does not match request user_id")
+
+    try:
+        await _ensure_client_connected(request, turn_id=turn_id, route="/voice/realtime/session")
+        session = await voice_service.create_realtime_session(
+            voice=body.voice,
+            include_input_transcription=True,
+        )
+        _trace_voice_stage(
+            turn_id,
+            "response_sent",
+            {
+                "route": "/voice/realtime/session",
+                "status": "ok",
+                "http_status": 200,
+                "session_id": session.get("session_id"),
+                "model": session.get("model"),
+                "voice": session.get("voice"),
+            },
+            finalize=True,
+        )
+        return VoiceRealtimeSessionResponse(
+            session_id=session.get("session_id"),
+            client_secret=str(session.get("client_secret") or ""),
+            client_secret_expires_at=(
+                int(session.get("client_secret_expires_at"))
+                if isinstance(session.get("client_secret_expires_at"), (int, float))
+                else None
+            ),
+            model=str(session.get("model") or voice_service.realtime_model),
+            voice=str(session.get("voice") or voice_service.tts_default_voice),
+        )
+    except VoiceServiceError as error:
+        _trace_voice_stage(
+            turn_id,
+            "response_sent",
+            {
+                "route": "/voice/realtime/session",
+                "status": "error",
+                "http_status": error.status_code,
+                "error": error.message,
+            },
+            finalize=True,
+        )
+        raise HTTPException(status_code=error.status_code, detail=error.message)
+    except HTTPException:
+        raise
+    except Exception as error:
+        _trace_voice_stage(
+            turn_id,
+            "response_sent",
+            {
+                "route": "/voice/realtime/session",
+                "status": "error",
+                "http_status": 500,
+                "error": str(error),
+            },
+            finalize=True,
+        )
+        logger.exception("[Kai Voice] realtime session failed turn_id=%s: %s", turn_id, error)
+        raise HTTPException(status_code=500, detail="Realtime session creation failed")
+
+
 @router.post("/voice/stt", response_model=VoiceSTTResponse)
 async def kai_voice_stt(
     request: Request,
     http_response: Response,
     user_id: str = Form(...),
     audio_file: UploadFile = File(...),
+    audio_mime_type: Optional[str] = Form(None),
     token_data: dict = Depends(require_vault_owner_token),
 ):
     started_at = time.perf_counter()
@@ -370,22 +717,34 @@ async def kai_voice_stt(
         raise HTTPException(status_code=403, detail="Token user_id does not match request user_id")
 
     try:
+        await _ensure_client_connected(request, turn_id=turn_id, route="/voice/stt")
         read_started_at = time.perf_counter()
         audio_bytes = await audio_file.read()
         audio_read_ms = int((time.perf_counter() - read_started_at) * 1000)
+        normalized_filename, normalized_content_type = _normalize_audio_upload_metadata(
+            filename=audio_file.filename,
+            content_type=audio_file.content_type,
+            mime_hint=audio_mime_type,
+            audio_bytes=audio_bytes,
+        )
+        await _ensure_client_connected(request, turn_id=turn_id, route="/voice/stt")
         _trace_voice_stage(
             turn_id,
             "stt_started",
             {
                 "route": "/voice/stt",
                 "audio_bytes": len(audio_bytes),
-                "audio_content_type": audio_file.content_type or "application/octet-stream",
+                "audio_content_type": normalized_content_type,
+                "audio_content_type_raw": audio_file.content_type or "application/octet-stream",
+                "audio_content_type_hint": audio_mime_type or None,
+                "audio_filename": normalized_filename,
+                "audio_filename_raw": audio_file.filename or "voice-input",
             },
         )
         transcript, openai_http_ms, model_used = await voice_service.transcribe_audio(
             audio_bytes=audio_bytes,
-            filename=audio_file.filename or "voice-input.webm",
-            content_type=audio_file.content_type or "application/octet-stream",
+            filename=normalized_filename,
+            content_type=normalized_content_type,
         )
         _trace_voice_stage(
             turn_id,
@@ -440,6 +799,20 @@ async def kai_voice_stt(
             finalize=True,
         )
         raise HTTPException(status_code=error.status_code, detail=error.message)
+    except HTTPException as error:
+        if error.status_code == 499:
+            raise
+        _trace_voice_stage(
+            turn_id,
+            "stt_finished",
+            {
+                "route": "/voice/stt",
+                "status": "error",
+                "error": str(error.detail),
+            },
+            finalize=True,
+        )
+        raise
     except Exception as error:
         _trace_voice_stage(
             turn_id,
@@ -461,29 +834,123 @@ async def kai_voice_understand(
     http_response: Response,
     user_id: str = Form(...),
     audio_file: UploadFile = File(...),
+    audio_mime_type: Optional[str] = Form(None),
     context_json: Optional[str] = Form(None),
     app_state_json: Optional[str] = Form(None),
     token_data: dict = Depends(require_vault_owner_token),
 ):
     started_at = time.perf_counter()
+    route = "/voice/understand"
+    incoming_turn_id = (request.headers.get("x-voice-turn-id") or "").strip()
+    turn_id_source = "frontend_header" if incoming_turn_id else "generated_server_side"
     turn_id = _resolve_voice_turn_id(request)
     _set_voice_turn_id_header(http_response, turn_id)
+    client_connected = not await request.is_disconnected()
     _trace_voice_stage(
         turn_id,
         "backend_received",
         {
-            "route": "/voice/understand",
+            "route": route,
             "method": "POST",
+            "turn_id_source": turn_id_source,
+            "client_connected": client_connected,
+            "auth_summary": {
+                "token_scope": token_data.get("scope"),
+                "token_user_present": bool(token_data.get("user_id")),
+                "token_present": bool(token_data.get("token")),
+                "token_user_matches_request": token_data.get("user_id") == user_id,
+            },
+        },
+    )
+    _trace_voice_stage(
+        turn_id,
+        "backend_request_received",
+        {
+            "route": route,
+            "method": "POST",
+            "turn_id_source": turn_id_source,
+            "client_connected": client_connected,
+            "origin": "backend_confirmed",
         },
     )
     if token_data.get("user_id") != user_id:
+        _trace_voice_stage(
+            turn_id,
+            "response_prepare_started",
+            {
+                "route": route,
+                "source": "kai_voice_understand",
+                "origin": "backend_confirmed",
+                "status": "error",
+                "http_status": 403,
+                "error_code": "request_error",
+                "error_stage": "request",
+            },
+        )
+        _trace_voice_stage(
+            turn_id,
+            "response_prepare_finished",
+            {
+                "route": route,
+                "source": "kai_voice_understand",
+                "origin": "backend_confirmed",
+                "status": "error",
+                "http_status": 403,
+                "error_code": "request_error",
+                "error_stage": "request",
+            },
+        )
+        _trace_voice_stage(
+            turn_id,
+            "response_sent",
+            {
+                "route": route,
+                "status": "error",
+                "http_status": 403,
+                "error": "Token user_id does not match request user_id",
+            },
+            finalize=True,
+        )
         raise HTTPException(status_code=403, detail="Token user_id does not match request user_id")
 
     stt_completed = False
     planner_started = False
     planner_completed = False
+    upstream_in_flight = False
+    current_stage = "backend_received"
+    stt_elapsed_ms = 0
+    planner_elapsed_ms = 0
+    stt_openai_http_ms = 0
+    planner_openai_http_ms = 0
+    stt_model_used = "unknown"
+    planner_model_used = "unknown"
+    response_kind = ""
+    planner_started_at: float | None = None
+
+    async def _check_client_connected(checkpoint: str) -> None:
+        await _ensure_client_connected(
+            request,
+            turn_id=turn_id,
+            route=route,
+            stage="request_aborted",
+            metadata={
+                "abort_stage": checkpoint,
+                "current_stage": current_stage,
+                "upstream_in_flight": upstream_in_flight,
+            },
+            finalize=False,
+        )
 
     try:
+        _trace_voice_stage(
+            turn_id,
+            "context_parse_started",
+            {
+                "route": route,
+                "source": "kai_voice_understand",
+                "origin": "backend_confirmed",
+            },
+        )
         context_payload = _parse_optional_form_json(context_json, field_name="context_json")
         app_state_raw = _parse_optional_form_json(app_state_json, field_name="app_state_json")
 
@@ -494,38 +961,167 @@ async def kai_voice_understand(
             except Exception:
                 app_state_model = AppRuntimeState()
         app_state_payload = app_state_model.model_dump() if app_state_model is not None else {}
+        _trace_voice_stage(
+            turn_id,
+            "context_parse_finished",
+            {
+                "route": route,
+                "source": "kai_voice_understand",
+                "origin": "backend_confirmed",
+                "context_keys": sorted(context_payload.keys()),
+                "app_state_keys": sorted(app_state_payload.keys()) if isinstance(app_state_payload, dict) else [],
+            },
+        )
 
+        current_stage = "pre_upload_disconnect_check"
+        await _check_client_connected("pre_upload_disconnect_check")
         stt_started_at = time.perf_counter()
+        _trace_voice_stage(
+            turn_id,
+            "upload_read_started",
+            {
+                "route": route,
+                "source": "kai_voice_understand",
+                "origin": "backend_confirmed",
+            },
+        )
         read_started_at = time.perf_counter()
         audio_bytes = await audio_file.read()
         audio_read_ms = int((time.perf_counter() - read_started_at) * 1000)
         _trace_voice_stage(
             turn_id,
-            "stt_started",
+            "upload_read_finished",
             {
-                "route": "/voice/understand",
+                "route": route,
+                "source": "kai_voice_understand",
+                "origin": "backend_confirmed",
                 "audio_bytes": len(audio_bytes),
-                "audio_content_type": audio_file.content_type or "application/octet-stream",
+                "elapsed_ms": audio_read_ms,
+                "raw_mime_type": audio_file.content_type or "application/octet-stream",
             },
         )
-        transcript, stt_openai_http_ms, stt_model_used = await voice_service.transcribe_audio(
+        normalized_filename, normalized_content_type = _normalize_audio_upload_metadata(
+            filename=audio_file.filename,
+            content_type=audio_file.content_type,
+            mime_hint=audio_mime_type,
             audio_bytes=audio_bytes,
-            filename=audio_file.filename or "voice-input.webm",
-            content_type=audio_file.content_type or "application/octet-stream",
         )
+        detected_container = _detect_audio_mime_from_bytes(audio_bytes)
+        normalized_ext = (os.path.splitext(normalized_filename)[1] or "").lower()
+        _trace_voice_stage(
+            turn_id,
+            "upload_normalized",
+            {
+                "route": route,
+                "audio_bytes": len(audio_bytes),
+                "audio_mime_raw": audio_file.content_type or "application/octet-stream",
+                "audio_mime_hint": audio_mime_type or None,
+                "audio_mime_normalized": normalized_content_type,
+                "filename_raw": audio_file.filename or "voice-input",
+                "filename_normalized": normalized_filename,
+                "filename_extension": normalized_ext or None,
+                "detected_container": detected_container or None,
+                "byte_signature_hex": _audio_byte_signature(audio_bytes),
+            },
+        )
+        _trace_voice_stage(
+            turn_id,
+            "upload_normalization_finished",
+            {
+                "route": route,
+                "source": "kai_voice_understand",
+                "origin": "backend_confirmed",
+                "audio_bytes": len(audio_bytes),
+                "raw_mime_type": audio_file.content_type or "application/octet-stream",
+                "normalized_mime_type": normalized_content_type,
+                "filename": normalized_filename,
+                "detected_container": detected_container or None,
+            },
+        )
+
+        current_stage = "post_upload_disconnect_check"
+        await _check_client_connected("post_upload_disconnect_check")
+        current_stage = "stt_started"
+        _trace_voice_stage(
+            turn_id,
+            "stt_started",
+            {
+                "route": route,
+                "audio_bytes": len(audio_bytes),
+                "audio_content_type": normalized_content_type,
+                "audio_content_type_raw": audio_file.content_type or "application/octet-stream",
+                "audio_content_type_hint": audio_mime_type or None,
+                "audio_filename": normalized_filename,
+                "audio_filename_raw": audio_file.filename or "voice-input",
+            },
+        )
+        _trace_voice_stage(
+            turn_id,
+            "stt_backend_started",
+            {
+                "route": route,
+                "source": "kai_voice_understand",
+                "origin": "backend_confirmed",
+                "audio_bytes": len(audio_bytes),
+                "normalized_mime_type": normalized_content_type,
+                "filename": normalized_filename,
+            },
+        )
+
+        def _trace_stt_upstream(stage: str, payload: dict[str, Any]) -> None:
+            _trace_voice_stage(
+                turn_id,
+                stage,
+                {
+                    "route": route,
+                    "source": "kai_voice_understand",
+                    "origin": "backend_confirmed",
+                    **payload,
+                },
+            )
+
+        current_stage = "stt_upstream"
+        upstream_in_flight = True
+        try:
+            transcript, stt_openai_http_ms, stt_model_used = await voice_service.transcribe_audio(
+                audio_bytes=audio_bytes,
+                filename=normalized_filename,
+                content_type=normalized_content_type,
+                trace_hook=_trace_stt_upstream,
+            )
+        finally:
+            upstream_in_flight = False
+
+        current_stage = "post_stt_upstream_disconnect_check"
+        await _check_client_connected("post_stt_upstream")
         stt_elapsed_ms = int((time.perf_counter() - stt_started_at) * 1000)
         stt_completed = True
+        current_stage = "stt_finished"
         _trace_voice_stage(
             turn_id,
             "stt_finished",
             {
-                "route": "/voice/understand",
+                "route": route,
                 "status": "ok",
                 "model": stt_model_used,
                 "audio_read_ms": audio_read_ms,
                 "openai_http_ms": stt_openai_http_ms,
                 "transcript_chars": len(transcript),
                 "stt_elapsed_ms": stt_elapsed_ms,
+            },
+        )
+        _trace_voice_stage(
+            turn_id,
+            "stt_backend_finished",
+            {
+                "route": route,
+                "source": "kai_voice_understand",
+                "origin": "backend_confirmed",
+                "status": "ok",
+                "model": stt_model_used,
+                "upstream_http_ms": stt_openai_http_ms,
+                "elapsed_ms": stt_elapsed_ms,
+                "transcript_chars": len(transcript),
             },
         )
         _log_voice_metric(
@@ -537,11 +1133,37 @@ async def kai_voice_understand(
         )
 
         planner_started_at = time.perf_counter()
+        planner_started = True
+        current_stage = "planner_started"
         logger.info(
             "[KAI_VOICE_DIAG] planner_normalization_version=%s",
             _PLANNER_NORMALIZATION_VERSION,
         )
         rollout = _voice_rollout_state(user_id)
+        expected_planner_branch = "deterministic" if not rollout["enabled"] else "model"
+        _trace_voice_stage(
+            turn_id,
+            "planner_started",
+            {
+                "route": route,
+                "transcript_chars": len(transcript),
+                "planner_branch_expected": expected_planner_branch,
+                "planner_model_candidates": list(voice_service.intent_models),
+                "rollout_reason": rollout.get("reason"),
+            },
+        )
+        _trace_voice_stage(
+            turn_id,
+            "planner_backend_started",
+            {
+                "route": route,
+                "source": "kai_voice_understand",
+                "origin": "backend_confirmed",
+                "planner_branch_expected": expected_planner_branch,
+                "planner_model_candidates": list(voice_service.intent_models),
+                "transcript_chars": len(transcript),
+            },
+        )
         planner_openai_http_ms = 0
         planner_model_used = "deterministic_rollout"
 
@@ -580,22 +1202,73 @@ async def kai_voice_understand(
                     "planner_normalization_version": _PLANNER_NORMALIZATION_VERSION,
                 },
             )
-            planner_started = True
             planner_completed = True
+            response_kind = str(response_payload.get("kind") or "")
+            current_stage = "planner_finished"
             _trace_voice_stage(
                 turn_id,
                 "planner_finished",
                 {
-                    "route": "/voice/understand",
+                    "route": route,
                     "status": "ok",
                     "kind": "speak_only",
                     "reason": "rollout_not_enabled",
                     "model": planner_model_used,
+                    "planner_branch_actual": "deterministic",
                     "openai_http_ms": planner_openai_http_ms,
                     "planner_elapsed_ms": planner_elapsed_ms,
                 },
             )
+            _trace_voice_stage(
+                turn_id,
+                "planner_backend_finished",
+                {
+                    "route": route,
+                    "source": "kai_voice_understand",
+                    "origin": "backend_confirmed",
+                    "status": "ok",
+                    "planner_mode": "deterministic",
+                    "model": planner_model_used,
+                    "elapsed_ms": planner_elapsed_ms,
+                    "upstream_http_ms": planner_openai_http_ms,
+                    "response_kind": response_kind,
+                },
+            )
             elapsed_ms = int((time.perf_counter() - started_at) * 1000)
+            _trace_voice_stage(
+                turn_id,
+                "response_prepare_started",
+                {
+                    "route": route,
+                    "source": "kai_voice_understand",
+                    "origin": "backend_confirmed",
+                    "status": "ok",
+                    "response_kind": response_kind,
+                },
+            )
+            _trace_voice_stage(
+                turn_id,
+                "response_prepare_finished",
+                {
+                    "route": route,
+                    "source": "kai_voice_understand",
+                    "origin": "backend_confirmed",
+                    "status": "ok",
+                    "response_kind": response_kind,
+                },
+            )
+            _trace_voice_stage(
+                turn_id,
+                "response_sent",
+                {
+                    "route": route,
+                    "status": "ok",
+                    "http_status": 200,
+                    "final_response_kind": response_kind,
+                    "elapsed_ms": elapsed_ms,
+                },
+                finalize=True,
+            )
             return VoiceUnderstandResponse(
                 transcript=transcript,
                 stt_elapsed_ms=stt_elapsed_ms,
@@ -614,23 +1287,35 @@ async def kai_voice_understand(
 
         active_analysis = await _resolve_active_analysis(user_id, app_state_payload)
         active_import = await _resolve_active_import(user_id, app_state_payload)
-        planner_started = True
-        _trace_voice_stage(
-            turn_id,
-            "planner_started",
-            {
-                "route": "/voice/understand",
-                "transcript_chars": len(transcript),
-            },
-        )
-        response_payload, planner_openai_http_ms, planner_model_used = await voice_service.plan_voice_response(
-            transcript=transcript,
-            user_id=user_id,
-            app_state=app_state_payload,
-            context=context_payload,
-            active_analysis=active_analysis,
-            active_import=active_import,
-        )
+        def _trace_planner_upstream(stage: str, payload: dict[str, Any]) -> None:
+            _trace_voice_stage(
+                turn_id,
+                stage,
+                {
+                    "route": route,
+                    "source": "kai_voice_understand",
+                    "origin": "backend_confirmed",
+                    **payload,
+                },
+            )
+        current_stage = "pre_planner_disconnect_check"
+        await _check_client_connected("pre_planner_disconnect_check")
+        current_stage = "planner_upstream"
+        upstream_in_flight = True
+        try:
+            response_payload, planner_openai_http_ms, planner_model_used = await voice_service.plan_voice_response(
+                transcript=transcript,
+                user_id=user_id,
+                app_state=app_state_payload,
+                context=context_payload,
+                active_analysis=active_analysis,
+                active_import=active_import,
+                trace_hook=_trace_planner_upstream,
+            )
+        finally:
+            upstream_in_flight = False
+        current_stage = "post_planner_upstream_disconnect_check"
+        await _check_client_connected("post_planner_upstream")
         if _voice_tool_execution_disabled() and response_payload.get("kind") == "execute":
             response_payload = voice_service._build_response(
                 kind="speak_only",
@@ -655,17 +1340,35 @@ async def kai_voice_understand(
         )
         planner_elapsed_ms = int((time.perf_counter() - planner_started_at) * 1000)
         planner_completed = True
+        current_stage = "planner_finished"
+        response_kind = response_kind or str(response_payload.get("kind") or "")
         _trace_voice_stage(
             turn_id,
             "planner_finished",
             {
-                "route": "/voice/understand",
+                "route": route,
                 "status": "ok",
                 "kind": response_kind,
                 "reason": response_reason,
                 "model": planner_model_used,
+                "planner_branch_actual": planner_branch,
                 "openai_http_ms": planner_openai_http_ms,
                 "planner_elapsed_ms": planner_elapsed_ms,
+            },
+        )
+        _trace_voice_stage(
+            turn_id,
+            "planner_backend_finished",
+            {
+                "route": route,
+                "source": "kai_voice_understand",
+                "origin": "backend_confirmed",
+                "status": "ok",
+                "planner_mode": planner_branch,
+                "model": planner_model_used,
+                "elapsed_ms": planner_elapsed_ms,
+                "upstream_http_ms": planner_openai_http_ms,
+                "response_kind": response_kind,
             },
         )
         _log_voice_metric(
@@ -720,6 +1423,40 @@ async def kai_voice_understand(
             },
         )
         elapsed_ms = int((time.perf_counter() - started_at) * 1000)
+        _trace_voice_stage(
+            turn_id,
+            "response_prepare_started",
+            {
+                "route": route,
+                "source": "kai_voice_understand",
+                "origin": "backend_confirmed",
+                "status": "ok",
+                "response_kind": response_kind,
+            },
+        )
+        _trace_voice_stage(
+            turn_id,
+            "response_prepare_finished",
+            {
+                "route": route,
+                "source": "kai_voice_understand",
+                "origin": "backend_confirmed",
+                "status": "ok",
+                "response_kind": response_kind,
+            },
+        )
+        _trace_voice_stage(
+            turn_id,
+            "response_sent",
+            {
+                "route": route,
+                "status": "ok",
+                "http_status": 200,
+                "final_response_kind": response_kind,
+                "elapsed_ms": elapsed_ms,
+            },
+            finalize=True,
+        )
         logger.info(
             (
                 "[Kai Voice] route=/voice/understand status=ok turn_id=%s elapsed_ms=%s stt_elapsed_ms=%s "
@@ -761,65 +1498,341 @@ async def kai_voice_understand(
             elapsed_ms=elapsed_ms,
         )
     except VoiceServiceError as error:
+        status_code, error_payload = _classify_understand_error(
+            stage=current_stage,
+            error=error,
+            status_hint=error.status_code,
+        )
+        error_payload.update(
+            {
+                "turn_id": turn_id,
+                "route": route,
+                "current_stage": current_stage,
+            }
+        )
         if not stt_completed:
             _trace_voice_stage(
                 turn_id,
                 "stt_finished",
                 {
-                    "route": "/voice/understand",
+                    "route": route,
                     "status": "error",
-                    "error": error.message,
+                    "error": error_payload.get("debug_message") or error.message,
+                    "error_code": error_payload.get("error_code"),
+                    "error_stage": error_payload.get("error_stage"),
                 },
-                finalize=True,
+            )
+            _trace_voice_stage(
+                turn_id,
+                "stt_backend_finished",
+                {
+                    "route": route,
+                    "source": "kai_voice_understand",
+                    "origin": "backend_confirmed",
+                    "status": "error",
+                    "error": error_payload.get("debug_message") or error.message,
+                    "error_code": error_payload.get("error_code"),
+                    "error_stage": error_payload.get("error_stage"),
+                },
             )
         elif planner_started and not planner_completed:
+            planner_elapsed_ms = (
+                int((time.perf_counter() - planner_started_at) * 1000)
+                if planner_started_at is not None
+                else 0
+            )
+            _trace_voice_stage(
+                turn_id,
+                "planner_failed",
+                {
+                    "route": route,
+                    "model_used": planner_model_used,
+                    "elapsed_ms": planner_elapsed_ms,
+                    "exception_type": "VoiceServiceError",
+                    "error": error_payload.get("debug_message") or error.message,
+                    "error_code": error_payload.get("error_code"),
+                    "error_stage": error_payload.get("error_stage"),
+                },
+            )
             _trace_voice_stage(
                 turn_id,
                 "planner_finished",
                 {
-                    "route": "/voice/understand",
+                    "route": route,
                     "status": "error",
-                    "error": error.message,
+                    "error": error_payload.get("debug_message") or error.message,
+                    "error_code": error_payload.get("error_code"),
+                    "error_stage": error_payload.get("error_stage"),
                 },
-                finalize=True,
+            )
+            _trace_voice_stage(
+                turn_id,
+                "planner_backend_finished",
+                {
+                    "route": route,
+                    "source": "kai_voice_understand",
+                    "origin": "backend_confirmed",
+                    "status": "error",
+                    "model": planner_model_used,
+                    "elapsed_ms": planner_elapsed_ms,
+                    "error": error_payload.get("debug_message") or error.message,
+                    "error_code": error_payload.get("error_code"),
+                    "error_stage": error_payload.get("error_stage"),
+                },
             )
         else:
             _trace_voice_stage(
                 turn_id,
                 "planner_finished",
                 {
-                    "route": "/voice/understand",
+                    "route": route,
                     "status": "error",
-                    "error": error.message,
+                    "error": error_payload.get("debug_message") or error.message,
+                    "error_code": error_payload.get("error_code"),
+                    "error_stage": error_payload.get("error_stage"),
                 },
-                finalize=True,
             )
-        raise HTTPException(status_code=error.status_code, detail=error.message)
-    except HTTPException:
+            _trace_voice_stage(
+                turn_id,
+                "planner_backend_finished",
+                {
+                    "route": route,
+                    "source": "kai_voice_understand",
+                    "origin": "backend_confirmed",
+                    "status": "error",
+                    "model": planner_model_used,
+                    "error": error_payload.get("debug_message") or error.message,
+                    "error_code": error_payload.get("error_code"),
+                    "error_stage": error_payload.get("error_stage"),
+                },
+            )
         _trace_voice_stage(
             turn_id,
-            "planner_finished" if stt_completed else "stt_finished",
+            "response_prepare_started",
             {
-                "route": "/voice/understand",
+                "route": route,
+                "source": "kai_voice_understand",
+                "origin": "backend_confirmed",
                 "status": "error",
-                "error": "http_exception",
+                "error_code": error_payload.get("error_code"),
+                "error_stage": error_payload.get("error_stage"),
+            },
+        )
+        _trace_voice_stage(
+            turn_id,
+            "response_prepare_finished",
+            {
+                "route": route,
+                "source": "kai_voice_understand",
+                "origin": "backend_confirmed",
+                "status": "error",
+                "error_code": error_payload.get("error_code"),
+                "error_stage": error_payload.get("error_stage"),
+            },
+        )
+        _trace_voice_stage(
+            turn_id,
+            "response_sent",
+            {
+                "route": route,
+                "status": "error",
+                "http_status": status_code,
+                "error": error_payload.get("debug_message") or error.message,
+                "error_code": error_payload.get("error_code"),
+                "error_stage": error_payload.get("error_stage"),
+                "current_stage": current_stage,
+                "upstream_in_flight": upstream_in_flight,
             },
             finalize=True,
         )
-        raise
-    except Exception as error:
+        raise HTTPException(status_code=status_code, detail=error_payload)
+    except HTTPException as error:
+        if error.status_code == 499:
+            status_code, error_payload = _classify_understand_error(
+                stage=current_stage,
+                error=error,
+                status_hint=499,
+            )
+            error_payload.update(
+                {
+                    "turn_id": turn_id,
+                    "route": route,
+                    "current_stage": current_stage,
+                }
+            )
+            _trace_voice_stage(
+                turn_id,
+                "response_sent",
+                {
+                    "route": route,
+                    "status": "aborted",
+                    "http_status": status_code,
+                    "error": error_payload.get("debug_message") or str(error.detail),
+                    "error_code": error_payload.get("error_code"),
+                    "error_stage": error_payload.get("error_stage"),
+                    "current_stage": current_stage,
+                    "upstream_in_flight": upstream_in_flight,
+                },
+                finalize=True,
+            )
+            raise HTTPException(status_code=status_code, detail=error_payload)
+        status_code: int
+        error_payload: dict[str, Any]
+        if isinstance(error.detail, dict) and isinstance(error.detail.get("error_code"), str):
+            status_code = error.status_code
+            error_payload = dict(error.detail)
+            error_payload.setdefault("route", route)
+            error_payload.setdefault("turn_id", turn_id)
+            error_payload.setdefault("current_stage", current_stage)
+        else:
+            status_code, error_payload = _classify_understand_error(
+                stage=current_stage,
+                error=error,
+                status_hint=error.status_code,
+            )
+            error_payload.update(
+                {
+                    "turn_id": turn_id,
+                    "route": route,
+                    "current_stage": current_stage,
+                }
+            )
+        if planner_started and not planner_completed and stt_completed:
+            planner_elapsed_ms = (
+                int((time.perf_counter() - planner_started_at) * 1000)
+                if planner_started_at is not None
+                else 0
+            )
+            _trace_voice_stage(
+                turn_id,
+                "planner_failed",
+                {
+                    "route": route,
+                    "model_used": planner_model_used,
+                    "elapsed_ms": planner_elapsed_ms,
+                    "exception_type": "HTTPException",
+                    "error": error_payload.get("debug_message") or str(error.detail),
+                    "error_code": error_payload.get("error_code"),
+                    "error_stage": error_payload.get("error_stage"),
+                },
+            )
+            _trace_voice_stage(
+                turn_id,
+                "planner_backend_finished",
+                {
+                    "route": route,
+                    "source": "kai_voice_understand",
+                    "origin": "backend_confirmed",
+                    "status": "error",
+                    "model": planner_model_used,
+                    "elapsed_ms": planner_elapsed_ms,
+                    "error": error_payload.get("debug_message") or str(error.detail),
+                    "error_code": error_payload.get("error_code"),
+                    "error_stage": error_payload.get("error_stage"),
+                },
+            )
         _trace_voice_stage(
             turn_id,
             "planner_finished" if stt_completed else "stt_finished",
             {
-                "route": "/voice/understand",
+                "route": route,
                 "status": "error",
-                "error": str(error),
+                "error": error_payload.get("debug_message") or str(error.detail),
+                "error_code": error_payload.get("error_code"),
+                "error_stage": error_payload.get("error_stage"),
+            },
+        )
+        _trace_voice_stage(
+            turn_id,
+            "response_sent",
+            {
+                "route": route,
+                "status": "error",
+                "http_status": status_code,
+                "error": error_payload.get("debug_message") or str(error.detail),
+                "error_code": error_payload.get("error_code"),
+                "error_stage": error_payload.get("error_stage"),
+                "current_stage": current_stage,
+                "upstream_in_flight": upstream_in_flight,
+            },
+            finalize=True,
+        )
+        raise HTTPException(status_code=status_code, detail=error_payload)
+    except Exception as error:
+        status_code, error_payload = _classify_understand_error(
+            stage=current_stage,
+            error=error,
+            status_hint=500,
+        )
+        error_payload.update(
+            {
+                "turn_id": turn_id,
+                "route": route,
+                "current_stage": current_stage,
+            }
+        )
+        if planner_started and not planner_completed and stt_completed:
+            planner_elapsed_ms = (
+                int((time.perf_counter() - planner_started_at) * 1000)
+                if planner_started_at is not None
+                else 0
+            )
+            _trace_voice_stage(
+                turn_id,
+                "planner_failed",
+                {
+                    "route": route,
+                    "model_used": planner_model_used,
+                    "elapsed_ms": planner_elapsed_ms,
+                    "exception_type": type(error).__name__,
+                    "error": error_payload.get("debug_message") or str(error),
+                    "error_code": error_payload.get("error_code"),
+                    "error_stage": error_payload.get("error_stage"),
+                },
+            )
+            _trace_voice_stage(
+                turn_id,
+                "planner_backend_finished",
+                {
+                    "route": route,
+                    "source": "kai_voice_understand",
+                    "origin": "backend_confirmed",
+                    "status": "error",
+                    "model": planner_model_used,
+                    "elapsed_ms": planner_elapsed_ms,
+                    "error": error_payload.get("debug_message") or str(error),
+                    "error_code": error_payload.get("error_code"),
+                    "error_stage": error_payload.get("error_stage"),
+                },
+            )
+        _trace_voice_stage(
+            turn_id,
+            "planner_finished" if stt_completed else "stt_finished",
+            {
+                "route": route,
+                "status": "error",
+                "error": error_payload.get("debug_message") or str(error),
+                "error_code": error_payload.get("error_code"),
+                "error_stage": error_payload.get("error_stage"),
+            },
+        )
+        _trace_voice_stage(
+            turn_id,
+            "response_sent",
+            {
+                "route": route,
+                "status": "error",
+                "http_status": status_code,
+                "error": error_payload.get("debug_message") or str(error),
+                "error_code": error_payload.get("error_code"),
+                "error_stage": error_payload.get("error_stage"),
+                "current_stage": current_stage,
+                "upstream_in_flight": upstream_in_flight,
             },
             finalize=True,
         )
         logger.exception("[Kai Voice] understand failed turn_id=%s: %s", turn_id, error)
-        raise HTTPException(status_code=500, detail="Voice understand request failed")
+        raise HTTPException(status_code=status_code, detail=error_payload)
 
 
 @router.post("/voice/plan", response_model=VoicePlanResponse)
@@ -894,6 +1907,7 @@ async def kai_voice_plan(
         app_state_payload = body.app_state.model_dump() if body.app_state is not None else {}
         active_analysis = await _resolve_active_analysis(body.user_id, app_state_payload)
         active_import = await _resolve_active_import(body.user_id, app_state_payload)
+        await _ensure_client_connected(request, turn_id=turn_id, route="/voice/plan")
         _trace_voice_stage(
             turn_id,
             "planner_started",
@@ -1028,6 +2042,20 @@ async def kai_voice_plan(
             finalize=True,
         )
         raise HTTPException(status_code=error.status_code, detail=error.message)
+    except HTTPException as error:
+        if error.status_code == 499:
+            raise
+        _trace_voice_stage(
+            turn_id,
+            "planner_finished",
+            {
+                "route": "/voice/plan",
+                "status": "error",
+                "error": str(error.detail),
+            },
+            finalize=True,
+        )
+        raise
     except Exception as error:
         _trace_voice_stage(
             turn_id,
@@ -1062,10 +2090,41 @@ async def kai_voice_tts(
             "text_chars": len(body.text or ""),
         },
     )
+    _trace_voice_stage(
+        turn_id,
+        "backend_request_received",
+        {
+            "route": "/voice/tts",
+            "method": "POST",
+            "origin": "backend_confirmed",
+            "text_chars": len(body.text or ""),
+        },
+    )
+    _trace_voice_stage(
+        turn_id,
+        "payload_parse_started",
+        {
+            "route": "/voice/tts",
+            "origin": "backend_confirmed",
+            "source": "kai_voice_tts",
+        },
+    )
+    _trace_voice_stage(
+        turn_id,
+        "payload_parse_finished",
+        {
+            "route": "/voice/tts",
+            "origin": "backend_confirmed",
+            "source": "kai_voice_tts",
+            "text_chars": len(body.text or ""),
+            "voice": body.voice or voice_service.tts_default_voice,
+        },
+    )
     if token_data.get("user_id") != body.user_id:
         raise HTTPException(status_code=403, detail="Token user_id does not match request user_id")
 
     try:
+        await _ensure_client_connected(request, turn_id=turn_id, route="/voice/tts")
         _trace_voice_stage(
             turn_id,
             "tts_started",
@@ -1073,11 +2132,38 @@ async def kai_voice_tts(
                 "route": "/voice/tts",
                 "text_chars": len(body.text or ""),
                 "voice": body.voice or voice_service.tts_default_voice,
+                "candidate_order": voice_service._ordered_tts_model_candidates(),
             },
         )
+        _trace_voice_stage(
+            turn_id,
+            "tts_backend_started",
+            {
+                "route": "/voice/tts",
+                "origin": "backend_confirmed",
+                "source": "kai_voice_tts",
+                "text_chars": len(body.text or ""),
+                "voice": body.voice or voice_service.tts_default_voice,
+                "candidate_order": voice_service._ordered_tts_model_candidates(),
+            },
+        )
+
+        def _trace_tts_upstream(stage: str, payload: dict[str, Any]) -> None:
+            _trace_voice_stage(
+                turn_id,
+                stage,
+                {
+                    "route": "/voice/tts",
+                    "origin": "backend_confirmed",
+                    "source": "kai_voice_tts",
+                    **payload,
+                },
+            )
+
         audio_base64, mime_type, tts_meta = await voice_service.synthesize_speech(
             text=body.text,
             voice=body.voice or voice_service.tts_default_voice,
+            trace_hook=_trace_tts_upstream,
         )
         _trace_voice_stage(
             turn_id,
@@ -1088,15 +2174,34 @@ async def kai_voice_tts(
                 "model": tts_meta.get("model"),
                 "voice": tts_meta.get("voice"),
                 "format": tts_meta.get("format"),
+                "source": tts_meta.get("source") or "backend_openai_audio",
+                "fallback_attempted": tts_meta.get("fallback_attempted"),
+                "candidate_order": tts_meta.get("candidate_order"),
+                "attempts": tts_meta.get("attempts"),
+                "pruned_unavailable": tts_meta.get("pruned_unavailable"),
+                "pruned_models": tts_meta.get("pruned_models"),
                 "mime_type": mime_type,
                 "audio_b64_chars": len(audio_base64),
             },
-            finalize=True,
+        )
+        _trace_voice_stage(
+            turn_id,
+            "tts_backend_finished",
+            {
+                "route": "/voice/tts",
+                "origin": "backend_confirmed",
+                "source": "kai_voice_tts",
+                "status": "ok",
+                "model": tts_meta.get("model"),
+                "voice": tts_meta.get("voice"),
+                "format": tts_meta.get("format"),
+                "audio_b64_chars": len(audio_base64),
+            },
         )
         elapsed_ms = int((time.perf_counter() - started_at) * 1000)
         logger.info(
             "[Kai Voice] route=/voice/tts status=ok turn_id=%s elapsed_ms=%s text_chars=%s "
-            "audio_b64_chars=%s model=%s voice=%s format=%s",
+            "audio_b64_chars=%s model=%s voice=%s format=%s source=%s pruned_unavailable=%s pruned_models=%s",
             turn_id,
             elapsed_ms,
             len(body.text or ""),
@@ -1104,6 +2209,9 @@ async def kai_voice_tts(
             tts_meta.get("model", ""),
             tts_meta.get("voice", ""),
             tts_meta.get("format", ""),
+            tts_meta.get("source", "backend_openai_audio"),
+            tts_meta.get("pruned_unavailable", "false"),
+            tts_meta.get("pruned_models", ""),
         )
         _log_voice_metric(
             "tts_latency_ms",
@@ -1117,13 +2225,101 @@ async def kai_voice_tts(
                 "format": tts_meta.get("format"),
             },
         )
-        return VoiceTTSResponse(
+        _trace_voice_stage(
+            turn_id,
+            "response_prepare_started",
+            {
+                "route": "/voice/tts",
+                "origin": "backend_confirmed",
+                "source": "kai_voice_tts",
+                "status": "ok",
+            },
+        )
+        response_payload = VoiceTTSResponse(
             audio_base64=audio_base64,
             mime_type=mime_type,
             model=str(tts_meta.get("model") or ""),
             voice=str(tts_meta.get("voice") or ""),
             format=str(tts_meta.get("format") or ""),
+            fallback_attempted=str(tts_meta.get("fallback_attempted") or "").strip().lower() == "true",
+            candidate_order=[
+                item
+                for item in str(tts_meta.get("candidate_order") or "").split(",")
+                if str(item).strip()
+            ],
+            attempts=list(tts_meta.get("attempts") or []),
         )
+        _trace_voice_stage(
+            turn_id,
+            "response_prepare_finished",
+            {
+                "route": "/voice/tts",
+                "origin": "backend_confirmed",
+                "source": "kai_voice_tts",
+                "status": "ok",
+            },
+        )
+        _trace_voice_stage(
+            turn_id,
+            "response_sent",
+            {
+                "route": "/voice/tts",
+                "origin": "backend_confirmed",
+                "source": "kai_voice_tts",
+                "status": "ok",
+                "http_status": 200,
+                "elapsed_ms": elapsed_ms,
+                "model": str(tts_meta.get("model") or ""),
+            },
+            finalize=True,
+        )
+        return response_payload
+    except HTTPException as error:
+        if error.status_code == 499:
+            raise
+        _trace_voice_stage(
+            turn_id,
+            "tts_finished",
+            {
+                "route": "/voice/tts",
+                "status": "error",
+                "error": str(error.detail),
+            },
+        )
+        _trace_voice_stage(
+            turn_id,
+            "response_prepare_started",
+            {
+                "route": "/voice/tts",
+                "origin": "backend_confirmed",
+                "source": "kai_voice_tts",
+                "status": "error",
+            },
+        )
+        _trace_voice_stage(
+            turn_id,
+            "response_prepare_finished",
+            {
+                "route": "/voice/tts",
+                "origin": "backend_confirmed",
+                "source": "kai_voice_tts",
+                "status": "error",
+            },
+        )
+        _trace_voice_stage(
+            turn_id,
+            "response_sent",
+            {
+                "route": "/voice/tts",
+                "origin": "backend_confirmed",
+                "source": "kai_voice_tts",
+                "status": "error",
+                "http_status": error.status_code,
+                "error": str(error.detail),
+            },
+            finalize=True,
+        )
+        raise
     except VoiceServiceError as error:
         _trace_voice_stage(
             turn_id,
@@ -1131,6 +2327,38 @@ async def kai_voice_tts(
             {
                 "route": "/voice/tts",
                 "status": "error",
+                "error": error.message,
+            },
+        )
+        _trace_voice_stage(
+            turn_id,
+            "response_prepare_started",
+            {
+                "route": "/voice/tts",
+                "origin": "backend_confirmed",
+                "source": "kai_voice_tts",
+                "status": "error",
+            },
+        )
+        _trace_voice_stage(
+            turn_id,
+            "response_prepare_finished",
+            {
+                "route": "/voice/tts",
+                "origin": "backend_confirmed",
+                "source": "kai_voice_tts",
+                "status": "error",
+            },
+        )
+        _trace_voice_stage(
+            turn_id,
+            "response_sent",
+            {
+                "route": "/voice/tts",
+                "origin": "backend_confirmed",
+                "source": "kai_voice_tts",
+                "status": "error",
+                "http_status": error.status_code,
                 "error": error.message,
             },
             finalize=True,
@@ -1143,6 +2371,38 @@ async def kai_voice_tts(
             {
                 "route": "/voice/tts",
                 "status": "error",
+                "error": str(error),
+            },
+        )
+        _trace_voice_stage(
+            turn_id,
+            "response_prepare_started",
+            {
+                "route": "/voice/tts",
+                "origin": "backend_confirmed",
+                "source": "kai_voice_tts",
+                "status": "error",
+            },
+        )
+        _trace_voice_stage(
+            turn_id,
+            "response_prepare_finished",
+            {
+                "route": "/voice/tts",
+                "origin": "backend_confirmed",
+                "source": "kai_voice_tts",
+                "status": "error",
+            },
+        )
+        _trace_voice_stage(
+            turn_id,
+            "response_sent",
+            {
+                "route": "/voice/tts",
+                "origin": "backend_confirmed",
+                "source": "kai_voice_tts",
+                "status": "error",
+                "http_status": 500,
                 "error": str(error),
             },
             finalize=True,

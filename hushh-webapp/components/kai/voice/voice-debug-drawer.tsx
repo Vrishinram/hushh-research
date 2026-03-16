@@ -38,6 +38,121 @@ export function VoiceDebugDrawer({
     return slice;
   }, [debugEvents]);
 
+  const turnSummary = useMemo(() => {
+    const byTurn = new Map<string, (typeof debugEvents)[number][]>();
+    for (const event of debugEvents) {
+      const list = byTurn.get(event.turnId) || [];
+      list.push(event);
+      byTurn.set(event.turnId, list);
+    }
+    const completedTurnIds: string[] = [];
+    for (const [turnId, events] of byTurn.entries()) {
+      const hasCompletion = events.some((event) => {
+        if (event.stage === "turn" && ["turn_completed", "turn_failed", "turn_aborted"].includes(event.event)) {
+          return true;
+        }
+        if (event.stage === "turn" && event.event === "stage_timing") {
+          const stage = typeof event.payload?.stage === "string" ? event.payload.stage : "";
+          return stage === "playback_ended" || stage === "tts_fallback_playback_ended";
+        }
+        return false;
+      });
+      if (hasCompletion) completedTurnIds.push(turnId);
+    }
+    const activeTurnId =
+      (completedTurnIds.length > 0 ? completedTurnIds[completedTurnIds.length - 1] : null) ||
+      lastTurnId ||
+      recentEvents[0]?.turnId ||
+      null;
+    if (!activeTurnId) {
+      return {
+        turnId: null,
+        sttModel: null as string | null,
+        plannerModel: null as string | null,
+        ttsModel: null as string | null,
+        ttsSource: null as string | null,
+        fallbackUsed: false,
+        fallbackReason: null as string | null,
+        totalMs: null as number | null,
+      };
+    }
+
+    const events = debugEvents.filter((event) => event.turnId === activeTurnId);
+    const toNumber = (value: unknown): number | null => {
+      if (typeof value === "number" && Number.isFinite(value)) return value;
+      if (typeof value === "string" && value.trim()) {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : null;
+      }
+      return null;
+    };
+
+    let sttModel: string | null = null;
+    let plannerModel: string | null = null;
+    let ttsModel: string | null = null;
+    let ttsSource: string | null = null;
+    let fallbackUsed = false;
+    let fallbackReason: string | null = null;
+    let totalMs: number | null = null;
+
+    for (const event of events) {
+      const payload = event.payload || {};
+      if (event.stage === "stt" && event.event === "request_ended") {
+        const model = payload.model;
+        if (typeof model === "string" && model.trim()) sttModel = model.trim();
+      }
+      if (event.stage === "planner" && event.event === "response_received") {
+        const model = payload.planner_model;
+        if (typeof model === "string" && model.trim()) plannerModel = model.trim();
+      }
+      if (event.stage === "tts" && event.event === "audio_received") {
+        const model = payload.model;
+        if (typeof model === "string" && model.trim()) ttsModel = model.trim();
+        const source = payload.source;
+        if (typeof source === "string" && source.trim()) ttsSource = source.trim();
+        if (payload.fallback_attempted === true) {
+          fallbackUsed = true;
+          fallbackReason = "model_fallback";
+        }
+      }
+      if (
+        event.stage === "tts" &&
+        (event.event === "fallback_activated" || event.event === "tts_fallback_triggered")
+      ) {
+        fallbackUsed = true;
+        const reason = payload.reason;
+        if (typeof reason === "string" && reason.trim()) {
+          fallbackReason = reason.trim();
+        }
+      }
+      if (event.stage === "tts" && event.event === "stream_tts_failed_fallback_batch") {
+        fallbackUsed = true;
+        fallbackReason = "realtime_tts_failed_fallback_batch";
+      }
+      if (event.stage === "stt" && event.event === "stream_session_failed") {
+        fallbackUsed = true;
+        fallbackReason = "realtime_stt_failed_fallback_batch";
+      }
+      if (event.stage === "turn" && event.event === "stage_timing") {
+        const ms = toNumber(payload.since_turn_start_ms);
+        if (ms != null) {
+          totalMs = totalMs == null ? ms : Math.max(totalMs, ms);
+        }
+      }
+    }
+
+    return {
+      turnId: activeTurnId,
+      sttModel,
+      plannerModel,
+      ttsModel,
+      ttsSource,
+      fallbackUsed,
+      fallbackReason,
+      totalMs,
+    };
+  }, [debugEvents, lastTurnId, recentEvents]);
+
   if (!enabled) return null;
 
   return (
@@ -70,6 +185,23 @@ export function VoiceDebugDrawer({
             </p>
             <p>
               <span className="font-semibold text-foreground">Turn:</span> {lastTurnId ?? "n/a"}
+            </p>
+            <p>
+              <span className="font-semibold text-foreground">Models:</span>{" "}
+              STT={turnSummary.sttModel || "n/a"} | Planner={turnSummary.plannerModel || "n/a"} | TTS=
+              {turnSummary.ttsModel || "n/a"}
+            </p>
+            <p>
+              <span className="font-semibold text-foreground">TTS Source:</span>{" "}
+              {turnSummary.ttsSource || "n/a"}
+            </p>
+            <p>
+              <span className="font-semibold text-foreground">Fallback:</span>{" "}
+              {turnSummary.fallbackUsed ? `yes${turnSummary.fallbackReason ? ` (${turnSummary.fallbackReason})` : ""}` : "no"}
+            </p>
+            <p>
+              <span className="font-semibold text-foreground">Turn Total:</span>{" "}
+              {turnSummary.totalMs != null ? `${Math.round(turnSummary.totalMs)} ms` : "n/a"}
             </p>
             <p>
               <span className="font-semibold text-foreground">Route:</span> {route} ({screen})

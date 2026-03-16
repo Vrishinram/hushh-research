@@ -37,6 +37,7 @@ import {
   type VoiceUiState,
 } from "@/lib/voice/voice-ui-state-machine";
 import { VoiceTtsPlaybackManager } from "@/lib/voice/voice-tts-playback";
+import { VoiceRealtimeClient } from "@/lib/voice/voice-realtime-client";
 import type {
   AppRuntimeState,
   VoiceMemoryHint,
@@ -74,8 +75,112 @@ const STT_UNCLEAR_MESSAGE = "I couldn’t understand what you said, please repea
 const NETWORK_RETRY_MESSAGE = "I couldn’t complete that request, please try again.";
 const DEFAULT_TTS_VOICE =
   String(process.env.NEXT_PUBLIC_KAI_VOICE_TTS_VOICE || "alloy").trim() || "alloy";
+const DEFAULT_UNDERSTAND_TIMEOUT_MS = (() => {
+  const parsed = Number(process.env.NEXT_PUBLIC_KAI_VOICE_UNDERSTAND_TIMEOUT_MS || "");
+  if (Number.isFinite(parsed) && parsed >= 20000) return Math.round(parsed);
+  return 50000;
+})();
+const EXPECTED_BACKEND_UPSTREAM_TIMEOUT_S = (() => {
+  const parsed = Number(process.env.NEXT_PUBLIC_KAI_VOICE_BACKEND_UPSTREAM_TIMEOUT_S || "");
+  if (Number.isFinite(parsed) && parsed >= 1) return Number(parsed);
+  return 45;
+})();
+const VOICE_STREAMING_ENABLED =
+  String(process.env.NEXT_PUBLIC_KAI_VOICE_STREAMING_ENABLED || "")
+    .trim()
+    .toLowerCase() === "true";
 const DEV_VOICE_DEBUG_ENABLED =
   process.env.NODE_ENV !== "production" || process.env.NEXT_PUBLIC_KAI_VOICE_DEBUG === "1";
+
+type VoiceUnderstandErrorCode =
+  | "stt_upstream_timeout"
+  | "stt_upstream_error"
+  | "planner_timeout"
+  | "planner_error"
+  | "client_aborted"
+  | "request_timeout"
+  | "request_error";
+
+type VoiceTurnError = Error & {
+  voice_error_code?: VoiceUnderstandErrorCode;
+  voice_error_stage?: string;
+  voice_http_status?: number;
+};
+
+function createVoiceTurnError(
+  message: string,
+  meta: {
+    code?: VoiceUnderstandErrorCode;
+    stage?: string;
+    status?: number;
+  } = {}
+): VoiceTurnError {
+  const error = new Error(message) as VoiceTurnError;
+  if (meta.code) error.voice_error_code = meta.code;
+  if (meta.stage) error.voice_error_stage = meta.stage;
+  if (typeof meta.status === "number") error.voice_http_status = meta.status;
+  return error;
+}
+
+function resolveVoiceTurnErrorMeta(error: unknown): {
+  code: VoiceUnderstandErrorCode | "unknown";
+  stage: string | null;
+  status: number | null;
+  message: string;
+} {
+  const typed = error as VoiceTurnError;
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "Voice command failed";
+  const stage =
+    typed && typeof typed === "object" && typeof typed.voice_error_stage === "string"
+      ? typed.voice_error_stage
+      : null;
+  const status =
+    typed && typeof typed === "object" && typeof typed.voice_http_status === "number"
+      ? typed.voice_http_status
+      : null;
+  const directCode =
+    typed && typeof typed === "object" && typeof typed.voice_error_code === "string"
+      ? typed.voice_error_code
+      : null;
+  if (directCode) {
+    return {
+      code: directCode as VoiceUnderstandErrorCode,
+      stage,
+      status,
+      message,
+    };
+  }
+  const normalized = message.toLowerCase();
+  if (normalized.includes("voice_understand_timeout")) {
+    return { code: "request_timeout", stage, status, message };
+  }
+  if (normalized.includes("voice_plan_timeout")) {
+    return { code: "planner_timeout", stage, status, message };
+  }
+  if (normalized.includes("abort")) {
+    return { code: "client_aborted", stage, status, message };
+  }
+  if (normalized.includes("timeout") || normalized.includes("timed out")) {
+    return { code: "request_timeout", stage, status, message };
+  }
+  return { code: "unknown", stage, status, message };
+}
+
+function userMessageForUnderstandFailure(code: VoiceUnderstandErrorCode | "unknown"): string {
+  if (code === "stt_upstream_timeout" || code === "request_timeout") {
+    return "I couldn’t understand in time. Please try again.";
+  }
+  if (code === "stt_upstream_error") {
+    return "I couldn’t process your voice input. Please try again.";
+  }
+  if (code === "planner_timeout" || code === "planner_error") {
+    return "I couldn’t complete voice planning. Please try again.";
+  }
+  if (code === "client_aborted") {
+    return "Voice request cancelled.";
+  }
+  return NETWORK_RETRY_MESSAGE;
+}
 
 interface KaiSearchBarProps {
   onCommand: (command: KaiCommandAction, params?: Record<string, unknown>) => void;
@@ -158,6 +263,37 @@ function formatMs(value: number): number {
   return Math.max(0, Math.round(value));
 }
 
+function normalizeVoiceAudioMimeType(rawMimeType: string | null | undefined): string {
+  const normalized = String(rawMimeType || "").trim().toLowerCase();
+  const base = (normalized.split(";", 1)[0] || "").trim();
+  if (base === "video/webm") return "audio/webm";
+  if (base === "audio/webm") return "audio/webm";
+  if (base === "audio/wav" || base === "audio/x-wav") return "audio/wav";
+  if (base === "audio/mp4" || base === "audio/m4a" || base === "audio/x-m4a") return "audio/mp4";
+  if (base === "audio/mpeg" || base === "audio/mp3" || base === "audio/mpga") return "audio/mpeg";
+  return "audio/webm";
+}
+
+function selectRecorderMimeType(): string | undefined {
+  if (typeof MediaRecorder === "undefined") return undefined;
+  if (typeof MediaRecorder.isTypeSupported !== "function") return undefined;
+  const candidates = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/mp4;codecs=mp4a.40.2",
+    "audio/mp4",
+    "audio/mpeg",
+  ];
+  for (const candidate of candidates) {
+    try {
+      if (MediaRecorder.isTypeSupported(candidate)) return candidate;
+    } catch {
+      // ignore and continue
+    }
+  }
+  return undefined;
+}
+
 export function KaiSearchBar({
   onCommand,
   onVoiceResponse,
@@ -202,6 +338,9 @@ export function KaiSearchBar({
   const voiceSessionIdRef = useRef<string>(`vsession_${createVoiceTurnId().replace("vturn_", "")}`);
   const turnStageTimingRef = useRef<Record<string, VoiceTurnStageTiming>>({});
   const understandAbortControllerRef = useRef<AbortController | null>(null);
+  const plannerAbortControllerRef = useRef<AbortController | null>(null);
+  const realtimeClientRef = useRef<VoiceRealtimeClient | null>(null);
+  const realtimeStreamingTurnRef = useRef<string | null>(null);
 
   const { rawRms, normalizedLevel, smoothedLevel, start, stop } = useAmplitudeMeter({
     sensitivity: 11,
@@ -212,16 +351,23 @@ export function KaiSearchBar({
   const micHidden = voiceVisibilityMode === "hidden";
   const micDisabled = disabled || !voiceAvailable || voiceVisibilityMode === "disabled";
   const voiceTransportMode = ApiService.getVoiceTransportMode();
+  const realtimeStreamingAvailable =
+    VOICE_STREAMING_ENABLED &&
+    typeof window !== "undefined" &&
+    typeof RTCPeerConnection !== "undefined";
 
   useEffect(() => {
     console.info(
-      "[VOICE_DIAG] planner_normalization_version=%s transport_mode=%s transport_reason=%s tts_voice=%s",
+      "[VOICE_DIAG] planner_normalization_version=%s transport_mode=%s transport_reason=%s tts_voice=%s understand_timeout_ms=%s backend_upstream_timeout_s=%s realtime_streaming_available=%s",
       VOICE_PLAN_NORMALIZATION_VERSION,
       voiceTransportMode.mode,
       voiceTransportMode.reason,
-      DEFAULT_TTS_VOICE
+      DEFAULT_TTS_VOICE,
+      DEFAULT_UNDERSTAND_TIMEOUT_MS,
+      EXPECTED_BACKEND_UPSTREAM_TIMEOUT_S,
+      realtimeStreamingAvailable
     );
-  }, [voiceTransportMode.mode, voiceTransportMode.reason]);
+  }, [realtimeStreamingAvailable, voiceTransportMode.mode, voiceTransportMode.reason]);
 
   const emitDebug = useCallback(
     (
@@ -231,31 +377,111 @@ export function KaiSearchBar({
       turnId?: string | null
     ) => {
       const resolvedTurn = turnId || currentVoiceTurnIdRef.current || "no_turn";
+      const routePath = appRuntimeState?.route.pathname || null;
+      const enrichedPayload = {
+        event,
+        timestamp_iso: new Date().toISOString(),
+        layer:
+          typeof payload.layer === "string" && payload.layer.trim()
+            ? payload.layer
+            : "frontend",
+        source:
+          typeof payload.source === "string" && payload.source.trim()
+            ? payload.source
+            : `kai_search_bar_${stage}`,
+        route:
+          typeof payload.route === "string" && payload.route.trim()
+            ? payload.route
+            : routePath,
+        ...payload,
+      };
       appendDebugEvent({
         turnId: resolvedTurn,
         sessionId: voiceSessionIdRef.current,
         stage,
         event,
-        payload,
+        payload: enrichedPayload,
       });
     },
-    [appendDebugEvent]
+    [appRuntimeState?.route.pathname, appendDebugEvent]
   );
+
+  useEffect(() => {
+    ApiService.setVoiceTransportTraceListener((payload) => {
+      const turnId =
+        typeof payload.turn_id === "string" && payload.turn_id.trim()
+          ? payload.turn_id
+          : currentVoiceTurnIdRef.current;
+      if (!turnId) return;
+      const eventName =
+        typeof payload.event === "string" && payload.event.trim()
+          ? payload.event
+          : "transport_event";
+      emitDebug(
+        "turn",
+        eventName,
+        {
+          ...payload,
+          source: "api_service_transport",
+          layer: "frontend",
+        },
+        turnId
+      );
+    });
+    return () => {
+      ApiService.setVoiceTransportTraceListener(null);
+    };
+  }, [emitDebug]);
 
   const isCurrentTurn = useCallback((turnId: string): boolean => {
     if (!turnId) return false;
     return currentVoiceTurnIdRef.current === turnId;
   }, []);
 
-  const abortInFlightUnderstand = useCallback(
-    (reason: string) => {
-      const active = understandAbortControllerRef.current;
-      if (!active) return;
-      active.abort(reason);
-      understandAbortControllerRef.current = null;
-      emitDebug("stt", "request_aborted", { reason }, currentVoiceTurnIdRef.current);
+  const closeRealtimeClient = useCallback(
+    (reason: string, options?: { stopLocalStream?: boolean }) => {
+      const client = realtimeClientRef.current;
+      if (!client) return;
+      realtimeClientRef.current = null;
+      realtimeStreamingTurnRef.current = null;
+      emitDebug(
+        "stt",
+        "stream_session_closed",
+        {
+          reason,
+        },
+        currentVoiceTurnIdRef.current
+      );
+      void client.close({ stopLocalStream: options?.stopLocalStream });
     },
     [emitDebug]
+  );
+
+  const abortInFlightVoiceRequests = useCallback(
+    (reason: string) => {
+      const activeUnderstand = understandAbortControllerRef.current;
+      if (activeUnderstand) {
+        activeUnderstand.abort(reason);
+        understandAbortControllerRef.current = null;
+        emitDebug("stt", "request_aborted", { reason }, currentVoiceTurnIdRef.current);
+      }
+      const activePlanner = plannerAbortControllerRef.current;
+      if (activePlanner) {
+        activePlanner.abort(reason);
+        plannerAbortControllerRef.current = null;
+        emitDebug("planner", "request_aborted", { reason }, currentVoiceTurnIdRef.current);
+      }
+      const streamingClient = realtimeClientRef.current;
+      if (streamingClient) {
+        try {
+          streamingClient.cancelSpeech("VOICE_STREAM_ABORTED");
+        } catch {
+          // noop
+        }
+      }
+      closeRealtimeClient(reason);
+    },
+    [closeRealtimeClient, emitDebug]
   );
 
   const emitStageTiming = useCallback(
@@ -291,7 +517,21 @@ export function KaiSearchBar({
       };
 
       const payload = {
+        event: stage,
         stage,
+        layer:
+          typeof metadata.layer === "string" && metadata.layer.trim()
+            ? metadata.layer
+            : "frontend",
+        source:
+          typeof metadata.source === "string" && metadata.source.trim()
+            ? metadata.source
+            : "kai_search_bar_stage_timing",
+        route:
+          typeof metadata.route === "string" && metadata.route.trim()
+            ? metadata.route
+            : appRuntimeState?.route.pathname || null,
+        timestamp_iso: nowIso,
         timestamp: nowIso,
         since_prev_ms: sincePrevMs,
         since_turn_start_ms: sinceTurnStartMs,
@@ -307,7 +547,7 @@ export function KaiSearchBar({
         delete turnStageTimingRef.current[turnId];
       }
     },
-    [emitDebug]
+    [appRuntimeState?.route.pathname, emitDebug]
   );
 
   const clearStageTiming = useCallback((turnId?: string | null) => {
@@ -355,6 +595,9 @@ export function KaiSearchBar({
   const cleanupAudioResources = useCallback(
     (reason: string) => {
       stop();
+      if (realtimeClientRef.current) {
+        closeRealtimeClient(`cleanup_${reason}`);
+      }
       const recorder = mediaRecorderRef.current;
       if (recorder) {
         recorder.ondataavailable = null;
@@ -380,7 +623,7 @@ export function KaiSearchBar({
 
       emitDebug("mic", "recording_resources_cleaned", { reason });
     },
-    [emitDebug, stop]
+    [closeRealtimeClient, emitDebug, stop]
   );
 
   const speakAssistantMessage = useCallback(
@@ -390,11 +633,87 @@ export function KaiSearchBar({
       const cleanText = String(text || "").trim();
       if (!cleanText) return;
 
+      const realtimeClient = realtimeClientRef.current;
+      const realtimeTurnId = realtimeStreamingTurnRef.current;
+      const useRealtimeStreamingTts =
+        Boolean(realtimeClient && realtimeClient.connected()) &&
+        Boolean(realtimeTurnId) &&
+        (!voiceTurnId || voiceTurnId === realtimeTurnId);
+
       if (!userId || !vaultOwnerToken) {
         await manager.speakLocally(cleanText, voiceTurnId);
         return;
       }
 
+      if (useRealtimeStreamingTts && realtimeClient) {
+        const streamTtsAttemptStartedAt = performance.now();
+        emitDebug(
+          "tts",
+          "stream_tts_attempt_started",
+          {
+            attempted_source: "realtime_stream_tts",
+            fallback_target_if_failed: "backend_batch_tts",
+            requested_voice: DEFAULT_TTS_VOICE,
+          },
+          voiceTurnId || null
+        );
+        try {
+          await manager.speak({
+            userId,
+            vaultOwnerToken,
+            text: cleanText,
+            voice: DEFAULT_TTS_VOICE,
+            voiceTurnId,
+            adapter: "realtime_stream_tts",
+            realtimeAdapter: {
+              speak: async ({
+                text: responseText,
+                voice,
+                timeoutMs,
+                onFirstAudio,
+                onPlaybackStarted,
+                onPlaybackEnded,
+              }) => {
+                await realtimeClient.requestSpeech({
+                  text: responseText,
+                  voice: voice || DEFAULT_TTS_VOICE,
+                  timeoutMs,
+                  onFirstAudio,
+                  onPlaybackStarted,
+                  onPlaybackEnded,
+                });
+              },
+              cancel: () => {
+                realtimeClient.cancelSpeech("VOICE_STREAM_TTS_CANCELLED");
+              },
+            },
+          });
+          emitDebug(
+            "tts",
+            "stream_tts_attempt_succeeded",
+            {
+              source: "realtime_stream_tts",
+              elapsed_ms: formatMs(performance.now() - streamTtsAttemptStartedAt),
+            },
+            voiceTurnId || null
+          );
+          return;
+        } catch (error) {
+          emitDebug(
+            "tts",
+            "stream_tts_failed_fallback_batch",
+            {
+              reason: error instanceof Error ? error.message : "stream_tts_failed",
+              attempted_source: "realtime_stream_tts",
+              fallback_source: "backend_batch_tts",
+              elapsed_ms: formatMs(performance.now() - streamTtsAttemptStartedAt),
+            },
+            voiceTurnId || null
+          );
+        }
+      }
+
+      const batchTtsAttemptStartedAt = performance.now();
       await manager.speak({
         userId,
         vaultOwnerToken,
@@ -402,8 +721,18 @@ export function KaiSearchBar({
         voice: DEFAULT_TTS_VOICE,
         voiceTurnId,
       });
+      emitDebug(
+        "tts",
+        "batch_tts_attempt_succeeded",
+        {
+          source: "backend_batch_tts",
+          elapsed_ms: formatMs(performance.now() - batchTtsAttemptStartedAt),
+          requested_voice: DEFAULT_TTS_VOICE,
+        },
+        voiceTurnId || null
+      );
     },
-    [userId, vaultOwnerToken]
+    [emitDebug, userId, vaultOwnerToken]
   );
 
   const processTranscriptTurn = useCallback(
@@ -444,8 +773,24 @@ export function KaiSearchBar({
           source,
           transcript_chars: cleanTranscript.length,
         });
+        emitStageTiming(turnId, "planner_request_prepared", {
+          layer: "frontend",
+          source: "process_transcript_turn",
+          route: "/api/kai/voice/plan",
+          origin: "frontend_optimistic",
+          transcript_chars: cleanTranscript.length,
+        });
+        emitStageTiming(turnId, "planner_request_sent", {
+          layer: "frontend",
+          source: "process_transcript_turn",
+          route: "/api/kai/voice/plan",
+          origin: "frontend_optimistic",
+          transcript_chars: cleanTranscript.length,
+        });
+        // Compatibility alias: optimistic frontend marker, not backend planner confirmation.
         emitStageTiming(turnId, "planner_started", {
           source,
+          origin: "frontend_optimistic",
           transcript_chars: cleanTranscript.length,
         });
         emitDebug(
@@ -461,20 +806,71 @@ export function KaiSearchBar({
         );
 
         const planStartedAt = performance.now();
-        const planResponse = await withTimeout(
-          ApiService.planKaiVoiceIntent({
-            userId,
-            vaultOwnerToken,
-            transcript: cleanTranscript,
-            context: voiceContext,
-            appState: appRuntimeState,
-            voiceTurnId: turnId,
-          }),
-          12000,
-          "VOICE_PLAN_TIMEOUT"
-        );
+        const plannerAbortController = new AbortController();
+        plannerAbortControllerRef.current = plannerAbortController;
+        let planResponse: Response;
+        try {
+          planResponse = await withTimeout(
+            ApiService.planKaiVoiceIntent({
+              userId,
+              vaultOwnerToken,
+              transcript: cleanTranscript,
+              context: voiceContext,
+              appState: appRuntimeState,
+              voiceTurnId: turnId,
+              signal: plannerAbortController.signal,
+            }),
+            12000,
+            "VOICE_PLAN_TIMEOUT",
+            () => plannerAbortController.abort("VOICE_PLAN_TIMEOUT")
+          );
+        } finally {
+          if (plannerAbortControllerRef.current === plannerAbortController) {
+            plannerAbortControllerRef.current = null;
+          }
+        }
         planElapsedMs = formatMs(performance.now() - planStartedAt);
-        rawPlanPayload = (await planResponse.json().catch(() => ({}))) as VoicePlannerRawPayload;
+        emitStageTiming(turnId, "planner_response_headers_received", {
+          layer: "frontend",
+          source: "process_transcript_turn",
+          route: "/api/kai/voice/plan",
+          origin: "backend_confirmed",
+          status_code: planResponse.status,
+        });
+        const plannerBodyReadStartedAt = performance.now();
+        const plannerBodyText = await planResponse.text().catch(() => "");
+        emitStageTiming(turnId, "planner_response_body_received", {
+          layer: "frontend",
+          source: "process_transcript_turn",
+          route: "/api/kai/voice/plan",
+          origin: "backend_confirmed",
+          status_code: planResponse.status,
+          response_body_chars: plannerBodyText.length,
+          elapsed_ms: formatMs(performance.now() - plannerBodyReadStartedAt),
+        });
+        const plannerParseStartedAt = performance.now();
+        let plannerPayloadParseError: string | null = null;
+        let parsedPlannerPayload: Record<string, unknown> = {};
+        if (plannerBodyText) {
+          try {
+            const maybePayload = JSON.parse(plannerBodyText) as unknown;
+            if (maybePayload && typeof maybePayload === "object") {
+              parsedPlannerPayload = maybePayload as Record<string, unknown>;
+            }
+          } catch (error) {
+            plannerPayloadParseError = error instanceof Error ? error.message : String(error);
+          }
+        }
+        emitStageTiming(turnId, "planner_payload_parsed", {
+          layer: "frontend",
+          source: "process_transcript_turn",
+          route: "/api/kai/voice/plan",
+          origin: "frontend_confirmed",
+          status_code: planResponse.status,
+          payload_parse_error: plannerPayloadParseError,
+          elapsed_ms: formatMs(performance.now() - plannerParseStartedAt),
+        });
+        rawPlanPayload = parsedPlannerPayload as VoicePlannerRawPayload;
 
         if (!planResponse.ok && planResponse.status !== 401 && planResponse.status !== 403) {
           const message =
@@ -551,6 +947,7 @@ export function KaiSearchBar({
         turnId
       );
       emitStageTiming(turnId, "planner_finished", {
+        origin: "backend_confirmed",
         response_kind: response.kind,
         planner_model: plannerModel,
         planner_branch: plannerBranch,
@@ -699,18 +1096,42 @@ export function KaiSearchBar({
       const understandAbortController = new AbortController();
       understandAbortControllerRef.current = understandAbortController;
       setProcessingStageText("Understanding your request...");
+      emitStageTiming(turnId, "understand_request_prepared", {
+        layer: "frontend",
+        source: "process_voice_recording",
+        route: "/api/kai/voice/understand",
+        origin: "frontend_optimistic",
+        transport_mode: voiceTransportMode.mode,
+        transport_reason: voiceTransportMode.reason,
+        audio_bytes: audioBlob.size,
+        mime_type: audioBlob.type || null,
+      });
+      emitStageTiming(turnId, "understand_request_sent", {
+        layer: "frontend",
+        source: "process_voice_recording",
+        route: "/api/kai/voice/understand",
+        origin: "frontend_optimistic",
+        transport_mode: voiceTransportMode.mode,
+        transport_reason: voiceTransportMode.reason,
+      });
       emitStageTiming(turnId, "frontend_request_started", {
         request: "understand",
         audio_bytes: audioBlob.size,
         transport: voiceTransportMode.mode,
         transport_reason: voiceTransportMode.reason,
+        understand_timeout_ms: DEFAULT_UNDERSTAND_TIMEOUT_MS,
+        backend_upstream_timeout_s: EXPECTED_BACKEND_UPSTREAM_TIMEOUT_S,
       });
+      // Compatibility alias: optimistic frontend marker, not backend STT confirmation.
       emitStageTiming(turnId, "stt_started", {
         layer: "frontend_combined",
+        origin: "frontend_optimistic",
         audio_bytes: audioBlob.size,
       });
+      // Compatibility alias: optimistic frontend marker, not backend planner confirmation.
       emitStageTiming(turnId, "planner_started", {
         layer: "frontend_combined",
+        origin: "frontend_optimistic",
         audio_bytes: audioBlob.size,
       });
       emitDebug(
@@ -720,6 +1141,8 @@ export function KaiSearchBar({
           audio_bytes: audioBlob.size,
           transport: voiceTransportMode.mode,
           transport_reason: voiceTransportMode.reason,
+          understand_timeout_ms: DEFAULT_UNDERSTAND_TIMEOUT_MS,
+          backend_upstream_timeout_s: EXPECTED_BACKEND_UPSTREAM_TIMEOUT_S,
         },
         turnId
       );
@@ -748,13 +1171,57 @@ export function KaiSearchBar({
             voiceTurnId: turnId,
             signal: understandAbortController.signal,
           }),
-          18000,
+          DEFAULT_UNDERSTAND_TIMEOUT_MS,
           "VOICE_UNDERSTAND_TIMEOUT",
           () => understandAbortController.abort("VOICE_UNDERSTAND_TIMEOUT")
         );
-        if (!isCurrentTurn(turnId)) return;
+        emitStageTiming(turnId, "understand_response_headers_received", {
+          layer: "frontend",
+          source: "process_voice_recording",
+          route: "/api/kai/voice/understand",
+          origin: "backend_confirmed",
+          status_code: understandResponse.status,
+        });
+        if (!isCurrentTurn(turnId)) {
+          emitDebug("turn", "stale_turn_ignored", { reason: "understand_response_arrived_for_old_turn" }, turnId);
+          return;
+        }
         const sttElapsedMs = formatMs(performance.now() - sttStartedAt);
-        const understandPayload = (await understandResponse.json().catch(() => ({}))) as {
+        const bodyReadStartedAt = performance.now();
+        const understandBodyText = await understandResponse.text().catch(() => "");
+        const bodyReadElapsedMs = formatMs(performance.now() - bodyReadStartedAt);
+        emitStageTiming(turnId, "understand_response_body_received", {
+          layer: "frontend",
+          source: "process_voice_recording",
+          route: "/api/kai/voice/understand",
+          origin: "backend_confirmed",
+          status_code: understandResponse.status,
+          response_body_chars: understandBodyText.length,
+          elapsed_ms: bodyReadElapsedMs,
+        });
+        const payloadParseStartedAt = performance.now();
+        let payloadParseError: string | null = null;
+        let parsedPayload: Record<string, unknown> = {};
+        if (understandBodyText) {
+          try {
+            const maybePayload = JSON.parse(understandBodyText) as unknown;
+            if (maybePayload && typeof maybePayload === "object") {
+              parsedPayload = maybePayload as Record<string, unknown>;
+            }
+          } catch (error) {
+            payloadParseError = error instanceof Error ? error.message : String(error);
+          }
+        }
+        emitStageTiming(turnId, "understand_payload_parsed", {
+          layer: "frontend",
+          source: "process_voice_recording",
+          route: "/api/kai/voice/understand",
+          origin: "frontend_confirmed",
+          status_code: understandResponse.status,
+          payload_parse_error: payloadParseError,
+          elapsed_ms: formatMs(performance.now() - payloadParseStartedAt),
+        });
+        const understandPayload = parsedPayload as {
           transcript?: unknown;
           response?: unknown;
           tool_call?: unknown;
@@ -775,15 +1242,51 @@ export function KaiSearchBar({
         };
 
         if (!understandResponse.ok) {
+          const detailObject =
+            understandPayload.detail && typeof understandPayload.detail === "object"
+              ? (understandPayload.detail as {
+                  error_code?: unknown;
+                  error_stage?: unknown;
+                  message?: unknown;
+                  debug_message?: unknown;
+                })
+              : null;
+          const backendErrorCode =
+            detailObject && typeof detailObject.error_code === "string"
+              ? (detailObject.error_code as VoiceUnderstandErrorCode)
+              : undefined;
+          const backendErrorStage =
+            detailObject && typeof detailObject.error_stage === "string"
+              ? detailObject.error_stage
+              : undefined;
+          const backendMessage =
+            (detailObject && typeof detailObject.message === "string" && detailObject.message) ||
+            (typeof understandPayload.detail === "string" && understandPayload.detail) ||
+            (typeof understandPayload.error === "string" && understandPayload.error) ||
+            "";
           const message =
             (understandResponse.status === 401 || understandResponse.status === 403
               ? "Unlock your vault to use voice."
               : null) ||
-            (typeof understandPayload.detail === "string" && understandPayload.detail) ||
-            (typeof understandPayload.error === "string" && understandPayload.error) ||
+            backendMessage ||
             "Voice understanding failed";
-          emitDebug("stt", "request_failed", { message, status: understandResponse.status }, turnId);
-          throw new Error(message);
+          emitDebug(
+            "stt",
+            "request_failed",
+            {
+              message,
+              status: understandResponse.status,
+              error_code: backendErrorCode || null,
+              error_stage: backendErrorStage || null,
+              error_detail: detailObject || null,
+            },
+            turnId
+          );
+          throw createVoiceTurnError(message, {
+            code: backendErrorCode,
+            stage: backendErrorStage,
+            status: understandResponse.status,
+          });
         }
 
         const transcript = String(understandPayload.transcript || "").trim();
@@ -816,8 +1319,10 @@ export function KaiSearchBar({
           },
           turnId
         );
+        // Compatibility alias: backend-confirmed STT completion surfaced by combined endpoint payload.
         emitStageTiming(turnId, "stt_finished", {
           layer: "frontend_combined",
+          origin: "backend_confirmed",
           transcript_chars: transcript.length,
           transcript_latency_ms: sttLatencyMs,
           model: sttModel,
@@ -888,10 +1393,194 @@ export function KaiSearchBar({
     ]
   );
 
+  const processRealtimeStreamingTurn = useCallback(
+    async (turnId: string) => {
+      const realtimeClient = realtimeClientRef.current;
+      if (!realtimeClient || realtimeStreamingTurnRef.current !== turnId) {
+        throw createVoiceTurnError("Realtime stream session unavailable", {
+          code: "request_error",
+          stage: "request",
+        });
+      }
+      if (!voiceAvailable || !userId || !vaultOwnerToken) {
+        throw createVoiceTurnError("Unlock your vault to use voice.", {
+          code: "request_error",
+          stage: "request",
+          status: 401,
+        });
+      }
+
+      setProcessingStageText("Understanding your request...");
+      emitStageTiming(turnId, "frontend_request_started", {
+        request: "streamed_understand",
+        transport: "realtime_webrtc",
+      });
+      emitStageTiming(turnId, "stt_started", {
+        layer: "frontend_realtime",
+        origin: "frontend_optimistic",
+      });
+      emitDebug(
+        "stt",
+        "request_started",
+        {
+          transport: "realtime_webrtc",
+          stream_mode: true,
+        },
+        turnId
+      );
+
+      realtimeClient.commitInputAudio();
+      emitDebug(
+        "stt",
+        "stream_commit_started",
+        {
+          transport: "realtime_webrtc",
+        },
+        turnId
+      );
+
+      const sttStartedAt = performance.now();
+      const transcript = (await realtimeClient.waitForFinalTranscript(
+        DEFAULT_UNDERSTAND_TIMEOUT_MS
+      )) || "";
+      const cleanTranscript = String(transcript || "").trim();
+      if (!cleanTranscript) {
+        throw createVoiceTurnError("No transcript returned from realtime stream", {
+          code: "stt_upstream_error",
+          stage: "stt_upstream",
+        });
+      }
+      if (!isCurrentTurn(turnId)) {
+        emitDebug("turn", "stale_turn_ignored", { reason: "stream_final_transcript_for_old_turn" }, turnId);
+        return;
+      }
+
+      const sttElapsedMs = formatMs(performance.now() - sttStartedAt);
+      setFinalTranscript(cleanTranscript);
+      setTranscriptPreview(cleanTranscript);
+      emitDebug(
+        "stt",
+        "request_ended",
+        {
+          transcript_final: cleanTranscript,
+          transcript_latency_ms: sttElapsedMs,
+          model: "realtime_stream",
+          openai_http_ms: null,
+          fallback_triggered: false,
+        },
+        turnId
+      );
+      emitStageTiming(turnId, "stt_finished", {
+        layer: "frontend_realtime",
+        origin: "backend_confirmed",
+        transcript_chars: cleanTranscript.length,
+        transcript_latency_ms: sttElapsedMs,
+        model: "realtime_stream",
+      });
+      emitDebug(
+        "planner",
+        "stream_planner_started",
+        {
+          transcript_chars: cleanTranscript.length,
+        },
+        turnId
+      );
+      emitStageTiming(turnId, "planner_started", {
+        layer: "frontend_realtime",
+        origin: "frontend_optimistic",
+        transcript_chars: cleanTranscript.length,
+      });
+
+      await processTranscriptTurn(cleanTranscript, "microphone", turnId);
+    },
+    [
+      emitDebug,
+      emitStageTiming,
+      isCurrentTurn,
+      processTranscriptTurn,
+      userId,
+      vaultOwnerToken,
+      voiceAvailable,
+    ]
+  );
+
+  const handleTurnFailure = useCallback(
+    (turnId: string, error: unknown) => {
+      if (!isCurrentTurn(turnId)) {
+        emitDebug("turn", "stale_turn_ignored", { reason: "turn_failed_for_old_turn" }, turnId);
+        clearStageTiming(turnId);
+        return;
+      }
+      const failure = resolveVoiceTurnErrorMeta(error);
+      const message = failure.message || "Voice command failed";
+      if (isAbortError(error) || failure.code === "client_aborted") {
+        emitDebug(
+          "turn",
+          "turn_aborted",
+          {
+            reason: message,
+            error_code: failure.code,
+            error_stage: failure.stage,
+            status: failure.status,
+          },
+          turnId
+        );
+        clearStageTiming(turnId);
+        transitionVoiceState("idle", "turn_aborted", { turn_id: turnId });
+        return;
+      }
+      emitDebug(
+        "turn",
+        "turn_failed",
+        {
+          reason: message,
+          error_code: failure.code,
+          error_stage: failure.stage,
+          status: failure.status,
+        },
+        turnId
+      );
+      const isUnderstandFailure =
+        failure.code === "request_timeout" ||
+        failure.code === "stt_upstream_timeout" ||
+        failure.code === "stt_upstream_error" ||
+        failure.code === "planner_timeout" ||
+        failure.code === "planner_error";
+      if (isUnderstandFailure || isTimeoutError(error)) {
+        emitDebug(
+          "stt",
+          "request_failed",
+          {
+            message,
+            error_code: failure.code,
+            error_stage: failure.stage,
+            status: failure.status,
+          },
+          turnId
+        );
+        toast.error(userMessageForUnderstandFailure(failure.code));
+        transitionVoiceState("retry_ready", "understand_failed_retry_path", {
+          turn_id: turnId,
+          error_code: failure.code,
+          error_stage: failure.stage,
+        });
+        clearStageTiming(turnId);
+        return;
+      }
+      setVoiceError(message, "Transcription failed. Try again.");
+      clearStageTiming(turnId);
+    },
+    [clearStageTiming, emitDebug, isCurrentTurn, setVoiceError, transitionVoiceState]
+  );
+
   const startListening = useCallback(async () => {
     if (!voiceAvailable) {
       const reason = voiceUnavailableReason || "Unlock your vault to use voice";
       toast.info(reason);
+      return;
+    }
+    if (!userId || !vaultOwnerToken) {
+      toast.info("Unlock your vault to use voice");
       return;
     }
     if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
@@ -899,7 +1588,7 @@ export function KaiSearchBar({
       return;
     }
 
-    abortInFlightUnderstand("new_mic_turn_started");
+    abortInFlightVoiceRequests("new_mic_turn_started");
     const turnId = createVoiceTurnId();
     currentVoiceTurnIdRef.current = turnId;
     setVoiceErrorMessage(null);
@@ -949,13 +1638,159 @@ export function KaiSearchBar({
       mediaStreamRef.current = stream;
       audioChunksRef.current = [];
       await start(stream);
+      recordingStartedAtRef.current = performance.now();
+      stopRequestedAtRef.current = null;
       emitDebug("mic", "recording_started", { waveform_active: true }, turnId);
       emitStageTiming(turnId, "recording_started", { waveform_active: true });
 
-      const recorder = new MediaRecorder(stream);
+      if (realtimeStreamingAvailable) {
+        emitDebug("stt", "stream_session_request_started", { transport: "realtime_webrtc" }, turnId);
+        const streamSessionStartedAt = performance.now();
+        try {
+          const sessionResponse = await ApiService.createKaiRealtimeSession({
+            userId,
+            vaultOwnerToken,
+            voice: DEFAULT_TTS_VOICE,
+            voiceTurnId: turnId,
+          });
+          const sessionPayload = (await sessionResponse.json().catch(() => ({}))) as {
+            session_id?: unknown;
+            client_secret?: unknown;
+            client_secret_expires_at?: unknown;
+            model?: unknown;
+            voice?: unknown;
+            detail?: unknown;
+            error?: unknown;
+          };
+
+          if (!sessionResponse.ok) {
+            const message =
+              (typeof sessionPayload.detail === "string" && sessionPayload.detail) ||
+              (typeof sessionPayload.error === "string" && sessionPayload.error) ||
+              `Realtime session failed (${sessionResponse.status})`;
+            throw createVoiceTurnError(message, {
+              code: "request_error",
+              stage: "stream_session",
+              status: sessionResponse.status,
+            });
+          }
+
+          const clientSecret =
+            typeof sessionPayload.client_secret === "string" ? sessionPayload.client_secret.trim() : "";
+          const model = typeof sessionPayload.model === "string" ? sessionPayload.model.trim() : "";
+          const selectedVoice =
+            typeof sessionPayload.voice === "string" && sessionPayload.voice.trim()
+              ? sessionPayload.voice.trim()
+              : DEFAULT_TTS_VOICE;
+          if (!clientSecret || !model) {
+            throw createVoiceTurnError("Realtime session payload was incomplete", {
+              code: "request_error",
+              stage: "stream_session",
+            });
+          }
+
+          const realtimeClient = new VoiceRealtimeClient();
+          realtimeClientRef.current = realtimeClient;
+          realtimeStreamingTurnRef.current = turnId;
+          await realtimeClient.connect({
+            session: {
+              clientSecret,
+              model,
+              voice: selectedVoice,
+              sessionId:
+                typeof sessionPayload.session_id === "string" ? sessionPayload.session_id : null,
+            },
+            localStream: stream,
+            turnId,
+            onTranscript: (event) => {
+              if (!isCurrentTurn(turnId)) return;
+              if (event.kind === "partial") {
+                setTranscriptPreview(event.text);
+                emitDebug(
+                  "stt",
+                  "stream_partial_transcript",
+                  {
+                    text: event.text,
+                    item_id: event.itemId || null,
+                  },
+                  turnId
+                );
+              } else {
+                setFinalTranscript(event.text);
+                setTranscriptPreview(event.text);
+                emitDebug(
+                  "stt",
+                  "stream_final_transcript",
+                  {
+                    text: event.text,
+                    item_id: event.itemId || null,
+                  },
+                  turnId
+                );
+              }
+            },
+            onDebug: (event, payload) => {
+              emitDebug("stt", event, payload || {}, turnId);
+            },
+          });
+          emitDebug(
+            "stt",
+            "stream_session_started",
+            {
+              transport: "realtime_webrtc",
+              model,
+              voice: selectedVoice,
+              session_id:
+                typeof sessionPayload.session_id === "string" ? sessionPayload.session_id : null,
+              client_secret_expires_at:
+                typeof sessionPayload.client_secret_expires_at === "number"
+                  ? sessionPayload.client_secret_expires_at
+                  : null,
+            },
+            turnId
+          );
+          emitStageTiming(turnId, "stream_session_start", {
+            transport: "realtime_webrtc",
+            model,
+            voice: selectedVoice,
+          });
+          return;
+        } catch (error) {
+          emitDebug(
+            "stt",
+            "stream_session_failed",
+            {
+              reason: error instanceof Error ? error.message : "stream_session_failed",
+              attempted_transport: "realtime_webrtc",
+              fallback: "batch_upload",
+              fallback_transport: voiceTransportMode.mode,
+              elapsed_ms: formatMs(performance.now() - streamSessionStartedAt),
+            },
+            turnId
+          );
+          const activeRealtimeClient = realtimeClientRef.current;
+          realtimeClientRef.current = null;
+          realtimeStreamingTurnRef.current = null;
+          if (activeRealtimeClient) {
+            void activeRealtimeClient.close({ stopLocalStream: false });
+          }
+        }
+      }
+
+      const preferredRecorderMime = selectRecorderMimeType();
+      const recorder = preferredRecorderMime
+        ? new MediaRecorder(stream, { mimeType: preferredRecorderMime })
+        : new MediaRecorder(stream);
       mediaRecorderRef.current = recorder;
-      recordingStartedAtRef.current = performance.now();
-      stopRequestedAtRef.current = null;
+      emitDebug(
+        "mic",
+        "recorder_configured",
+        {
+          requested_mime_type: preferredRecorderMime || null,
+          recorder_mime_type: recorder.mimeType || null,
+        },
+        turnId
+      );
 
       recorder.ondataavailable = (event: BlobEvent) => {
         if (event.data && event.data.size > 0) {
@@ -981,7 +1816,9 @@ export function KaiSearchBar({
             ? formatMs(performance.now() - recordingStartedAtRef.current)
             : -1;
         const recordedChunks = [...audioChunksRef.current];
-        const mimeType = recorder.mimeType || "audio/webm";
+        const mimeType = normalizeVoiceAudioMimeType(
+          recorder.mimeType || preferredRecorderMime || "audio/webm"
+        );
         const audioBlob = new Blob(recordedChunks, { type: mimeType });
         emitStageTiming(turnId, "recording_stopped", {
           recording_duration_ms: recordingDurationMs,
@@ -1023,46 +1860,20 @@ export function KaiSearchBar({
         void processVoiceRecording(audioBlob, turnId)
           .then(() => {
             if (!isCurrentTurn(turnId)) {
+              emitDebug("turn", "stale_turn_ignored", { reason: "turn_completed_for_old_turn" }, turnId);
               clearStageTiming(turnId);
               return;
             }
             emitDebug("turn", "turn_completed", {}, turnId);
             clearStageTiming(turnId);
           })
-          .catch(async (error: unknown) => {
-            if (!isCurrentTurn(turnId)) {
-              clearStageTiming(turnId);
-              return;
-            }
-            const message = error instanceof Error ? error.message : "Voice command failed";
-            if (isAbortError(error)) {
-              emitDebug("turn", "turn_aborted", { reason: message }, turnId);
-              clearStageTiming(turnId);
-              transitionVoiceState("idle", "turn_aborted", { turn_id: turnId });
-              return;
-            }
-            emitDebug("turn", "turn_failed", { reason: message }, turnId);
-            if (isTimeoutError(error)) {
-              toast.error(NETWORK_RETRY_MESSAGE);
-              try {
-                const manager = ttsPlaybackManagerRef.current;
-                if (manager) {
-                  await manager.speakLocally(NETWORK_RETRY_MESSAGE, turnId);
-                }
-              } catch {
-                // noop
-              }
-              transitionVoiceState("retry_ready", "timeout_retry_path", { turn_id: turnId });
-              clearStageTiming(turnId);
-              return;
-            }
-            setVoiceError(message, "Transcription failed. Try again.");
-            transitionVoiceState("retry_ready", "turn_failed_retry", { turn_id: turnId });
-            clearStageTiming(turnId);
+          .catch((error: unknown) => {
+            handleTurnFailure(turnId, error);
           });
       };
 
-      recorder.start(200);
+      // One finalized blob is more reliable for downstream STT than tiny chunk slices.
+      recorder.start();
     } catch (error) {
       cleanupAudioResources("start_failed");
       if (isPermissionDeniedError(error)) {
@@ -1079,7 +1890,7 @@ export function KaiSearchBar({
       transitionVoiceState("retry_ready", "mic_start_failed", { turn_id: turnId });
     }
   }, [
-    abortInFlightUnderstand,
+    abortInFlightVoiceRequests,
     appRuntimeState?.auth,
     appRuntimeState?.route.pathname,
     appRuntimeState?.route.screen,
@@ -1088,16 +1899,69 @@ export function KaiSearchBar({
     cleanupAudioResources,
     emitDebug,
     emitStageTiming,
+    handleTurnFailure,
     isCurrentTurn,
     processVoiceRecording,
+    realtimeStreamingAvailable,
     setVoiceError,
     start,
     transitionVoiceState,
+    userId,
+    vaultOwnerToken,
     voiceAvailable,
     voiceUnavailableReason,
   ]);
 
   const submitListening = useCallback(() => {
+    const streamTurnId = realtimeStreamingTurnRef.current;
+    const streamingClient = realtimeClientRef.current;
+    if (streamTurnId && streamingClient && isCurrentTurn(streamTurnId)) {
+      setProcessingStageText("Finalizing voice capture...");
+      transitionVoiceState("sheet_submitting", "submit_clicked");
+      stop();
+      mediaStreamRef.current?.getAudioTracks?.().forEach((track) => {
+        track.enabled = false;
+      });
+      emitStageTiming(streamTurnId, "recording_stopped", {
+        recording_duration_ms:
+          recordingStartedAtRef.current != null
+            ? formatMs(performance.now() - recordingStartedAtRef.current)
+            : -1,
+        stream_mode: true,
+      });
+      emitStageTiming(streamTurnId, "blob_finalized", {
+        blob_bytes: null,
+        mime_type: "audio/realtime_stream",
+        chunk_count: null,
+      });
+      transitionVoiceState("processing_compact", "audio_submitted", { turn_id: streamTurnId });
+      void processRealtimeStreamingTurn(streamTurnId)
+        .then(() => {
+          if (!isCurrentTurn(streamTurnId)) {
+            emitDebug(
+              "turn",
+              "stale_turn_ignored",
+              { reason: "stream_turn_completed_for_old_turn" },
+              streamTurnId
+            );
+            clearStageTiming(streamTurnId);
+            closeRealtimeClient("stream_turn_completed");
+            cleanupAudioResources("stream_turn_completed");
+            return;
+          }
+          emitDebug("turn", "turn_completed", { stream_mode: true }, streamTurnId);
+          clearStageTiming(streamTurnId);
+          closeRealtimeClient("stream_turn_completed");
+          cleanupAudioResources("stream_turn_completed");
+        })
+        .catch((error: unknown) => {
+          handleTurnFailure(streamTurnId, error);
+          closeRealtimeClient("stream_turn_failed");
+          cleanupAudioResources("stream_turn_failed");
+        });
+      return;
+    }
+
     const recorder = mediaRecorderRef.current;
     if (!recorder) return;
     if (recorder.state !== "recording" && recorder.state !== "paused") return;
@@ -1105,11 +1969,38 @@ export function KaiSearchBar({
     setProcessingStageText("Finalizing voice capture...");
     transitionVoiceState("sheet_submitting", "submit_clicked");
     recorder.stop();
-  }, [transitionVoiceState]);
+  }, [
+    clearStageTiming,
+    cleanupAudioResources,
+    closeRealtimeClient,
+    emitDebug,
+    emitStageTiming,
+    handleTurnFailure,
+    isCurrentTurn,
+    processRealtimeStreamingTurn,
+    stop,
+    transitionVoiceState,
+  ]);
 
   const togglePauseListening = useCallback(() => {
     const recorder = mediaRecorderRef.current;
-    if (!recorder) return;
+    if (!recorder) {
+      const stream = mediaStreamRef.current;
+      const track = stream?.getAudioTracks?.()[0];
+      if (!track) return;
+      const shouldPause = track.enabled;
+      track.enabled = !shouldPause;
+      if (shouldPause) {
+        transitionVoiceState("sheet_paused", "pause_clicked");
+        emitDebug("mic", "recording_paused", { stream_mode: true });
+        setTranscriptPreview("Listening paused. Tap resume to continue.");
+      } else {
+        transitionVoiceState("sheet_listening", "resume_clicked");
+        emitDebug("mic", "recording_resumed", { stream_mode: true });
+        setTranscriptPreview("Listening for your voice...");
+      }
+      return;
+    }
 
     if (recorder.state === "recording") {
       recorder.pause();
@@ -1128,6 +2019,7 @@ export function KaiSearchBar({
 
   const cancelListening = useCallback(() => {
     recordingCancelledRef.current = true;
+    closeRealtimeClient("cancel_clicked");
     const recorder = mediaRecorderRef.current;
     if (recorder && (recorder.state === "recording" || recorder.state === "paused")) {
       recorder.stop();
@@ -1138,13 +2030,13 @@ export function KaiSearchBar({
     setTranscriptPreview("");
     setFinalTranscript("");
     transitionVoiceState("idle", "cancel_clicked");
-  }, [cleanupAudioResources, transitionVoiceState]);
+  }, [cleanupAudioResources, closeRealtimeClient, transitionVoiceState]);
 
   const handleExamplePrompt = useCallback(
     async (prompt: string) => {
       const trimmed = String(prompt || "").trim();
       if (!trimmed) return;
-      abortInFlightUnderstand("example_prompt_turn_started");
+      abortInFlightVoiceRequests("example_prompt_turn_started");
       recordingCancelledRef.current = true;
       const recorder = mediaRecorderRef.current;
       if (recorder && (recorder.state === "recording" || recorder.state === "paused")) {
@@ -1181,7 +2073,7 @@ export function KaiSearchBar({
       }
     },
     [
-      abortInFlightUnderstand,
+      abortInFlightVoiceRequests,
       appRuntimeState?.route.pathname,
       appRuntimeState?.route.screen,
       cleanupAudioResources,
@@ -1352,6 +2244,19 @@ export function KaiSearchBar({
             voiceTurnId || null
           );
         },
+        onTraceEvent: ({ voiceTurnId, event, metadata, finalize }) => {
+          const turn = voiceTurnId || currentVoiceTurnIdRef.current;
+          if (!turn) return;
+          emitStageTiming(
+            turn,
+            event,
+            {
+              ...(metadata || {}),
+            },
+            finalize ? { finalize: true } : undefined
+          );
+          emitDebug("tts", event, metadata || {}, turn);
+        },
         onAudioReceived: ({
           voiceTurnId,
           mimeType,
@@ -1360,14 +2265,30 @@ export function KaiSearchBar({
           model,
           voice,
           format,
+          fallbackAttempted,
+          candidateOrder,
+          attempts,
         }) => {
           if (voiceTurnId) {
+            emitStageTiming(voiceTurnId, "tts_payload_parsed", {
+              layer: "frontend",
+              source: "voice_tts_playback",
+              route: "/api/kai/voice/tts",
+              origin: "frontend_confirmed",
+              source_path: source,
+              mime_type: mimeType,
+              audio_bytes_estimate: audioBytesEstimate,
+            });
+            // Compatibility alias retained for legacy dashboards.
             emitStageTiming(voiceTurnId, "tts_finished", {
               layer: "frontend",
               source,
               model: model || null,
               voice: voice || null,
               format: format || null,
+              fallback_attempted: fallbackAttempted === true,
+              candidate_order: candidateOrder || [],
+              attempts: attempts || [],
               mime_type: mimeType,
               audio_bytes_estimate: audioBytesEstimate,
             });
@@ -1380,14 +2301,31 @@ export function KaiSearchBar({
               model: model || null,
               voice: voice || null,
               format: format || null,
+              fallback_attempted: fallbackAttempted === true,
+              candidate_order: candidateOrder || [],
+              attempts: attempts || [],
               mime_type: mimeType,
               audio_bytes_estimate: audioBytesEstimate,
             },
             voiceTurnId || null
           );
+          if (fallbackAttempted) {
+            emitDebug(
+              "tts",
+              "model_fallback_used",
+              {
+                source,
+                model: model || null,
+                candidate_order: candidateOrder || [],
+                attempts: attempts || [],
+              },
+              voiceTurnId || null
+            );
+          }
         },
         onPlaybackStarted: ({ voiceTurnId, source }) => {
           if (voiceTurnId) {
+            // Compatibility alias retained for legacy dashboards.
             emitStageTiming(voiceTurnId, "playback_started", {
               source,
             });
@@ -1404,6 +2342,7 @@ export function KaiSearchBar({
         },
         onPlaybackEnded: ({ voiceTurnId, source }) => {
           if (voiceTurnId) {
+            // Compatibility alias retained for legacy dashboards.
             emitStageTiming(
               voiceTurnId,
               "playback_ended",
@@ -1428,6 +2367,7 @@ export function KaiSearchBar({
           requestedVoice,
         }) => {
           if (voiceTurnId) {
+            // Compatibility alias retained for legacy dashboards.
             emitStageTiming(voiceTurnId, "tts_finished", {
               layer: "frontend",
               source,
@@ -1469,11 +2409,11 @@ export function KaiSearchBar({
   useEffect(() => {
     return () => {
       recordingCancelledRef.current = true;
-      abortInFlightUnderstand("component_unmount");
+      abortInFlightVoiceRequests("component_unmount");
       cleanupAudioResources("component_unmount");
       ttsPlaybackManagerRef.current?.stop();
     };
-  }, [abortInFlightUnderstand, cleanupAudioResources]);
+  }, [abortInFlightVoiceRequests, cleanupAudioResources]);
 
   useEffect(() => {
     if (voiceUiState !== "error_terminal") return;

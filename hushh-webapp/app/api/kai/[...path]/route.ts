@@ -36,8 +36,16 @@ function emitProxyVoiceStage(
 
   const payload = {
     turn_id: turnId,
-    timestamp: new Date().toISOString(),
+    event: stage,
     stage,
+    timestamp_iso: new Date().toISOString(),
+    timestamp: new Date().toISOString(),
+    layer: "proxy",
+    source:
+      typeof metadata.source === "string" && metadata.source.trim()
+        ? metadata.source
+        : "nextjs_kai_proxy",
+    route: typeof metadata.route === "string" ? metadata.route : null,
     since_prev_ms: sincePrevMs,
     since_turn_start_ms: sinceTurnStartMs,
     ...metadata,
@@ -99,11 +107,20 @@ async function proxyRequest(request: NextRequest, params: { path: string[] }) {
     : null;
 
   if (voiceTraceTurnId) {
+    emitProxyVoiceStage(voiceTraceTurnId, "proxy_request_received", {
+      method: request.method,
+      route: `/api/kai/${path}`,
+      content_type: contentType || null,
+      has_auth_header: Boolean(authHeader),
+      source: "nextjs_kai_proxy",
+    });
+    // Compatibility alias retained.
     emitProxyVoiceStage(voiceTraceTurnId, "proxy_received", {
       method: request.method,
       route: `/api/kai/${path}`,
       content_type: contentType || null,
       has_auth_header: Boolean(authHeader),
+      source: "nextjs_kai_proxy",
     });
   }
 
@@ -143,6 +160,13 @@ async function proxyRequest(request: NextRequest, params: { path: string[] }) {
     }
 
     if (voiceTraceTurnId) {
+      emitProxyVoiceStage(voiceTraceTurnId, "proxy_forward_started", {
+        method: request.method,
+        route: `/api/kai/${path}`,
+        target_url: url,
+        source: "nextjs_kai_proxy",
+      });
+      // Compatibility alias retained.
       emitProxyVoiceStage(voiceTraceTurnId, "proxy_forwarded", {
         method: request.method,
         route: `/api/kai/${path}`,
@@ -153,6 +177,7 @@ async function proxyRequest(request: NextRequest, params: { path: string[] }) {
             : contentType.includes("multipart/form-data")
               ? "multipart_form_data"
               : "json_text",
+        source: "nextjs_kai_proxy",
       });
     }
 
@@ -168,12 +193,26 @@ async function proxyRequest(request: NextRequest, params: { path: string[] }) {
       const shouldFinalize = path === "voice/tts" || response.status >= 400;
       emitProxyVoiceStage(
         voiceTraceTurnId,
+        "proxy_response_headers_received",
+        {
+          method: request.method,
+          route: `/api/kai/${path}`,
+          status_code: response.status,
+          response_content_type: responseContentType || null,
+          source: "nextjs_kai_proxy",
+        },
+        { finalize: false }
+      );
+      // Compatibility alias retained.
+      emitProxyVoiceStage(
+        voiceTraceTurnId,
         "proxy_response_received",
         {
           method: request.method,
           route: `/api/kai/${path}`,
           status: response.status,
           response_content_type: responseContentType || null,
+          source: "nextjs_kai_proxy",
         },
         { finalize: shouldFinalize }
       );
@@ -195,6 +234,31 @@ async function proxyRequest(request: NextRequest, params: { path: string[] }) {
     }
 
     const data = await response.json().catch(() => ({}));
+    if (voiceTraceTurnId) {
+      emitProxyVoiceStage(
+        voiceTraceTurnId,
+        "proxy_response_body_received",
+        {
+          method: request.method,
+          route: `/api/kai/${path}`,
+          status_code: response.status,
+          source: "nextjs_kai_proxy",
+        },
+        { finalize: false }
+      );
+      emitProxyVoiceStage(
+        voiceTraceTurnId,
+        "proxy_payload_parsed",
+        {
+          method: request.method,
+          route: `/api/kai/${path}`,
+          status_code: response.status,
+          payload_type: typeof data,
+          source: "nextjs_kai_proxy",
+        },
+        { finalize: !response.ok || path === "voice/tts" }
+      );
+    }
 
     if (!response.ok) {
       const expectedAnalyzeRunMiss =

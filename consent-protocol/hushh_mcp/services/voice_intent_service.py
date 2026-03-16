@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 _OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions"
 _OPENAI_TRANSCRIBE_URL = "https://api.openai.com/v1/audio/transcriptions"
 _OPENAI_TTS_URL = "https://api.openai.com/v1/audio/speech"
+_OPENAI_REALTIME_SESSIONS_URL = "https://api.openai.com/v1/realtime/sessions"
+_OPENAI_HTTP_TIMEOUT_SECONDS = 45.0
 
 _ALLOWED_TOOL_NAMES = {
     "execute_kai_command",
@@ -208,12 +210,13 @@ def _prioritize_tts_models(
         seen.add(normalized)
         ordered.append(normalized)
 
-    if prefer_quality:
-        _add("gpt-4o-tts")
+    # Keep the known-working model first for stable latency in live runtime.
+    _add("gpt-4o-mini-tts")
     _add(configured_model)
     for model in parsed_models:
         _add(model)
-    _add("gpt-4o-mini-tts")
+    if prefer_quality:
+        _add("gpt-4o-tts")
     return ordered or ["gpt-4o-mini-tts"]
 
 
@@ -234,31 +237,88 @@ def _is_retryable_model_error(status_code: int, payload: Any) -> bool:
     return any(key in detail for key in keywords)
 
 
+def _is_model_unavailable_error(status_code: int, payload: Any) -> bool:
+    if status_code not in {400, 403, 404}:
+        return False
+    detail = (_extract_openai_error(payload) or "").lower()
+    if not detail:
+        return False
+    unavailable_keywords = (
+        "does not exist",
+        "not found",
+        "model",
+        "not available",
+        "do not have access",
+        "you do not have access",
+    )
+    return any(keyword in detail for keyword in unavailable_keywords)
+
+
 async def _post_with_model_fallback(
     *,
     url: str,
     headers: dict[str, str],
     candidate_models: list[str],
     body_builder: Callable[[str], dict[str, Any]],
+    timeout_seconds: float = _OPENAI_HTTP_TIMEOUT_SECONDS,
+    attempt_hook: Callable[[dict[str, Any]], None] | None = None,
 ) -> tuple[httpx.Response, dict[str, Any], int, str]:
     last_response: httpx.Response | None = None
     last_payload: dict[str, Any] = {}
     last_elapsed_ms = 0
     last_model = candidate_models[0] if candidate_models else "unknown"
 
-    async with httpx.AsyncClient(timeout=45.0) as client:
+    async with httpx.AsyncClient(timeout=timeout_seconds) as client:
         for index, model_name in enumerate(candidate_models):
             request_kwargs = body_builder(model_name)
+            if attempt_hook:
+                attempt_hook(
+                    {
+                        "event": "upstream_started",
+                        "model_candidate_order": list(candidate_models),
+                        "model_attempted": model_name,
+                        "attempt_index": index + 1,
+                        "attempt_count": len(candidate_models),
+                        "timeout_seconds": timeout_seconds,
+                    }
+                )
             started_at = time.perf_counter()
-            response = await client.post(
-                url,
-                headers=headers,
-                **request_kwargs,
-            )
+            try:
+                response = await client.post(
+                    url,
+                    headers=headers,
+                    **request_kwargs,
+                )
+            except Exception as error:
+                elapsed_ms = int((time.perf_counter() - started_at) * 1000)
+                if attempt_hook:
+                    attempt_hook(
+                        {
+                            "event": "upstream_failed",
+                            "model_used": model_name,
+                            "elapsed_ms": elapsed_ms,
+                            "exception_type": type(error).__name__,
+                            "upstream_error_message": str(error),
+                            "upstream_error_payload": None,
+                            "will_retry": False,
+                            "next_model": None,
+                        }
+                    )
+                raise
             elapsed_ms = int((time.perf_counter() - started_at) * 1000)
             payload = response.json() if response.content else {}
 
             if response.status_code < 400:
+                if attempt_hook:
+                    attempt_hook(
+                        {
+                            "event": "upstream_finished",
+                            "model_used": model_name,
+                            "elapsed_ms": elapsed_ms,
+                            "status_code": response.status_code,
+                            "payload": payload,
+                        }
+                    )
                 return response, payload, elapsed_ms, model_name
 
             last_response = response
@@ -270,6 +330,24 @@ async def _post_with_model_fallback(
                 index < len(candidate_models) - 1
                 and _is_retryable_model_error(response.status_code, payload)
             )
+            if attempt_hook:
+                attempt_hook(
+                    {
+                        "event": "upstream_failed",
+                        "model_used": model_name,
+                        "elapsed_ms": elapsed_ms,
+                        "status_code": response.status_code,
+                        "exception_type": None,
+                        "upstream_error_message": _extract_openai_error(payload),
+                        "upstream_error_payload": payload.get("error")
+                        if isinstance(payload, dict)
+                        else payload,
+                        "will_retry": should_retry,
+                        "next_model": candidate_models[index + 1]
+                        if should_retry and index + 1 < len(candidate_models)
+                        else None,
+                    }
+                )
             if should_retry:
                 logger.warning(
                     "[VOICE_MODEL_FALLBACK] model=%s status=%s error=%s next_model=%s",
@@ -391,8 +469,19 @@ def _build_screen_explain_message(
     )
     busy_ops = _coerce_str_list(runtime_state.get("busy_operations") if isinstance(runtime_state, dict) else [])
 
+    screen_key = screen.lower() if screen else ""
+    purpose_by_screen = {
+        "home": "This is the Kai home view for market context, spotlight ideas, and quick voice actions.",
+        "dashboard": "This dashboard summarizes your portfolio and is the fastest place to review position-level changes.",
+        "analysis": "This analysis view is for running and reviewing ticker deep-dives.",
+        "import": "This page is for importing statements and monitoring ingest progress.",
+        "profile": "This profile page summarizes your investor profile and preference signals.",
+        "consent": "This page is for consent visibility and permission controls.",
+        "history": "This history page is for reviewing prior analysis runs and transcripts.",
+    }
+
     if screen and pathname:
-        location_line = f"You are on the {screen} screen ({pathname})."
+        location_line = f"You are on the {screen} screen at {pathname}."
     elif screen:
         location_line = f"You are on the {screen} screen."
     elif pathname:
@@ -401,30 +490,37 @@ def _build_screen_explain_message(
         location_line = "You are in Kai."
 
     if subview:
-        location_line = f"{location_line[:-1]} with the {subview} view active."
+        location_line = f"{location_line[:-1]} The active subview is {subview}."
 
-    task_parts: list[str] = []
+    purpose_line = purpose_by_screen.get(screen_key)
+    if not purpose_line and pathname:
+        purpose_line = f"This section is focused on tasks related to {pathname}."
+    if not purpose_line:
+        purpose_line = "This section helps you navigate, explain context, and run voice actions."
+
+    runtime_parts: list[str] = []
     if analysis_active:
         ticker_label = analysis_ticker or "an active ticker"
-        task_parts.append(f"Analysis is currently running for {ticker_label}.")
+        runtime_parts.append(f"An analysis is running for {ticker_label}.")
     if import_active:
-        task_parts.append("A portfolio import is currently running.")
-    if not task_parts:
-        task_parts.append(
-            "No long-running analysis or import task is active right now."
-        )
+        runtime_parts.append("A portfolio import is currently running.")
     if busy_ops:
-        task_parts.append(f"Current busy operations: {', '.join(busy_ops[:3])}.")
+        runtime_parts.append(f"Current busy operations: {', '.join(busy_ops[:3])}.")
+    if not runtime_parts:
+        runtime_parts.append("No long-running analysis or import task is active right now.")
 
-    actions_hint = _SCREEN_ACTION_HINTS.get(screen.lower()) if screen else None
+    portfolio_line = (
+        "Portfolio data is connected, so personalized insights should be available."
+        if has_portfolio_data
+        else "Portfolio data looks limited right now, so insights may be partial."
+    )
+
+    actions_hint = _SCREEN_ACTION_HINTS.get(screen_key) if screen else None
     if not actions_hint:
-        actions_hint = "You can ask me to explain this view, open another section, or start analysis."
-    if not has_portfolio_data:
-        actions_hint = (
-            f"{actions_hint} Your portfolio data appears limited, so insights may be partial."
-        )
+        actions_hint = "You can ask me to explain this view, open another section, or start analysis for a ticker."
+    actions_line = f"Next actions: {actions_hint}"
 
-    return " ".join([location_line, *task_parts, actions_hint])
+    return " ".join([location_line, purpose_line, *runtime_parts, portfolio_line, actions_line])
 
 
 def _is_likely_english(text: str) -> bool:
@@ -623,6 +719,10 @@ class VoiceServiceError(Exception):
 class VoiceIntentService:
     def __init__(self) -> None:
         self.api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+        self.realtime_enabled = _env_bool("KAI_VOICE_REALTIME_ENABLED", default=False)
+        self.realtime_model = (
+            os.getenv("OPENAI_VOICE_REALTIME_MODEL") or "gpt-realtime"
+        ).strip() or "gpt-realtime"
         self.stt_models = _parse_model_candidates(
             os.getenv("OPENAI_VOICE_STT_MODELS"),
             default_models=[
@@ -642,12 +742,11 @@ class VoiceIntentService:
         parsed_tts_models = _parse_model_candidates(
             os.getenv("OPENAI_VOICE_TTS_MODELS"),
             default_models=[
-                "gpt-4o-tts",
                 configured_tts_model or "gpt-4o-mini-tts",
                 "gpt-4o-mini-tts",
             ],
         )
-        self.tts_prefer_quality = _env_bool("OPENAI_VOICE_TTS_PREFER_QUALITY", default=True)
+        self.tts_prefer_quality = _env_bool("OPENAI_VOICE_TTS_PREFER_QUALITY", default=False)
         self.tts_models = _prioritize_tts_models(
             parsed_tts_models,
             configured_model=configured_tts_model,
@@ -659,10 +758,13 @@ class VoiceIntentService:
             os.getenv("OPENAI_VOICE_TTS_DEFAULT_VOICE") or "alloy"
         ).strip() or "alloy"
         self.tts_format = (os.getenv("OPENAI_VOICE_TTS_FORMAT") or "mp3").strip() or "mp3"
+        self.tts_unavailable_models: set[str] = set()
+        self.upstream_http_timeout_seconds = _OPENAI_HTTP_TIMEOUT_SECONDS
         logger.info(
             (
                 "[VOICE_MODEL_CONFIG] stt_models=%s planner_models=%s "
-                "tts_models=%s tts_prefer_quality=%s tts_voice=%s tts_format=%s"
+                "tts_models=%s tts_prefer_quality=%s tts_voice=%s tts_format=%s "
+                "upstream_timeout_seconds=%s realtime_enabled=%s realtime_model=%s"
             ),
             self.stt_models,
             self.intent_models,
@@ -670,10 +772,27 @@ class VoiceIntentService:
             self.tts_prefer_quality,
             self.tts_default_voice,
             self.tts_format,
+            self.upstream_http_timeout_seconds,
+            self.realtime_enabled,
+            self.realtime_model,
         )
 
     def _ordered_tts_model_candidates(self) -> list[str]:
-        candidates = list(self.tts_models)
+        base_candidates = list(self.tts_models)
+        pruned_models = [
+            model_name for model_name in base_candidates if model_name in self.tts_unavailable_models
+        ]
+        candidates = [
+            model_name for model_name in base_candidates if model_name not in self.tts_unavailable_models
+        ]
+        if pruned_models:
+            logger.info(
+                "[VOICE_TTS_MODEL_PRUNE] pruned_due_to_unavailable=%s remaining_candidates=%s",
+                pruned_models,
+                candidates,
+            )
+        if not candidates:
+            candidates = base_candidates or ["gpt-4o-mini-tts"]
         if self.tts_last_success_model and self.tts_last_success_model in candidates:
             candidates.remove(self.tts_last_success_model)
             candidates.insert(0, self.tts_last_success_model)
@@ -688,12 +807,66 @@ class VoiceIntentService:
             "Authorization": f"Bearer {self.api_key}",
         }
 
+    async def create_realtime_session(
+        self,
+        *,
+        voice: str | None = None,
+        include_input_transcription: bool = True,
+    ) -> dict[str, Any]:
+        self._require_api_key()
+        if not self.realtime_enabled:
+            raise VoiceServiceError(503, "Realtime voice is not enabled.")
+
+        selected_voice = str(voice or self.tts_default_voice).strip() or self.tts_default_voice
+        payload: dict[str, Any] = {
+            "model": self.realtime_model,
+            "voice": selected_voice,
+            "modalities": ["text", "audio"],
+        }
+        if include_input_transcription:
+            payload["input_audio_transcription"] = {
+                "model": self.stt_models[0] if self.stt_models else "gpt-4o-mini-transcribe"
+            }
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.post(
+                _OPENAI_REALTIME_SESSIONS_URL,
+                headers={
+                    **self._headers(),
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+
+        result = response.json() if response.content else {}
+        if response.status_code >= 400:
+            detail = _extract_openai_error(result) or "Realtime session creation failed"
+            raise VoiceServiceError(502, detail)
+
+        client_secret = ""
+        if isinstance(result, dict):
+            secret_obj = result.get("client_secret")
+            if isinstance(secret_obj, dict):
+                client_secret = str(secret_obj.get("value") or "").strip()
+        if not client_secret:
+            raise VoiceServiceError(502, "Realtime session did not return a client secret")
+
+        return {
+            "session_id": str(result.get("id") or "").strip() or None,
+            "client_secret": client_secret,
+            "client_secret_expires_at": result.get("expires_at"),
+            "model": str(result.get("model") or self.realtime_model).strip() or self.realtime_model,
+            "voice": str(result.get("voice") or selected_voice).strip() or selected_voice,
+            "raw": result if isinstance(result, dict) else {},
+        }
+
     async def transcribe_audio(
         self,
         *,
         audio_bytes: bytes,
         filename: str,
         content_type: str,
+        trace_hook: Callable[[str, dict[str, Any]], None] | None = None,
     ) -> tuple[str, int, str]:
         started_at = time.perf_counter()
         self._require_api_key()
@@ -703,6 +876,58 @@ class VoiceIntentService:
         files = {
             "file": (filename, audio_bytes, content_type or "application/octet-stream"),
         }
+
+        def _emit_trace(stage: str, payload: dict[str, Any]) -> None:
+            if not trace_hook:
+                return
+            try:
+                trace_hook(stage, payload)
+            except Exception:
+                logger.exception("[VOICE_STT_TRACE_HOOK] stage=%s payload=%s", stage, payload)
+
+        def _on_attempt(event_payload: dict[str, Any]) -> None:
+            event = str(event_payload.get("event") or "")
+            if event == "upstream_started":
+                _emit_trace(
+                    "stt_upstream_started",
+                    {
+                        "model_candidate_order": event_payload.get("model_candidate_order") or [],
+                        "model_attempted": event_payload.get("model_attempted"),
+                        "timeout_seconds": event_payload.get("timeout_seconds"),
+                        "audio_bytes": len(audio_bytes),
+                        "normalized_mime": content_type or "application/octet-stream",
+                        "filename": filename,
+                    },
+                )
+                return
+            if event == "upstream_finished":
+                payload = event_payload.get("payload") if isinstance(event_payload.get("payload"), dict) else {}
+                transcript = str(payload.get("text") or "").strip() if isinstance(payload, dict) else ""
+                _emit_trace(
+                    "stt_upstream_finished",
+                    {
+                        "model_used": event_payload.get("model_used"),
+                        "elapsed_ms": event_payload.get("elapsed_ms"),
+                        "status_code": event_payload.get("status_code"),
+                        "transcript_chars": len(transcript),
+                    },
+                )
+                return
+            if event == "upstream_failed":
+                _emit_trace(
+                    "stt_upstream_failed",
+                    {
+                        "model_used": event_payload.get("model_used"),
+                        "elapsed_ms": event_payload.get("elapsed_ms"),
+                        "status_code": event_payload.get("status_code"),
+                        "exception_type": event_payload.get("exception_type"),
+                        "upstream_error_message": event_payload.get("upstream_error_message"),
+                        "upstream_error_payload": event_payload.get("upstream_error_payload"),
+                        "will_retry": event_payload.get("will_retry"),
+                        "next_model": event_payload.get("next_model"),
+                    },
+                )
+
         response, payload, openai_http_ms, model_used = await _post_with_model_fallback(
             url=_OPENAI_TRANSCRIBE_URL,
             headers=self._headers(),
@@ -711,15 +936,61 @@ class VoiceIntentService:
                 "data": {"model": model_name},
                 "files": files,
             },
+            timeout_seconds=self.upstream_http_timeout_seconds,
+            attempt_hook=_on_attempt,
         )
         if response.status_code >= 400:
             detail = _extract_openai_error(payload) or "STT request failed"
+            _emit_trace(
+                "stt_service_failed",
+                {
+                    "status_code": response.status_code,
+                    "model_used": model_used,
+                    "upstream_http_ms": openai_http_ms,
+                    "service_elapsed_ms": int((time.perf_counter() - started_at) * 1000),
+                    "error": detail,
+                },
+            )
+            logger.warning(
+                (
+                    "[VOICE_STT] status=error model=%s status_code=%s openai_http_ms=%s "
+                    "audio_bytes=%s filename=%s content_type=%s error=%s openai_error_payload=%s"
+                ),
+                model_used,
+                response.status_code,
+                openai_http_ms,
+                len(audio_bytes),
+                filename,
+                content_type or "application/octet-stream",
+                detail,
+                payload.get("error") if isinstance(payload, dict) else payload,
+            )
             raise VoiceServiceError(502, detail)
 
         transcript = str(payload.get("text") or "").strip()
         if not transcript:
+            _emit_trace(
+                "stt_service_failed",
+                {
+                    "status_code": 422,
+                    "model_used": model_used,
+                    "upstream_http_ms": openai_http_ms,
+                    "service_elapsed_ms": int((time.perf_counter() - started_at) * 1000),
+                    "error": "No transcript returned from STT",
+                },
+            )
             raise VoiceServiceError(422, "No transcript returned from STT")
         elapsed_ms = int((time.perf_counter() - started_at) * 1000)
+        _emit_trace(
+            "stt_service_finished",
+            {
+                "status_code": response.status_code,
+                "model_used": model_used,
+                "upstream_http_ms": openai_http_ms,
+                "service_elapsed_ms": elapsed_ms,
+                "transcript_chars": len(transcript),
+            },
+        )
         logger.info(
             (
                 "[VOICE_STT] status=ok model=%s elapsed_ms=%s openai_http_ms=%s "
@@ -894,6 +1165,7 @@ class VoiceIntentService:
         user_id: str,
         context_payload: dict[str, Any],
         runtime_state: dict[str, Any],
+        trace_hook: Callable[[str, dict[str, Any]], None] | None = None,
     ) -> tuple[dict[str, Any] | None, int, str]:
         self._require_api_key()
         tools = _build_tools_schema()
@@ -902,6 +1174,51 @@ class VoiceIntentService:
             "Use English-only behavior for V1. "
             "Return exactly one tool call from provided tools and never output plain text."
         )
+
+        def _emit_trace(stage: str, payload: dict[str, Any]) -> None:
+            if not trace_hook:
+                return
+            try:
+                trace_hook(stage, payload)
+            except Exception:
+                logger.exception("[VOICE_PLANNER_TRACE_HOOK] stage=%s payload=%s", stage, payload)
+
+        def _on_attempt(event_payload: dict[str, Any]) -> None:
+            event = str(event_payload.get("event") or "")
+            if event == "upstream_started":
+                _emit_trace(
+                    "planner_upstream_started",
+                    {
+                        "model_candidate_order": event_payload.get("model_candidate_order") or [],
+                        "model_attempted": event_payload.get("model_attempted"),
+                        "timeout_seconds": event_payload.get("timeout_seconds"),
+                    },
+                )
+                return
+            if event == "upstream_finished":
+                _emit_trace(
+                    "planner_upstream_finished",
+                    {
+                        "model_used": event_payload.get("model_used"),
+                        "elapsed_ms": event_payload.get("elapsed_ms"),
+                        "status_code": event_payload.get("status_code"),
+                    },
+                )
+                return
+            if event == "upstream_failed":
+                _emit_trace(
+                    "planner_upstream_failed",
+                    {
+                        "model_used": event_payload.get("model_used"),
+                        "elapsed_ms": event_payload.get("elapsed_ms"),
+                        "status_code": event_payload.get("status_code"),
+                        "exception_type": event_payload.get("exception_type"),
+                        "upstream_error_message": event_payload.get("upstream_error_message"),
+                        "upstream_error_payload": event_payload.get("upstream_error_payload"),
+                        "will_retry": event_payload.get("will_retry"),
+                        "next_model": event_payload.get("next_model"),
+                    },
+                )
 
         response, result, openai_http_ms, model_used = await _post_with_model_fallback(
             url=_OPENAI_CHAT_URL,
@@ -930,6 +1247,8 @@ class VoiceIntentService:
                     "tools": tools,
                 }
             },
+            timeout_seconds=self.upstream_http_timeout_seconds,
+            attempt_hook=_on_attempt,
         )
         if response.status_code >= 400:
             detail = _extract_openai_error(result) or "Intent planning request failed"
@@ -947,6 +1266,7 @@ class VoiceIntentService:
         context: dict[str, Any] | None,
         active_analysis: dict[str, Any] | None = None,
         active_import: dict[str, Any] | None = None,
+        trace_hook: Callable[[str, dict[str, Any]], None] | None = None,
     ) -> tuple[dict[str, Any], int, str]:
         clean_transcript = _coerce_str(transcript)
         context_payload = _compact_context(context)
@@ -1190,6 +1510,7 @@ class VoiceIntentService:
             user_id=user_id,
             context_payload=context_payload,
             runtime_state=runtime_state,
+            trace_hook=trace_hook,
         )
 
         validated = _validate_tool_call(tool_call)
@@ -1241,7 +1562,8 @@ class VoiceIntentService:
         *,
         text: str,
         voice: str,
-    ) -> tuple[str, str, dict[str, str]]:
+        trace_hook: Callable[[str, dict[str, Any]], None] | None = None,
+    ) -> tuple[str, str, dict[str, Any]]:
         self._require_api_key()
         clean_text = str(text or "").strip()
         if not clean_text:
@@ -1251,10 +1573,29 @@ class VoiceIntentService:
         response: httpx.Response | None = None
         error_payload: dict[str, Any] = {}
         candidate_models = self._ordered_tts_model_candidates()
+        fallback_attempted = False
+        tts_attempts: list[dict[str, Any]] = []
+        pruned_unavailable = any(
+            model_name in self.tts_unavailable_models for model_name in self.tts_models
+        )
+        pruned_models = [model_name for model_name in self.tts_models if model_name in self.tts_unavailable_models]
 
         async with httpx.AsyncClient(timeout=45.0) as client:
             for idx, model_name in enumerate(candidate_models):
                 selected_model = model_name
+                attempt_started_at = time.perf_counter()
+                if trace_hook:
+                    trace_hook(
+                        "tts_upstream_started",
+                        {
+                            "model_candidate_order": list(candidate_models),
+                            "model_attempted": model_name,
+                            "attempt_index": idx + 1,
+                            "attempt_count": len(candidate_models),
+                            "timeout_seconds": 45.0,
+                            "text_chars": len(clean_text),
+                        },
+                    )
                 payload = {
                     "model": model_name,
                     "input": clean_text,
@@ -1269,22 +1610,82 @@ class VoiceIntentService:
                     },
                     json=payload,
                 )
+                attempt_elapsed_ms = int((time.perf_counter() - attempt_started_at) * 1000)
                 if candidate_response.status_code < 400:
+                    if trace_hook:
+                        trace_hook(
+                            "tts_upstream_finished",
+                            {
+                                "model_used": model_name,
+                                "elapsed_ms": attempt_elapsed_ms,
+                                "status_code": candidate_response.status_code,
+                                "audio_bytes": len(candidate_response.content or b""),
+                            },
+                        )
                     response = candidate_response
+                    tts_attempts.append(
+                        {
+                            "model": model_name,
+                            "status_code": candidate_response.status_code,
+                            "elapsed_ms": attempt_elapsed_ms,
+                            "result": "success",
+                        }
+                    )
                     break
 
                 maybe_payload = candidate_response.json() if candidate_response.content else {}
+                extracted_error = _extract_openai_error(maybe_payload)
+                if _is_model_unavailable_error(candidate_response.status_code, maybe_payload):
+                    self.tts_unavailable_models.add(model_name)
+                    logger.warning(
+                        (
+                            "[VOICE_TTS_MODEL_UNAVAILABLE] model=%s status=%s error=%s "
+                            "unavailable_models=%s"
+                        ),
+                        model_name,
+                        candidate_response.status_code,
+                        extracted_error,
+                        sorted(self.tts_unavailable_models),
+                    )
                 should_retry = (
                     idx < len(candidate_models) - 1
                     and _is_retryable_model_error(candidate_response.status_code, maybe_payload)
                 )
+                next_model = candidate_models[idx + 1] if should_retry else None
+                tts_attempts.append(
+                    {
+                        "model": model_name,
+                        "status_code": candidate_response.status_code,
+                        "elapsed_ms": attempt_elapsed_ms,
+                        "result": "failed",
+                        "error": extracted_error or "",
+                        "next_model": next_model,
+                    }
+                )
+                if trace_hook:
+                    trace_hook(
+                        "tts_upstream_failed",
+                        {
+                            "model_used": model_name,
+                            "elapsed_ms": attempt_elapsed_ms,
+                            "status_code": candidate_response.status_code,
+                            "exception_type": None,
+                            "upstream_error_message": extracted_error,
+                            "upstream_error_payload": maybe_payload.get("error")
+                            if isinstance(maybe_payload, dict)
+                            else maybe_payload,
+                            "will_retry": should_retry,
+                            "next_model": next_model,
+                        },
+                    )
                 if should_retry:
+                    fallback_attempted = True
                     logger.warning(
                         "[VOICE_MODEL_FALLBACK] tts_model=%s status=%s error=%s next_model=%s",
                         model_name,
                         candidate_response.status_code,
-                        _extract_openai_error(maybe_payload),
-                        candidate_models[idx + 1],
+                        extracted_error,
+                        next_model,
                     )
                     continue
 
@@ -1308,10 +1709,33 @@ class VoiceIntentService:
             raise VoiceServiceError(502, "TTS response was empty")
         self.tts_last_success_model = selected_model
         mime_type = "audio/mpeg" if self.tts_format == "mp3" else f"audio/{self.tts_format}"
+        logger.info(
+            (
+                "[VOICE_TTS] status=ok source=backend_openai_audio model=%s voice=%s format=%s "
+                "candidates=%s fallback_attempted=%s pruned_unavailable=%s pruned_models=%s "
+                "text_chars=%s audio_b64_chars=%s attempts=%s"
+            ),
+            selected_model,
+            selected_voice,
+            self.tts_format,
+            candidate_models,
+            fallback_attempted,
+            pruned_unavailable,
+            pruned_models,
+            len(clean_text),
+            len(audio_b64),
+            tts_attempts,
+        )
         return audio_b64, mime_type, {
             "model": selected_model,
             "voice": selected_voice,
             "format": self.tts_format,
+            "source": "backend_openai_audio",
+            "pruned_unavailable": "true" if pruned_unavailable else "false",
+            "pruned_models": ",".join(pruned_models),
+            "candidate_order": ",".join(candidate_models),
+            "fallback_attempted": "true" if fallback_attempted else "false",
+            "attempts": tts_attempts,
         }
 
 
