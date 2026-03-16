@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Forward to backend
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8001";
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
     const backendResponse = await fetch(
       `${backendUrl}/api/world-model/store-domain`,
       {

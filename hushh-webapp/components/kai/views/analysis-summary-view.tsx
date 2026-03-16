@@ -253,7 +253,13 @@ export function AnalysisSummaryView({
   vaultOwnerToken,
   showHeader = true,
 }: AnalysisSummaryViewProps) {
-  const rawCard = (entry.raw_card || {}) as Record<string, unknown>;
+  const rawCard = useMemo(
+    () =>
+      entry.raw_card && typeof entry.raw_card === "object"
+        ? (entry.raw_card as Record<string, unknown>)
+        : {},
+    [entry.raw_card]
+  );
   const entryRecord = entry as unknown as Record<string, unknown>;
   const rawCardSnapshot = useMemo(
     () =>

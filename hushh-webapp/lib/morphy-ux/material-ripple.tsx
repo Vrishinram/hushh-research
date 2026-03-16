@@ -19,14 +19,6 @@ import { type ColorVariant, type ComponentEffect } from "./types";
 import "@material/web/ripple/ripple.js";
 
 // ============================================================================
-// TYPES - MdRipple interface is now in global.d.ts
-// ============================================================================
-
-interface MdRipple extends HTMLElement {
-  disabled: boolean;
-}
-
-// ============================================================================
 // COLOR MAPPING - Morphy Variants to Material 3 Tokens
 // ============================================================================
 
@@ -154,7 +146,6 @@ export const MaterialRipple = ({
   disabled = false,
   className = "",
 }: MaterialRippleProps) => {
-  const rippleRef = useRef<MdRipple>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [mounted, setMounted] = useState(false);
 
@@ -226,7 +217,6 @@ export const MaterialRipple = ({
     >
       {mounted
         ? React.createElement("md-ripple", {
-            ref: rippleRef,
             disabled: disabled || undefined,
             className: "morphy-md-ripple",
           })

@@ -5,7 +5,11 @@
     "hushh-webapp/app/api/app-config/review-mode/route.ts",
     "hushh-webapp/app/api/app-config/review-mode/session/route.ts",
     "hushh-webapp/app/api/consent/events/[userId]/route.ts",
-    "hushh-webapp/app/api/world-model/get-context/route.ts"
+    "hushh-webapp/app/api/world-model/get-context/route.ts",
+    "hushh-webapp/app/api/portfolio/share-link/route.ts"
+  ],
+  "allowlistedPageRouteFiles": [
+    "hushh-webapp/app/portfolio/shared/page.tsx"
   ],
   "contracts": [
     {

@@ -66,12 +66,12 @@ export function Providers({ children }: ProvidersProps) {
           ? "calc(var(--top-tabs-h) + var(--top-tabs-gap))"
           : "0px",
         "--top-systembar-row-gap": topShellMetrics.hasTabs ? "4px" : "6px",
-        "--top-fade-active": topShellMetrics.hasTabs ? "24px" : "8px",
+        "--top-fade-active": topShellMetrics.hasTabs ? "6px" : "8px",
         "--top-content-pad": topShellMetrics.hasTabs
-          ? "var(--top-glass-h)"
+          ? "calc(var(--top-shell-h) + 2px)"
           : "calc(var(--top-shell-h) + 2px)",
-        "--kai-route-content-gap": topShellMetrics.hasTabs ? "20px" : "10px",
-        "--kai-route-content-gap-sm": topShellMetrics.hasTabs ? "24px" : "14px",
+        "--kai-route-content-gap": topShellMetrics.hasTabs ? "2px" : "10px",
+        "--kai-route-content-gap-sm": topShellMetrics.hasTabs ? "6px" : "14px",
         "--app-top-shell-visible": topShellMetrics.shellVisible ? "1" : "0",
         "--app-top-has-tabs": topShellMetrics.hasTabs ? "1" : "0",
         "--app-top-offset-mode":

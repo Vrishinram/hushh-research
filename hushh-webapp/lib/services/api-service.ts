@@ -23,6 +23,7 @@
 import { Capacitor, CapacitorHttp } from "@capacitor/core";
 import { HushhVault, HushhAuth, HushhConsent, HushhNotifications } from "@/lib/capacitor";
 import { Kai, PORTFOLIO_STREAM_EVENT, KAI_STREAM_EVENT } from "@/lib/capacitor/kai";
+import type { PortfolioSharePayload } from "@/lib/portfolio-share/contract";
 import { isKaiStreamEnvelope, type KaiStreamEnvelope } from "@/lib/streaming/kai-stream-types";
 import { AuthService } from "@/lib/services/auth-service";
 
@@ -1723,6 +1724,17 @@ export class ApiService {
         },
       }
     );
+  }
+
+  static async createPortfolioShareLink(data: {
+    payload: PortfolioSharePayload;
+  }): Promise<Response> {
+    return apiFetch("/api/portfolio/share-link", {
+      method: "POST",
+      body: JSON.stringify({
+        payload: data.payload,
+      }),
+    });
   }
 
   static async importPortfolio(data: {

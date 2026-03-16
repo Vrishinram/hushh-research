@@ -33,6 +33,8 @@ import {
 
 type Stage = "loading" | "wizard" | "persona";
 type OnboardingSource = "pre_vault" | "vault";
+const ONBOARDING_ACTION_TIMEOUT_MS = 15000;
+const ONBOARDING_TIMEOUT_ERROR = "OnboardingTimeoutError";
 
 type WizardAnswers = {
   investment_horizon: InvestmentHorizon | null;
@@ -60,6 +62,26 @@ function computePersona(answers: WizardAnswers, explicit?: RiskProfile | null): 
   if (explicit) return explicit;
   const score = computeRiskScore(answers as PreVaultOnboardingAnswers);
   return score === null ? "balanced" : mapRiskProfile(score);
+}
+
+function withActionTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeoutId = globalThis.setTimeout(() => {
+      const error = new Error(`${label} timed out after ${ONBOARDING_ACTION_TIMEOUT_MS}ms`);
+      error.name = ONBOARDING_TIMEOUT_ERROR;
+      reject(error);
+    }, ONBOARDING_ACTION_TIMEOUT_MS);
+
+    promise
+      .then((value) => {
+        globalThis.clearTimeout(timeoutId);
+        resolve(value);
+      })
+      .catch((error: unknown) => {
+        globalThis.clearTimeout(timeoutId);
+        reject(error);
+      });
+  });
 }
 
 export default function KaiOnboardingPage() {
@@ -171,6 +193,23 @@ export default function KaiOnboardingPage() {
     return computePersona(wizardAnswers, preVaultState?.risk_profile ?? null);
   }, [source, wizardAnswers, profile?.preferences.risk_profile, preVaultState?.risk_profile]);
 
+  async function persistLocalCompletionFallback(params: {
+    skipped: boolean;
+    answers: WizardAnswers;
+  }): Promise<void> {
+    const userId = user?.uid;
+    if (!userId) return;
+    const score = computeRiskScore(params.answers as PreVaultOnboardingAnswers);
+    const profileForFallback = score === null ? null : mapRiskProfile(score);
+    const nextState = await PreVaultOnboardingService.markCompleted(userId, {
+      skipped: params.skipped,
+      answers: params.answers,
+      risk_score: score,
+      risk_profile: profileForFallback,
+    });
+    setPreVaultState(nextState);
+  }
+
   if (authLoading) {
     return <HushhLoader label="Loading onboarding..." variant="fullscreen" />;
   }
@@ -217,13 +256,28 @@ export default function KaiOnboardingPage() {
                 toast.error("Unlock your vault to continue.");
                 return;
               }
-              const nextProfile = await KaiProfileService.setOnboardingCompleted({
-                userId: user.uid,
-                vaultKey,
-                vaultOwnerToken,
-                skippedPreferences: false,
-              });
-              setProfile(nextProfile);
+              try {
+                const nextProfile = await withActionTimeout(
+                  KaiProfileService.setOnboardingCompleted({
+                    userId: user.uid,
+                    vaultKey,
+                    vaultOwnerToken,
+                    skippedPreferences: false,
+                  }),
+                  "Finalize onboarding"
+                );
+                setProfile(nextProfile);
+              } catch (vaultError) {
+                console.warn(
+                  "[KaiOnboardingPage] Vault finalize failed. Falling back to local completion state:",
+                  vaultError
+                );
+                await persistLocalCompletionFallback({
+                  skipped: false,
+                  answers: wizardAnswers,
+                });
+                toast.warning("Vault sync is slow. Continuing and syncing in background.");
+              }
             } else {
               const completedAt = Date.now();
               await PreVaultUserStateService.updatePreVaultState(user.uid, {
@@ -266,6 +320,7 @@ export default function KaiOnboardingPage() {
     <KaiPreferencesWizard
       mode="onboarding"
       layout="page"
+      isSubmitting={saving}
       initialStep={0}
       initialAnswers={wizardAnswers}
       onBack={() => router.replace("/kai")}
@@ -290,13 +345,28 @@ export default function KaiOnboardingPage() {
               toast.error("Unlock your vault to continue.");
               return;
             }
-            const nextProfile = await KaiProfileService.setOnboardingCompleted({
-              userId: user.uid,
-              vaultKey,
-              vaultOwnerToken,
-              skippedPreferences: true,
-            });
-            setProfile(nextProfile);
+            try {
+              const nextProfile = await withActionTimeout(
+                KaiProfileService.setOnboardingCompleted({
+                  userId: user.uid,
+                  vaultKey,
+                  vaultOwnerToken,
+                  skippedPreferences: true,
+                }),
+                "Skip onboarding"
+              );
+              setProfile(nextProfile);
+            } catch (vaultError) {
+              console.warn(
+                "[KaiOnboardingPage] Vault skip failed. Falling back to local completion state:",
+                vaultError
+              );
+              await persistLocalCompletionFallback({
+                skipped: true,
+                answers: wizardAnswers,
+              });
+              toast.warning("Vault sync is slow. Skipping now and syncing in background.");
+            }
           } else {
             const completedAt = Date.now();
             await PreVaultUserStateService.updatePreVaultState(user.uid, {
@@ -340,15 +410,32 @@ export default function KaiOnboardingPage() {
               toast.error("Unlock your vault to continue.");
               return;
             }
-
-            const nextProfile = await KaiProfileService.savePreferences({
-              userId: user.uid,
-              vaultKey,
-              vaultOwnerToken,
-              updates: nextAnswers,
-              mode: "onboarding",
-            });
-            setProfile(nextProfile);
+            try {
+              const nextProfile = await withActionTimeout(
+                KaiProfileService.savePreferences({
+                  userId: user.uid,
+                  vaultKey,
+                  vaultOwnerToken,
+                  updates: nextAnswers,
+                  mode: "onboarding",
+                }),
+                "Save onboarding preferences"
+              );
+              setProfile(nextProfile);
+            } catch (vaultError) {
+              console.warn(
+                "[KaiOnboardingPage] Vault preference save failed. Falling back to local draft:",
+                vaultError
+              );
+              const score = computeRiskScore(nextAnswers as PreVaultOnboardingAnswers);
+              const nextState = await PreVaultOnboardingService.saveDraft(user.uid, {
+                answers: nextAnswers,
+                risk_score: score,
+                risk_profile: score === null ? null : mapRiskProfile(score),
+              });
+              setPreVaultState(nextState);
+              toast.warning("Vault sync is slow. Continuing with local draft.");
+            }
           } else {
             const score = computeRiskScore(nextAnswers as PreVaultOnboardingAnswers);
             const nextState = await PreVaultOnboardingService.saveDraft(user.uid, {

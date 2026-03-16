@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ColumnDef } from "@tanstack/react-table";
 import {
   Plus,
   Save,
@@ -9,26 +8,29 @@ import {
   TrendingDown,
   TrendingUp,
   Loader2,
+  Share2,
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { DataTable } from "@/components/app-ui/data-table";
+import { ProfileBasedPicksList } from "@/components/kai/cards/profile-based-picks-list";
 import { AssetAllocationDonut } from "@/components/kai/charts/asset-allocation-donut";
 import { GainLossDistributionChart } from "@/components/kai/charts/gain-loss-distribution-chart";
 import { HoldingsConcentrationChart } from "@/components/kai/charts/holdings-concentration-chart";
 import { PortfolioHistoryChart } from "@/components/kai/charts/portfolio-history-chart";
 import { SectorAllocationChart } from "@/components/kai/charts/sector-allocation-chart";
 import { StatementCashflowChart } from "@/components/kai/charts/statement-cashflow-chart";
-import { HoldingRowActions } from "@/components/kai/holdings/holding-row-actions";
+import { HoldingsMobileList } from "@/components/kai/holdings/holdings-mobile-list";
 import { EditHoldingModal } from "@/components/kai/modals/edit-holding-modal";
 import type { Holding as PortfolioHolding, PortfolioData } from "@/components/kai/types/portfolio";
-import { ProfileBasedPicksList } from "@/components/kai/cards/profile-based-picks-list";
 import { useCache, type PortfolioData as CachedPortfolioData } from "@/lib/cache/cache-context";
 import { CacheSyncService } from "@/lib/cache/cache-sync-service";
 import { Button as MorphyButton } from "@/lib/morphy-ux/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/lib/morphy-ux/card";
 import { Icon } from "@/lib/morphy-ux/ui";
 import { KAI_EXPERIENCE_CONTRACT } from "@/lib/kai/experience-contract";
+import { getTickerUniverseSnapshot, preloadTickerUniverse } from "@/lib/kai/ticker-universe-cache";
+import { buildPortfolioSharePayloadFromDashboardModel, exportPortfolioPdf } from "@/lib/portfolio-share/client";
+import { WorldModelService } from "@/lib/services/world-model-service";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   AlertDialog,
@@ -40,11 +42,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { WorldModelService } from "@/lib/services/world-model-service";
+import { mapPortfolioToDashboardViewModel } from "@/components/kai/views/dashboard-data-mapper";
 import { cn } from "@/lib/utils";
 import { useVault } from "@/lib/vault/vault-context";
-import { mapPortfolioToDashboardViewModel } from "@/components/kai/views/dashboard-data-mapper";
-import { getTickerUniverseSnapshot, preloadTickerUniverse } from "@/lib/kai/ticker-universe-cache";
 
 interface DashboardMasterViewProps {
   userId: string;
@@ -115,27 +115,6 @@ function formatCurrency(value: number): string {
 
 function formatPercent(value: number): string {
   return `${value.toFixed(1)}%`;
-}
-
-function compareHoldingsByNameAsc<T extends { name?: string; symbol?: string }>(
-  left: T,
-  right: T
-): number {
-  const leftName = String(left.name || "").trim();
-  const rightName = String(right.name || "").trim();
-  const leftSymbol = String(left.symbol || "").trim();
-  const rightSymbol = String(right.symbol || "").trim();
-  const leftKey = leftName || leftSymbol;
-  const rightKey = rightName || rightSymbol;
-
-  if (!leftKey && !rightKey) return 0;
-  if (!leftKey) return 1;
-  if (!rightKey) return -1;
-
-  return leftKey.localeCompare(rightKey, undefined, {
-    sensitivity: "base",
-    numeric: true,
-  });
 }
 
 function DataQualityFallback({ title, detail }: { title: string; detail: string }) {
@@ -366,9 +345,7 @@ export function DashboardMasterView({
   const [editingHolding, setEditingHolding] = useState<ManagedHolding | null>(null);
   const [editingHoldingId, setEditingHoldingId] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [mobileHoldingsTab, _setMobileHoldingsTab] = useState<
-    "all" | "analyze" | "non-analyze" | "cash"
-  >("all");
+  const [isSharingPortfolioPdf, setIsSharingPortfolioPdf] = useState(false);
 
   useEffect(() => {
     const sourceHoldings = (portfolioData.holdings || []) as PortfolioHolding[];
@@ -502,6 +479,10 @@ export function DashboardMasterView({
     () => mapPortfolioToDashboardViewModel(workingPortfolioData),
     [workingPortfolioData]
   );
+  const portfolioSharePayload = useMemo(
+    () => buildPortfolioSharePayloadFromDashboardModel(model),
+    [model]
+  );
 
   const allocationData = useMemo(
     () =>
@@ -517,28 +498,6 @@ export function DashboardMasterView({
     [model.canonicalModel.debateContext.eligibleSymbols]
   );
 
-  const sortedHoldingsDraft = useMemo(
-    () => [...holdingsDraft].sort(compareHoldingsByNameAsc),
-    [holdingsDraft]
-  );
-
-  const desktopHoldingTables = useMemo(
-    () => ({
-      all: sortedHoldingsDraft,
-      analyzeEligible: sortedHoldingsDraft.filter((holding) => isHoldingAnalyzeEligible(holding)),
-      nonAnalyzable: sortedHoldingsDraft.filter(
-        (holding) => !holding.is_cash_equivalent && !isHoldingAnalyzeEligible(holding)
-      ),
-      cashSweep: sortedHoldingsDraft.filter((holding) => holding.is_cash_equivalent === true),
-    }),
-    [sortedHoldingsDraft]
-  );
-  const _mobileHoldingsData = useMemo(() => {
-    if (mobileHoldingsTab === "analyze") return desktopHoldingTables.analyzeEligible;
-    if (mobileHoldingsTab === "non-analyze") return desktopHoldingTables.nonAnalyzable;
-    if (mobileHoldingsTab === "cash") return desktopHoldingTables.cashSweep;
-    return desktopHoldingTables.all;
-  }, [desktopHoldingTables, mobileHoldingsTab]);
   const holdingsBifurcation = useMemo(() => {
     let cashSweep = 0;
     let analyzeEligible = 0;
@@ -1063,7 +1022,7 @@ export function DashboardMasterView({
     } finally {
       setIsDeletingImportedData(false);
     }
-  }, [onReupload, portfolioData.account_info, setCachePortfolioData, userId, vaultKey, vaultOwnerToken]);
+  }, [onReupload, portfolioData.account_info, userId, vaultKey, vaultOwnerToken]);
 
   const handleEditHolding = useCallback(
     (holdingId: string) => {
@@ -1149,141 +1108,69 @@ export function DashboardMasterView({
     );
   }, []);
 
-  const holdingsTableColumns = useMemo<ColumnDef<ManagedHolding>[]>(
-    () => [
-      {
-        id: "row_actions",
-        header: () => <span className="sr-only">Actions</span>,
-        cell: ({ row }) => {
-          const holding = row.original;
-          const deleted = Boolean(holding.pending_delete);
-          return (
-            <div className="flex items-start justify-center pt-1">
-              <HoldingRowActions
-                symbol={holding.symbol}
-                isDeleted={deleted}
-                disableEdit={deleted}
-                layout="row"
-                className="w-auto"
-                onEdit={() => handleEditHolding(holding.client_id)}
-                onToggleDelete={() => handleToggleDeleteHolding(holding.client_id)}
-              />
-            </div>
-          );
-        },
-      },
-      {
-        accessorKey: "symbol",
-        header: "Holding",
-        cell: ({ row }) => {
-          const holding = row.original;
-          const deleted = Boolean(holding.pending_delete);
-          return (
-            <div
-              className={cn(
-                "min-w-[170px] max-w-[240px] sm:max-w-[280px] lg:max-w-[340px]",
-                deleted && "opacity-60"
-              )}
-            >
-              <p className={cn("font-semibold", deleted && "line-through")}>
-                {holding.symbol || "—"}
-              </p>
-              <p
-                title={holding.name || "Unnamed security"}
-                className={cn("truncate text-xs text-muted-foreground", deleted && "line-through")}
-              >
-                {holding.name || "Unnamed security"}
-              </p>
-            </div>
-          );
-        },
-      },
-      {
-        id: "position",
-        header: "Shares @ Price",
-        cell: ({ row }) => {
-          const holding = row.original;
-          return (
-            <span
-              className={cn(
-                "text-xs sm:text-sm leading-tight",
-                holding.pending_delete && "line-through text-muted-foreground"
-              )}
-            >
-              {Number(holding.quantity || 0).toLocaleString()} @ {formatCurrency(Number(holding.price || 0))}
-            </span>
-          );
-        },
-      },
-      {
-        accessorKey: "market_value",
-        header: "Market Value",
-        cell: ({ row }) => {
-          const holding = row.original;
-          return (
-            <span
-              className={cn(
-                "font-semibold text-xs sm:text-sm leading-tight",
-                holding.pending_delete && "line-through text-muted-foreground"
-              )}
-            >
-              {formatCurrency(Number(holding.market_value || 0))}
-            </span>
-          );
-        },
-      },
-      {
-        accessorKey: "unrealized_gain_loss",
-        header: "Gain / Loss",
-        cell: ({ row }) => {
-          const holding = row.original;
-          const gain = Number(holding.unrealized_gain_loss || 0);
-          const gainText = `${gain >= 0 ? "+" : ""}${formatCurrency(gain)}`;
-          return (
-            <span
-              className={cn(
-                "font-medium",
-                holding.pending_delete
-                  ? "line-through text-muted-foreground"
-                  : gain >= 0
-                    ? "text-emerald-600 dark:text-emerald-400"
-                    : "text-rose-600 dark:text-rose-400"
-              )}
-            >
-              {gainText}
-            </span>
-          );
-        },
-      },
-    ],
-    [handleEditHolding, handleToggleDeleteHolding]
-  );
+  const handleSharePortfolioPdf = useCallback(async () => {
+    if (isSharingPortfolioPdf) return;
+
+    setIsSharingPortfolioPdf(true);
+    try {
+      const delivery = await exportPortfolioPdf(portfolioSharePayload);
+      if (delivery === "download") {
+        toast.success("Portfolio PDF exported.");
+      } else {
+        toast.success("Portfolio PDF ready to share.");
+      }
+    } catch (error) {
+      const message = String((error as Error)?.message || "").toLowerCase();
+      if (message.includes("cancel")) return;
+      console.error("[DashboardMasterView] Failed to share portfolio PDF:", error);
+      toast.error("Could not share portfolio PDF.");
+    } finally {
+      setIsSharingPortfolioPdf(false);
+    }
+  }, [isSharingPortfolioPdf, portfolioSharePayload]);
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-8 overflow-x-hidden px-5 pb-6 pt-[var(--kai-view-top-gap,16px)] sm:px-8">
+    <div className="mx-auto w-full max-w-5xl space-y-3 overflow-x-hidden px-5 pb-5 pt-[var(--kai-view-top-gap,16px)] sm:space-y-8 sm:px-8 sm:pb-6">
       <Card
         variant="muted"
         effect="fill"
         className="overflow-hidden rounded-[26px] p-0 !border-transparent shadow-[0_14px_44px_rgba(15,23,42,0.06)]"
       >
-        <CardContent className="space-y-6 p-6 sm:p-7">
+        <CardContent className="space-y-4 p-5 sm:space-y-6 sm:p-7">
+          <div className="flex justify-end">
+            <MorphyButton
+              variant="none"
+              effect="fade"
+              size="sm"
+              onClick={() => void handleSharePortfolioPdf()}
+              disabled={isSharingPortfolioPdf}
+              className="h-10 w-10 rounded-full border border-border/70 bg-background/85 p-0 text-foreground shadow-sm"
+              aria-label="Share portfolio PDF"
+            >
+              {isSharingPortfolioPdf ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Icon icon={Share2} size="sm" />
+              )}
+            </MorphyButton>
+          </div>
           <div className="flex flex-col items-center gap-2 text-center">
-            <p className="text-sm font-medium text-muted-foreground">Total portfolio value</p>
+            <p className="app-label-text app-title-subtitle-gap">Total portfolio value</p>
             <div className="flex flex-wrap justify-center gap-2">
-              <span className="inline-flex items-center rounded-full bg-background px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+              <span className="app-feature-point inline-flex items-center rounded-full bg-background px-2.5 py-1 text-muted-foreground">
                 Risk: {model.hero.portfolioConcentrationLabel.replace(" Concentration", "")}
               </span>
-              <span className="inline-flex items-center rounded-full bg-background px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+              <span className="app-feature-point inline-flex items-center rounded-full bg-background px-2.5 py-1 text-muted-foreground">
                 Holdings: {model.hero.investableHoldingsCount}
               </span>
               {model.hero.cashPositionsCount > 0 ? (
-                <span className="inline-flex items-center rounded-full bg-background px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                <span className="app-feature-point inline-flex items-center rounded-full bg-background px-2.5 py-1 text-muted-foreground">
                   Cash Positions: {model.hero.cashPositionsCount}
                 </span>
               ) : null}
             </div>
-            <p className="text-4xl font-black tracking-tight">{formatCurrency(model.hero.totalValue)}</p>
-            <div className="flex items-center justify-center gap-2 text-sm">
+            <p className="app-hero-title text-foreground">{formatCurrency(model.hero.totalValue)}</p>
+            <div className="app-feature-point flex items-center justify-center gap-2">
               <span
                 className={cn(
                   "inline-flex items-center font-semibold",
@@ -1298,16 +1185,16 @@ export function DashboardMasterView({
               </span>
               {model.hero.statementPeriod ? (
                 <>
-                  <span className="text-muted-foreground">•</span>
-                  <span className="text-muted-foreground">{model.hero.statementPeriod}</span>
+                  <span className="app-label-text">•</span>
+                  <span className="app-label-text">{model.hero.statementPeriod}</span>
                 </>
               ) : null}
             </div>
           </div>
 
           <div className="rounded-xl border border-border/60 bg-background/75 p-4 text-center">
-            <p className="text-sm font-semibold">{model.hero.statementPeriod || "Current statement period"}</p>
-            <p className="mt-1 text-xs text-muted-foreground">
+            <p className="app-card-title">{model.hero.statementPeriod || "Current statement period"}</p>
+            <p className="app-body-text mt-1">
               Beginning Balance:{" "}
               <span className="font-semibold text-foreground">{formatCurrency(model.hero.beginningValue)}</span>
             </p>
@@ -1315,398 +1202,322 @@ export function DashboardMasterView({
         </CardContent>
       </Card>
 
-      <section className="space-y-4">
-        {hasEquitySectorAllocation ? (
-          <SectorAllocationChart
-            className="min-w-0 overflow-hidden rounded-[22px]"
-            holdings={equitySectorChartHoldings}
-            title="Equity Sector Allocation"
-            subtitle={`${(equitySectorCoveragePct * 100).toFixed(0)}% of equity holdings have mapped sector labels. Denominator: ${formatCurrency(model.hero.totalValue)} total portfolio value.`}
-          />
-        ) : (
-          <DataQualityFallback
-            title="Equity Sector Allocation"
-            detail="No equity holdings are currently available for sector-level allocation."
-          />
-        )}
+      <Tabs defaultValue="overview" className="space-y-4">
+        <TabsList className="grid h-9 w-full grid-cols-3 rounded-lg bg-background/80 p-0.5">
+          <TabsTrigger value="overview" className="text-xs">
+            Overview
+          </TabsTrigger>
+          <TabsTrigger value="holdings" className="text-xs">
+            Holdings
+          </TabsTrigger>
+          <TabsTrigger value="deep-dive" className="text-xs">
+            Deep Dive
+          </TabsTrigger>
+        </TabsList>
 
-        {hasNonEquityAllocation ? (
-          <SectorAllocationChart
-            className="min-w-0 overflow-hidden rounded-[22px]"
-            holdings={nonEquityAllocationChartHoldings}
-            title="Non-Equity Allocation"
-            subtitle={`${(nonEquityCoveragePct * 100).toFixed(0)}% of non-equity holdings are mapped to canonical allocation buckets. Denominator: ${formatCurrency(model.hero.totalValue)} total portfolio value.`}
-          />
-        ) : (
-          <DataQualityFallback
-            title="Non-Equity Allocation"
-            detail="No non-equity holdings are present in the current portfolio."
-          />
-        )}
-      </section>
-
-      {statementSnapshotRows.length > 0 ? (
-        <StatementCashflowChart data={statementChartData} />
-      ) : null}
-
-      <Card
-        variant="muted"
-        effect="fill"
-        className="rounded-[24px] p-0 !border-transparent shadow-[0_12px_36px_rgba(15,23,42,0.05)]"
-      >
-        <CardHeader className="pb-2 px-6 pt-6 sm:px-7">
-          <CardTitle className="text-xs uppercase tracking-widest text-muted-foreground">
-            Investor Snapshot
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4 px-6 pb-6 pt-0 sm:px-7 sm:pb-7">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-xl border border-border/60 bg-background/75 p-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                Debate Readiness
-              </p>
-              <p className="mt-1 text-2xl font-black">{investorSnapshot.readinessScore}</p>
-              <p className="text-xs text-muted-foreground">Context quality score (0-100)</p>
-            </div>
-            <div className="rounded-xl border border-border/60 bg-background/75 p-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                Optimization Pressure
-              </p>
-              <p className="mt-1 text-2xl font-black">{formatPercent(investorSnapshot.optimizationPressurePct)}</p>
-              <p className="text-xs text-muted-foreground">
-                Portfolio value in losing positions
-              </p>
-            </div>
-            <div className="rounded-xl border border-border/60 bg-background/75 p-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                Top 3 Concentration
-              </p>
-              <p className="mt-1 text-2xl font-black">{formatPercent(investorSnapshot.top3ConcentrationPct)}</p>
-              <p className="text-xs text-muted-foreground">
-                Largest three holdings share
-              </p>
-            </div>
-            <div className="rounded-xl border border-border/60 bg-background/75 p-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                Estimated Annual Income
-              </p>
-              <p className="mt-1 text-2xl font-black">{formatCurrency(investorSnapshot.estimatedAnnualIncome)}</p>
-              <p className="text-xs text-muted-foreground">
-                Yield {formatPercent(investorSnapshot.annualYieldPct)}
-              </p>
-            </div>
-          </div>
-
-          <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
-            <div className="rounded-lg border border-border/60 bg-background/70 px-3 py-2">
-              {investorSnapshot.losersCount} losers / {investorSnapshot.winnersCount} winners
-            </div>
-            <div className="rounded-lg border border-border/60 bg-background/70 px-3 py-2">
-              {investorSnapshot.uniqueSectors} sector buckets represented
-            </div>
-            <div className="rounded-lg border border-border/60 bg-background/70 px-3 py-2">
-              Cash allocation {formatPercent(investorSnapshot.cashPct)}
-            </div>
-            <div className="rounded-lg border border-border/60 bg-background/70 px-3 py-2">
-              Fixed income {formatPercent(investorSnapshot.fixedIncomePct)} / Real assets{" "}
-              {formatPercent(investorSnapshot.realAssetsPct)}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card
-        variant="muted"
-        effect="fill"
-        className="min-w-0 rounded-[24px] p-0 !border-transparent shadow-[0_12px_36px_rgba(15,23,42,0.05)]"
-      >
-        <CardHeader className="pb-2 px-6 pt-6 sm:px-7">
-          <div className="flex items-center justify-between gap-2">
-            <CardTitle className="text-xs uppercase tracking-widest text-muted-foreground">
-              Current Holdings
-            </CardTitle>
-            <MorphyButton
-              variant="none"
-              effect="fade"
-              size="sm"
-              onClick={openAddHoldingModal}
-            >
-              <Icon icon={Plus} size="sm" className="mr-1" />
-              Add Holding
-            </MorphyButton>
-          </div>
-        </CardHeader>
-
-        <CardContent className="space-y-4 px-6 pb-6 pt-0 sm:px-7 sm:pb-7">
-          <div className="rounded-xl border border-border/60 bg-background/70 px-3 py-2.5 text-xs text-muted-foreground">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-semibold text-foreground">Change Summary</span>
-              <span className="rounded-full bg-background px-2 py-0.5">Added: {holdingsChangeSummary.added}</span>
-              <span className="rounded-full bg-background px-2 py-0.5">Edited: {holdingsChangeSummary.edited}</span>
-              <span className="rounded-full bg-background px-2 py-0.5">Deleted: {holdingsChangeSummary.deleted}</span>
-            </div>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <span className="font-semibold text-foreground">Bifurcation</span>
-              <span className="rounded-full bg-background px-2 py-0.5">
-                Equities: {holdingsBifurcation.analyzeEligible}
-              </span>
-              <span className="rounded-full bg-background px-2 py-0.5">
-                Other Assets: {holdingsBifurcation.nonAnalyzable}
-              </span>
-              <span className="rounded-full bg-background px-2 py-0.5">
-                Cash: {holdingsBifurcation.cashSweep}
-              </span>
-            </div>
-          </div>
-
-          <Tabs defaultValue="all" className="space-y-3">
-            <div className="pb-1">
-              <TabsList className="grid h-8 w-full grid-cols-4 gap-0.5 rounded-lg bg-background/80 p-0.5">
-                <TabsTrigger
-                  className="h-7 min-w-0 truncate px-1 text-[10px] leading-none sm:text-xs"
-                  value="all"
-                  title={`All holdings (${desktopHoldingTables.all.length})`}
-                >
-                  All ({desktopHoldingTables.all.length})
-                </TabsTrigger>
-                <TabsTrigger
-                  className="h-7 min-w-0 truncate px-1 text-[10px] leading-none sm:text-xs"
-                  value="analyze"
-                  title={`Equities (${desktopHoldingTables.analyzeEligible.length})`}
-                >
-                  Equity ({desktopHoldingTables.analyzeEligible.length})
-                </TabsTrigger>
-                <TabsTrigger
-                  className="h-7 min-w-0 truncate px-1 text-[10px] leading-none sm:text-xs"
-                  value="non-analyze"
-                  title={`Other assets (${desktopHoldingTables.nonAnalyzable.length})`}
-                >
-                  Other ({desktopHoldingTables.nonAnalyzable.length})
-                </TabsTrigger>
-                <TabsTrigger
-                  className="h-7 min-w-0 truncate px-1 text-[10px] leading-none sm:text-xs"
-                  value="cash"
-                  title={`Cash holdings (${desktopHoldingTables.cashSweep.length})`}
-                >
-                  Cash ({desktopHoldingTables.cashSweep.length})
-                </TabsTrigger>
-              </TabsList>
-            </div>
-
-            <TabsContent value="all">
-              <DataTable
-                columns={holdingsTableColumns}
-                data={desktopHoldingTables.all}
-                globalSearchKeys={["symbol", "name"]}
-                searchPlaceholder="Search holdings by symbol or name..."
-                initialPageSize={5}
-                pageSizeOptions={[5, 10, 20]}
-                rowClassName={(holding) =>
-                  holding.pending_delete
-                    ? "bg-muted/45 text-muted-foreground"
-                    : "bg-transparent"
-                }
-                tableContainerClassName="w-full"
-                tableClassName="w-full"
+        <TabsContent value="overview" className="space-y-4">
+          <section className="space-y-4">
+            {hasEquitySectorAllocation ? (
+              <SectorAllocationChart
+                className="min-w-0 overflow-hidden rounded-[22px]"
+                holdings={equitySectorChartHoldings}
+                title="Equity Sector Allocation"
+                subtitle={`${(equitySectorCoveragePct * 100).toFixed(0)}% of equity holdings have mapped sector labels. Denominator: ${formatCurrency(model.hero.totalValue)} total portfolio value.`}
               />
-            </TabsContent>
-
-            <TabsContent value="analyze">
-              <DataTable
-                columns={holdingsTableColumns}
-                data={desktopHoldingTables.analyzeEligible}
-                globalSearchKeys={["symbol", "name"]}
-                searchPlaceholder="Search equities..."
-                initialPageSize={5}
-                pageSizeOptions={[5, 10, 20]}
-                rowClassName={(holding) =>
-                  holding.pending_delete
-                    ? "bg-muted/45 text-muted-foreground"
-                    : "bg-transparent"
-                }
-                tableContainerClassName="w-full"
-                tableClassName="w-full"
+            ) : (
+              <DataQualityFallback
+                title="Equity Sector Allocation"
+                detail="No equity holdings are currently available for sector-level allocation."
               />
-            </TabsContent>
+            )}
 
-            <TabsContent value="non-analyze">
-              <DataTable
-                columns={holdingsTableColumns}
-                data={desktopHoldingTables.nonAnalyzable}
-                globalSearchKeys={["symbol", "name"]}
-                searchPlaceholder="Search other assets..."
-                initialPageSize={5}
-                pageSizeOptions={[5, 10, 20]}
-                rowClassName={(holding) =>
-                  holding.pending_delete
-                    ? "bg-muted/45 text-muted-foreground"
-                    : "bg-transparent"
-                }
-                tableContainerClassName="w-full"
-                tableClassName="w-full"
+            {hasNonEquityAllocation ? (
+              <SectorAllocationChart
+                className="min-w-0 overflow-hidden rounded-[22px]"
+                holdings={nonEquityAllocationChartHoldings}
+                title="Non-Equity Allocation"
+                subtitle={`${(nonEquityCoveragePct * 100).toFixed(0)}% of non-equity holdings are mapped to canonical allocation buckets. Denominator: ${formatCurrency(model.hero.totalValue)} total portfolio value.`}
               />
-            </TabsContent>
-
-            <TabsContent value="cash">
-              <DataTable
-                columns={holdingsTableColumns}
-                data={desktopHoldingTables.cashSweep}
-                globalSearchKeys={["symbol", "name"]}
-                searchPlaceholder="Search cash holdings..."
-                initialPageSize={5}
-                pageSizeOptions={[5, 10, 20]}
-                rowClassName={(holding) =>
-                  holding.pending_delete
-                    ? "bg-muted/45 text-muted-foreground"
-                    : "bg-transparent"
-                }
-                tableContainerClassName="w-full"
-                tableClassName="w-full"
+            ) : (
+              <DataQualityFallback
+                title="Non-Equity Allocation"
+                detail="No non-equity holdings are present in the current portfolio."
               />
-            </TabsContent>
-          </Tabs>
+            )}
+          </section>
 
-          {hasHoldingsChanges ? (
-            <div className="pt-2">
-              <MorphyButton
-                variant="blue-gradient"
-                effect="fade"
-                fullWidth
-                onClick={() => void persistHoldingsChanges()}
-                disabled={isSavingHoldings}
-                className="bg-black text-white hover:bg-black/90 dark:bg-white dark:text-black dark:hover:bg-white/90"
-              >
-                <Icon icon={Save} size="sm" className="mr-2" />
-                {isSavingHoldings ? "Saving Holdings..." : "Save Holdings Changes"}
-              </MorphyButton>
-            </div>
+          {statementSnapshotRows.length > 0 ? (
+            <StatementCashflowChart data={statementChartData} />
           ) : null}
-        </CardContent>
-      </Card>
 
-      <section className="space-y-3">
-        <h2 className="app-section-heading px-1 uppercase tracking-[0.12em] text-muted-foreground">
-          Portfolio Insights
-        </h2>
-        <div className="grid gap-4 lg:grid-cols-2">
-          {model.quality.allocationReady ? (
-            <Card variant="none" effect="glass" className="min-w-0 overflow-hidden rounded-[22px]">
-              <CardHeader className="pb-2 px-5 pt-5">
-                <CardTitle className="text-sm">Allocation Mix</CardTitle>
-              </CardHeader>
-              <CardContent className="px-5 pb-5 pt-0">
-                <AssetAllocationDonut data={allocationData} height={240} />
-              </CardContent>
-            </Card>
-          ) : (
-            <DataQualityFallback
-              title="Allocation Mix"
-              detail="Insufficient statement allocation fields to build a reliable mix chart."
-            />
-          )}
+          <Card
+            variant="muted"
+            effect="fill"
+            className="rounded-[24px] p-0 !border-transparent shadow-[0_12px_36px_rgba(15,23,42,0.05)]"
+          >
+            <CardHeader className="pb-2 px-6 pt-6 sm:px-7">
+              <CardTitle className="text-xs uppercase tracking-widest text-muted-foreground">
+                Investor Snapshot
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4 px-6 pb-6 pt-0 sm:px-7 sm:pb-7">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-xl border border-border/60 bg-background/75 p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Debate Readiness
+                  </p>
+                  <p className="mt-1 text-2xl font-black">{investorSnapshot.readinessScore}</p>
+                  <p className="text-xs text-muted-foreground">Context quality score (0-100)</p>
+                </div>
+                <div className="rounded-xl border border-border/60 bg-background/75 p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Optimization Pressure
+                  </p>
+                  <p className="mt-1 text-2xl font-black">{formatPercent(investorSnapshot.optimizationPressurePct)}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Portfolio value in losing positions
+                  </p>
+                </div>
+                <div className="rounded-xl border border-border/60 bg-background/75 p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Top 3 Concentration
+                  </p>
+                  <p className="mt-1 text-2xl font-black">{formatPercent(investorSnapshot.top3ConcentrationPct)}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Largest three holdings share
+                  </p>
+                </div>
+                <div className="rounded-xl border border-border/60 bg-background/75 p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Estimated Annual Income
+                  </p>
+                  <p className="mt-1 text-2xl font-black">{formatCurrency(investorSnapshot.estimatedAnnualIncome)}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Yield {formatPercent(investorSnapshot.annualYieldPct)}
+                  </p>
+                </div>
+              </div>
 
-          {model.quality.historyReady ? (
-            <PortfolioHistoryChart
-              data={model.history}
-              beginningValue={model.hero.beginningValue}
-              endingValue={model.hero.endingValue}
-              statementPeriod={model.hero.statementPeriod}
-              className="h-full min-w-0 overflow-hidden rounded-[22px]"
-            />
-          ) : (
-            <DataQualityFallback
-              title="Portfolio History"
-              detail="Insufficient statement period values to plot a defensible history trend."
-            />
-          )}
+              <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
+                <div className="rounded-lg border border-border/60 bg-background/70 px-3 py-2">
+                  {investorSnapshot.losersCount} losers / {investorSnapshot.winnersCount} winners
+                </div>
+                <div className="rounded-lg border border-border/60 bg-background/70 px-3 py-2">
+                  {investorSnapshot.uniqueSectors} sector buckets represented
+                </div>
+                <div className="rounded-lg border border-border/60 bg-background/70 px-3 py-2">
+                  Cash allocation {formatPercent(investorSnapshot.cashPct)}
+                </div>
+                <div className="rounded-lg border border-border/60 bg-background/70 px-3 py-2">
+                  Fixed income {formatPercent(investorSnapshot.fixedIncomePct)} / Real assets{" "}
+                  {formatPercent(investorSnapshot.realAssetsPct)}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-          {model.quality.gainLossReady ? (
-            <GainLossDistributionChart
-              className="min-w-0 overflow-hidden rounded-[22px]"
-              data={model.gainLossDistribution}
-            />
-          ) : (
-            <DataQualityFallback
-              title="Gain/Loss Distribution"
-              detail="Statement lacks enough gain/loss percentages to build a reliable distribution."
-            />
-          )}
+        <TabsContent value="holdings" className="space-y-4">
+          <Card
+            variant="muted"
+            effect="fill"
+            className="min-w-0 rounded-[24px] p-0 !border-transparent shadow-[0_12px_36px_rgba(15,23,42,0.05)]"
+          >
+            <CardHeader className="pb-2 px-6 pt-6 sm:px-7">
+              <div className="flex items-center justify-between gap-2">
+                <CardTitle className="app-card-title whitespace-nowrap text-foreground">
+                  Current Holdings
+                </CardTitle>
+                <MorphyButton
+                  variant="none"
+                  effect="fade"
+                  size="sm"
+                  className="app-button-text app-button-black shrink-0 whitespace-nowrap"
+                  onClick={openAddHoldingModal}
+                >
+                  <Icon icon={Plus} size="sm" className="mr-1" />
+                  Add Holding
+                </MorphyButton>
+              </div>
+            </CardHeader>
 
-          {model.quality.concentrationReady ? (
-            <HoldingsConcentrationChart
-              className="min-w-0 overflow-hidden rounded-[22px]"
-              data={model.concentration}
-            />
-          ) : (
-            <DataQualityFallback
-              title="Holdings Concentration"
-              detail="Need at least three measurable holdings to compute concentration safely."
-            />
-          )}
-        </div>
-      </section>
+            <CardContent className="space-y-4 px-6 pb-6 pt-0 sm:px-7 sm:pb-7">
+              <div className="rounded-xl border border-border/60 bg-background/70 px-3 py-2.5 text-xs text-muted-foreground">
+                <div className="overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+                  <div className="flex min-w-max items-center gap-1.5 whitespace-nowrap">
+                    <span className="app-feature-point text-foreground">Change Summary</span>
+                    <span className="app-feature-point rounded-full bg-background px-2 py-0.5">Added: {holdingsChangeSummary.added}</span>
+                    <span className="app-feature-point rounded-full bg-background px-2 py-0.5">Edited: {holdingsChangeSummary.edited}</span>
+                    <span className="app-feature-point rounded-full bg-background px-2 py-0.5">Deleted: {holdingsChangeSummary.deleted}</span>
+                  </div>
+                </div>
+                <div className="mt-2 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+                  <div className="flex min-w-max items-center gap-1.5 whitespace-nowrap">
+                    <span className="app-feature-point text-foreground">Bifurcation</span>
+                    <span className="app-feature-point rounded-full bg-background px-2 py-0.5">
+                      Equities: {holdingsBifurcation.analyzeEligible}
+                    </span>
+                    <span className="app-feature-point rounded-full bg-background px-2 py-0.5">
+                      Other Assets: {holdingsBifurcation.nonAnalyzable}
+                    </span>
+                    <span className="app-feature-point rounded-full bg-background px-2 py-0.5">
+                      Cash: {holdingsBifurcation.cashSweep}
+                    </span>
+                  </div>
+                </div>
+              </div>
 
-      <Card variant="none" effect="glass" className="min-w-0 overflow-hidden rounded-[22px]">
-        <CardContent className="p-4 sm:p-5">
-          <ProfileBasedPicksList
-            userId={userId}
-            vaultOwnerToken={vaultOwnerToken}
-            symbols={holdingSymbols}
-            onAdd={(symbol) => onAnalyzeStock?.(symbol)}
-          />
-        </CardContent>
-      </Card>
+              <HoldingsMobileList
+                holdings={holdingsDraft}
+                onEditHolding={handleEditHolding}
+                onToggleDeleteHolding={handleToggleDeleteHolding}
+              />
 
-      <Card variant="none" effect="glass" className="min-w-0 overflow-hidden rounded-[24px]">
-        <CardHeader className="pb-2 px-5 pt-5 sm:px-6 sm:pt-6">
-          <CardTitle className="text-sm">Recommendations</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 px-5 pb-5 pt-0 sm:px-6 sm:pb-6">
-          <p className="text-xs text-muted-foreground">
-            {KAI_EXPERIENCE_CONTRACT.decisionConviction.dashboardRecommendationsDescription}
-          </p>
-          {model.recommendations.map((item) => (
-            <div key={item.title} className="rounded-xl border border-border/60 bg-background/70 p-3">
-              <p className="text-sm font-semibold">{item.title}</p>
-              <p className="mt-1 text-xs text-muted-foreground">{item.detail}</p>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
+              {hasHoldingsChanges ? (
+                <div className="pt-2">
+                  <MorphyButton
+                    variant="blue-gradient"
+                    effect="fade"
+                    fullWidth
+                    onClick={() => void persistHoldingsChanges()}
+                    disabled={isSavingHoldings}
+                    className="app-button-text bg-black text-white hover:bg-black/90 dark:bg-black dark:text-white dark:hover:bg-black/90"
+                  >
+                    <Icon icon={Save} size="sm" className="mr-2" />
+                    {isSavingHoldings ? "Saving Holdings..." : "Save Holdings Changes"}
+                  </MorphyButton>
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
 
-      <Card variant="none" effect="glass" className="rounded-[24px]">
-        <CardContent className="flex flex-col gap-3 p-5 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:p-6">
-          <p>Imported statement data is synced across dashboard and holdings views.</p>
-          <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-2">
-            <MorphyButton
-              variant="none"
-              effect="fade"
-              size="sm"
-              fullWidth
-              disabled={isDeletingImportedData}
-              onClick={onReupload}
-            >
-              Import Portfolio
-            </MorphyButton>
-            <MorphyButton
-              variant="none"
-              effect="fade"
-              size="sm"
-              fullWidth
-              className="text-rose-600 hover:text-rose-700 dark:text-rose-400 dark:hover:text-rose-300"
-              disabled={isDeletingImportedData}
-              onClick={() => setDeleteImportedDialogOpen(true)}
-            >
-              {isDeletingImportedData ? (
-                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+          <Card variant="none" effect="glass" className="rounded-[24px]">
+            <CardContent className="flex flex-col gap-3 p-5 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:p-6">
+              <p>Imported statement data is synced across dashboard and holdings views.</p>
+              <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-2">
+                <MorphyButton
+                  variant="none"
+                  effect="fade"
+                  size="sm"
+                  fullWidth
+                  disabled={isDeletingImportedData}
+                  onClick={onReupload}
+                >
+                  Import Portfolio
+                </MorphyButton>
+                <MorphyButton
+                  variant="none"
+                  effect="fade"
+                  size="sm"
+                  fullWidth
+                  className="text-rose-600 hover:text-rose-700 dark:text-rose-400 dark:hover:text-rose-300"
+                  disabled={isDeletingImportedData}
+                  onClick={() => setDeleteImportedDialogOpen(true)}
+                >
+                  {isDeletingImportedData ? (
+                    <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="mr-1 h-4 w-4" />
+                  )}
+                  Delete Imported Data
+                </MorphyButton>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="deep-dive" className="space-y-4">
+          <section className="space-y-3">
+            <h2 className="app-section-heading px-1 uppercase tracking-[0.12em] text-muted-foreground">
+              Portfolio Insights
+            </h2>
+            <div className="grid gap-4 lg:grid-cols-2">
+              {model.quality.allocationReady ? (
+                <Card variant="none" effect="glass" className="min-w-0 overflow-hidden rounded-[22px]">
+                  <CardHeader className="pb-2 px-5 pt-5">
+                    <CardTitle className="text-sm">Allocation Mix</CardTitle>
+                  </CardHeader>
+                  <CardContent className="px-5 pb-5 pt-0">
+                    <AssetAllocationDonut data={allocationData} height={240} />
+                  </CardContent>
+                </Card>
               ) : (
-                <Trash2 className="mr-1 h-4 w-4" />
+                <DataQualityFallback
+                  title="Allocation Mix"
+                  detail="Insufficient statement allocation fields to build a reliable mix chart."
+                />
               )}
-              Delete Imported Data
-            </MorphyButton>
-          </div>
-        </CardContent>
-      </Card>
+
+              {model.quality.historyReady ? (
+                <PortfolioHistoryChart
+                  data={model.history}
+                  beginningValue={model.hero.beginningValue}
+                  endingValue={model.hero.endingValue}
+                  statementPeriod={model.hero.statementPeriod}
+                  className="h-full min-w-0 overflow-hidden rounded-[22px]"
+                />
+              ) : (
+                <DataQualityFallback
+                  title="Portfolio History"
+                  detail="Insufficient statement period values to plot a defensible history trend."
+                />
+              )}
+
+              {model.quality.gainLossReady ? (
+                <GainLossDistributionChart
+                  className="min-w-0 overflow-hidden rounded-[22px]"
+                  data={model.gainLossDistribution}
+                />
+              ) : (
+                <DataQualityFallback
+                  title="Gain/Loss Distribution"
+                  detail="Statement lacks enough gain/loss percentages to build a reliable distribution."
+                />
+              )}
+
+              {model.quality.concentrationReady ? (
+                <HoldingsConcentrationChart
+                  className="min-w-0 overflow-hidden rounded-[22px]"
+                  data={model.concentration}
+                />
+              ) : (
+                <DataQualityFallback
+                  title="Holdings Concentration"
+                  detail="Need at least three measurable holdings to compute concentration safely."
+                />
+              )}
+            </div>
+          </section>
+
+          <Card variant="none" effect="glass" className="min-w-0 overflow-hidden rounded-[22px]">
+            <CardContent className="p-4 sm:p-5">
+              <ProfileBasedPicksList
+                userId={userId}
+                vaultOwnerToken={vaultOwnerToken}
+                symbols={holdingSymbols}
+                onAdd={(symbol) => onAnalyzeStock?.(symbol)}
+              />
+            </CardContent>
+          </Card>
+
+          <Card variant="none" effect="glass" className="min-w-0 overflow-hidden rounded-[24px]">
+            <CardHeader className="pb-2 px-5 pt-5 sm:px-6 sm:pt-6">
+              <CardTitle className="text-sm">Recommendations</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 px-5 pb-5 pt-0 sm:px-6 sm:pb-6">
+              <p className="text-xs text-muted-foreground">
+                {KAI_EXPERIENCE_CONTRACT.decisionConviction.dashboardRecommendationsDescription}
+              </p>
+              {model.recommendations.map((item) => (
+                <div key={item.title} className="rounded-xl border border-border/60 bg-background/70 p-3">
+                  <p className="text-sm font-semibold">{item.title}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{item.detail}</p>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
       <EditHoldingModal
         isOpen={isModalOpen}

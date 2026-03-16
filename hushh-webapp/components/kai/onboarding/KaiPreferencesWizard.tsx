@@ -67,6 +67,7 @@ const QUESTIONS = [
 export function KaiPreferencesWizard(props: {
   mode: "onboarding" | "edit";
   layout?: "page" | "sheet";
+  isSubmitting?: boolean;
   initialStep?: number;
   initialAnswers?: Partial<WizardAnswers>;
   onAnswersChange?: (answers: WizardAnswers) => void | Promise<void>;
@@ -99,6 +100,7 @@ export function KaiPreferencesWizard(props: {
 
   const activeQuestion = QUESTIONS[step]!;
   const activeValue = answers[activeQuestion.id];
+  const isSubmitting = props.isSubmitting === true;
 
   const canContinue = Boolean(activeValue);
 
@@ -112,7 +114,11 @@ export function KaiPreferencesWizard(props: {
 
   function handleSelect(value: string) {
     if (activeQuestion.id !== "investment_horizon") {
-      setAnswer(activeQuestion.id, value as any);
+      if (activeQuestion.id === "drawdown_response") {
+        setAnswer("drawdown_response", value as DrawdownResponse);
+      } else {
+        setAnswer("volatility_preference", value as VolatilityPreference);
+      }
       return;
     }
 
@@ -135,7 +141,7 @@ export function KaiPreferencesWizard(props: {
   }
 
   async function handlePrimary() {
-    if (!canContinue) return;
+    if (!canContinue || isSubmitting) return;
     if (!isLast) {
       setStep((s) => Math.min(total - 1, s + 1));
       return;
@@ -163,6 +169,7 @@ export function KaiPreferencesWizard(props: {
   const canGoPrevious = step > 0;
 
   function handleBack() {
+    if (isSubmitting) return;
     if (canGoPrevious) {
       setStep((s) => Math.max(0, s - 1));
       return;
@@ -194,6 +201,7 @@ export function KaiPreferencesWizard(props: {
                 effect="fade"
                 size="sm"
                 onClick={handleBack}
+                disabled={isSubmitting}
                 className={cn(
                   "h-auto p-0",
                   !showBack && "invisible pointer-events-none"
@@ -251,11 +259,12 @@ export function KaiPreferencesWizard(props: {
             size="lg"
             fullWidth
             onClick={handlePrimary}
-            disabled={!canContinue}
+            disabled={!canContinue || isSubmitting}
+            loading={isSubmitting}
             showRipple
           >
-            {primaryLabel}
-            <ArrowRight className="ml-2 h-5 w-5" />
+            {isSubmitting ? "Saving..." : primaryLabel}
+            {!isSubmitting && <ArrowRight className="ml-2 h-5 w-5" />}
           </Button>
 
           {props.mode === "onboarding" && props.onSkip && (
@@ -265,9 +274,11 @@ export function KaiPreferencesWizard(props: {
               size="lg"
               fullWidth
               onClick={props.onSkip}
+              disabled={isSubmitting}
+              loading={isSubmitting}
               showRipple={false}
             >
-              Skip
+              {isSubmitting ? "Saving..." : "Skip"}
             </Button>
           )}
         </div>

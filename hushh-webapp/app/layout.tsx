@@ -1,12 +1,13 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono, Inter } from "next/font/google";
+import { Geist_Mono, Manrope, Playfair_Display } from "next/font/google";
 import "./globals.css";
 import { RootLayoutClient } from "./layout-client";
 
-const geistSans = Geist({
+const manrope = Manrope({
   subsets: ["latin"],
   display: "swap",
   variable: "--font-app-body",
+  weight: ["400", "500", "600", "700", "800"],
 });
 
 const geistMono = Geist_Mono({
@@ -15,10 +16,11 @@ const geistMono = Geist_Mono({
   variable: "--font-app-mono",
 });
 
-const headingSans = Inter({
+const playfairDisplay = Playfair_Display({
   subsets: ["latin"],
   display: "swap",
   variable: "--font-app-heading",
+  weight: ["600", "700", "800"],
 });
 
 export const metadata: Metadata = {
@@ -62,7 +64,7 @@ export default function RootLayout({
         />
       </head>
       <RootLayoutClient
-        fontClasses={`${geistSans.variable} ${geistMono.variable} ${headingSans.variable}`}
+        fontClasses={`${manrope.variable} ${geistMono.variable} ${playfairDisplay.variable}`}
       >
         {children}
       </RootLayoutClient>

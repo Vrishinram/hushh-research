@@ -96,6 +96,7 @@ const INITIAL_ROUND_STATE: Record<string, AgentState> = {
   sentiment: { ...INITIAL_AGENT_STATE },
   valuation: { ...INITIAL_AGENT_STATE },
 };
+const AGENTS = ["fundamental", "sentiment", "valuation"] as const;
 
 // ============================================================================
 // Error Classification
@@ -197,6 +198,28 @@ function toFiniteNumber(value: unknown): number | undefined {
     if (Number.isFinite(parsed)) return parsed;
   }
   return undefined;
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function optionalNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function optionalStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const normalized = value
+    .map((item) => String(item || "").trim())
+    .filter((item) => item.length > 0);
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function optionalRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
 }
 
 function isCashEquivalentRow(row: {
@@ -432,6 +455,8 @@ type HeaderMarketQuote = {
   source: string;
 };
 
+type StreamPayload = Record<string, unknown>;
+
 function toMarketNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string") {
@@ -441,7 +466,7 @@ function toMarketNumber(value: unknown): number | null {
   return null;
 }
 
-function extractMarketSnapshotFromDecision(data: Record<string, any>): MarketSnapshot {
+function extractMarketSnapshotFromDecision(data: StreamPayload): MarketSnapshot {
   const rawCard =
     data.raw_card && typeof data.raw_card === "object" ? (data.raw_card as Record<string, unknown>) : {};
   const keyMetrics =
@@ -683,8 +708,6 @@ export function DebateStreamView({
   const headerChangePct = headerMarketQuote?.change_pct ?? null;
 
   // ---- Overall progress computation ----
-  const AGENTS = ["fundamental", "sentiment", "valuation"] as const;
-
   const overallProgress = useMemo(() => {
     let progress = 0;
     // Round 1: each agent complete = +14%, active/streaming = +7%
@@ -862,7 +885,7 @@ export function DebateStreamView({
     round2StatesRef.current = JSON.parse(JSON.stringify(INITIAL_ROUND_STATE));
   }, []);
 
-  const resolveRoundForEnvelope = useCallback((data: Record<string, any>): 1 | 2 => {
+  const resolveRoundForEnvelope = useCallback((data: StreamPayload): 1 | 2 => {
     if (data.round === 2 || data.round === "2") return 2;
     if (data.round === 1 || data.round === "1") return 1;
     const phase = typeof data.phase === "string" ? data.phase.toLowerCase() : "";
@@ -874,7 +897,7 @@ export function DebateStreamView({
   const applyEnvelope = useCallback(
     (envelope: KaiStreamEnvelope) => {
       const resolvedEventType = envelope.event;
-      const data = envelope.payload as Record<string, any>;
+      const data = envelope.payload as StreamPayload;
       setLoading(false);
       setRetryCountdown(null);
 
@@ -965,14 +988,18 @@ export function DebateStreamView({
           }
 
           const setter = r === 1 ? setRound1States : setRound2States;
-          setter((prev) => ({
-            ...prev,
-            [ag]: {
-                ...prev[ag],
-                stage: prev[ag]?.stage === "idle" ? "active" : prev[ag]?.stage,
-                text: toInvestorStreamText((prev[ag]?.text || "") + txt),
+          setter((prev) => {
+            const current = prev[ag];
+            if (!current) return prev;
+            return {
+              ...prev,
+              [ag]: {
+                ...current,
+                stage: current.stage === "idle" ? "active" : current.stage,
+                text: toInvestorStreamText((current.text || "") + txt),
               },
-            }));
+            };
+          });
           break;
         }
         case "agent_complete": {
@@ -981,25 +1008,25 @@ export function DebateStreamView({
             stage: "complete",
             text: toInvestorStreamText(data.summary || ""),
             thoughts: [],
-            recommendation: data.recommendation,
-            confidence: data.confidence,
-            sources: data.sources,
-            keyMetrics: data.key_metrics,
-            quantMetrics: data.quant_metrics,
-            businessMoat: data.business_moat,
-            financialResilience: data.financial_resilience,
-            growthEfficiency: data.growth_efficiency,
-            bullCase: data.bull_case,
-            bearCase: data.bear_case,
-            sentimentScore: data.sentiment_score,
-            keyCatalysts: data.key_catalysts,
-            valuationMetrics: data.valuation_metrics,
-            peerComparison: data.peer_comparison,
-            priceTargets: data.price_targets,
+            recommendation: optionalString(data.recommendation),
+            confidence: optionalNumber(data.confidence),
+            sources: optionalStringArray(data.sources),
+            keyMetrics: optionalRecord(data.key_metrics),
+            quantMetrics: optionalRecord(data.quant_metrics),
+            businessMoat: optionalString(data.business_moat),
+            financialResilience: optionalString(data.financial_resilience),
+            growthEfficiency: optionalString(data.growth_efficiency),
+            bullCase: optionalString(data.bull_case),
+            bearCase: optionalString(data.bear_case),
+            sentimentScore: optionalNumber(data.sentiment_score),
+            keyCatalysts: optionalStringArray(data.key_catalysts),
+            valuationMetrics: optionalRecord(data.valuation_metrics),
+            peerComparison: optionalRecord(data.peer_comparison),
+            priceTargets: optionalRecord(data.price_targets),
           });
           if (
             r === 2 &&
-            !decision &&
+            !decisionNotifiedRef.current &&
             AGENTS.every((agent) => round2StatesRef.current[agent]?.stage === "complete")
           ) {
             setKaiThinking("Preparing your final recommendation...");
@@ -1014,7 +1041,7 @@ export function DebateStreamView({
         }
         case "agent_error": {
           const r = resolveRoundForEnvelope(data);
-          const errMsg = data.error || "Agent analysis failed";
+          const errMsg = optionalString(data.error) || "Agent analysis failed";
           updateAgentState(r, (data.agent || "").toString(), {
             stage: "error",
             error: errMsg,

@@ -97,9 +97,28 @@ function _formatPercent(value: number): string {
   return `${value.toFixed(2)}%`;
 }
 
-function compactSectorLabel(value: string): string {
-  if (value.length <= 16) return value;
-  return `${value.slice(0, 15)}…`;
+const SECTOR_CHART_ABBREVIATIONS: Record<string, string> = {
+  "consumer discretionary": "Consumer Disc.",
+  "consumer staples": "Cons. Staples",
+  "information technology": "Tech",
+  "technology": "Tech",
+  "communication services": "Comm.",
+};
+
+function normalizeSectorLabel(value: string): string {
+  return String(value).replace(/\s+/g, " ").trim();
+}
+
+function abbreviateSectorLabelForChart(value: string): string {
+  const normalized = normalizeSectorLabel(value);
+  if (!normalized) return "Unclassified";
+
+  const mapped = SECTOR_CHART_ABBREVIATIONS[normalized.toLowerCase()];
+  const abbreviated = mapped || normalized;
+  const singleLine = abbreviated.length > 14 ? `${abbreviated.slice(0, 13).trimEnd()}…` : abbreviated;
+
+  // Keep labels on one line inside SVG axis ticks.
+  return singleLine.replace(/ /g, "\u00A0");
 }
 
 export function SectorAllocationChart({
@@ -133,7 +152,7 @@ export function SectorAllocationChart({
     >();
     
     holdings.forEach((holding) => {
-      const normalizedSector = String(holding.sector || "").trim() || "Unclassified";
+      const normalizedSector = normalizeSectorLabel(holding.sector || "") || "Unclassified";
       
       const existing = sectorMap.get(normalizedSector) || { value: 0, count: 0, holdings: [] };
       sectorMap.set(normalizedSector, {
@@ -164,7 +183,6 @@ export function SectorAllocationChart({
           .sort((a, b) => b.marketValue - a.marketValue),
       }))
       .sort((a, b) => b.value - a.value)
-      .slice(0, 8) // Top 8 sectors
       .map((item, index) => ({
         ...item,
         color: CHART_COLORS[index % CHART_COLORS.length] ?? "#2563eb",
@@ -215,7 +233,7 @@ export function SectorAllocationChart({
 
   const yAxisWidth = useMemo(() => {
     if (!responsive) return 96;
-    if (windowWidth < 640) return 66;
+    if (windowWidth < 640) return 92;
     if (windowWidth < 1024) return 82;
     return 96;
   }, [responsive, windowWidth]);
@@ -271,7 +289,7 @@ export function SectorAllocationChart({
             <YAxis
               type="category"
               dataKey="name"
-              tickFormatter={(value) => compactSectorLabel(String(value))}
+              tickFormatter={(value) => abbreviateSectorLabelForChart(String(value))}
               axisLine={false}
               tickLine={false}
               width={yAxisWidth}
@@ -360,22 +378,30 @@ export function SectorAllocationChart({
                         className="h-3 w-3 shrink-0 rounded-full"
                         style={{ backgroundColor: sector.color }}
                       />
-                      <span className="text-sm font-medium text-foreground">{sector.name}</span>
-                      <span className="text-xs font-medium text-foreground/80">
+                      <span
+                        className="min-w-0 flex-1 truncate whitespace-nowrap text-sm font-medium text-foreground"
+                        title={sector.name}
+                      >
+                        {sector.name}
+                      </span>
+                      <span className="shrink-0 whitespace-nowrap text-xs font-medium text-foreground/80">
                         {formatCurrency(sector.value)} ({sector.percent.toFixed(1)}%)
                       </span>
-                      <span className="ml-auto text-[11px] text-muted-foreground">
+                      <span className="ml-auto shrink-0 whitespace-nowrap text-[11px] text-muted-foreground">
                         {sector.count} holding{sector.count !== 1 ? "s" : ""}
                       </span>
                       {isOpen ? (
-                        <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                        <ChevronUp className="h-4 w-4 shrink-0 text-muted-foreground" />
                       ) : (
-                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
                       )}
                     </button>
                   </CollapsibleTrigger>
                   <CollapsibleContent className="overflow-hidden border-t border-border/50 data-[state=closed]:animate-accordion-up data-[state=open]:animate-accordion-down">
                     <div className="space-y-2 p-2.5">
+                      <p className="text-[11px] text-muted-foreground">
+                        <span className="font-semibold text-foreground">{sector.name}</span>
+                      </p>
                       <div className="flex flex-wrap gap-1.5">
                         {visibleHoldings.map((holding) => (
                           <span
