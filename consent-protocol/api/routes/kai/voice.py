@@ -281,6 +281,11 @@ class VoicePlanRequest(BaseModel):
     transcript: str
     context: dict[str, Any] = Field(default_factory=dict)
     app_state: Optional[AppRuntimeState] = None
+    turn_id: Optional[str] = None
+    transcript_final: Optional[str] = None
+    context_structured: dict[str, Any] = Field(default_factory=dict)
+    memory_short: list[dict[str, Any]] = Field(default_factory=list)
+    memory_retrieved: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class VoiceMemoryHints(BaseModel):
@@ -306,6 +311,15 @@ class VoicePlanResponse(BaseModel):
     elapsed_ms: int
     openai_http_ms: int
     model: str
+    turn_id: Optional[str] = None
+    response_id: Optional[str] = None
+    intent: Optional[dict[str, Any]] = None
+    action: Optional[dict[str, Any]] = None
+    needs_confirmation: bool = False
+    ack_text: Optional[str] = None
+    final_text: Optional[str] = None
+    is_long_running: bool = False
+    memory_write_candidates: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class VoiceSTTResponse(BaseModel):
@@ -323,17 +337,6 @@ class VoiceTTSRequest(BaseModel):
     voice: Optional[str] = "alloy"
 
 
-class VoiceTTSResponse(BaseModel):
-    audio_base64: str
-    mime_type: str
-    model: str
-    voice: str
-    format: str
-    fallback_attempted: bool = False
-    candidate_order: list[str] = Field(default_factory=list)
-    attempts: list[dict[str, Any]] = Field(default_factory=list)
-
-
 class VoiceRealtimeSessionRequest(BaseModel):
     user_id: str
     voice: Optional[str] = None
@@ -345,6 +348,10 @@ class VoiceRealtimeSessionResponse(BaseModel):
     client_secret_expires_at: Optional[int] = None
     model: str
     voice: str
+    server_vad_enabled: bool = True
+    silence_duration_ms: int = 800
+    auto_response_enabled: bool = False
+    barge_in_enabled: bool = True
 
 
 class VoiceUnderstandResponse(BaseModel):
@@ -637,6 +644,9 @@ async def kai_voice_realtime_session(
         session = await voice_service.create_realtime_session(
             voice=body.voice,
             include_input_transcription=True,
+            server_vad_silence_ms=800,
+            disable_auto_response=True,
+            enable_barge_in=True,
         )
         _trace_voice_stage(
             turn_id,
@@ -661,6 +671,10 @@ async def kai_voice_realtime_session(
             ),
             model=str(session.get("model") or voice_service.realtime_model),
             voice=str(session.get("voice") or voice_service.tts_default_voice),
+            server_vad_enabled=bool(session.get("server_vad_enabled", True)),
+            silence_duration_ms=int(session.get("silence_duration_ms") or 800),
+            auto_response_enabled=bool(session.get("auto_response_enabled", False)),
+            barge_in_enabled=bool(session.get("barge_in_enabled", True)),
         )
     except VoiceServiceError as error:
         _trace_voice_stage(
@@ -714,6 +728,17 @@ async def kai_voice_stt(
         },
     )
     if token_data.get("user_id") != user_id:
+        _trace_voice_stage(
+            turn_id,
+            "response_sent",
+            {
+                "route": "/voice/stt",
+                "status": "error",
+                "http_status": 403,
+                "error": "Token user_id does not match request user_id",
+            },
+            finalize=True,
+        )
         raise HTTPException(status_code=403, detail="Token user_id does not match request user_id")
 
     try:
@@ -778,6 +803,18 @@ async def kai_voice_stt(
             turn_id=turn_id,
             user_id=user_id,
             tags={"route": "/voice/stt", "model": model_used},
+        )
+        _trace_voice_stage(
+            turn_id,
+            "response_sent",
+            {
+                "route": "/voice/stt",
+                "status": "ok",
+                "http_status": 200,
+                "model": model_used,
+                "elapsed_ms": elapsed_ms,
+            },
+            finalize=True,
         )
         return VoiceSTTResponse(
             transcript=transcript,
@@ -1851,10 +1888,23 @@ async def kai_voice_plan(
         {
             "route": "/voice/plan",
             "method": "POST",
-            "transcript_chars": len(body.transcript or ""),
+            "transcript_chars": len((body.transcript_final or body.transcript or "")),
+            "memory_short_count": len(body.memory_short or []),
+            "memory_retrieved_count": len(body.memory_retrieved or []),
         },
     )
     if token_data.get("user_id") != body.user_id:
+        _trace_voice_stage(
+            turn_id,
+            "response_sent",
+            {
+                "route": "/voice/plan",
+                "status": "error",
+                "http_status": 403,
+                "error": "Token user_id does not match request user_id",
+            },
+            finalize=True,
+        )
         raise HTTPException(status_code=403, detail="Token user_id does not match request user_id")
 
     try:
@@ -1871,6 +1921,8 @@ async def kai_voice_plan(
             response_payload["memory"] = {"allow_durable_write": False}
             tool_call = voice_service._legacy_tool_call_for_response(response_payload)
             elapsed_ms = int((time.perf_counter() - started_at) * 1000)
+            planner_turn_id = str(body.turn_id or turn_id).strip() or turn_id
+            planner_response_id = f"vrsp_{planner_turn_id.removeprefix('vturn_')}"
             _log_voice_metric(
                 "planner_latency_ms",
                 elapsed_ms,
@@ -1895,6 +1947,19 @@ async def kai_voice_plan(
                     "bucket": rollout["bucket"],
                 },
             )
+            _trace_voice_stage(
+                turn_id,
+                "response_sent",
+                {
+                    "route": "/voice/plan",
+                    "status": "ok",
+                    "http_status": 200,
+                    "final_response_kind": "speak_only",
+                    "elapsed_ms": elapsed_ms,
+                    "model": "deterministic_rollout",
+                },
+                finalize=True,
+            )
             return VoicePlanResponse(
                 response=VoiceResponsePayload(**response_payload),
                 tool_call=tool_call,
@@ -1902,9 +1967,26 @@ async def kai_voice_plan(
                 elapsed_ms=elapsed_ms,
                 openai_http_ms=0,
                 model="deterministic_rollout",
+                turn_id=planner_turn_id,
+                response_id=planner_response_id,
+                needs_confirmation=False,
+                ack_text=None,
+                final_text=str(response_payload.get("message") or ""),
+                is_long_running=False,
+                memory_write_candidates=[],
             )
 
         app_state_payload = body.app_state.model_dump() if body.app_state is not None else {}
+        planner_turn_id = str(body.turn_id or turn_id).strip() or turn_id
+        planner_transcript = str(body.transcript_final or body.transcript or "").strip()
+        planner_context: dict[str, Any] = dict(body.context or {})
+        if body.context_structured:
+            planner_context["structured_screen_context"] = body.context_structured
+        if body.memory_short:
+            planner_context["memory_short"] = body.memory_short
+        if body.memory_retrieved:
+            planner_context["memory_retrieved"] = body.memory_retrieved
+        planner_context["planner_turn_id"] = planner_turn_id
         active_analysis = await _resolve_active_analysis(body.user_id, app_state_payload)
         active_import = await _resolve_active_import(body.user_id, app_state_payload)
         await _ensure_client_connected(request, turn_id=turn_id, route="/voice/plan")
@@ -1913,14 +1995,14 @@ async def kai_voice_plan(
             "planner_started",
             {
                 "route": "/voice/plan",
-                "transcript_chars": len(body.transcript or ""),
+                "transcript_chars": len(planner_transcript),
             },
         )
         response, openai_http_ms, model_used = await voice_service.plan_voice_response(
-            transcript=body.transcript,
+            transcript=planner_transcript,
             user_id=body.user_id,
             app_state=app_state_payload,
-            context=body.context,
+            context=planner_context,
             active_analysis=active_analysis,
             active_import=active_import,
         )
@@ -1966,6 +2048,16 @@ async def kai_voice_plan(
         response_kind = str(response.get("kind") or "")
         response_reason = str(response.get("reason") or "")
         response_task = str(response.get("task") or "")
+        planner_turn_id = str(body.turn_id or turn_id).strip() or turn_id
+        planner_response_id = f"vrsp_{planner_turn_id.removeprefix('vturn_')}"
+        final_text = str(response.get("message") or "")
+        is_long_running = response_kind == "background_started"
+        ack_text = final_text if is_long_running else None
+        memory_write_candidates = (
+            list(response.get("memory_write_candidates"))
+            if isinstance(response.get("memory_write_candidates"), list)
+            else []
+        )
         planner_branch = _resolve_planner_branch(
             model=model_used,
             response_kind=response_kind,
@@ -2022,6 +2114,20 @@ async def kai_voice_plan(
                 "planner_normalization_version": _PLANNER_NORMALIZATION_VERSION,
             },
         )
+        _trace_voice_stage(
+            turn_id,
+            "response_sent",
+            {
+                "route": "/voice/plan",
+                "status": "ok",
+                "http_status": 200,
+                "final_response_kind": response_kind,
+                "elapsed_ms": elapsed_ms,
+                "model": model_used,
+                "openai_http_ms": openai_http_ms,
+            },
+            finalize=True,
+        )
         return VoicePlanResponse(
             response=VoiceResponsePayload(**response),
             tool_call=tool_call,
@@ -2029,6 +2135,22 @@ async def kai_voice_plan(
             elapsed_ms=elapsed_ms,
             openai_http_ms=openai_http_ms,
             model=model_used,
+            turn_id=planner_turn_id,
+            response_id=planner_response_id,
+            intent={"name": response_kind or "unknown", "confidence": 1.0},
+            action={
+                "type": "tool" if response_kind == "execute" else "none",
+                "payload": tool_call if response_kind == "execute" else {},
+            },
+            needs_confirmation=bool(
+                response_kind == "execute"
+                and isinstance(tool_call, dict)
+                and str(tool_call.get("tool_name") or "") in {"cancel_active_analysis"}
+            ),
+            ack_text=ack_text,
+            final_text=final_text,
+            is_long_running=is_long_running,
+            memory_write_candidates=memory_write_candidates,
         )
     except VoiceServiceError as error:
         _trace_voice_stage(
@@ -2071,7 +2193,7 @@ async def kai_voice_plan(
         raise HTTPException(status_code=500, detail="Voice intent planning failed")
 
 
-@router.post("/voice/tts", response_model=VoiceTTSResponse)
+@router.post("/voice/tts")
 async def kai_voice_tts(
     request: Request,
     http_response: Response,
@@ -2121,6 +2243,19 @@ async def kai_voice_tts(
         },
     )
     if token_data.get("user_id") != body.user_id:
+        _trace_voice_stage(
+            turn_id,
+            "response_sent",
+            {
+                "route": "/voice/tts",
+                "origin": "backend_confirmed",
+                "source": "kai_voice_tts",
+                "status": "error",
+                "http_status": 403,
+                "error": "Token user_id does not match request user_id",
+            },
+            finalize=True,
+        )
         raise HTTPException(status_code=403, detail="Token user_id does not match request user_id")
 
     try:
@@ -2160,7 +2295,7 @@ async def kai_voice_tts(
                 },
             )
 
-        audio_base64, mime_type, tts_meta = await voice_service.synthesize_speech(
+        audio_bytes, mime_type, tts_meta = await voice_service.synthesize_speech(
             text=body.text,
             voice=body.voice or voice_service.tts_default_voice,
             trace_hook=_trace_tts_upstream,
@@ -2181,7 +2316,7 @@ async def kai_voice_tts(
                 "pruned_unavailable": tts_meta.get("pruned_unavailable"),
                 "pruned_models": tts_meta.get("pruned_models"),
                 "mime_type": mime_type,
-                "audio_b64_chars": len(audio_base64),
+                "audio_bytes": len(audio_bytes),
             },
         )
         _trace_voice_stage(
@@ -2195,17 +2330,17 @@ async def kai_voice_tts(
                 "model": tts_meta.get("model"),
                 "voice": tts_meta.get("voice"),
                 "format": tts_meta.get("format"),
-                "audio_b64_chars": len(audio_base64),
+                "audio_bytes": len(audio_bytes),
             },
         )
         elapsed_ms = int((time.perf_counter() - started_at) * 1000)
         logger.info(
             "[Kai Voice] route=/voice/tts status=ok turn_id=%s elapsed_ms=%s text_chars=%s "
-            "audio_b64_chars=%s model=%s voice=%s format=%s source=%s pruned_unavailable=%s pruned_models=%s",
+            "audio_bytes=%s model=%s voice=%s format=%s source=%s pruned_unavailable=%s pruned_models=%s",
             turn_id,
             elapsed_ms,
             len(body.text or ""),
-            len(audio_base64),
+            len(audio_bytes),
             tts_meta.get("model", ""),
             tts_meta.get("voice", ""),
             tts_meta.get("format", ""),
@@ -2235,19 +2370,23 @@ async def kai_voice_tts(
                 "status": "ok",
             },
         )
-        response_payload = VoiceTTSResponse(
-            audio_base64=audio_base64,
-            mime_type=mime_type,
-            model=str(tts_meta.get("model") or ""),
-            voice=str(tts_meta.get("voice") or ""),
-            format=str(tts_meta.get("format") or ""),
-            fallback_attempted=str(tts_meta.get("fallback_attempted") or "").strip().lower() == "true",
-            candidate_order=[
-                item
-                for item in str(tts_meta.get("candidate_order") or "").split(",")
-                if str(item).strip()
-            ],
-            attempts=list(tts_meta.get("attempts") or []),
+        response_headers = {
+            "X-Voice-Turn-Id": turn_id,
+            "X-Kai-TTS-Model": str(tts_meta.get("model") or ""),
+            "X-Kai-TTS-Voice": str(tts_meta.get("voice") or ""),
+            "X-Kai-TTS-Format": str(tts_meta.get("format") or ""),
+            "X-Kai-TTS-Source": str(tts_meta.get("source") or "backend_openai_audio"),
+            "X-Kai-TTS-Candidate-Order": str(tts_meta.get("candidate_order") or ""),
+            "X-Kai-TTS-Fallback-Attempted": str(tts_meta.get("fallback_attempted") or "false"),
+            "X-Kai-TTS-Attempts-Count": str(len(list(tts_meta.get("attempts") or []))),
+            "X-Kai-TTS-Audio-Bytes": str(len(audio_bytes)),
+            "X-Kai-TTS-OpenAI-Http-Ms": str(int(tts_meta.get("openai_http_ms") or 0)),
+            "Cache-Control": "no-store",
+        }
+        binary_response = Response(
+            content=audio_bytes,
+            media_type=mime_type,
+            headers=response_headers,
         )
         _trace_voice_stage(
             turn_id,
@@ -2270,10 +2409,12 @@ async def kai_voice_tts(
                 "http_status": 200,
                 "elapsed_ms": elapsed_ms,
                 "model": str(tts_meta.get("model") or ""),
+                "mime_type": mime_type,
+                "audio_bytes": len(audio_bytes),
             },
             finalize=True,
         )
-        return response_payload
+        return binary_response
     except HTTPException as error:
         if error.status_code == 499:
             raise

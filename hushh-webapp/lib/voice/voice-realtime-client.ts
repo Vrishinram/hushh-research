@@ -9,7 +9,7 @@ export type VoiceRealtimeSessionInfo = {
 
 type VoiceRealtimeEventPayload = Record<string, unknown>;
 
-type VoiceRealtimeTranscriptEvent = {
+export type VoiceRealtimeTranscriptEvent = {
   kind: "partial" | "final";
   text: string;
   itemId?: string | null;
@@ -19,14 +19,21 @@ type VoiceRealtimeConnectInput = {
   session: VoiceRealtimeSessionInfo;
   localStream?: MediaStream;
   turnId?: string;
+  serverVadSilenceMs?: number;
+  disableAutoResponse?: boolean;
+  enableBargeIn?: boolean;
   onTranscript?: (event: VoiceRealtimeTranscriptEvent) => void;
   onDebug?: (event: string, payload?: VoiceRealtimeEventPayload) => void;
+  onSpeechBoundary?: (event: "speech_started" | "speech_stopped") => void;
 };
 
 type VoiceRealtimeSpeechInput = {
   text: string;
   voice?: string;
   timeoutMs?: number;
+  turnId: string;
+  responseId: string;
+  segmentType: "ack" | "final";
   onFirstAudio?: () => void;
   onPlaybackStarted?: () => void;
   onPlaybackEnded?: () => void;
@@ -36,6 +43,9 @@ type PendingSpeechState = {
   timeoutHandle: number;
   started: boolean;
   firstAudio: boolean;
+  turnId: string;
+  responseId: string;
+  segmentType: "ack" | "final";
   onFirstAudio?: () => void;
   onPlaybackStarted?: () => void;
   onPlaybackEnded?: () => void;
@@ -77,6 +87,35 @@ function normalizeTranscriptEvent(payload: Record<string, unknown>): VoiceRealti
   return null;
 }
 
+function parseResponseId(payload: Record<string, unknown>): string | null {
+  if (typeof payload.response_id === "string" && payload.response_id.trim()) {
+    return payload.response_id.trim();
+  }
+  const metadataObject = asObject(payload.metadata);
+  if (
+    metadataObject &&
+    typeof metadataObject.response_id === "string" &&
+    metadataObject.response_id.trim()
+  ) {
+    return metadataObject.response_id.trim();
+  }
+  const responseObject = asObject(payload.response);
+  if (responseObject) {
+    const responseMetadata = asObject(responseObject.metadata);
+    if (
+      responseMetadata &&
+      typeof responseMetadata.response_id === "string" &&
+      responseMetadata.response_id.trim()
+    ) {
+      return responseMetadata.response_id.trim();
+    }
+  }
+  if (responseObject && typeof responseObject.id === "string" && responseObject.id.trim()) {
+    return responseObject.id.trim();
+  }
+  return null;
+}
+
 export class VoiceRealtimeClient {
   private peerConnection: RTCPeerConnection | null = null;
   private dataChannel: RTCDataChannel | null = null;
@@ -84,6 +123,7 @@ export class VoiceRealtimeClient {
   private remoteAudio: HTMLAudioElement | null = null;
   private onTranscript?: (event: VoiceRealtimeTranscriptEvent) => void;
   private onDebug?: (event: string, payload?: VoiceRealtimeEventPayload) => void;
+  private onSpeechBoundary?: (event: "speech_started" | "speech_stopped") => void;
   private latestFinalTranscript = "";
   private finalTranscriptWaiters: Array<{
     resolve: (value: string) => void;
@@ -97,6 +137,7 @@ export class VoiceRealtimeClient {
     await this.close();
     this.onTranscript = input.onTranscript;
     this.onDebug = input.onDebug;
+    this.onSpeechBoundary = input.onSpeechBoundary;
 
     const stream =
       input.localStream || (await navigator.mediaDevices.getUserMedia({ audio: true }));
@@ -127,7 +168,25 @@ export class VoiceRealtimeClient {
     this.dataChannel = channel;
     channel.onmessage = (event: MessageEvent<string>) => this.handleDataMessage(event.data);
     channel.onerror = () => {
-      this.onDebug?.("data_channel_error");
+      this.onDebug?.("data_channel_error", {
+        ready_state: channel.readyState,
+      });
+    };
+    channel.onclose = () => {
+      this.isConnected = false;
+      this.onDebug?.("data_channel_closed", {
+        ready_state: channel.readyState,
+      });
+    };
+
+    pc.onconnectionstatechange = () => {
+      const state = pc.connectionState;
+      if (state === "failed" || state === "closed" || state === "disconnected") {
+        this.isConnected = false;
+      }
+      this.onDebug?.("peer_connection_state_changed", {
+        connection_state: state,
+      });
     };
 
     const offer = await pc.createOffer();
@@ -136,7 +195,8 @@ export class VoiceRealtimeClient {
       throw new Error("Realtime SDP offer missing");
     }
 
-    const realtimeUrl = `https://api.openai.com/v1/realtime?model=${encodeURIComponent(input.session.model)}`;
+    const realtimeUrl = `https://api.openai.com/v1/realtime/calls?model=${encodeURIComponent(input.session.model)}`;
+    // eslint-disable-next-line no-restricted-syntax -- Realtime SDP negotiation must call OpenAI directly with ephemeral client secret.
     const response = await fetch(realtimeUrl, {
       method: "POST",
       headers: {
@@ -164,7 +224,50 @@ export class VoiceRealtimeClient {
       voice: input.session.voice,
       session_id: input.session.sessionId || null,
     });
+
+    this.configureServerVAD({
+      silenceDurationMs:
+        typeof input.serverVadSilenceMs === "number" && Number.isFinite(input.serverVadSilenceMs)
+          ? Math.max(300, Math.round(input.serverVadSilenceMs))
+          : 800,
+      disableAutoResponse: input.disableAutoResponse !== false,
+      enableBargeIn: input.enableBargeIn !== false,
+    });
+
     return stream;
+  }
+
+  private configureServerVAD(input: {
+    silenceDurationMs: number;
+    disableAutoResponse: boolean;
+    enableBargeIn: boolean;
+  }): void {
+    try {
+      this.sendEvent({
+        type: "session.update",
+        session: {
+          audio: {
+            input: {
+              turn_detection: {
+                type: "server_vad",
+                silence_duration_ms: input.silenceDurationMs,
+                create_response: input.disableAutoResponse ? false : true,
+                interrupt_response: input.enableBargeIn ? true : false,
+              },
+            },
+          },
+        },
+      });
+      this.onDebug?.("session_update_sent", {
+        silence_duration_ms: input.silenceDurationMs,
+        create_response: input.disableAutoResponse ? false : true,
+        interrupt_response: input.enableBargeIn ? true : false,
+      });
+    } catch (error) {
+      this.onDebug?.("session_update_failed", {
+        reason: error instanceof Error ? error.message : "unknown",
+      });
+    }
   }
 
   getStream(): MediaStream | null {
@@ -172,7 +275,10 @@ export class VoiceRealtimeClient {
   }
 
   connected(): boolean {
-    return this.isConnected;
+    const channelOpen = Boolean(this.dataChannel && this.dataChannel.readyState === "open");
+    const pcState = this.peerConnection?.connectionState || "new";
+    const pcUsable = pcState !== "failed" && pcState !== "closed" && pcState !== "disconnected";
+    return Boolean(this.isConnected && channelOpen && pcUsable);
   }
 
   commitInputAudio(): void {
@@ -204,6 +310,10 @@ export class VoiceRealtimeClient {
     const cleanText = String(input.text || "").trim();
     if (!cleanText) return;
 
+    if (!input.turnId || !input.responseId) {
+      throw new Error("VOICE_STREAM_TTS_CORRELATION_REQUIRED");
+    }
+
     if (this.pendingSpeech) {
       this.cancelSpeech("VOICE_STREAM_TTS_INTERRUPTED");
     }
@@ -221,6 +331,9 @@ export class VoiceRealtimeClient {
         timeoutHandle,
         started: false,
         firstAudio: false,
+        turnId: input.turnId,
+        responseId: input.responseId,
+        segmentType: input.segmentType,
         onFirstAudio: input.onFirstAudio,
         onPlaybackStarted: input.onPlaybackStarted,
         onPlaybackEnded: input.onPlaybackEnded,
@@ -239,18 +352,37 @@ export class VoiceRealtimeClient {
       this.sendEvent({
         type: "response.create",
         response: {
-          modalities: ["audio"],
-          instructions: `Speak this response naturally and clearly: ${cleanText}`,
+          output_modalities: ["audio"],
+          instructions: cleanText,
           audio: {
-            voice: input.voice || "alloy",
+            output: {
+              voice: input.voice || "alloy",
+            },
+          },
+          metadata: {
+            turn_id: input.turnId,
+            response_id: input.responseId,
+            segment_type: input.segmentType,
           },
         },
+      });
+      this.onDebug?.("stream_tts_requested", {
+        turn_id: input.turnId,
+        response_id: input.responseId,
+        segment_type: input.segmentType,
       });
     });
   }
 
   cancelSpeech(reason: string = "VOICE_STREAM_TTS_CANCELLED"): void {
-    this.sendEvent({ type: "response.cancel" });
+    const hasOpenChannel = Boolean(this.dataChannel && this.dataChannel.readyState === "open");
+    if (hasOpenChannel) {
+      try {
+        this.sendEvent({ type: "response.cancel" });
+      } catch {
+        // Ignore cancel attempts during teardown when the data channel is racing closed.
+      }
+    }
     if (!this.pendingSpeech) return;
     const pending = this.pendingSpeech;
     this.pendingSpeech = null;
@@ -316,11 +448,23 @@ export class VoiceRealtimeClient {
         cleanup();
         resolve();
       };
+      const handleError = () => {
+        cleanup();
+        reject(new Error("VOICE_STREAM_DATA_CHANNEL_ERROR"));
+      };
+      const handleClose = () => {
+        cleanup();
+        reject(new Error("VOICE_STREAM_DATA_CHANNEL_CLOSED_BEFORE_OPEN"));
+      };
       const cleanup = () => {
         window.clearTimeout(timeoutHandle);
         channel.removeEventListener("open", handleOpen);
+        channel.removeEventListener("error", handleError);
+        channel.removeEventListener("close", handleClose);
       };
       channel.addEventListener("open", handleOpen);
+      channel.addEventListener("error", handleError);
+      channel.addEventListener("close", handleClose);
     });
   }
 
@@ -329,6 +473,61 @@ export class VoiceRealtimeClient {
       throw new Error("Realtime data channel is not open");
     }
     this.dataChannel.send(JSON.stringify(payload));
+  }
+
+  private shouldAcceptPendingSpeechEvent(payload: Record<string, unknown>): boolean {
+    const pending = this.pendingSpeech;
+    if (!pending) return false;
+
+    const responseId = parseResponseId(payload);
+    if (!responseId) {
+      // If the event has no correlation id, treat as unsolicited to prevent cross-turn speech bleed.
+      this.onDebug?.("stream_tts_event_dropped_missing_response_id", {
+        expected_response_id: pending.responseId,
+        event_type: payload.type,
+      });
+      return false;
+    }
+
+    if (responseId !== pending.responseId) {
+      this.onDebug?.("stream_tts_event_dropped_response_mismatch", {
+        expected_response_id: pending.responseId,
+        observed_response_id: responseId,
+        event_type: payload.type,
+      });
+      return false;
+    }
+
+    return true;
+  }
+
+  private maybeDropUnsolicitedAssistantEvent(payload: Record<string, unknown>): boolean {
+    const eventType = String(payload.type || "").trim();
+    if (!eventType.startsWith("response.")) return false;
+
+    if (this.pendingSpeech) {
+      return false;
+    }
+
+    const responseId = parseResponseId(payload);
+    if (!responseId) {
+      return false;
+    }
+
+    if (eventType === "response.created" || eventType === "response.audio.delta" || eventType === "response.done") {
+      this.onDebug?.("stream_unsolicited_response_dropped", {
+        event_type: eventType,
+        response_id: responseId,
+      });
+      try {
+        this.sendEvent({ type: "response.cancel" });
+      } catch {
+        // ignore race when channel is closing
+      }
+      return true;
+    }
+
+    return false;
   }
 
   private handleDataMessage(raw: string): void {
@@ -357,9 +556,26 @@ export class VoiceRealtimeClient {
     const eventType = String(payload.type || "").trim();
     if (!eventType) return;
 
+    if (eventType === "input_audio_buffer.speech_started") {
+      this.onSpeechBoundary?.("speech_started");
+      this.onDebug?.("speech_started", {});
+      return;
+    }
+
+    if (eventType === "input_audio_buffer.speech_stopped") {
+      this.onSpeechBoundary?.("speech_stopped");
+      this.onDebug?.("speech_stopped", {});
+      return;
+    }
+
+    if (this.maybeDropUnsolicitedAssistantEvent(payload)) {
+      return;
+    }
+
     if (eventType === "response.audio.delta") {
       const pending = this.pendingSpeech;
       if (!pending) return;
+      if (!this.shouldAcceptPendingSpeechEvent(payload)) return;
       if (!pending.firstAudio) {
         pending.firstAudio = true;
         pending.onFirstAudio?.();
@@ -374,6 +590,7 @@ export class VoiceRealtimeClient {
     if (eventType === "response.done") {
       const pending = this.pendingSpeech;
       if (!pending) return;
+      if (!this.shouldAcceptPendingSpeechEvent(payload)) return;
       pending.onPlaybackEnded?.();
       pending.resolve();
       return;

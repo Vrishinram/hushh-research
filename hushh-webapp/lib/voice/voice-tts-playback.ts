@@ -10,6 +10,8 @@ export type VoiceSpeakInput = {
   text: string;
   voice?: string;
   voiceTurnId?: string;
+  responseId?: string;
+  segmentType?: "ack" | "final";
   timeoutMs?: number;
   adapter?: "backend_batch_tts" | "realtime_stream_tts";
   realtimeAdapter?: {
@@ -17,6 +19,8 @@ export type VoiceSpeakInput = {
       text: string;
       voice?: string;
       voiceTurnId?: string;
+      responseId?: string;
+      segmentType?: "ack" | "final";
       timeoutMs?: number;
       onFirstAudio?: () => void;
       onPlaybackStarted?: () => void;
@@ -31,15 +35,28 @@ export type VoicePlaybackSource =
   | "browser_speech_synthesis"
   | "realtime_stream_tts";
 
-function shouldUseBrowserTtsFallback(errorMessage: string): boolean {
-  const normalized = String(errorMessage || "").trim().toLowerCase();
-  if (!normalized) return false;
-  if (normalized === "voice_tts_timeout") return true;
-  if (normalized.startsWith("voice_tts_http_5")) return true;
-  if (normalized.includes("networkerror")) return true;
-  if (normalized.includes("failed to fetch")) return true;
-  if (normalized.includes("aborterror")) return true;
-  return false;
+function isTruthyEnvFlag(raw: string | undefined): boolean {
+  return ["1", "true", "yes", "on", "enabled"].includes(String(raw || "").trim().toLowerCase());
+}
+
+function isVoiceFailFastEnabled(): boolean {
+  const disableFallbacks =
+    isTruthyEnvFlag(process.env.NEXT_PUBLIC_DISABLE_VOICE_FALLBACKS) ||
+    isTruthyEnvFlag(process.env.DISABLE_VOICE_FALLBACKS);
+  const failFast =
+    isTruthyEnvFlag(process.env.NEXT_PUBLIC_FAIL_FAST_VOICE) ||
+    isTruthyEnvFlag(process.env.FAIL_FAST_VOICE);
+  const forceRealtime =
+    isTruthyEnvFlag(process.env.NEXT_PUBLIC_FORCE_REALTIME_VOICE) ||
+    isTruthyEnvFlag(process.env.FORCE_REALTIME_VOICE);
+  return disableFallbacks || failFast || forceRealtime;
+}
+
+function isLegacyLocalSpeechCompatEnabled(): boolean {
+  return (
+    isTruthyEnvFlag(process.env.NEXT_PUBLIC_ENABLE_LEGACY_LOCAL_TTS_COMPAT) ||
+    isTruthyEnvFlag(process.env.ENABLE_LEGACY_LOCAL_TTS_COMPAT)
+  );
 }
 
 type VoiceTtsLifecycleHandlers = {
@@ -88,19 +105,14 @@ type VoiceTtsLifecycleHandlers = {
   }) => void;
 };
 
-function decodeBase64ToBytes(base64: string): Uint8Array {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
+function normalizeAudioMimeType(raw: string | null | undefined): string {
+  const normalized = String(raw || "").trim().toLowerCase();
+  const base = (normalized.split(";", 1)[0] || "").trim();
+  return base || "audio/mpeg";
 }
 
-function toBlobFromBytes(bytes: Uint8Array, mimeType: string): Blob {
-  const stableCopy = new Uint8Array(bytes.byteLength);
-  stableCopy.set(bytes);
-  return new Blob([stableCopy.buffer], { type: mimeType || "audio/mpeg" });
+function parseHeaderBoolean(raw: string | null | undefined): boolean {
+  return ["1", "true", "yes", "on", "enabled"].includes(String(raw || "").trim().toLowerCase());
 }
 
 function resolveTtsTimeoutMs(explicitTimeout?: number): number {
@@ -377,6 +389,8 @@ export class VoiceTtsPlaybackManager {
         this.setState("idle");
         throw new Error("VOICE_TTS_REALTIME_ADAPTER_MISSING");
       }
+      const realtimeTtsStartedAt = performance.now();
+      let realtimeFirstAudioMarked = false;
       this.emitTraceEvent(
         "tts_request_sent",
         {
@@ -400,13 +414,42 @@ export class VoiceTtsPlaybackManager {
           text,
           voice: input.voice,
           voiceTurnId: input.voiceTurnId,
+          responseId: input.responseId,
+          segmentType: input.segmentType || "final",
           timeoutMs: input.timeoutMs,
           onFirstAudio: () => {
+            const firstAudioMs = Math.max(0, Math.round(performance.now() - realtimeTtsStartedAt));
+            if (!realtimeFirstAudioMarked) {
+              realtimeFirstAudioMarked = true;
+              this.emitTraceEvent(
+                "tts_first_audio_byte_received",
+                {
+                  route: "realtime_stream",
+                  first_audio_byte_ms: firstAudioMs,
+                  stream_mode: true,
+                  adapter: "realtime_stream_tts",
+                  source: "voice_tts_playback",
+                },
+                { voiceTurnId: input.voiceTurnId }
+              );
+              this.emitTraceEvent(
+                "tts_first_playable_data_received",
+                {
+                  route: "realtime_stream",
+                  first_playable_data_ms: firstAudioMs,
+                  stream_mode: true,
+                  adapter: "realtime_stream_tts",
+                  source: "voice_tts_playback",
+                },
+                { voiceTurnId: input.voiceTurnId }
+              );
+            }
             this.emitTraceEvent(
               "tts_response_body_received",
               {
                 route: "realtime_stream",
                 origin: "backend_confirmed",
+                first_audio_byte_ms: firstAudioMs,
                 adapter: "realtime_stream_tts",
                 source: "voice_tts_playback",
               },
@@ -535,161 +578,166 @@ export class VoiceTtsPlaybackManager {
           route: "/api/kai/voice/tts",
           origin: "backend_confirmed",
           status_code: response.status,
+          response_content_type: response.headers.get("content-type") || null,
           source: "voice_tts_playback",
         },
         { voiceTurnId: input.voiceTurnId }
       );
 
+      const responseMimeType = normalizeAudioMimeType(response.headers.get("content-type"));
+      const headerModel = String(response.headers.get("x-kai-tts-model") || "").trim() || undefined;
+      const headerVoice = String(response.headers.get("x-kai-tts-voice") || "").trim() || undefined;
+      const headerFormat = String(response.headers.get("x-kai-tts-format") || "").trim() || undefined;
+      const headerCandidateOrderRaw = String(response.headers.get("x-kai-tts-candidate-order") || "").trim();
+      const headerCandidateOrder = headerCandidateOrderRaw
+        ? headerCandidateOrderRaw
+            .split(",")
+            .map((value) => value.trim())
+            .filter((value) => value.length > 0)
+        : [];
+      const headerFallbackAttempted = parseHeaderBoolean(
+        response.headers.get("x-kai-tts-fallback-attempted")
+      );
+      const headerAudioBytes = Number(response.headers.get("x-kai-tts-audio-bytes") || "");
+      const headerAttemptsCount = Number(response.headers.get("x-kai-tts-attempts-count") || "");
+
+      if (!response.ok) {
+        let message = `VOICE_TTS_HTTP_${response.status}`;
+        const errorBodyText = await response.text().catch(() => "");
+        const errorContentType = String(response.headers.get("content-type") || "").toLowerCase();
+        if (errorBodyText && errorContentType.includes("application/json")) {
+          try {
+            const errorPayload = JSON.parse(errorBodyText) as {
+              detail?: unknown;
+              error?: unknown;
+            };
+            if (typeof errorPayload.detail === "string" && errorPayload.detail.trim()) {
+              message = errorPayload.detail.trim();
+            } else if (typeof errorPayload.error === "string" && errorPayload.error.trim()) {
+              message = errorPayload.error.trim();
+            } else if (errorBodyText.trim()) {
+              message = errorBodyText.trim();
+            }
+          } catch {
+            if (errorBodyText.trim()) {
+              message = errorBodyText.trim();
+            }
+          }
+        } else if (errorBodyText.trim()) {
+          message = errorBodyText.trim();
+        }
+        throw new Error(message);
+      }
+
       const ttsBodyReadStartedAt = performance.now();
-      const responseBodyText = await response.text().catch(() => "");
+      const responseReader =
+        response.body && typeof response.body.getReader === "function"
+          ? response.body.getReader()
+          : null;
+      const audioChunks: ArrayBuffer[] = [];
+      let audioBytesRead = 0;
+      let firstAudioByteMs: number | null = null;
+      const markFirstAudioByte = () => {
+        if (firstAudioByteMs !== null) return;
+        firstAudioByteMs = Math.max(0, Math.round(performance.now() - ttsBodyReadStartedAt));
+        this.emitTraceEvent(
+          "tts_first_audio_byte_received",
+          {
+            route: "/api/kai/voice/tts",
+            first_audio_byte_ms: firstAudioByteMs,
+            stream_mode: Boolean(responseReader),
+            source: "voice_tts_playback",
+          },
+          { voiceTurnId: input.voiceTurnId }
+        );
+        this.emitTraceEvent(
+          "tts_first_playable_data_received",
+          {
+            route: "/api/kai/voice/tts",
+            first_playable_data_ms: firstAudioByteMs,
+            stream_mode: Boolean(responseReader),
+            source: "voice_tts_playback",
+          },
+          { voiceTurnId: input.voiceTurnId }
+        );
+      };
+
+      if (responseReader) {
+        while (true) {
+          const { done, value } = await responseReader.read();
+          if (done) break;
+          if (!value || value.byteLength === 0) continue;
+          markFirstAudioByte();
+          const stableChunk = new Uint8Array(value.byteLength);
+          stableChunk.set(value);
+          audioChunks.push(stableChunk.buffer);
+          audioBytesRead += stableChunk.byteLength;
+        }
+      } else {
+        const audioBuffer = await response.arrayBuffer();
+        if (audioBuffer.byteLength > 0) {
+          markFirstAudioByte();
+          const singleChunk = new Uint8Array(audioBuffer);
+          const stableChunk = new Uint8Array(singleChunk.byteLength);
+          stableChunk.set(singleChunk);
+          audioChunks.push(stableChunk.buffer);
+          audioBytesRead = stableChunk.byteLength;
+        }
+      }
+
+      const bodyReadElapsedMs = Math.max(0, Math.round(performance.now() - ttsBodyReadStartedAt));
       this.emitTraceEvent(
         "tts_response_body_received",
         {
           route: "/api/kai/voice/tts",
           origin: "backend_confirmed",
           status_code: response.status,
-          response_body_chars: responseBodyText.length,
-          elapsed_ms: Math.max(0, Math.round(performance.now() - ttsBodyReadStartedAt)),
+          stream_mode: Boolean(responseReader),
+          audio_bytes: audioBytesRead,
+          first_audio_byte_ms: firstAudioByteMs,
+          elapsed_ms: bodyReadElapsedMs,
           source: "voice_tts_playback",
         },
         { voiceTurnId: input.voiceTurnId }
       );
-      const payloadParseStartedAt = performance.now();
-      let payloadParseError: string | null = null;
-      let parsedPayload: Record<string, unknown> = {};
-      if (responseBodyText) {
-        try {
-          const maybePayload = JSON.parse(responseBodyText) as unknown;
-          if (maybePayload && typeof maybePayload === "object") {
-            parsedPayload = maybePayload as Record<string, unknown>;
-          }
-        } catch (error) {
-          payloadParseError = error instanceof Error ? error.message : String(error);
-        }
-      }
-      this.emitTraceEvent(
-        "tts_payload_parsed",
-        {
-          route: "/api/kai/voice/tts",
-          origin: "frontend_confirmed",
-          status_code: response.status,
-          payload_parse_error: payloadParseError,
-          elapsed_ms: Math.max(0, Math.round(performance.now() - payloadParseStartedAt)),
-          source: "voice_tts_playback",
-        },
-        { voiceTurnId: input.voiceTurnId }
-      );
-      const payload = parsedPayload as {
-        audio_base64?: unknown;
-        mime_type?: unknown;
-        model?: unknown;
-        voice?: unknown;
-        format?: unknown;
-        fallback_attempted?: unknown;
-        candidate_order?: unknown;
-        attempts?: unknown;
-        detail?: unknown;
-        error?: unknown;
-      };
 
-      if (!response.ok) {
-        const message =
-          (typeof payload.detail === "string" && payload.detail) ||
-          (typeof payload.error === "string" && payload.error) ||
-          `VOICE_TTS_HTTP_${response.status}`;
-        throw new Error(message);
-      }
-
-      if (typeof payload.audio_base64 !== "string" || !payload.audio_base64.trim()) {
+      if (audioBytesRead <= 0) {
         throw new Error("VOICE_TTS_EMPTY_AUDIO");
       }
 
-      const parsedAttempts: Array<{
-        model?: string;
-        status_code?: number;
-        elapsed_ms?: number;
-        result?: string;
-        error?: string;
-        next_model?: string | null;
-      }> = Array.isArray(payload.attempts)
-        ? payload.attempts
-            .filter((value): value is Record<string, unknown> => typeof value === "object" && value !== null)
-            .map((value) => ({
-              model: typeof value.model === "string" ? value.model : undefined,
-              status_code: typeof value.status_code === "number" ? value.status_code : undefined,
-              elapsed_ms: typeof value.elapsed_ms === "number" ? value.elapsed_ms : undefined,
-              result: typeof value.result === "string" ? value.result : undefined,
-              error: typeof value.error === "string" ? value.error : undefined,
-              next_model:
-                typeof value.next_model === "string"
-                  ? value.next_model
-                  : value.next_model === null
-                    ? null
-                    : undefined,
-            }))
-        : [];
-
       this.lifecycleHandlers?.onAudioReceived?.({
         voiceTurnId: input.voiceTurnId,
-        mimeType: typeof payload.mime_type === "string" ? payload.mime_type : "audio/mpeg",
-        audioBytesEstimate: payload.audio_base64.length,
+        mimeType: responseMimeType,
+        audioBytesEstimate:
+          Number.isFinite(headerAudioBytes) && headerAudioBytes > 0 ? Math.round(headerAudioBytes) : audioBytesRead,
         source: "backend_openai_audio",
-        model: typeof payload.model === "string" ? payload.model : undefined,
-        voice:
-          typeof payload.voice === "string"
-            ? payload.voice
-            : typeof input.voice === "string"
-              ? input.voice
-              : undefined,
-        format: typeof payload.format === "string" ? payload.format : undefined,
-        fallbackAttempted:
-          typeof payload.fallback_attempted === "boolean"
-            ? payload.fallback_attempted
-            : String(payload.fallback_attempted || "").trim().toLowerCase() === "true",
-        candidateOrder: Array.isArray(payload.candidate_order)
-          ? payload.candidate_order
-              .map((value) => (typeof value === "string" ? value.trim() : ""))
-              .filter((value) => value.length > 0)
-          : [],
-        attempts: parsedAttempts,
+        model: headerModel,
+        voice: headerVoice || (typeof input.voice === "string" ? input.voice : undefined),
+        format: headerFormat,
+        fallbackAttempted: headerFallbackAttempted,
+        candidateOrder: headerCandidateOrder,
+        attempts:
+          Number.isFinite(headerAttemptsCount) && headerAttemptsCount > 0
+            ? [{ result: `count:${Math.round(headerAttemptsCount)}` }]
+            : [],
       });
 
-      this.emitTraceEvent(
-        "tts_audio_decode_started",
-        {
-          route: "/api/kai/voice/tts",
-          source: "voice_tts_playback",
-        },
-        { voiceTurnId: input.voiceTurnId }
-      );
-      const decodedAudioBytes = decodeBase64ToBytes(payload.audio_base64);
-      this.emitTraceEvent(
-        "tts_audio_decode_finished",
-        {
-          route: "/api/kai/voice/tts",
-          decoded_audio_bytes: decodedAudioBytes.length,
-          source: "voice_tts_playback",
-        },
-        { voiceTurnId: input.voiceTurnId }
-      );
       this.emitTraceEvent(
         "tts_blob_creation_started",
         {
           route: "/api/kai/voice/tts",
+          audio_bytes: audioBytesRead,
           source: "voice_tts_playback",
         },
         { voiceTurnId: input.voiceTurnId }
       );
-      const blob = toBlobFromBytes(
-        decodedAudioBytes,
-        typeof payload.mime_type === "string" ? payload.mime_type : "audio/mpeg"
-      );
+      const blob = new Blob(audioChunks, { type: responseMimeType });
       this.emitTraceEvent(
         "tts_blob_creation_finished",
         {
           route: "/api/kai/voice/tts",
           blob_bytes: blob.size,
-          mime_type: blob.type,
+          mime_type: blob.type || responseMimeType,
           source: "voice_tts_playback",
         },
         { voiceTurnId: input.voiceTurnId }
@@ -784,66 +832,26 @@ export class VoiceTtsPlaybackManager {
       if (!this.isRunActive(runId)) return;
 
       const errorMessage = error instanceof Error ? error.message : "VOICE_TTS_UNKNOWN";
-      const shouldFallback = shouldUseBrowserTtsFallback(errorMessage);
-      const backendInFlightAtFailure =
-        !backendResponseReceived &&
-        (errorMessage === "VOICE_TTS_TIMEOUT" ||
-          (error instanceof DOMException && error.name === "AbortError"));
-      if (!shouldFallback) {
-        this.emitTraceEvent(
-          "tts_fallback_skipped",
-          {
-            route: "/api/kai/voice/tts",
-            fallback_triggered: false,
-            reason: errorMessage,
-            backend_response_received: backendResponseReceived,
-            source: "voice_tts_playback",
-          },
-          { voiceTurnId: input.voiceTurnId, finalize: true }
-        );
-        console.info(
-          "[VOICE_TTS] browser_fallback_skipped reason=%s backend_response_received=%s",
-          errorMessage,
-          backendResponseReceived
-        );
-        this.setState("idle");
-        this.lifecycleHandlers?.onPlaybackFailed?.({
-          voiceTurnId: input.voiceTurnId,
-          reason: errorMessage,
-          source: this.activePlaybackSource,
-        });
-        throw error;
-      }
-      const fallbackSucceeded = await this.playWithSpeechSynthesis(
-        runId,
-        text,
-        errorMessage,
+      this.emitTraceEvent(
+        "tts_fallback_disabled",
         {
-          backendInFlight: backendInFlightAtFailure,
-          backendResponseReceived,
-          timeoutMs,
-          requestedVoice: input.voice,
-        }
-      );
-      if (!fallbackSucceeded) {
-        this.emitTraceEvent(
-          "tts_fallback_playback_failed",
-          {
-            route: "/api/kai/voice/tts",
-            fallback_triggered: true,
-            reason: errorMessage,
-            source: "voice_tts_playback",
-          },
-          { voiceTurnId: input.voiceTurnId, finalize: true }
-        );
-        this.setState("idle");
-        this.lifecycleHandlers?.onPlaybackFailed?.({
-          voiceTurnId: input.voiceTurnId,
+          route: "/api/kai/voice/tts",
+          fallback_triggered: false,
           reason: errorMessage,
-          source: this.activePlaybackSource,
-        });
-        throw error;
-      }
+          backend_response_received: backendResponseReceived,
+          fail_fast_voice: isVoiceFailFastEnabled(),
+          no_fallbacks: true,
+          source: "voice_tts_playback",
+        },
+        { voiceTurnId: input.voiceTurnId, finalize: true }
+      );
+      this.setState("idle");
+      this.lifecycleHandlers?.onPlaybackFailed?.({
+        voiceTurnId: input.voiceTurnId,
+        reason: errorMessage,
+        source: this.activePlaybackSource,
+      });
+      throw error;
     } finally {
       if (this.inFlightTtsAbortController === ttsAbortController) {
         this.inFlightTtsAbortController = null;
@@ -866,6 +874,9 @@ export class VoiceTtsPlaybackManager {
   }
 
   async speakLocally(text: string, voiceTurnId?: string): Promise<void> {
+    if (!isLegacyLocalSpeechCompatEnabled()) {
+      throw new Error("VOICE_TTS_LOCAL_COMPAT_DISABLED");
+    }
     const cleanText = String(text || "").trim();
     if (!cleanText) return;
     this.stop();

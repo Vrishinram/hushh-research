@@ -37,6 +37,12 @@ describe("ApiService voice planning contract", () => {
     delete process.env.NEXT_PUBLIC_BACKEND_URL;
     delete process.env.NEXT_PUBLIC_VOICE_DIRECT_BACKEND;
     delete process.env.NEXT_PUBLIC_VOICE_FORCE_PROXY;
+    delete process.env.NEXT_PUBLIC_DISABLE_VOICE_FALLBACKS;
+    delete process.env.NEXT_PUBLIC_FAIL_FAST_VOICE;
+    delete process.env.NEXT_PUBLIC_FORCE_REALTIME_VOICE;
+    delete process.env.DISABLE_VOICE_FALLBACKS;
+    delete process.env.FAIL_FAST_VOICE;
+    delete process.env.FORCE_REALTIME_VOICE;
     process.env.NODE_ENV = originalEnv.NODE_ENV;
   });
 
@@ -223,5 +229,104 @@ describe("ApiService voice planning contract", () => {
     const headers = request?.headers as Record<string, string>;
     expect(headers.Authorization).toBe("Bearer vault_token");
     expect(headers["X-Voice-Turn-Id"]).toBe("vturn_realtime_1");
+  });
+
+  it("does not fallback to proxy when fail-fast voice is enabled", async () => {
+    process.env.NEXT_PUBLIC_BACKEND_URL = "https://voice.example.com";
+    process.env.NEXT_PUBLIC_VOICE_DIRECT_BACKEND = "true";
+    process.env.NEXT_PUBLIC_FAIL_FAST_VOICE = "true";
+    const { ApiService } = await import("@/lib/services/api-service");
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new Error("DIRECT_BACKEND_DOWN"));
+
+    await expect(
+      ApiService.synthesizeKaiVoice({
+        userId: "user_1",
+        vaultOwnerToken: "vault_token",
+        text: "hello",
+        voiceTurnId: "vturn_tts_fail_fast",
+      })
+    ).rejects.toThrow("DIRECT_BACKEND_DOWN");
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not fallback to proxy when force realtime voice is enabled", async () => {
+    process.env.NEXT_PUBLIC_BACKEND_URL = "https://voice.example.com";
+    process.env.NEXT_PUBLIC_VOICE_DIRECT_BACKEND = "true";
+    process.env.NEXT_PUBLIC_FORCE_REALTIME_VOICE = "true";
+    const { ApiService } = await import("@/lib/services/api-service");
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new Error("DIRECT_BACKEND_DOWN"));
+
+    await expect(
+      ApiService.synthesizeKaiVoice({
+        userId: "user_1",
+        vaultOwnerToken: "vault_token",
+        text: "hello",
+        voiceTurnId: "vturn_tts_force_realtime",
+      })
+    ).rejects.toThrow("DIRECT_BACKEND_DOWN");
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not fallback to proxy after direct backend failure even without fail-fast flags", async () => {
+    process.env.NEXT_PUBLIC_BACKEND_URL = "https://voice.example.com";
+    process.env.NEXT_PUBLIC_VOICE_DIRECT_BACKEND = "true";
+    const { ApiService } = await import("@/lib/services/api-service");
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new Error("DIRECT_BACKEND_DOWN"));
+
+    await expect(
+      ApiService.planKaiVoiceIntent({
+        userId: "user_1",
+        vaultOwnerToken: "vault_token",
+        transcript: "Analyze NVDA",
+      })
+    ).rejects.toThrow("DIRECT_BACKEND_DOWN");
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("requires direct backend in development when backend URL is missing", async () => {
+    process.env.NODE_ENV = "development";
+    const { ApiService } = await import("@/lib/services/api-service");
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+
+    await expect(
+      ApiService.planKaiVoiceIntent({
+        userId: "user_1",
+        vaultOwnerToken: "vault_token",
+        transcript: "Analyze NVDA",
+      })
+    ).rejects.toThrow("VOICE_DIRECT_BACKEND_REQUIRED:missing_backend_url");
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("rejects proxy override for voice in development", async () => {
+    process.env.NODE_ENV = "development";
+    process.env.NEXT_PUBLIC_BACKEND_URL = "http://localhost:8000";
+    process.env.NEXT_PUBLIC_VOICE_FORCE_PROXY = "true";
+    const { ApiService } = await import("@/lib/services/api-service");
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+
+    await expect(
+      ApiService.createKaiRealtimeSession({
+        userId: "user_1",
+        vaultOwnerToken: "vault_token",
+        voice: "alloy",
+      })
+    ).rejects.toThrow("VOICE_DIRECT_BACKEND_REQUIRED:explicit_proxy");
+
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

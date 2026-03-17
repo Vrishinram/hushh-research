@@ -74,6 +74,7 @@ export function VoiceDebugDrawer({
         fallbackUsed: false,
         fallbackReason: null as string | null,
         totalMs: null as number | null,
+        realtimeReady: null as boolean | null,
       };
     }
 
@@ -94,6 +95,7 @@ export function VoiceDebugDrawer({
     let fallbackUsed = false;
     let fallbackReason: string | null = null;
     let totalMs: number | null = null;
+    let realtimeReady: boolean | null = null;
 
     for (const event of events) {
       const payload = event.payload || {};
@@ -117,7 +119,9 @@ export function VoiceDebugDrawer({
       }
       if (
         event.stage === "tts" &&
-        (event.event === "fallback_activated" || event.event === "tts_fallback_triggered")
+        (event.event === "fallback_activated" ||
+          event.event === "tts_fallback_triggered" ||
+          event.event === "legacy_local_tts_activated")
       ) {
         fallbackUsed = true;
         const reason = payload.reason;
@@ -125,19 +129,22 @@ export function VoiceDebugDrawer({
           fallbackReason = reason.trim();
         }
       }
-      if (event.stage === "tts" && event.event === "stream_tts_failed_fallback_batch") {
-        fallbackUsed = true;
-        fallbackReason = "realtime_tts_failed_fallback_batch";
-      }
-      if (event.stage === "stt" && event.event === "stream_session_failed") {
-        fallbackUsed = true;
-        fallbackReason = "realtime_stt_failed_fallback_batch";
-      }
       if (event.stage === "turn" && event.event === "stage_timing") {
         const ms = toNumber(payload.since_turn_start_ms);
         if (ms != null) {
           totalMs = totalMs == null ? ms : Math.max(totalMs, ms);
         }
+      }
+      if (event.stage === "stt" && event.event === "stream_session_connected") {
+        realtimeReady = true;
+      }
+      if (
+        event.stage === "stt" &&
+        (event.event === "stream_submit_blocked_not_ready" ||
+          event.event === "stream_session_failed" ||
+          event.event === "data_channel_closed")
+      ) {
+        realtimeReady = false;
       }
     }
 
@@ -150,6 +157,7 @@ export function VoiceDebugDrawer({
       fallbackUsed,
       fallbackReason,
       totalMs,
+      realtimeReady,
     };
   }, [debugEvents, lastTurnId, recentEvents]);
 
@@ -198,6 +206,10 @@ export function VoiceDebugDrawer({
             <p>
               <span className="font-semibold text-foreground">Fallback:</span>{" "}
               {turnSummary.fallbackUsed ? `yes${turnSummary.fallbackReason ? ` (${turnSummary.fallbackReason})` : ""}` : "no"}
+            </p>
+            <p>
+              <span className="font-semibold text-foreground">Realtime Ready:</span>{" "}
+              {turnSummary.realtimeReady == null ? "n/a" : turnSummary.realtimeReady ? "yes" : "no"}
             </p>
             <p>
               <span className="font-semibold text-foreground">Turn Total:</span>{" "}

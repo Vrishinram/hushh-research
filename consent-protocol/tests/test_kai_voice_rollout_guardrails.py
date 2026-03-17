@@ -285,7 +285,11 @@ def test_voice_tts_echoes_voice_turn_id_header(
     token = vault_owner_token_for_user("user_a")
 
     async def _fake_tts(*args, **kwargs):
-        return "YWJj", "audio/mpeg", {"model": "gpt-4o-mini-tts", "voice": "alloy", "format": "mp3"}
+        return (
+            b"abc",
+            "audio/mpeg",
+            {"model": "gpt-4o-mini-tts", "voice": "alloy", "format": "mp3"},
+        )
 
     monkeypatch.setattr(VOICE_ROUTES.voice_service, "synthesize_speech", _fake_tts)
 
@@ -297,3 +301,5 @@ def test_voice_tts_echoes_voice_turn_id_header(
 
     assert response.status_code == 200
     assert response.headers.get("X-Voice-Turn-Id") == "vturn_test_003"
+    assert response.headers.get("content-type", "").startswith("audio/mpeg")
+    assert response.content == b"abc"

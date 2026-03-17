@@ -11,7 +11,7 @@ export type VoiceUiState =
   | "error_terminal";
 
 const TRANSITIONS: Record<VoiceUiState, VoiceUiState[]> = {
-  idle: ["sheet_listening"],
+  idle: ["sheet_listening", "error_terminal"],
   sheet_listening: ["sheet_paused", "sheet_submitting", "idle", "error_terminal"],
   sheet_paused: ["sheet_listening", "sheet_submitting", "idle", "error_terminal"],
   sheet_submitting: ["processing_compact", "idle", "error_terminal"],

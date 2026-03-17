@@ -156,4 +156,46 @@ describe("/api/kai/[...path] proxy", () => {
     const headers = options?.headers as Headers;
     expect(headers.get("Authorization")).toBeNull();
   });
+
+  it("passes through binary voice TTS responses without JSON parsing", async () => {
+    const ttsAudio = new Uint8Array([1, 2, 3, 4, 5]);
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(ttsAudio, {
+        status: 200,
+        headers: {
+          "Content-Type": "audio/mpeg",
+          "X-Kai-TTS-Model": "gpt-4o-mini-tts",
+          "X-Kai-TTS-Voice": "alloy",
+        },
+      })
+    );
+
+    const req = createRequest("http://localhost:3000/api/kai/voice/tts", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer vault_owner_token",
+        "Content-Type": "application/json",
+        "X-Voice-Turn-Id": "vturn_proxy_tts_binary",
+      },
+      body: JSON.stringify({ user_id: "user_123", text: "hello" }),
+    });
+
+    const res = await kaiRoute.POST(req, {
+      params: Promise.resolve({ path: ["voice", "tts"] }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("audio/mpeg");
+    expect(res.headers.get("X-Kai-TTS-Model")).toBe("gpt-4o-mini-tts");
+    expect(res.headers.get("X-Kai-TTS-Voice")).toBe("alloy");
+    await expect(res.arrayBuffer()).resolves.toEqual(ttsAudio.buffer);
+
+    const [url, options] = fetchSpy.mock.calls[0] ?? [];
+    expect(url).toBe("http://backend.test/api/kai/voice/tts");
+    const headers = options?.headers as Headers;
+    expect(headers.get("Authorization")).toBe("Bearer vault_owner_token");
+    expect(headers.get("Content-Type")).toBe("application/json");
+    expect(headers.get("X-Voice-Turn-Id")).toBe("vturn_proxy_tts_binary");
+    expect(options?.body).toBeDefined();
+  });
 });

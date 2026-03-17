@@ -157,6 +157,30 @@ function getVoiceTransportMode(): VoiceTransportMode {
   return { mode: "nextjs_proxy", reason: "proxy_default", backendUrl: backend };
 }
 
+function isTruthyEnvFlag(raw: string | undefined): boolean {
+  return ["1", "true", "yes", "on", "enabled"].includes(String(raw || "").trim().toLowerCase());
+}
+
+function isVoiceFailFastEnabled(): boolean {
+  const disableFallbacks =
+    isTruthyEnvFlag(process.env.NEXT_PUBLIC_DISABLE_VOICE_FALLBACKS) ||
+    isTruthyEnvFlag(process.env.DISABLE_VOICE_FALLBACKS);
+  const failFast =
+    isTruthyEnvFlag(process.env.NEXT_PUBLIC_FAIL_FAST_VOICE) ||
+    isTruthyEnvFlag(process.env.FAIL_FAST_VOICE);
+  const forceRealtime =
+    isTruthyEnvFlag(process.env.NEXT_PUBLIC_FORCE_REALTIME_VOICE) ||
+    isTruthyEnvFlag(process.env.FORCE_REALTIME_VOICE);
+  return disableFallbacks || failFast || forceRealtime;
+}
+
+function isVoiceDirectBackendRequired(): boolean {
+  if (Capacitor.isNativePlatform()) return false;
+  const explicitDirect = isTruthyEnvFlag(process.env.NEXT_PUBLIC_VOICE_DIRECT_BACKEND);
+  const devDefaultDirectOnly = process.env.NODE_ENV === "development";
+  return explicitDirect || isVoiceFailFastEnabled() || devDefaultDirectOnly;
+}
+
 function normalizeVoiceAudioMimeType(rawMimeType: string | null | undefined): string {
   const normalized = String(rawMimeType || "").trim().toLowerCase();
   const base = (normalized.split(";", 1)[0] || "").trim();
@@ -341,7 +365,6 @@ type VoiceTransportTimingState = {
 };
 
 const voiceTransportTimingByTurn = new Map<string, VoiceTransportTimingState>();
-let voiceTransportTraceListener: ((payload: Record<string, unknown>) => void) | null = null;
 
 function emitVoiceTransportStage(
   turnId: string | undefined,
@@ -366,31 +389,14 @@ function emitVoiceTransportStage(
     lastStageMs: nowMs,
   });
 
-  const timestampIso = new Date().toISOString();
-  const route = typeof metadata.route === "string" ? metadata.route : null;
-  const source =
-    typeof metadata.source === "string" && metadata.source.trim()
-      ? metadata.source
-      : "api_service_transport";
-  const tracePayload = {
+  console.info("[KAI_VOICE_TRACE_TRANSPORT]", {
     turn_id: turnId,
-    event: stage,
+    timestamp: new Date().toISOString(),
     stage,
-    timestamp_iso: timestampIso,
-    timestamp: timestampIso,
-    layer: "frontend",
-    source,
-    route,
     since_prev_ms: sincePrevMs,
     since_turn_start_ms: sinceTurnStartMs,
     ...metadata,
-  };
-  console.info("[KAI_VOICE_TRACE_TRANSPORT]", tracePayload);
-  try {
-    voiceTransportTraceListener?.(tracePayload);
-  } catch {
-    // keep transport logging non-fatal
-  }
+  });
 
   if (options?.finalize) {
     voiceTransportTimingByTurn.delete(turnId);
@@ -399,6 +405,7 @@ function emitVoiceTransportStage(
 
 async function voiceFetch(path: string, options: RequestInit = {}): Promise<Response> {
   const transport = getVoiceTransportMode();
+  const directRequired = isVoiceDirectBackendRequired();
   const turnIdHeaderRaw =
     options.headers instanceof Headers
       ? options.headers.get("X-Voice-Turn-Id") || options.headers.get("x-voice-turn-id")
@@ -410,40 +417,29 @@ async function voiceFetch(path: string, options: RequestInit = {}): Promise<Resp
           : undefined;
   const turnIdHeader = turnIdHeaderRaw || undefined;
   const finalizeTrace = /\/api\/kai\/voice\/tts$/.test(path);
+  if (directRequired && transport.mode !== "direct_backend") {
+    const reason = `VOICE_DIRECT_BACKEND_REQUIRED:${transport.reason}`;
+    emitVoiceTransportStage(turnIdHeader, "transport_config_invalid", {
+      route: path,
+      mode: transport.mode,
+      reason: transport.reason,
+      direct_required: true,
+      error: reason,
+    }, { finalize: true });
+    throw new Error(reason);
+  }
   if (transport.mode !== "direct_backend") {
-    emitVoiceTransportStage(turnIdHeader, "transport_fetch_prepared", {
-      route: path,
-      transport_mode: "nextjs_proxy",
-      transport_reason: transport.reason,
-      source: "voice_fetch",
-      origin: "frontend_optimistic",
-    });
-    emitVoiceTransportStage(turnIdHeader, "transport_network_send_start", {
-      route: path,
-      transport_mode: "nextjs_proxy",
-      transport_reason: transport.reason,
-      source: "voice_fetch",
-      origin: "frontend_optimistic",
-    });
-    // Compatibility alias for existing dashboards.
     emitVoiceTransportStage(turnIdHeader, "transport_request_started", {
       route: path,
       mode: "nextjs_proxy",
       reason: transport.reason,
-      source: "voice_fetch",
+      direct_required: directRequired,
     });
     console.info(
       `[VOICE_NET] transport=nextjs_proxy route=${path} reason=${transport.reason} turn_id=${turnIdHeader || "unknown"}`
     );
     try {
       const response = await apiFetch(path, options);
-      emitVoiceTransportStage(turnIdHeader, "transport_response_headers_received", {
-        route: path,
-        transport_mode: "nextjs_proxy",
-        status_code: response.status,
-        source: "voice_fetch",
-        origin: "backend_confirmed",
-      });
       emitVoiceTransportStage(
         turnIdHeader,
         "transport_response_received",
@@ -451,31 +447,11 @@ async function voiceFetch(path: string, options: RequestInit = {}): Promise<Resp
           route: path,
           mode: "nextjs_proxy",
           status: response.status,
-          source: "voice_fetch",
-        },
-        { finalize: finalizeTrace || !response.ok }
-      );
-      emitVoiceTransportStage(
-        turnIdHeader,
-        "transport_response_returned",
-        {
-          route: path,
-          transport_mode: "nextjs_proxy",
-          status_code: response.status,
-          source: "voice_fetch",
-          origin: "backend_confirmed",
         },
         { finalize: finalizeTrace || !response.ok }
       );
       return response;
     } catch (error) {
-      emitVoiceTransportStage(turnIdHeader, "transport_response_headers_received", {
-        route: path,
-        transport_mode: "nextjs_proxy",
-        status_code: 0,
-        error: error instanceof Error ? error.message : String(error),
-        source: "voice_fetch",
-      });
       emitVoiceTransportStage(
         turnIdHeader,
         "transport_response_received",
@@ -484,19 +460,6 @@ async function voiceFetch(path: string, options: RequestInit = {}): Promise<Resp
           mode: "nextjs_proxy",
           status: 0,
           error: error instanceof Error ? error.message : String(error),
-          source: "voice_fetch",
-        },
-        { finalize: true }
-      );
-      emitVoiceTransportStage(
-        turnIdHeader,
-        "transport_response_returned",
-        {
-          route: path,
-          transport_mode: "nextjs_proxy",
-          status_code: 0,
-          error: error instanceof Error ? error.message : String(error),
-          source: "voice_fetch",
         },
         { finalize: true }
       );
@@ -531,41 +494,16 @@ async function voiceFetch(path: string, options: RequestInit = {}): Promise<Resp
   console.info(
     `[VOICE_NET] transport=direct_backend route=${path} reason=${transport.reason} url=${url} turn_id=${turnIdHeader || "unknown"}`
   );
-  emitVoiceTransportStage(turnIdHeader, "transport_fetch_prepared", {
-    route: path,
-    transport_mode: "direct_backend",
-    transport_reason: transport.reason,
-    target_url: url,
-    source: "voice_fetch",
-    origin: "frontend_optimistic",
-  });
-  emitVoiceTransportStage(turnIdHeader, "transport_network_send_start", {
-    route: path,
-    transport_mode: "direct_backend",
-    transport_reason: transport.reason,
-    target_url: url,
-    source: "voice_fetch",
-    origin: "frontend_optimistic",
-  });
-  // Compatibility alias for existing dashboards.
   emitVoiceTransportStage(turnIdHeader, "transport_request_started", {
     route: path,
     mode: "direct_backend",
     reason: transport.reason,
     target_url: url,
-    source: "voice_fetch",
   });
   try {
     const response = await fetch(url, {
       ...options,
       headers: mergedHeaders,
-    });
-    emitVoiceTransportStage(turnIdHeader, "transport_response_headers_received", {
-      route: path,
-      transport_mode: "direct_backend",
-      status_code: response.status,
-      source: "voice_fetch",
-      origin: "backend_confirmed",
     });
     emitVoiceTransportStage(
       turnIdHeader,
@@ -574,70 +512,26 @@ async function voiceFetch(path: string, options: RequestInit = {}): Promise<Resp
         route: path,
         mode: "direct_backend",
         status: response.status,
-        source: "voice_fetch",
-      },
-      { finalize: finalizeTrace || !response.ok }
-    );
-    emitVoiceTransportStage(
-      turnIdHeader,
-      "transport_response_returned",
-      {
-        route: path,
-        transport_mode: "direct_backend",
-        status_code: response.status,
-        source: "voice_fetch",
-        origin: "backend_confirmed",
       },
       { finalize: finalizeTrace || !response.ok }
     );
     return response;
   } catch (error) {
-    emitVoiceTransportStage(turnIdHeader, "transport_fallback_to_proxy", {
-      route: path,
-      mode: "direct_backend",
-      reason: "direct_fetch_failed",
-      error: error instanceof Error ? error.message : String(error),
-      source: "voice_fetch",
-    });
-    console.warn(
-      `[VOICE_NET] transport=direct_backend failed route=${path}; falling back to nextjs_proxy turn_id=${turnIdHeader || "unknown"}`,
-      error
-    );
-    const response = await apiFetch(path, options);
-    emitVoiceTransportStage(turnIdHeader, "transport_response_headers_received", {
-      route: path,
-      transport_mode: "nextjs_proxy",
-      fallback_from: "direct_backend",
-      status_code: response.status,
-      source: "voice_fetch",
-      origin: "backend_confirmed",
-    });
     emitVoiceTransportStage(
       turnIdHeader,
       "transport_response_received",
       {
         route: path,
-        mode: "nextjs_proxy",
-        status: response.status,
-        fallback_from: "direct_backend",
-        source: "voice_fetch",
+        mode: "direct_backend",
+        status: 0,
+        reason: "direct_fetch_failed",
+        direct_required: directRequired,
+        fail_fast_voice: isVoiceFailFastEnabled(),
+        error: error instanceof Error ? error.message : String(error),
       },
-      { finalize: finalizeTrace || !response.ok }
+      { finalize: true }
     );
-    emitVoiceTransportStage(
-      turnIdHeader,
-      "transport_response_returned",
-      {
-        route: path,
-        transport_mode: "nextjs_proxy",
-        fallback_from: "direct_backend",
-        status_code: response.status,
-        source: "voice_fetch",
-        origin: "backend_confirmed",
-      },
-      { finalize: finalizeTrace || !response.ok }
-    );
-    return response;
+    throw error;
   }
 }
 
@@ -825,14 +719,6 @@ export interface KaiDashboardProfilePicksResponse {
   context?: Record<string, unknown>;
 }
 
-export interface KaiVoiceRealtimeSessionResponse {
-  session_id?: string | null;
-  client_secret: string;
-  client_secret_expires_at?: number | null;
-  model: string;
-  voice: string;
-}
-
 /**
  * API Service for platform-aware API calls
  */
@@ -927,12 +813,6 @@ export class ApiService {
     return getVoiceTransportMode();
   }
 
-  static setVoiceTransportTraceListener(
-    listener: ((payload: Record<string, unknown>) => void) | null
-  ): void {
-    voiceTransportTraceListener = listener;
-  }
-
   // ==================== Kai Voice ====================
 
   static async transcribeKaiVoice(data: {
@@ -944,14 +824,6 @@ export class ApiService {
     voiceTurnId?: string;
   }): Promise<Response> {
     const prepared = prepareVoiceAudioUpload(data);
-    emitVoiceTransportStage(data.voiceTurnId || undefined, "stt_request_prepared", {
-      route: "/api/kai/voice/stt",
-      source: "api_service",
-      origin: "frontend_optimistic",
-      mime_type: prepared.mimeType,
-      audio_bytes: prepared.blobBytes,
-      filename: prepared.filename,
-    });
     const form = new FormData();
     form.append("user_id", data.userId);
     form.append("audio_file", prepared.audioFile, prepared.filename);
@@ -965,45 +837,13 @@ export class ApiService {
       prepared.filename
     );
 
-    emitVoiceTransportStage(data.voiceTurnId || undefined, "stt_request_sent", {
-      route: "/api/kai/voice/stt",
-      source: "api_service",
-      origin: "frontend_optimistic",
-      transport_mode: getVoiceTransportMode().mode,
-    });
-    const response = await voiceFetch("/api/kai/voice/stt", {
+    return voiceFetch("/api/kai/voice/stt", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${data.vaultOwnerToken}`,
         ...(data.voiceTurnId ? { "X-Voice-Turn-Id": data.voiceTurnId } : {}),
       },
       body: form,
-    });
-    emitVoiceTransportStage(data.voiceTurnId || undefined, "stt_response_headers_received", {
-      route: "/api/kai/voice/stt",
-      source: "api_service",
-      origin: "backend_confirmed",
-      status_code: response.status,
-    });
-    return response;
-  }
-
-  static async createKaiRealtimeSession(data: {
-    userId: string;
-    vaultOwnerToken: string;
-    voice?: string;
-    voiceTurnId?: string;
-  }): Promise<Response> {
-    return voiceFetch("/api/kai/voice/realtime/session", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${data.vaultOwnerToken}`,
-        ...(data.voiceTurnId ? { "X-Voice-Turn-Id": data.voiceTurnId } : {}),
-      },
-      body: JSON.stringify({
-        user_id: data.userId,
-        voice: data.voice,
-      }),
     });
   }
 
@@ -1018,15 +858,7 @@ export class ApiService {
     voiceTurnId?: string;
     signal?: AbortSignal;
   }): Promise<Response> {
-    const prepared = prepareVoiceAudioUpload(data);
-    emitVoiceTransportStage(data.voiceTurnId || undefined, "understand_request_prepared", {
-      route: "/api/kai/voice/understand",
-      source: "api_service",
-      origin: "frontend_optimistic",
-      mime_type: prepared.mimeType,
-      audio_bytes: prepared.blobBytes,
-      filename: prepared.filename,
-    });
+    const prepared = prepareVoiceAudioUpload(data); // Takes less than 1ms 
     const form = new FormData();
     form.append("user_id", data.userId);
     form.append("audio_file", prepared.audioFile, prepared.filename);
@@ -1042,13 +874,7 @@ export class ApiService {
       prepared.filename
     );
 
-    emitVoiceTransportStage(data.voiceTurnId || undefined, "understand_request_sent", {
-      route: "/api/kai/voice/understand",
-      source: "api_service",
-      origin: "frontend_optimistic",
-      transport_mode: getVoiceTransportMode().mode,
-    });
-    const response = await voiceFetch("/api/kai/voice/understand", {
+    return voiceFetch("/api/kai/voice/understand", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${data.vaultOwnerToken}`,
@@ -1057,13 +883,6 @@ export class ApiService {
       body: form,
       signal: data.signal,
     });
-    emitVoiceTransportStage(data.voiceTurnId || undefined, "understand_response_headers_received", {
-      route: "/api/kai/voice/understand",
-      source: "api_service",
-      origin: "backend_confirmed",
-      status_code: response.status,
-    });
-    return response;
   }
 
   static async planKaiVoiceIntent(data: {
@@ -1072,6 +891,13 @@ export class ApiService {
     transcript: string;
     context?: Record<string, unknown>;
     appState?: AppRuntimeState;
+    plannerV2?: {
+      turnId: string;
+      transcriptFinal: string;
+      structuredContext?: Record<string, unknown>;
+      memoryShort?: Array<Record<string, unknown>>;
+      memoryRetrieved?: Array<Record<string, unknown>>;
+    };
     voiceTurnId?: string;
     signal?: AbortSignal;
   }): Promise<Response> {
@@ -1086,6 +912,11 @@ export class ApiService {
         transcript: data.transcript,
         context: data.context || {},
         app_state: data.appState,
+        turn_id: data.plannerV2?.turnId,
+        transcript_final: data.plannerV2?.transcriptFinal,
+        context_structured: data.plannerV2?.structuredContext,
+        memory_short: data.plannerV2?.memoryShort || [],
+        memory_retrieved: data.plannerV2?.memoryRetrieved || [],
       }),
       signal: data.signal,
     });
@@ -1099,21 +930,7 @@ export class ApiService {
     voiceTurnId?: string;
     signal?: AbortSignal;
   }): Promise<Response> {
-    emitVoiceTransportStage(data.voiceTurnId || undefined, "tts_request_prepared", {
-      route: "/api/kai/voice/tts",
-      source: "api_service",
-      origin: "frontend_optimistic",
-      text_chars: String(data.text || "").trim().length,
-      voice: data.voice || null,
-    });
-    emitVoiceTransportStage(data.voiceTurnId || undefined, "tts_request_sent", {
-      route: "/api/kai/voice/tts",
-      source: "api_service",
-      origin: "frontend_optimistic",
-      transport_mode: getVoiceTransportMode().mode,
-      text_chars: String(data.text || "").trim().length,
-    });
-    const response = await voiceFetch("/api/kai/voice/tts", {
+    return voiceFetch("/api/kai/voice/tts", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${data.vaultOwnerToken}`,
@@ -1126,13 +943,27 @@ export class ApiService {
       }),
       signal: data.signal,
     });
-    emitVoiceTransportStage(data.voiceTurnId || undefined, "tts_response_headers_received", {
-      route: "/api/kai/voice/tts",
-      source: "api_service",
-      origin: "backend_confirmed",
-      status_code: response.status,
+  }
+
+  static async createKaiRealtimeSession(data: {
+    userId: string;
+    vaultOwnerToken: string;
+    voice?: string;
+    voiceTurnId?: string;
+    signal?: AbortSignal;
+  }): Promise<Response> {
+    return voiceFetch("/api/kai/voice/realtime/session", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${data.vaultOwnerToken}`,
+        ...(data.voiceTurnId ? { "X-Voice-Turn-Id": data.voiceTurnId } : {}),
+      },
+      body: JSON.stringify({
+        user_id: data.userId,
+        voice: data.voice,
+      }),
+      signal: data.signal,
     });
-    return response;
   }
 
   // ==================== App Config ====================

@@ -144,3 +144,38 @@ export type VoicePlanPayload = {
   openai_http_ms?: number;
   model?: string;
 };
+
+export type PlannerV2Request = {
+  turn_id: string;
+  transcript_final: string;
+  context: Record<string, unknown>;
+  memory_short: Array<{
+    turn_id: string;
+    transcript_final: string;
+    response_text: string;
+    response_kind: string;
+    created_at_ms: number;
+  }>;
+  memory_retrieved: Array<{
+    id: string;
+    category: string;
+    summary: string;
+    created_at_ms: number;
+    last_used_ms: number;
+  }>;
+};
+
+export type PlannerV2Response = {
+  turn_id: string;
+  response_id: string;
+  intent?: { name: string; confidence: number };
+  action?: { type: "navigate" | "tool" | "none"; payload?: Record<string, unknown> };
+  needs_confirmation?: boolean;
+  ack_text?: string;
+  final_text?: string;
+  is_long_running?: boolean;
+  memory_write_candidates?: Array<{
+    category: string;
+    summary: string;
+  }>;
+};

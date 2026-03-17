@@ -147,6 +147,12 @@ async function proxyRequest(request: NextRequest, params: { path: string[] }) {
     // Handle different content types
     if (request.method === "GET" || request.method === "DELETE") {
       body = undefined;
+    } else if (isVoiceRoute) {
+      // Voice endpoints must preserve binary/streaming semantics and avoid payload re-buffering/parsing.
+      if (contentType) {
+        headers.set("Content-Type", contentType);
+      }
+      body = request.body ?? undefined;
     } else if (contentType.includes("multipart/form-data")) {
       // For file uploads, pass through the FormData
       // Don't set Content-Type - let fetch set it with boundary
@@ -174,6 +180,8 @@ async function proxyRequest(request: NextRequest, params: { path: string[] }) {
         body_mode:
           request.method === "GET" || request.method === "DELETE"
             ? "none"
+            : isVoiceRoute
+              ? "passthrough_stream"
             : contentType.includes("multipart/form-data")
               ? "multipart_form_data"
               : "json_text",
@@ -181,16 +189,20 @@ async function proxyRequest(request: NextRequest, params: { path: string[] }) {
       });
     }
 
-    const response = await fetch(url, {
+    const fetchInit: RequestInit & { duplex?: "half" } = {
       method: request.method,
       headers: headers,
       body: body,
-    });
+    };
+    if (body && typeof (body as { getReader?: unknown }).getReader === "function") {
+      fetchInit.duplex = "half";
+    }
+    const response = await fetch(url, fetchInit);
 
     // Check for SSE stream response
     const responseContentType = response.headers.get("content-type");
     if (voiceTraceTurnId) {
-      const shouldFinalize = path === "voice/tts" || response.status >= 400;
+      const shouldFinalize = !isVoiceRoute && (path === "voice/tts" || response.status >= 400);
       emitProxyVoiceStage(
         voiceTraceTurnId,
         "proxy_response_headers_received",
@@ -220,6 +232,21 @@ async function proxyRequest(request: NextRequest, params: { path: string[] }) {
 
     if (responseContentType?.includes("text/event-stream")) {
       console.log(`[Kai API] SSE stream detected, passing through`);
+      if (voiceTraceTurnId) {
+        emitProxyVoiceStage(
+          voiceTraceTurnId,
+          "proxy_response_body_forwarded",
+          {
+            method: request.method,
+            route: `/api/kai/${path}`,
+            status_code: response.status,
+            response_content_type: responseContentType || null,
+            stream_mode: true,
+            source: "nextjs_kai_proxy",
+          },
+          { finalize: true }
+        );
+      }
       // Return SSE stream directly without parsing
       return new Response(response.body, {
         status: response.status,
@@ -230,6 +257,28 @@ async function proxyRequest(request: NextRequest, params: { path: string[] }) {
           "Content-Encoding": "none",
           "X-Accel-Buffering": "no",
         },
+      });
+    }
+
+    if (isVoiceRoute) {
+      if (voiceTraceTurnId) {
+        emitProxyVoiceStage(
+          voiceTraceTurnId,
+          "proxy_response_body_forwarded",
+          {
+            method: request.method,
+            route: `/api/kai/${path}`,
+            status_code: response.status,
+            response_content_type: responseContentType || null,
+            stream_mode: false,
+            source: "nextjs_kai_proxy",
+          },
+          { finalize: true }
+        );
+      }
+      return new Response(response.body, {
+        status: response.status,
+        headers: new Headers(response.headers),
       });
     }
 
