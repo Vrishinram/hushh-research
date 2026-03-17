@@ -75,18 +75,22 @@ function defaultRuntimeForEnvironment(
 
 export function resolveDeveloperRuntime(currentOrigin?: string | null): DeveloperRuntime {
   const explicitAppUrl = normalizeOrigin(process.env.NEXT_PUBLIC_DEVELOPER_APP_URL);
-  const explicitApiOrigin = normalizeOrigin(process.env.NEXT_PUBLIC_DEVELOPER_API_URL);
+  const explicitApiOrigin =
+    normalizeOrigin(process.env.NEXT_PUBLIC_DEVELOPER_API_URL) ||
+    normalizeOrigin(process.env.NEXT_PUBLIC_BACKEND_URL);
   const explicitMcpUrl = normalizeOrigin(process.env.NEXT_PUBLIC_DEVELOPER_MCP_URL);
   const resolvedOrigin =
     normalizeOrigin(currentOrigin) ||
     (typeof window !== "undefined" ? normalizeOrigin(window.location.origin) : null);
 
-  const environment = resolveEnvironment(explicitAppUrl || resolvedOrigin);
+  const environment = resolveEnvironment(
+    explicitAppUrl || explicitApiOrigin || explicitMcpUrl || resolvedOrigin
+  );
   const defaults = defaultRuntimeForEnvironment(environment, resolvedOrigin);
 
-  const appUrl = explicitAppUrl || defaults.appUrl;
+  const appUrl = explicitAppUrl || resolvedOrigin || defaults.appUrl;
   const apiOrigin = explicitApiOrigin || defaults.apiOrigin;
-  const mcpOrigin = explicitMcpUrl || defaults.mcpUrl;
+  const mcpOrigin = explicitMcpUrl || apiOrigin || defaults.apiOrigin;
 
   return {
     environment,

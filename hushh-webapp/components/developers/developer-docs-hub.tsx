@@ -858,8 +858,8 @@ function MobileSectionsFab({
   );
 }
 
-export function DeveloperDocsHub() {
-  const runtime = resolveDeveloperRuntime();
+export function DeveloperDocsHub({ initialOrigin = null }: { initialOrigin?: string | null }) {
+  const runtime = resolveDeveloperRuntime(initialOrigin);
   const integrationModes = buildIntegrationModes(runtime);
   const restSnippets = buildRestSnippets(runtime);
   const mcpSnippets = buildMcpSnippets(runtime);
