@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Cable,
   ClipboardCopy,
@@ -954,7 +954,7 @@ export function DeveloperDocsHub({ initialOrigin = null }: { initialOrigin?: str
     return () => window.clearTimeout(timer);
   }, [isMobile]);
 
-  async function refreshAccess(currentUser = user) {
+  const refreshAccess = useCallback(async (currentUser = user) => {
     if (!currentUser) {
       setAccess(null);
       setAccessError(null);
@@ -974,7 +974,7 @@ export function DeveloperDocsHub({ initialOrigin = null }: { initialOrigin?: str
     } finally {
       setAccessLoading(false);
     }
-  }
+  }, [runtime, user]);
 
   useEffect(() => {
     if (loading) {
@@ -982,7 +982,7 @@ export function DeveloperDocsHub({ initialOrigin = null }: { initialOrigin?: str
     }
 
     void refreshAccess();
-  }, [loading, user]);
+  }, [loading, refreshAccess]);
 
   async function handleProviderSignIn(provider: "google" | "apple") {
     try {

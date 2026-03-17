@@ -264,7 +264,7 @@ export const DEVELOPER_SAMPLE_PAYLOADS: DeveloperSamplePayload[] = [
   },
 ];
 
-export function buildIntegrationModes(runtime: DeveloperRuntime): IntegrationMode[] {
+export function buildIntegrationModes(_runtime: DeveloperRuntime): IntegrationMode[] {
   return [
     {
       id: "remote-mcp",
