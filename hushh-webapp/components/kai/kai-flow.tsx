@@ -3152,7 +3152,7 @@ export function KaiFlow({
   }
 
   return (
-    <div className="flex w-full flex-col overflow-x-hidden">
+    <div className="flex w-full flex-col">
       {/* Error display */}
       {error && state !== "importing" && state !== "import_complete" && (
         <div className="mb-4 p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-600 dark:text-red-400">

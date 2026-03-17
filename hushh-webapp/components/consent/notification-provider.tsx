@@ -66,7 +66,7 @@ function consentFromFCMPayload(
   if (!requestId) return null;
   return {
     id: requestId,
-    developer: data.agent_id || "Unknown Agent",
+    developer: data.agent_label || data.agent_id || "Unknown Agent",
     scope: data.scope || "",
     scopeDescription: data.scope_description || undefined,
     requestedAt: Date.now(),

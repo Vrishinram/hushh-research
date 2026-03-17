@@ -21,6 +21,7 @@ import { StepProgressBar } from "@/components/app-ui/step-progress-bar";
 import { CacheProvider } from "@/lib/cache/cache-context";
 import { ConsentNotificationProvider } from "@/components/consent/notification-provider";
 import { resolveTopShellRouteProfile } from "@/components/app-ui/top-shell-metrics";
+import { resolveAppRouteLayoutMode } from "@/lib/navigation/app-route-layout";
 import { TopAppBar } from "@/components/app-ui/top-app-bar";
 import { Navbar } from "@/components/navbar";
 import { Toaster } from "@/components/ui/sonner";
@@ -47,25 +48,16 @@ interface ProvidersProps {
 
 export function Providers({ children }: ProvidersProps) {
   const pathname = usePathname();
-  const isImportRoute = pathname.startsWith("/kai/import");
   const chromeState = useMemo(() => getKaiChromeState(pathname), [pathname]);
+  const routeLayoutMode = useMemo(() => resolveAppRouteLayoutMode(pathname), [pathname]);
   const topShellRouteProfile = useMemo(
     () => resolveTopShellRouteProfile(pathname),
     [pathname]
   );
   const topShellMetrics = topShellRouteProfile.metrics;
   const hideGlobalChrome = !topShellMetrics.shellVisible;
-  const isFullscreenTopFlow = topShellMetrics.contentOffsetMode === "fullscreen-flow";
-  const shouldLockFullscreenRoot = isFullscreenTopFlow && !isImportRoute;
-  const routeOwnsTopPadding =
-    topShellMetrics.shellVisible &&
-    !isFullscreenTopFlow &&
-    !pathname.startsWith("/kai/onboarding") &&
-    !pathname.startsWith("/kai/import");
-  const shouldRenderTopSpacer =
-    topShellMetrics.shellVisible &&
-    !routeOwnsTopPadding &&
-    (!isFullscreenTopFlow || isImportRoute);
+  const isFullscreenTopFlow = routeLayoutMode === "flow";
+  const shouldLockFullscreenRoot = isFullscreenTopFlow;
   const topShellRouteStyle = useMemo(
     () =>
       ({
@@ -76,9 +68,6 @@ export function Providers({ children }: ProvidersProps) {
         "--top-systembar-row-gap": topShellMetrics.hasTabs ? "2px" : "0px",
         "--top-fade-active": topShellMetrics.hasTabs ? "24px" : "22px",
         "--top-content-pad": "var(--top-shell-reserved-height)",
-        "--page-top-breathing-space": topShellMetrics.hasTabs ? "32px" : "28px",
-        "--page-top-start":
-          "calc(var(--top-shell-reserved-height) + var(--page-top-breathing-space))",
         "--kai-route-content-gap": topShellMetrics.hasTabs ? "28px" : "20px",
         "--kai-route-content-gap-sm": topShellMetrics.hasTabs ? "32px" : "24px",
         "--app-top-shell-visible": topShellMetrics.shellVisible ? "1" : "0",
@@ -204,13 +193,6 @@ export function Providers({ children }: ProvidersProps) {
                           : "flex-1 overflow-y-auto overflow-x-hidden overscroll-x-none touch-pan-y pb-[var(--app-scroll-bottom-pad,var(--app-bottom-inset))] relative z-10 min-h-0"
                       }
                     >
-                      {shouldRenderTopSpacer ? (
-                        <div
-                          aria-hidden
-                          className="w-full shrink-0"
-                          style={{ height: "var(--page-top-start)" }}
-                        />
-                      ) : null}
                       <div
                         ref={pageRef}
                         className={shouldLockFullscreenRoot ? "min-h-0 h-full" : "min-h-0"}

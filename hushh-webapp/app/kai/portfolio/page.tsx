@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { AppPageShell } from "@/components/app-ui/app-page-shell";
 import { KaiFlow, type FlowState } from "@/components/kai/kai-flow";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { useStepProgress } from "@/lib/progress/step-progress-context";
@@ -39,8 +40,12 @@ export default function KaiPortfolioPage() {
   }
 
   return (
-    <div className="app-page-shell relative w-full overflow-x-hidden">
-      <div className="w-full pb-32">
+    <AppPageShell
+      as="div"
+      width="wide"
+      className="relative pb-32"
+    >
+      <div className="w-full">
         <KaiFlow
           userId={user.uid}
           mode="dashboard"
@@ -48,6 +53,6 @@ export default function KaiPortfolioPage() {
           onStateChange={setFlowState}
         />
       </div>
-    </div>
+    </AppPageShell>
   );
 }

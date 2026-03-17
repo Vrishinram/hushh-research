@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { BriefcaseBusiness, ShieldCheck, TriangleAlert } from "lucide-react";
 
+import { AppPageShell } from "@/components/app-ui/app-page-shell";
 import {
   ContentSurface,
   PageHeader,
@@ -31,12 +32,7 @@ export function RiaPageShell({
   className?: string;
 }) {
   return (
-    <main
-      className={cn(
-        "app-page-shell mx-auto w-full max-w-4xl px-4 pb-28 sm:px-6",
-        className
-      )}
-    >
+    <AppPageShell as="main" width="content" className={cn("pb-28", className)}>
       <PageHeader
         eyebrow={eyebrow}
         title={title}
@@ -48,7 +44,7 @@ export function RiaPageShell({
       {statusPanel ? <div className="mt-6">{statusPanel}</div> : null}
 
       <div className="mt-6 space-y-7">{children}</div>
-    </main>
+    </AppPageShell>
   );
 }
 

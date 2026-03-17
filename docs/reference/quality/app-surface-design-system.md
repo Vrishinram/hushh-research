@@ -44,6 +44,25 @@ Rules:
 6. Standalone actions should use the shared `Button` primitive so ripple, loading, and emphasis stay consistent across the app.
 7. Do not ship raw clickable pills or text links for primary app actions when a shared button or row primitive already exists.
 
+## Surface Card Contract
+
+Rules:
+
+1. Shared app cards must originate from the `surface` card preset, not page-level radius/shadow recipes.
+2. Prefer `SurfaceCard`, `ChartSurfaceCard`, `FallbackSurfaceCard`, and `SurfaceInset` from `components/app-ui/surfaces.tsx`.
+3. `Card` remains the low-level primitive. App pages should not re-specify:
+   - outer radius
+   - outer shadow
+   - border opacity
+   - glass background treatment
+4. Standard header/content spacing for app-facing cards must come from:
+   - `SurfaceCardHeader`
+   - `SurfaceCardContent`
+   - `SurfaceCardTitle`
+5. Page files may control layout width and grid placement, but not reinvent card chrome.
+6. Nested content should use `SurfaceInset` or another semantic surface helper instead of raw `rounded-[..] border bg ...` blocks where possible.
+7. Feature/hero summary cards may use the `surface-feature` preset, but they must stay in the same visual family as default data surfaces.
+
 ## Icon Policy
 
 Rules:

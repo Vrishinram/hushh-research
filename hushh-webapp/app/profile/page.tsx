@@ -31,6 +31,7 @@ import {
   SettingsSegmentedTabs,
 } from "@/components/profile/settings-ui";
 import { ConsentCenterView } from "@/components/consent/consent-center-view";
+import { AppPageShell } from "@/components/app-ui/app-page-shell";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -906,7 +907,11 @@ export default function ProfilePage() {
   ];
 
   return (
-    <div className="app-page-shell mx-auto w-full max-w-[860px] px-4 pb-[calc(var(--app-bottom-fixed-ui,96px)+1.25rem)] sm:px-6 sm:pb-10 md:pb-8">
+    <AppPageShell
+      as="div"
+      width="profile"
+      className="pb-[calc(var(--app-bottom-fixed-ui,96px)+1.25rem)] sm:pb-10 md:pb-8"
+    >
       <div className="space-y-5 sm:space-y-6 md:space-y-8">
         <header className="space-y-4 sm:space-y-5">
           <div className="flex flex-col items-start gap-3 text-left min-[430px]:flex-row min-[430px]:items-center sm:gap-4">
@@ -1515,6 +1520,6 @@ export default function ProfilePage() {
           vaultOwnerToken={vaultOwnerToken as string}
         />
       )}
-    </div>
+    </AppPageShell>
   );
 }

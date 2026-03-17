@@ -91,7 +91,9 @@ export const Navbar = () => {
       useKaiSession.getState().setLastRiaPath(pathname);
     }
   }, [pathname]);
-  const hideNavbar = pathname?.startsWith(ROUTES.LABS_PROFILE_APPEARANCE);
+  const hideNavbar =
+    pathname?.startsWith(ROUTES.LABS_PROFILE_APPEARANCE) ||
+    pathname === ROUTES.DEVELOPERS;
 
   useEffect(() => {
       if (activePersona === "ria") {

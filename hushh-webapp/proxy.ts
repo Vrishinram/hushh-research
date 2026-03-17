@@ -12,6 +12,7 @@ import { ROUTES, isPublicRoute } from "./lib/navigation/routes";
 // Routes that don't require authentication (VaultLockGuard handles protected routes)
 const PUBLIC_ROUTES = [
   ROUTES.HOME,
+  ROUTES.DEVELOPERS,
   ROUTES.LOGIN,
   ROUTES.LOGOUT,
   ROUTES.PROFILE,

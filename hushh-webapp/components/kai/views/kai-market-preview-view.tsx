@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 
 import { PageHeader, SectionHeader } from "@/components/app-ui/page-sections";
+import { AppPageShell } from "@/components/app-ui/app-page-shell";
 import { NewsTape } from "@/components/kai/home/news-tape";
 import { ConnectPortfolioCta } from "@/components/kai/cards/connect-portfolio-cta";
 import { MarketOverviewGrid, type MarketOverviewMetric } from "@/components/kai/cards/market-overview-grid";
@@ -943,7 +944,11 @@ export function KaiMarketPreviewView() {
   }, [activePickSource]);
 
   return (
-    <div className="app-page-shell mx-auto w-full max-w-5xl space-y-8 overflow-x-hidden px-4 pb-8 sm:px-6 lg:px-8">
+    <AppPageShell
+      as="div"
+      width="wide"
+      className="space-y-8 pb-8"
+    >
       <PageHeader
         eyebrow="Market"
         title="Explore the market with Kai"
@@ -1139,6 +1144,6 @@ export function KaiMarketPreviewView() {
           <ConnectPortfolioCta />
         </section>
       ) : null}
-    </div>
+    </AppPageShell>
   );
 }

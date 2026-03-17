@@ -68,8 +68,10 @@ export interface MorphyCardBaseProps extends MorphyInteractiveProps {
    * Design-system preset for consistent radius/elevation without per-callsite className.
    * - "default": standard card surface
    * - "hero": large-radius, elevated hero surface (e.g. onboarding previews)
+   * - "surface": shared app data surface with standardized card chrome
+   * - "surface-feature": emphasized shared app surface for hero/summary cards
    */
-  preset?: "default" | "hero";
+  preset?: "default" | "hero" | "surface" | "surface-feature";
   /**
    * Optional glass accent overlay for depth/highlight on glass cards.
    * Keep centralized via tokens so light/dark stay balanced.

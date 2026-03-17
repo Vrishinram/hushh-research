@@ -15,6 +15,7 @@ import {
 import { toast } from "sonner";
 
 import { PortfolioSourceSwitcher } from "@/components/kai/portfolio-source-switcher";
+import { AppPageShell } from "@/components/app-ui/app-page-shell";
 import { PageHeader } from "@/components/app-ui/page-sections";
 import { SettingsGroup, SettingsRow } from "@/components/profile/settings-ui";
 import { PlaidBrokerageSummarySection, PlaidInvestmentAccountsSection } from "@/components/kai/plaid/plaid-brokerage-sections";
@@ -392,17 +393,25 @@ export function InvestmentsMasterView({
 
   if (isLoading && !workingPortfolio) {
     return (
-      <div className="app-page-shell mx-auto flex w-full max-w-5xl items-center justify-center px-5 pb-10 sm:px-8">
+      <AppPageShell
+        as="div"
+        width="wide"
+        className="flex items-center justify-center pb-10"
+      >
         <div className="flex items-center gap-3 rounded-[24px] border border-border/70 bg-background/84 px-5 py-5 text-sm text-muted-foreground shadow-sm backdrop-blur-xl">
           <Loader2 className="h-4 w-4 animate-spin" />
           Loading investments...
         </div>
-      </div>
+      </AppPageShell>
     );
   }
 
   return (
-    <div className="app-page-shell mx-auto w-full max-w-5xl space-y-6 overflow-x-hidden px-5 pb-10 sm:px-8">
+    <AppPageShell
+      as="div"
+      width="wide"
+      className="space-y-6 pb-10"
+    >
       <PageHeader
         eyebrow="Kai Investments"
         title="Investments"
@@ -501,7 +510,7 @@ export function InvestmentsMasterView({
 
       {equitySectorHoldings.length > 0 ? (
         <SectorAllocationChart
-          className="min-w-0 overflow-hidden rounded-[24px]"
+          className="min-w-0"
           holdings={equitySectorHoldings}
           title="Equity sector view"
           subtitle={`Built from the current ${sourceLabel.toLowerCase()} source and ready for debate context.`}
@@ -590,6 +599,6 @@ export function InvestmentsMasterView({
           trailing={<ArrowRight className="h-4 w-4 text-muted-foreground" />}
         />
       </SettingsGroup>
-    </div>
+    </AppPageShell>
   );
 }

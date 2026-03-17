@@ -30,6 +30,7 @@ import {
 import { ROUTES } from "@/lib/navigation/routes";
 import { Button } from "@/lib/morphy-ux/button";
 import { Badge } from "@/components/ui/badge";
+import { AppPageShell } from "@/components/app-ui/app-page-shell";
 import {
   Select,
   SelectContent,
@@ -1067,11 +1068,10 @@ export function ConsentCenterView({
   }
 
   return (
-    <div
-      className={cn(
-        "app-page-shell mx-auto w-full max-w-4xl space-y-6 px-4 pb-6 sm:px-6 md:pb-8",
-        className
-      )}
+    <AppPageShell
+      as="div"
+      width="content"
+      className={cn("space-y-6 pb-6 md:pb-8", className)}
     >
       <PageHeader
         eyebrow={actor === "ria" ? "Consent Workspace" : "Consent Center"}
@@ -1100,6 +1100,6 @@ export function ConsentCenterView({
         }
       />
       {content}
-    </div>
+    </AppPageShell>
   );
 }

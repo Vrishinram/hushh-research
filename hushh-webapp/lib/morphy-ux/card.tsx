@@ -54,6 +54,8 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
     ref
   ) => {
     const Comp = asChild ? Slot : StockCard;
+    const isHeroPreset = preset === "hero";
+    const isSurfacePreset = preset === "surface" || preset === "surface-feature";
     const variantStyles = showRipple
       ? getVariantStyles(variant, effect)
       : getVariantStylesNoHover(variant, effect);
@@ -112,21 +114,34 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
       <Comp
         ref={ref}
         className={cn(
-          "relative rounded-lg border border-solid text-card-foreground p-4 sm:p-6 transition-[border-color,box-shadow,background-color] duration-200",
-          "shadow-[0_1px_3px_0_rgb(0_0_0_/_0.3),_0_1px_2px_-1px_rgb(0_0_0_/_0.2)]",
-          preset === "hero" &&
+          "relative border border-solid text-card-foreground transition-[border-color,box-shadow,background-color] duration-200",
+          !isHeroPreset &&
+            !isSurfacePreset &&
+            "rounded-lg p-4 shadow-[0_1px_3px_0_rgb(0_0_0_/_0.3),_0_1px_2px_-1px_rgb(0_0_0_/_0.2)] sm:p-6",
+          isHeroPreset &&
             "p-0 rounded-3xl shadow-[0_18px_60px_rgba(0,0,0,0.10)]",
-          variant === "muted"
+          preset === "surface" &&
+            "min-w-0 rounded-[24px] p-0 !border-border/60 bg-background/82 shadow-[0_16px_42px_rgba(15,23,42,0.06)] backdrop-blur-xl",
+          preset === "surface-feature" &&
+            "min-w-0 rounded-[26px] p-0 !border-border/65 bg-background/90 shadow-[0_18px_48px_rgba(15,23,42,0.08)] backdrop-blur-xl",
+          !isSurfacePreset &&
+            variant === "muted"
             ? "bg-white/60 dark:bg-background/40 border-border/30"
-            : effect === "glass"
+            : !isSurfacePreset && effect === "glass"
             ? ""
-            : "bg-white/80 dark:bg-gray-900/40",
-          effect === "fade" ? "!backdrop-blur-none" : "backdrop-blur-[6px]",
-          variantStyles,
+            : !isSurfacePreset
+              ? "bg-white/80 dark:bg-gray-900/40"
+              : "",
+          effect === "fade"
+            ? "!backdrop-blur-none"
+            : !isSurfacePreset
+              ? "backdrop-blur-[6px]"
+              : "",
+          !isSurfacePreset ? variantStyles : "",
           showRipple ? "overflow-hidden" : "",
           showRipple
             ? "!border-transparent hover:!border-[var(--morphy-primary-start)]"
-            : variant === "muted"
+            : variant === "muted" || isSurfacePreset
             ? ""
             : "!border-transparent",
           interactive ? "cursor-pointer" : "",

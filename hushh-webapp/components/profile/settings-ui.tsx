@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { ChevronRight } from "lucide-react";
 import { Slot } from "radix-ui";
@@ -28,22 +28,30 @@ export function SettingsSegmentedTabs({
   value,
   onValueChange,
   options,
+  mobileColumns,
   className,
 }: {
   value: string;
   onValueChange: (value: string) => void;
   options: Array<{ value: string; label: string }>;
+  mobileColumns?: number;
   className?: string;
 }) {
+  const resolvedDesktopColumns = Math.max(options.length, 1);
+  const resolvedMobileColumns = Math.max(mobileColumns ?? resolvedDesktopColumns, 1);
+
   return (
     <div
       className={cn(
-        "relative grid w-full grid-cols-3 rounded-[20px] border border-border/80 bg-muted/60 p-1 shadow-sm backdrop-blur-xl sm:rounded-[22px]",
+        "relative grid w-full rounded-[20px] border border-border/80 bg-muted/60 p-1 shadow-sm backdrop-blur-xl [grid-template-columns:repeat(var(--segmented-mobile-cols),minmax(0,1fr))] sm:rounded-[22px] sm:[grid-template-columns:repeat(var(--segmented-desktop-cols),minmax(0,1fr))]",
         className
       )}
-      style={{
-        gridTemplateColumns: `repeat(${Math.max(options.length, 1)}, minmax(0, 1fr))`,
-      }}
+      style={
+        {
+          "--segmented-mobile-cols": String(resolvedMobileColumns),
+          "--segmented-desktop-cols": String(resolvedDesktopColumns),
+        } as CSSProperties
+      }
     >
       {options.map((option) => {
         const isActive = option.value === value;

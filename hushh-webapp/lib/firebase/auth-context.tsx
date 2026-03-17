@@ -59,7 +59,7 @@ interface AuthContextType {
   // Methods
   sendOTP: (phoneNumber: string) => Promise<ConfirmationResult>;
   verifyOTP: (otp: string) => Promise<User>;
-  signOut: () => Promise<void>;
+  signOut: (options?: { redirectTo?: string }) => Promise<void>;
   checkAuth: () => Promise<void>; // Manually trigger auth check (e.g. after native login)
   setNativeUser: (user: User | null) => void; // Helper to manually set user state
 }
@@ -224,8 +224,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, [checkAuth]); // FIXED: Removed `user` from dependencies to prevent render loop
 
   // Sign out
-  const signOut = async (): Promise<void> => {
+  const signOut = async (options?: { redirectTo?: string }): Promise<void> => {
     const currentUid = user?.uid ?? null;
+    const redirectTo = options?.redirectTo || ROUTES.HOME;
     try {
       // Delete FCM token before signing out (requires auth)
       if (currentUid) {
@@ -265,7 +266,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       localStorage.removeItem("user_id");
       sessionStorage.clear();
 
-      router.push(ROUTES.HOME);
+      router.push(redirectTo);
     }
   };
 

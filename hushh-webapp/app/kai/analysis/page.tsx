@@ -6,6 +6,7 @@ import { ArrowLeft, BarChart3, X } from "lucide-react";
 import { morphyToast as toast } from "@/lib/morphy-ux/morphy";
 
 import { PageHeader } from "@/components/app-ui/page-sections";
+import { AppPageShell } from "@/components/app-ui/app-page-shell";
 import { DebateStreamView, type AgentState } from "@/components/kai/debate-stream-view";
 import { HushhLoader } from "@/components/app-ui/hushh-loader";
 import { AnalysisHistoryDashboard } from "@/components/kai/views/analysis-history-dashboard";
@@ -556,15 +557,15 @@ export default function KaiAnalysisPage() {
 
   if (!user || !userId) {
     return (
-      <div className="flex min-h-96 items-center justify-center">
+      <AppPageShell as="div" width="content" className="flex min-h-96 items-center justify-center">
         <HushhLoader variant="inline" label={toInvestorLoading("ANALYSIS")} />
-      </div>
+      </AppPageShell>
     );
   }
 
   if (!vaultKey) {
     return (
-      <div className="app-page-shell mx-auto w-full max-w-xl px-4">
+      <AppPageShell as="div" width="narrow">
         <div className="rounded-2xl border border-border/60 bg-background/80 p-5 text-center">
           <h2 className="text-lg font-semibold">Connect your portfolio first</h2>
           <p className="mt-2 text-sm text-muted-foreground">
@@ -583,18 +584,16 @@ export default function KaiAnalysisPage() {
             </MorphyButton>
           </div>
         </div>
-      </div>
+      </AppPageShell>
     );
   }
 
   return (
-    <div className="overflow-x-hidden">
+    <div className="w-full">
       {showWorkspace ? (
-        <div
-          ref={workspaceTopRef}
-          className="app-page-shell mx-auto w-full max-w-6xl space-y-4 px-4 sm:px-6"
-        >
-          <div className="space-y-3">
+        <AppPageShell as="div" width="wide">
+          <div ref={workspaceTopRef} className="space-y-4">
+            <div className="space-y-3">
             <PageHeader
               eyebrow="Kai Analysis"
               title="Analysis"
@@ -738,10 +737,11 @@ export default function KaiAnalysisPage() {
                 )}
               </TabsContent>
             </Tabs>
+            </div>
           </div>
-        </div>
+        </AppPageShell>
       ) : !resolvingEntry ? (
-        <div className="space-y-3 pt-3">
+        <AppPageShell as="div" width="wide" className="space-y-3">
           <div className="mx-auto w-full max-w-6xl px-4 sm:px-6">
             <PageHeader
               eyebrow="Kai Analysis"
@@ -795,13 +795,13 @@ export default function KaiAnalysisPage() {
             onSelectTicker={handleSelectTicker}
             onViewHistory={handleViewHistory}
           />
-        </div>
+        </AppPageShell>
       ) : null}
 
       {resolvingEntry ? (
-        <div className="flex min-h-64 items-center justify-center">
+        <AppPageShell as="div" width="content" className="flex min-h-64 items-center justify-center">
           <HushhLoader variant="inline" label="Loading saved analysis..." />
-        </div>
+        </AppPageShell>
       ) : null}
     </div>
   );

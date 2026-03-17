@@ -133,10 +133,8 @@ html body[data-scroll-locked] {
   --top-shell-h: var(--top-shell-reserved-height);
   --top-glass-h: var(--top-shell-visual-height);
   --top-content-pad: var(--top-shell-reserved-height);
-  --page-top-breathing-space: 24px;
-  --page-top-start: calc(
-    var(--top-shell-reserved-height) + var(--page-top-breathing-space)
-  );
+  --page-inline-gutter-standard: 24px;
+  --page-top-start: 85px;
   --bottom-chrome-stack-height: calc(var(--app-bottom-inset) + var(--kai-command-fixed-ui));
   --bottom-chrome-fade-overscan: 24px;
   --bottom-chrome-full-height: calc(
@@ -293,10 +291,18 @@ html body[data-scroll-locked] {
 
 .app-page-shell {
   padding-top: var(--page-top-start);
+  padding-inline: var(--page-inline-gutter-standard);
+}
+
+@media (min-width: 640px) {
+  :root {
+    --page-inline-gutter-standard: 28px;
+  }
 }
 
 .native-ios {
   --app-top-safe-offset: 2px;
+  --page-top-start: max(85px, calc(var(--top-shell-reserved-height) + 12px));
 }
 
 /* Capacitor iOS uses `ios.contentInset = "never"` with CSS-owned insets; don't double-count shell spacing. */

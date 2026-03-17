@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/firebase/auth-context";
+import { AppPageShell } from "@/components/app-ui/app-page-shell";
 import { useVault } from "@/lib/vault/vault-context";
 import { ApiService } from "@/lib/services/api-service";
 import { KaiProfileService, type KaiProfileV2 } from "@/lib/services/kai-profile-service";
@@ -589,7 +590,7 @@ export default function PortfolioHealthPage() {
     ].join("\n");
 
   return (
-    <div className="w-full mx-auto space-y-4 px-4 py-4 sm:px-6 sm:py-6 md:max-w-5xl">
+    <AppPageShell as="div" width="wide" className="space-y-4 pb-6 sm:pb-8">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Icon icon={Activity} size="md" className="text-emerald-500" />
@@ -1237,6 +1238,6 @@ export default function PortfolioHealthPage() {
           </div>
         </>
       )}
-    </div>
+    </AppPageShell>
   );
 }
