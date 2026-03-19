@@ -1055,8 +1055,8 @@ export default function ProfilePage() {
               />
               <SettingsRow
                 icon={Cloud}
-                title="Sync to cloud"
-                description="Optional device-level sync controls will land here in a later phase."
+                title="On-device first"
+                description="BYOK for cloud models."
                 trailing={<Badge variant="secondary">Coming soon</Badge>}
                 stackTrailingOnMobile
               />

@@ -180,6 +180,12 @@ export function SettingsRow({
   const Comp = asChild ? Slot.Root : onClick ? "button" : "div";
   const rowRadiusClassName =
     "[--settings-row-top-radius:0px] [--settings-row-bottom-radius:0px] first:[--settings-row-top-radius:calc(var(--settings-group-radius)-1px)] last:[--settings-row-bottom-radius:calc(var(--settings-group-radius)-1px)] [border-top-left-radius:var(--settings-row-top-radius)] [border-top-right-radius:var(--settings-row-top-radius)] [border-bottom-left-radius:var(--settings-row-bottom-radius)] [border-bottom-right-radius:var(--settings-row-bottom-radius)]";
+  const rowShellClassName = cn(
+    "group/settings-row relative isolate overflow-hidden bg-transparent",
+    rowRadiusClassName,
+    disabled && "cursor-not-allowed opacity-60",
+    className
+  );
   const content = (
     <>
       <div
@@ -239,39 +245,27 @@ export function SettingsRow({
   );
 
   const sharedClassName = cn(
-    "group relative isolate grid w-full appearance-none border-0 bg-transparent px-3 py-3.5 text-left outline-hidden ring-0 [-webkit-tap-highlight-color:transparent] sm:px-4 sm:py-4",
-    rowRadiusClassName,
+    "relative z-10 grid w-full appearance-none border-0 bg-transparent px-3 py-3.5 text-left outline-hidden ring-0 [-webkit-tap-highlight-color:transparent] sm:px-4 sm:py-4",
     shouldStackTrailing
       ? "grid-cols-1 gap-y-2.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-x-3 sm:gap-y-0"
       : "grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3",
     isInteractive &&
-      "transition-[border-color,box-shadow] focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0",
-    disabled && "cursor-not-allowed opacity-60",
-    className
+      "transition-[border-color,box-shadow] focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0"
   );
 
   return (
-    <Comp
-      {...(!asChild && onClick
-        ? { type: "button" as const, onClick, disabled }
-        : !asChild
-          ? { "aria-disabled": disabled || undefined }
-          : {})}
-      className={sharedClassName}
-    >
+    <div className={rowShellClassName}>
       {isInteractive ? (
         <span
           aria-hidden
           className={cn(
             "pointer-events-none absolute inset-0 z-[1] bg-transparent transition-[background-color]",
-            rowRadiusClassName,
-            "group-hover:bg-muted/36 group-active:bg-muted/48"
+            "group-hover/settings-row:bg-muted/36 group-active/settings-row:bg-muted/48"
           )}
         />
       ) : null}
-      {content}
       {isInteractive ? (
-        <div aria-hidden className={cn("pointer-events-none absolute inset-0 z-[2] overflow-hidden", rowRadiusClassName)}>
+        <div aria-hidden className="pointer-events-none absolute inset-0 z-[2] overflow-hidden rounded-[inherit]">
           <MaterialRipple
             variant="none"
             effect="fade"
@@ -280,7 +274,17 @@ export function SettingsRow({
           />
         </div>
       ) : null}
-    </Comp>
+      <Comp
+        {...(!asChild && onClick
+          ? { type: "button" as const, onClick, disabled }
+          : !asChild
+            ? { "aria-disabled": disabled || undefined }
+            : {})}
+        className={sharedClassName}
+      >
+        {content}
+      </Comp>
+    </div>
   );
 }
 
