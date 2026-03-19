@@ -58,7 +58,7 @@ describe("app route layout contract", () => {
 
   it("resolves the expected layout modes for representative paths", () => {
     expect(resolveAppRouteLayoutMode("/")).toBe("hidden");
-    expect(resolveAppRouteLayoutMode("/developers")).toBe("hidden");
+    expect(resolveAppRouteLayoutMode("/developers")).toBe("standard");
     expect(resolveAppRouteLayoutMode("/login")).toBe("hidden");
     expect(resolveAppRouteLayoutMode("/kai")).toBe("standard");
     expect(resolveAppRouteLayoutMode("/kai/onboarding")).toBe("flow");

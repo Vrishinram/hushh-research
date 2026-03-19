@@ -39,6 +39,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { PageHeader, SectionHeader, ContentSurface } from "@/components/app-ui/page-sections";
+import { SurfaceInset, SurfaceStack } from "@/components/app-ui/surfaces";
 import { useConsentNotificationState } from "@/components/consent/notification-provider";
 import { Icon } from "@/lib/morphy-ux/ui";
 import { SegmentedPill, type SegmentedPillOption } from "@/lib/morphy-ux/ui";
@@ -472,7 +473,7 @@ export function ConsentCenterView({
     const isExpanded = expandedBundles[bundle.bundleId] ?? false;
 
     return (
-      <div key={`bundle-${bundle.bundleId}`} className="space-y-4 rounded-[24px] border border-border/60 bg-background/70 px-5 py-5">
+      <SurfaceInset key={`bundle-${bundle.bundleId}`} className="space-y-4 px-5 py-5">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div className="min-w-0 space-y-2">
             <div className="flex flex-wrap items-center gap-2">
@@ -511,7 +512,7 @@ export function ConsentCenterView({
           </div>
         </div>
 
-        <div className="space-y-4 rounded-[22px] border border-border/60 bg-background/75 p-4">
+        <SurfaceInset className="space-y-4 p-4">
           <div className="space-y-2">
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
               Approval mode
@@ -662,8 +663,8 @@ export function ConsentCenterView({
               Deny bundle
             </Button>
           </div>
-        </div>
-      </div>
+        </SurfaceInset>
+      </SurfaceInset>
     );
   };
 
@@ -792,7 +793,7 @@ export function ConsentCenterView({
       </div>
 
       {actor === "investor" && !isVaultUnlocked ? (
-        <ContentSurface className="space-y-3">
+        <ContentSurface className="space-y-3" accent="sky">
           <SectionHeader
             eyebrow="Vault"
             title="Unlock is required for investor decisions"
@@ -811,7 +812,7 @@ export function ConsentCenterView({
       ) : null}
 
       {riaCapability === "setup" ? (
-        <ContentSurface className="space-y-3">
+        <ContentSurface className="space-y-3" accent="emerald">
           <SectionHeader
             eyebrow="RIA setup"
             title="The same account can activate RIA mode"
@@ -830,7 +831,11 @@ export function ConsentCenterView({
       ) : null}
 
       {actor === "investor" && deliveryCopy ? (
-        <ContentSurface className="space-y-3">
+        <ContentSurface
+          className="space-y-3"
+          tone={notificationState.deliveryMode === "push_blocked" ? "warning" : "default"}
+          accent={notificationState.deliveryMode === "push_failed_fallback_active" ? "amber" : "none"}
+        >
           <SectionHeader
             eyebrow="Notifications"
             title={deliveryCopy.title}
@@ -862,23 +867,23 @@ export function ConsentCenterView({
           ) : null}
           {notificationState.deliveryMode !== "push_active" ? (
             <div className="grid gap-3 px-5 pb-5 md:grid-cols-3">
-              <div className="rounded-[20px] border border-border/60 bg-background/70 p-4">
+              <SurfaceInset className="p-4">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
                   Browser permission
                 </p>
                 <p className="mt-2 text-sm text-foreground">
                   Confirm notifications are allowed for this origin before retrying.
                 </p>
-              </div>
-              <div className="rounded-[20px] border border-border/60 bg-background/70 p-4">
+              </SurfaceInset>
+              <SurfaceInset className="p-4">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
                   Token registration
                 </p>
                 <p className="mt-2 text-sm text-foreground">
                   A healthy retry should create a row in <code>user_push_tokens</code>.
                 </p>
-              </div>
-              <div className="rounded-[20px] border border-border/60 bg-background/70 p-4">
+              </SurfaceInset>
+              <SurfaceInset className="p-4">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
                   Firebase Console
                 </p>
@@ -886,7 +891,7 @@ export function ConsentCenterView({
                   Check the active project&apos;s Cloud Messaging web configuration and
                   use the project-specific VAPID key.
                 </p>
-              </div>
+              </SurfaceInset>
             </div>
           ) : null}
         </ContentSurface>
@@ -896,7 +901,7 @@ export function ConsentCenterView({
       center?.self_activity_summary &&
       (center.self_activity_summary.active_sessions > 0 ||
         center.self_activity_summary.recent.length > 0) ? (
-        <ContentSurface className="space-y-3">
+        <ContentSurface className="space-y-3" accent="violet">
           <SectionHeader
             eyebrow="Self activity"
             title="Your own vault activity stays separate"
@@ -904,30 +909,30 @@ export function ConsentCenterView({
             icon={Activity}
           />
           <div className="grid gap-3 px-5 pb-5 md:grid-cols-3">
-            <div className="rounded-[20px] border border-border/60 bg-background/70 p-4">
+            <SurfaceInset className="p-4">
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
                 Active sessions
               </p>
               <p className="mt-2 text-2xl font-semibold text-foreground">
                 {center.self_activity_summary.active_sessions}
               </p>
-            </div>
-            <div className="rounded-[20px] border border-border/60 bg-background/70 p-4">
+            </SurfaceInset>
+            <SurfaceInset className="p-4">
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
                 Last 24 hours
               </p>
               <p className="mt-2 text-2xl font-semibold text-foreground">
                 {center.self_activity_summary.recent_operations_24h}
               </p>
-            </div>
-            <div className="rounded-[20px] border border-border/60 bg-background/70 p-4">
+            </SurfaceInset>
+            <SurfaceInset className="p-4">
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
                 Latest activity
               </p>
               <p className="mt-2 text-sm font-medium text-foreground">
                 {formatDate(center.self_activity_summary.last_activity_at) || "No recent activity"}
               </p>
-            </div>
+            </SurfaceInset>
           </div>
           {center.self_activity_summary.recent.length > 0 ? (
             <div className="divide-y divide-border/60">
@@ -1026,9 +1031,9 @@ export function ConsentCenterView({
                         <div className="space-y-3">
                           {groupedBundles.map(renderBundleCard)}
                           {groupedEntries.length > 0 ? (
-                            <div className="divide-y divide-border/60 rounded-[24px] border border-border/60 bg-background/65">
+                            <SurfaceInset className="divide-y divide-border/60 p-0">
                               {groupedEntries.map(renderEntryRow)}
-                            </div>
+                            </SurfaceInset>
                           ) : null}
                         </div>
                       </div>
@@ -1071,35 +1076,37 @@ export function ConsentCenterView({
     <AppPageShell
       as="div"
       width="content"
-      className={cn("space-y-6 pb-6 md:pb-8", className)}
+      className={cn("pb-6 md:pb-8", className)}
     >
-      <PageHeader
-        eyebrow={actor === "ria" ? "Consent Workspace" : "Consent Center"}
-        title={
-          actor === "ria"
-            ? "Outgoing requests, invites, and live advisor access"
-            : "Pending, active, and previous Kai access"
-        }
-        description={
-          actor === "ria"
-            ? "Use the shared consent workspace to send request bundles, track investor decisions, and open ready workspaces without leaving the main shell."
-            : "One place to review pending approvals, active grants, and the full consent log for the current persona."
-        }
-        icon={ClipboardList}
-        actions={
-          <Button
-            variant="none"
-            effect="fade"
-            size="default"
-            onClick={() => void loadCenter({ force: true, silent: true })}
-            disabled={refreshing}
-          >
-            <Icon icon={RefreshCw} size="sm" className={refreshing ? "mr-2 animate-spin" : "mr-2"} />
-            Refresh
-          </Button>
-        }
-      />
-      {content}
+      <SurfaceStack>
+        <PageHeader
+          eyebrow={actor === "ria" ? "Consent Workspace" : "Consent Center"}
+          title={
+            actor === "ria"
+              ? "Outgoing requests, invites, and live advisor access"
+              : "Pending, active, and previous Kai access"
+          }
+          description={
+            actor === "ria"
+              ? "Use the shared consent workspace to send request bundles, track investor decisions, and open ready workspaces without leaving the main shell."
+              : "One place to review pending approvals, active grants, and the full consent log for the current persona."
+          }
+          icon={ClipboardList}
+          actions={
+            <Button
+              variant="none"
+              effect="fade"
+              size="default"
+              onClick={() => void loadCenter({ force: true, silent: true })}
+              disabled={refreshing}
+            >
+              <Icon icon={RefreshCw} size="sm" className={refreshing ? "mr-2 animate-spin" : "mr-2"} />
+              Refresh
+            </Button>
+          }
+        />
+        {content}
+      </SurfaceStack>
     </AppPageShell>
   );
 }

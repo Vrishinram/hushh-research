@@ -7,6 +7,7 @@ import { ClipboardList, Loader2, Shield, Unplug, Waves } from "lucide-react";
 import { toast } from "sonner";
 
 import { SectionHeader } from "@/components/app-ui/page-sections";
+import { SurfaceInset } from "@/components/app-ui/surfaces";
 import { SettingsGroup, SettingsRow } from "@/components/profile/settings-ui";
 import {
   RiaCompatibilityState,
@@ -327,7 +328,7 @@ export default function RiaWorkspacePage() {
       ) : null}
 
       {detailError && !iamUnavailable ? (
-        <RiaSurface className="border-red-500/20 bg-red-500/5 p-4">
+        <RiaSurface tone="critical" className="p-4">
           <p className="text-sm text-red-500">{detailError}</p>
         </RiaSurface>
       ) : null}
@@ -366,7 +367,7 @@ export default function RiaWorkspacePage() {
             </div>
 
             {!workspace && detail.granted_scopes.length === 0 ? (
-              <div className="rounded-[22px] border border-primary/20 bg-primary/6 p-4">
+              <SurfaceInset className="border-primary/20 bg-primary/6 p-4">
                 <p className="text-sm font-medium text-foreground">
                   This workspace is still locked.
                 </p>
@@ -375,7 +376,7 @@ export default function RiaWorkspacePage() {
                   scopes yet. Request access below to move this relationship into a readable
                   workspace.
                 </p>
-              </div>
+              </SurfaceInset>
             ) : null}
           </RiaSurface>
 

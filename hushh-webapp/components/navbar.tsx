@@ -267,7 +267,7 @@ export const Navbar = () => {
           ref={pillRef}
           size="compact"
           layout="stacked"
-          hitArea="content"
+          hitArea="segment"
           value={activeNav}
           options={navOptions}
           onValueChange={navigateTo}

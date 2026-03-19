@@ -15,7 +15,14 @@ export interface AppRouteLayoutContractEntry {
 
 export const APP_ROUTE_LAYOUT_CONTRACT: readonly AppRouteLayoutContractEntry[] = [
   { route: ROUTES.HOME, mode: "hidden" },
-  { route: ROUTES.DEVELOPERS, mode: "hidden" },
+  {
+    route: ROUTES.DEVELOPERS,
+    mode: "standard",
+    shellVerification: {
+      file: "components/developers/developer-docs-hub.tsx",
+      includes: ["AppPageShell", "AppPageHeaderRegion", "AppPageContentRegion"],
+    },
+  },
   { route: ROUTES.LOGIN, mode: "hidden" },
   { route: ROUTES.LOGOUT, mode: "hidden" },
   { route: ROUTES.LABS_PROFILE_APPEARANCE, mode: "hidden" },
@@ -24,7 +31,7 @@ export const APP_ROUTE_LAYOUT_CONTRACT: readonly AppRouteLayoutContractEntry[] =
     mode: "standard",
     shellVerification: {
       file: "components/consent/consent-center-view.tsx",
-      includes: ["AppPageShell"],
+      includes: ["AppPageShell", "SurfaceStack"],
     },
   },
   {
@@ -32,7 +39,7 @@ export const APP_ROUTE_LAYOUT_CONTRACT: readonly AppRouteLayoutContractEntry[] =
     mode: "standard",
     shellVerification: {
       file: "components/kai/views/kai-market-preview-view.tsx",
-      includes: ["AppPageShell"],
+      includes: ["AppPageShell", "SurfaceStack"],
     },
   },
   {
@@ -40,7 +47,7 @@ export const APP_ROUTE_LAYOUT_CONTRACT: readonly AppRouteLayoutContractEntry[] =
     mode: "standard",
     shellVerification: {
       file: "app/kai/analysis/page.tsx",
-      includes: ["AppPageShell"],
+      includes: ["AppPageShell", "SurfaceStack"],
     },
   },
   { route: "/kai/dashboard", mode: "redirect" },
@@ -57,7 +64,7 @@ export const APP_ROUTE_LAYOUT_CONTRACT: readonly AppRouteLayoutContractEntry[] =
     mode: "standard",
     shellVerification: {
       file: "app/kai/import/page.tsx",
-      includes: ["AppPageShell"],
+      includes: ["AppPageShell", "AppPageContentRegion"],
     },
   },
   {
@@ -65,7 +72,7 @@ export const APP_ROUTE_LAYOUT_CONTRACT: readonly AppRouteLayoutContractEntry[] =
     mode: "standard",
     shellVerification: {
       file: "components/kai/views/investments-master-view.tsx",
-      includes: ["AppPageShell"],
+      includes: ["AppPageShell", "SurfaceStack"],
     },
   },
   {
@@ -77,7 +84,7 @@ export const APP_ROUTE_LAYOUT_CONTRACT: readonly AppRouteLayoutContractEntry[] =
     mode: "standard",
     shellVerification: {
       file: "app/kai/optimize/page.tsx",
-      includes: ["AppPageShell"],
+      includes: ["AppPageShell", "SurfaceStack"],
     },
   },
   {
@@ -93,7 +100,7 @@ export const APP_ROUTE_LAYOUT_CONTRACT: readonly AppRouteLayoutContractEntry[] =
     mode: "standard",
     shellVerification: {
       file: "app/kai/portfolio/page.tsx",
-      includes: ["AppPageShell"],
+      includes: ["AppPageShell", "AppPageContentRegion"],
     },
   },
   {
@@ -125,7 +132,7 @@ export const APP_ROUTE_LAYOUT_CONTRACT: readonly AppRouteLayoutContractEntry[] =
     mode: "standard",
     shellVerification: {
       file: "components/ria/ria-page-shell.tsx",
-      includes: ["AppPageShell"],
+      includes: ["AppPageShell", "SurfaceStack"],
     },
   },
   {
@@ -133,7 +140,7 @@ export const APP_ROUTE_LAYOUT_CONTRACT: readonly AppRouteLayoutContractEntry[] =
     mode: "standard",
     shellVerification: {
       file: "components/ria/ria-page-shell.tsx",
-      includes: ["AppPageShell"],
+      includes: ["AppPageShell", "SurfaceStack"],
     },
   },
   {
@@ -141,7 +148,7 @@ export const APP_ROUTE_LAYOUT_CONTRACT: readonly AppRouteLayoutContractEntry[] =
     mode: "standard",
     shellVerification: {
       file: "components/ria/ria-page-shell.tsx",
-      includes: ["AppPageShell"],
+      includes: ["AppPageShell", "SurfaceStack"],
     },
   },
   {
@@ -149,7 +156,7 @@ export const APP_ROUTE_LAYOUT_CONTRACT: readonly AppRouteLayoutContractEntry[] =
     mode: "standard",
     shellVerification: {
       file: "components/ria/ria-page-shell.tsx",
-      includes: ["AppPageShell"],
+      includes: ["AppPageShell", "SurfaceStack"],
     },
   },
   {
@@ -165,7 +172,7 @@ export const APP_ROUTE_LAYOUT_CONTRACT: readonly AppRouteLayoutContractEntry[] =
     mode: "standard",
     shellVerification: {
       file: "components/ria/ria-page-shell.tsx",
-      includes: ["AppPageShell"],
+      includes: ["AppPageShell", "SurfaceStack"],
     },
   },
 ] as const;

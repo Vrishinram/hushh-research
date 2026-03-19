@@ -16,6 +16,7 @@ import {
 import { toast } from "sonner";
 
 import { SectionHeader } from "@/components/app-ui/page-sections";
+import { SurfaceInset } from "@/components/app-ui/surfaces";
 import {
   SettingsDetailPanel,
   SettingsGroup,
@@ -778,7 +779,7 @@ export default function RiaClientsPage() {
           ) : null}
 
           {detailError ? (
-            <RiaSurface className="border-red-500/20 bg-red-500/5 p-4">
+            <RiaSurface tone="critical" className="p-4">
               <p className="text-sm text-red-500">{detailError}</p>
             </RiaSurface>
           ) : null}
@@ -831,7 +832,7 @@ export default function RiaClientsPage() {
                 </div>
 
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-[20px] border border-border/60 bg-background/70 p-4">
+                  <SurfaceInset className="p-4">
                     <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
                       Granted scopes
                     </p>
@@ -843,8 +844,8 @@ export default function RiaClientsPage() {
                         ? `Access expires ${formatDate(detail.consent_expires_at)}`
                         : "No active expiry yet."}
                     </p>
-                  </div>
-                  <div className="rounded-[20px] border border-border/60 bg-background/70 p-4">
+                  </SurfaceInset>
+                  <SurfaceInset className="p-4">
                     <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
                       Metadata availability
                     </p>
@@ -855,12 +856,12 @@ export default function RiaClientsPage() {
                       {detail.available_domains.length} indexed domains across{" "}
                       {detail.total_attributes} tracked attributes.
                     </p>
-                  </div>
+                  </SurfaceInset>
                 </div>
               </RiaSurface>
 
               {detail.is_self_relationship ? (
-                <RiaSurface className="border-primary/20 bg-primary/6 p-4">
+                <RiaSurface accent="sky" className="p-4">
                   <p className="text-sm text-foreground">
                     This is your dual-persona self relationship. You can use it to verify the full
                     RIA-to-investor flow before testing with a separate investor.

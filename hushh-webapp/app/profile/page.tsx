@@ -32,6 +32,7 @@ import {
 } from "@/components/profile/settings-ui";
 import { ConsentCenterView } from "@/components/consent/consent-center-view";
 import { AppPageShell } from "@/components/app-ui/app-page-shell";
+import { SurfaceInset } from "@/components/app-ui/surfaces";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -1202,10 +1203,10 @@ export default function ProfilePage() {
           ) : null}
 
           {hasVault === true && loadingVaultMethod ? (
-            <div className="flex items-center gap-2 rounded-[24px] border border-border/85 bg-background/72 px-4 py-4 text-sm text-muted-foreground shadow-sm">
+            <SurfaceInset className="flex items-center gap-2 px-4 py-4 text-sm text-muted-foreground">
               <Icon icon={Loader2} size="sm" className="animate-spin" />
               Loading vault methods...
-            </div>
+            </SurfaceInset>
           ) : null}
 
           {hasVault === true && !loadingVaultMethod ? (
@@ -1249,10 +1250,10 @@ export default function ProfilePage() {
               </SettingsGroup>
 
               {vaultMethod === "passphrase" && availableQuickMethod ? (
-                <div className="rounded-[22px] border border-border/85 bg-background/72 px-3.5 py-3.5 text-sm leading-6 text-muted-foreground shadow-sm sm:rounded-[24px] sm:px-4 sm:py-4">
+                <SurfaceInset className="px-3.5 py-3.5 text-sm leading-6 text-muted-foreground sm:px-4 sm:py-4">
                   {readableMethod(availableQuickMethod)} is already enrolled on this
                   device or domain. It is not the default unlock yet.
-                </div>
+                </SurfaceInset>
               ) : null}
 
               <SettingsGroup eyebrow="Actions">

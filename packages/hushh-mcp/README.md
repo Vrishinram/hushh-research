@@ -11,7 +11,11 @@ This package does not replace the Python MCP implementation. It bootstraps the e
   "mcpServers": {
     "hushh-consent": {
       "command": "npx",
-      "args": ["-y", "@hushh/mcp@beta"]
+      "args": ["-y", "@hushh/mcp@beta"],
+      "env": {
+        "CONSENT_API_URL": "https://<consent-api-origin>",
+        "HUSHH_DEVELOPER_TOKEN": "<developer-token>"
+      }
     }
   }
 }
@@ -23,6 +27,9 @@ Codex-style config:
 [mcp_servers.hushh_consent]
 command = "npx"
 args = ["-y", "@hushh/mcp@beta"]
+[mcp_servers.hushh_consent.env]
+CONSENT_API_URL = "https://<consent-api-origin>"
+HUSHH_DEVELOPER_TOKEN = "<developer-token>"
 enabled = true
 ```
 
@@ -32,7 +39,7 @@ Remote MCP hosts that support direct HTTP transport can point at the UAT beta en
 {
   "mcpServers": {
     "hushh-consent-remote": {
-      "url": "https://api.uat.kai.hushh.ai/mcp?token=<developer-token>"
+      "url": "https://<consent-api-origin>/mcp?token=<developer-token>"
     }
   }
 }
@@ -58,9 +65,10 @@ Provide configuration in one of two ways:
 1. Export the required environment variables before launching the host.
 2. Point `HUSHH_MCP_ENV_FILE` at a `consent-protocol` style `.env` file.
 
-For stdio hosts, the developer credential env var is:
+For stdio hosts, the minimal public setup is:
 
 ```bash
+export CONSENT_API_URL=https://<consent-api-origin>
 export HUSHH_DEVELOPER_TOKEN=<developer-token>
 ```
 
@@ -92,4 +100,4 @@ See `consent-protocol/docs/mcp-setup.md` for the npm-first guide and direct-Pyth
 
 ## Launch Note
 
-Product Hunt and developer-facing launch materials should treat the npm package as the preferred public install surface. UAT/public beta materials should reference `@hushh/mcp@beta`, `https://api.uat.kai.hushh.ai/mcp`, and the self-serve `/developers` workspace until production developer access is explicitly promoted.
+Product Hunt and developer-facing launch materials should treat the npm package as the preferred public install surface. UAT/public beta materials should reference `@hushh/mcp@beta`, the exact backend MCP URL shown in `/developers`, and the self-serve `/developers` workspace until production developer access is explicitly promoted.

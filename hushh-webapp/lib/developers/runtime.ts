@@ -4,7 +4,6 @@ export type DeveloperRuntime = {
   environment: DeveloperEnvironment;
   environmentLabel: string;
   appUrl: string;
-  docsUrl: string;
   apiOrigin: string;
   apiBaseUrl: string;
   mcpUrl: string;
@@ -50,8 +49,8 @@ function defaultRuntimeForEnvironment(
     const appUrl = currentOrigin || "http://localhost:3000";
     return {
       appUrl,
-      apiOrigin: "http://localhost:8000",
-      mcpUrl: "http://localhost:8000/mcp",
+      apiOrigin: "http://127.0.0.1:8000",
+      mcpUrl: "http://127.0.0.1:8000/mcp",
       npmPackage: "@hushh/mcp@beta",
     };
   }
@@ -97,7 +96,6 @@ export function resolveDeveloperRuntime(currentOrigin?: string | null): Develope
     environmentLabel:
       environment === "local" ? "Local" : environment === "uat" ? "UAT" : "Production",
     appUrl,
-    docsUrl: `${appUrl}/developers`,
     apiOrigin,
     apiBaseUrl: `${apiOrigin}/api/v1`,
     mcpUrl: mcpOrigin.endsWith("/mcp") ? mcpOrigin : `${mcpOrigin}/mcp`,

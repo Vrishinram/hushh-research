@@ -19,6 +19,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { SurfaceCard } from "@/components/app-ui/surfaces";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { MaterialRipple } from "@/lib/morphy-ux/material-ripple";
 import { Icon } from "@/lib/morphy-ux/ui";
@@ -86,14 +87,35 @@ export function SettingsGroup({
   title,
   description,
   children,
+  embedded = false,
   className,
 }: {
   eyebrow?: string;
   title?: ReactNode;
   description?: ReactNode;
   children: ReactNode;
+  embedded?: boolean;
   className?: string;
 }) {
+  const clipShell = (
+    <div className="relative isolate overflow-hidden rounded-[calc(var(--settings-group-radius)-1px)]">
+      <div className="relative isolate divide-y divide-border/60">{children}</div>
+    </div>
+  );
+
+  const shell = (
+    <div
+      className={cn(
+        "relative isolate p-px",
+        embedded
+          ? "[--settings-group-radius:20px] rounded-[20px] border border-border/60 bg-background/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.22)]"
+          : "[--settings-group-radius:inherit] rounded-[inherit]"
+      )}
+    >
+      {clipShell}
+    </div>
+  );
+
   return (
     <section className={cn("space-y-2", className)}>
       {eyebrow || title || description ? (
@@ -115,9 +137,13 @@ export function SettingsGroup({
           ) : null}
         </div>
       ) : null}
-      <div className="overflow-hidden rounded-[22px] border border-foreground/10 bg-background/72 shadow-sm backdrop-blur-sm divide-y divide-foreground/10 dark:border-white/10 dark:divide-white/10 sm:rounded-[28px]">
-        {children}
-      </div>
+      {embedded ? (
+        shell
+      ) : (
+        <SurfaceCard>
+          {shell}
+        </SurfaceCard>
+      )}
     </section>
   );
 }
@@ -152,6 +178,8 @@ export function SettingsRow({
   const isInteractive = !disabled && (typeof onClick === "function" || asChild);
   const shouldStackTrailing = stackTrailingOnMobile && Boolean(trailing) && !chevron;
   const Comp = asChild ? Slot.Root : onClick ? "button" : "div";
+  const rowRadiusClassName =
+    "[--settings-row-top-radius:0px] [--settings-row-bottom-radius:0px] first:[--settings-row-top-radius:calc(var(--settings-group-radius)-1px)] last:[--settings-row-bottom-radius:calc(var(--settings-group-radius)-1px)] [border-top-left-radius:var(--settings-row-top-radius)] [border-top-right-radius:var(--settings-row-top-radius)] [border-bottom-left-radius:var(--settings-row-bottom-radius)] [border-bottom-right-radius:var(--settings-row-bottom-radius)]";
   const content = (
     <>
       <div
@@ -211,12 +239,13 @@ export function SettingsRow({
   );
 
   const sharedClassName = cn(
-    "group relative grid w-full overflow-hidden px-3 py-3.5 text-left sm:px-4 sm:py-4",
+    "group relative isolate grid w-full appearance-none border-0 bg-transparent px-3 py-3.5 text-left outline-hidden ring-0 [-webkit-tap-highlight-color:transparent] sm:px-4 sm:py-4",
+    rowRadiusClassName,
     shouldStackTrailing
       ? "grid-cols-1 gap-y-2.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-x-3 sm:gap-y-0"
       : "grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3",
     isInteractive &&
-      "transition-[border-color,box-shadow] before:pointer-events-none before:absolute before:inset-0 before:z-[1] before:bg-muted/0 before:transition-[background-color,opacity] before:duration-200 hover:before:bg-muted/36 active:before:bg-muted/48",
+      "transition-[border-color,box-shadow] focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0",
     disabled && "cursor-not-allowed opacity-60",
     className
   );
@@ -230,14 +259,26 @@ export function SettingsRow({
           : {})}
       className={sharedClassName}
     >
+      {isInteractive ? (
+        <span
+          aria-hidden
+          className={cn(
+            "pointer-events-none absolute inset-0 z-[1] bg-transparent transition-[background-color]",
+            rowRadiusClassName,
+            "group-hover:bg-muted/36 group-active:bg-muted/48"
+          )}
+        />
+      ) : null}
       {content}
       {isInteractive ? (
-        <MaterialRipple
-          variant="none"
-          effect="fade"
-          disabled={disabled}
-          className="z-[2]"
-        />
+        <div aria-hidden className={cn("pointer-events-none absolute inset-0 z-[2] overflow-hidden", rowRadiusClassName)}>
+          <MaterialRipple
+            variant="none"
+            effect="fade"
+            disabled={disabled}
+            className="z-[2]"
+          />
+        </div>
       ) : null}
     </Comp>
   );

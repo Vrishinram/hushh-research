@@ -1,10 +1,24 @@
 # Hushh Research - Cloud Build Deployment
 
-> **CI/CD deployment using Google Cloud Build**
+> CI/CD deployment using Google Cloud Build. Contributor setup lives in `make bootstrap` plus the docs under `docs/guides/`.
 
 ---
 
 ## 🚀 Quick Deploy
+
+UAT is the first deployment lane. Do not treat production as the initial validation target.
+
+Recommended order:
+
+```bash
+# local validation before touching deploy branches
+bash scripts/ci/orchestrate.sh all
+
+# release through the UAT branch first
+git push origin deploy_uat
+```
+
+The push to `deploy_uat` triggers [`.github/workflows/deploy-uat.yml`](../.github/workflows/deploy-uat.yml), which deploys backend/frontend and then runs the hosted runtime parity check.
 
 ### Backend Deployment
 
@@ -20,9 +34,22 @@ gcloud builds submit --config=deploy/frontend.cloudbuild.yaml
 
 ---
 
-## 🧭 Runtime Profiles (Local/UAT-Remote/Prod-Remote)
+## 🧭 Runtime Profiles
 
-Use profile sources and activate one profile into the live local files:
+Contributor onboarding should start with:
+
+```bash
+make bootstrap
+make doctor PROFILE=local-uatdb
+```
+
+Detailed profile behavior now lives in:
+
+- [docs/guides/getting-started.md](../docs/guides/getting-started.md)
+- [docs/guides/environment-model.md](../docs/guides/environment-model.md)
+- [docs/guides/advanced-ops.md](../docs/guides/advanced-ops.md)
+
+Low-level profile activation still works when you need it:
 
 - Backend active file: `consent-protocol/.env`
 - Frontend active file: `hushh-webapp/.env.local`
@@ -31,15 +58,6 @@ Runtime profile sources (local only, not committed):
 
 - `consent-protocol/.env.local-uatdb.local`, `.env.uat-remote.local`, `.env.prod-remote.local`
 - `hushh-webapp/.env.local-uatdb.local`, `.env.uat-remote.local`, `.env.prod-remote.local`
-
-Activation:
-
-```bash
-bash scripts/env/bootstrap_profiles.sh
-bash scripts/env/use_profile.sh local-uatdb
-bash scripts/env/use_profile.sh uat-remote
-bash scripts/env/use_profile.sh prod-remote
-```
 
 `local-uatdb` backend note:
 

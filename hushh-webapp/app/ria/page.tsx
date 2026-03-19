@@ -16,6 +16,7 @@ import { SectionHeader } from "@/components/app-ui/page-sections";
 import { SettingsGroup, SettingsRow } from "@/components/profile/settings-ui";
 import {
   RiaCompatibilityState,
+  MetricTile,
   RiaPageShell,
   RiaStatusPanel,
   RiaSurface,
@@ -265,7 +266,7 @@ export default function RiaHomePage() {
 
       {!iamUnavailable ? (
         <>
-          <RiaSurface className="space-y-5 bg-gradient-to-br from-primary/7 via-background/96 to-background/92 p-5 sm:p-6">
+          <RiaSurface accent="sky" className="space-y-5 p-5 sm:p-6">
             <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
               <div className="max-w-2xl space-y-3">
                 <Badge variant="outline" className={verificationBadgeClassName(verificationStatus)}>
@@ -292,39 +293,21 @@ export default function RiaHomePage() {
             </div>
 
             <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-[22px] border border-border/60 bg-background/76 p-4">
-                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                  Clients
-                </p>
-                <p className="mt-2 text-lg font-semibold tracking-tight text-foreground">
-                  {loading ? "..." : clients.length}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  One roster for connected, pending, and invited relationships.
-                </p>
-              </div>
-              <div className="rounded-[22px] border border-border/60 bg-background/76 p-4">
-                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                  Request bundles
-                </p>
-                <p className="mt-2 text-lg font-semibold tracking-tight text-foreground">
-                  {loading ? "..." : bundles.length}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Outgoing consent bundles tracked in the shared consent workspace.
-                </p>
-              </div>
-              <div className="rounded-[22px] border border-border/60 bg-background/76 p-4">
-                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                  Active list
-                </p>
-                <p className="mt-2 text-lg font-semibold tracking-tight text-foreground">
-                  Picks
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Publish one active advisor list that connected investors can compare against.
-                </p>
-              </div>
+              <MetricTile
+                label="Clients"
+                value={loading ? "..." : String(clients.length)}
+                helper="One roster for connected, pending, and invited relationships."
+              />
+              <MetricTile
+                label="Request bundles"
+                value={loading ? "..." : String(bundles.length)}
+                helper="Outgoing consent bundles tracked in the shared consent workspace."
+              />
+              <MetricTile
+                label="Active list"
+                value="Picks"
+                helper="Publish one active advisor list that connected investors can compare against."
+              />
             </div>
           </RiaSurface>
 

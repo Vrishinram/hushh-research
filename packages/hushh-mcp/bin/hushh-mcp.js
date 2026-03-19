@@ -31,6 +31,7 @@ function printUsage() {
   console.log("  HUSHH_MCP_RUNTIME_DIR   Optional path to a consent-protocol runtime");
   console.log("  HUSHH_MCP_CACHE_DIR     Optional bootstrap cache directory");
   console.log("  HUSHH_MCP_PYTHON        Optional base Python interpreter for bootstrap");
+  console.log("  CONSENT_API_URL         Backend origin for consent API and MCP calls");
   console.log("  HUSHH_DEVELOPER_TOKEN   Self-serve developer token used by stdio MCP");
   console.log("  HUSHH_MCP_SKIP_BOOTSTRAP  Set to 1 to skip venv creation and pip install");
 }
@@ -44,6 +45,7 @@ function printConfig() {
             command: "npx",
             args: ["-y", "@hushh/mcp@beta"],
             env: {
+              CONSENT_API_URL: "https://<consent-api-origin>",
               HUSHH_DEVELOPER_TOKEN: "<developer-token>",
             },
           },
@@ -60,6 +62,7 @@ function printCodexToml() {
   console.log('command = "npx"');
   console.log('args = ["-y", "@hushh/mcp@beta"]');
   console.log('[mcp_servers.hushh_consent.env]');
+  console.log('CONSENT_API_URL = "https://<consent-api-origin>"');
   console.log('HUSHH_DEVELOPER_TOKEN = "<developer-token>"');
   console.log("enabled = true");
 }
@@ -70,7 +73,7 @@ function printRemoteConfig() {
       {
         mcpServers: {
           "hushh-consent-remote": {
-            url: "https://api.uat.kai.hushh.ai/mcp?token=<developer-token>",
+            url: "https://<consent-api-origin>/mcp?token=<developer-token>",
           },
         },
       },

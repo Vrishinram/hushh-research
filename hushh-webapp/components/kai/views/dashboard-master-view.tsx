@@ -1728,7 +1728,7 @@ export function DashboardMasterView({
         </SurfaceCard>
       ) : null}
 
-      <SurfaceCard tone="feature" className="overflow-hidden">
+      <SurfaceCard tone="feature">
         <SurfaceCardContent className="space-y-6 p-6 sm:p-7">
           <div className="flex flex-col items-center gap-2 text-center">
             <p className="text-sm font-medium text-muted-foreground">

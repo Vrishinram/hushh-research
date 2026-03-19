@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Cable,
   ClipboardCopy,
@@ -49,7 +49,11 @@ import {
   type DeveloperPortalAccess,
   type LiveDocsResponse,
 } from "@/lib/services/developer-portal-service";
-import { AppPageShell } from "@/components/app-ui/app-page-shell";
+import {
+  AppPageContentRegion,
+  AppPageHeaderRegion,
+  AppPageShell,
+} from "@/components/app-ui/app-page-shell";
 import { PageHeader, SectionHeader } from "@/components/app-ui/page-sections";
 import {
   SurfaceCard,
@@ -200,9 +204,9 @@ function ContentsNav({
 
   if (!framed) {
     return (
-      <div className="overflow-hidden rounded-[22px] border border-foreground/10 bg-background/72 shadow-sm backdrop-blur-sm divide-y divide-foreground/10 dark:border-white/10 dark:divide-white/10 sm:rounded-[28px]">
+      <SettingsGroup embedded className="space-y-0">
         {rows}
-      </div>
+      </SettingsGroup>
     );
   }
 
@@ -344,7 +348,7 @@ function DeveloperSectionShell({
 
   return (
     <section id={sectionId} className="scroll-mt-24">
-      <SurfaceCard className="overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-500">
+      <SurfaceCard className="animate-in fade-in slide-in-from-bottom-2 duration-500">
         <Accordion
           type="single"
           collapsible
@@ -795,8 +799,8 @@ function DesktopContentsRail({
   onSelectSection: (sectionId: string) => void;
 }) {
   return (
-    <aside className="hidden lg:block lg:self-start">
-      <SurfaceCard className="flex max-h-[calc(100dvh-3rem)] flex-col overflow-hidden">
+    <aside className="hidden lg:sticky lg:top-0 lg:block lg:self-start">
+      <SurfaceCard className="flex max-h-[calc(100dvh-3rem)] flex-col">
         <SurfaceCardHeader className="gap-1 pb-2.5">
           <SurfaceCardTitle>Sections</SurfaceCardTitle>
           <SurfaceCardDescription>Jump anywhere on the page.</SurfaceCardDescription>
@@ -861,10 +865,10 @@ function MobileSectionsFab({
 }
 
 export function DeveloperDocsHub({ initialOrigin = null }: { initialOrigin?: string | null }) {
-  const runtime = resolveDeveloperRuntime(initialOrigin);
-  const integrationModes = buildIntegrationModes(runtime);
-  const restSnippets = buildRestSnippets(runtime);
-  const mcpSnippets = buildMcpSnippets(runtime);
+  const runtime = useMemo(() => resolveDeveloperRuntime(initialOrigin), [initialOrigin]);
+  const integrationModes = useMemo(() => buildIntegrationModes(runtime), [runtime]);
+  const restSnippets = useMemo(() => buildRestSnippets(runtime), [runtime]);
+  const mcpSnippets = useMemo(() => buildMcpSnippets(runtime), [runtime]);
   const isMobile = useIsMobile();
 
   const { user, loading, signOut, setNativeUser, checkAuth } = useAuth();
@@ -882,7 +886,11 @@ export function DeveloperDocsHub({ initialOrigin = null }: { initialOrigin?: str
   const [profileSaving, setProfileSaving] = useState(false);
   const [revealedToken, setRevealedToken] = useState<string | null>(null);
   const initialHashHandledRef = useRef(false);
-  const workspaceSnippets = buildWorkspaceSnippets(runtime, revealedToken || "<developer-token>");
+  const lastAccessRefreshUidRef = useRef<string | null | undefined>(undefined);
+  const workspaceSnippets = useMemo(
+    () => buildWorkspaceSnippets(runtime, revealedToken || "<developer-token>"),
+    [revealedToken, runtime]
+  );
   const developerTokenSnippet = `${workspaceSnippets.envVar}\n${workspaceSnippets.remoteUrl}`;
 
   useEffect(() => {
@@ -981,8 +989,14 @@ export function DeveloperDocsHub({ initialOrigin = null }: { initialOrigin?: str
       return;
     }
 
-    void refreshAccess();
-  }, [loading, refreshAccess]);
+    const nextUid = user?.uid ?? null;
+    if (lastAccessRefreshUidRef.current === nextUid) {
+      return;
+    }
+
+    lastAccessRefreshUidRef.current = nextUid;
+    void refreshAccess(user);
+  }, [loading, refreshAccess, user]);
 
   async function handleProviderSignIn(provider: "google" | "apple") {
     try {
@@ -1107,26 +1121,28 @@ export function DeveloperDocsHub({ initialOrigin = null }: { initialOrigin?: str
     <TooltipProvider>
       <AppPageShell
         width="wide"
-        className="max-w-[1440px] px-4 pb-[calc(6rem+var(--app-safe-area-bottom-effective))] pt-6 sm:px-6 md:pb-12 lg:h-dvh lg:overflow-hidden lg:px-8 lg:pb-6"
+        className="max-w-[1440px] pb-[calc(6rem+var(--app-safe-area-bottom-effective))] md:pb-12 lg:pb-6"
       >
-        <div className="grid gap-6 lg:h-full lg:min-h-0 lg:grid-cols-[248px_minmax(0,1fr)] xl:grid-cols-[272px_minmax(0,1fr)] 2xl:grid-cols-[288px_minmax(0,1fr)] 2xl:gap-8">
+        <AppPageContentRegion className="grid gap-6 lg:grid-cols-[248px_minmax(0,1fr)] xl:grid-cols-[272px_minmax(0,1fr)] 2xl:grid-cols-[288px_minmax(0,1fr)] 2xl:gap-8">
           <DesktopContentsRail onSelectSection={handleSectionSelect} />
 
-          <div className="min-w-0 space-y-6 md:space-y-8 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:pr-2">
+          <div className="min-w-0 space-y-6 md:space-y-8 lg:pr-2">
             <section id="start" className="scroll-mt-24 space-y-6 md:space-y-8">
-              <PageHeader
-                eyebrow="Developer Hub"
-                title="Build consent-aware Kai integrations with dynamic scopes"
-                description="Use MCP or the API to discover user-specific scopes from the world model, request consent inside Kai, and read only the approved slice through one scalable contract."
-                icon={Code2}
-                accent="sky"
-                actions={
-                  <>
-                    <Badge variant="outline">{runtime.environmentLabel}</Badge>
-                    <Badge variant="outline">{PUBLIC_TOOL_NAMES.length} public tools</Badge>
-                  </>
-                }
-              />
+              <AppPageHeaderRegion>
+                <PageHeader
+                  eyebrow="Developer Hub"
+                  title="Build consent-aware Kai integrations with dynamic scopes"
+                  description="Use MCP or the API to discover user-specific scopes from the world model, request consent inside Kai, and read only the approved slice through one scalable contract."
+                  icon={Code2}
+                  accent="sky"
+                  actions={
+                    <>
+                      <Badge variant="outline">{runtime.environmentLabel}</Badge>
+                      <Badge variant="outline">{PUBLIC_TOOL_NAMES.length} public tools</Badge>
+                    </>
+                  }
+                />
+              </AppPageHeaderRegion>
 
               <SurfaceCard tone="feature" className="min-w-0">
                 <SurfaceCardHeader>
@@ -1668,7 +1684,7 @@ export function DeveloperDocsHub({ initialOrigin = null }: { initialOrigin?: str
               </SurfaceInset>
             </DeveloperSectionShell>
           </div>
-        </div>
+        </AppPageContentRegion>
       </AppPageShell>
 
       {isMobile ? (

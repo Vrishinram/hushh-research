@@ -270,9 +270,9 @@ export const MaterialRipple = ({
   return (
     <div
       ref={containerRef}
-      className={`absolute inset-0 ${className}`}
-      // Ensure the ripple clips correctly for pill/rounded buttons.
-      style={{ borderRadius: "inherit" }}
+      className={`morphy-ripple-host absolute inset-0 ${className}`}
+      // Let the ripple host own the clip boundary for rounded actionables.
+      style={{ borderRadius: "inherit", contain: "paint" }}
     />
   );
 };

@@ -22,6 +22,7 @@ import {
   BriefcaseBusiness,
   Check,
   ChevronDown,
+  Code2,
   type LucideIcon,
   Loader2,
   LogOut,
@@ -103,6 +104,10 @@ function getTopBarTitle(
 
   if (pathname === ROUTES.RIA_ONBOARDING || pathname.startsWith(`${ROUTES.RIA_ONBOARDING}/`)) {
     return { label: "Set up RIA", interactive: false as const };
+  }
+
+  if (pathname === ROUTES.DEVELOPERS) {
+    return { label: "Developers", icon: Code2, interactive: false as const };
   }
 
   const isPersonaShellRoute =
@@ -290,7 +295,7 @@ export function TopAppBar({ className }: TopAppBarProps) {
                             <span>Investor</span>
                           </div>
                           {activePersona === "investor" ? (
-                            <Check className="ml-auto h-4 w-4 text-primary" />
+                            <Check className="ml-auto h-4 w-4 text-current" />
                           ) : null}
                         </DropdownMenuItem>
                         <DropdownMenuItem
@@ -303,9 +308,9 @@ export function TopAppBar({ className }: TopAppBarProps) {
                             <span>{riaCapability === "switch" ? "RIA" : "Set up RIA"}</span>
                           </div>
                           {switchingPersona === "ria" ? (
-                            <Loader2 className="ml-auto h-4 w-4 animate-spin text-primary" />
+                            <Loader2 className="ml-auto h-4 w-4 animate-spin text-current" />
                           ) : activePersona === "ria" ? (
-                            <Check className="ml-auto h-4 w-4 text-primary" />
+                            <Check className="ml-auto h-4 w-4 text-current" />
                           ) : null}
                         </DropdownMenuItem>
                       </DropdownMenuContent>

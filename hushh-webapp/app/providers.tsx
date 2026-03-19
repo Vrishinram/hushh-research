@@ -163,7 +163,7 @@ export function Providers({ children }: ProvidersProps) {
                                   "--app-bar-glass-bg-dark": "rgba(10, 12, 16, 0.64)",
                                   "--app-bar-glass-blur": "2px",
                                   "--app-bar-shadow": "none",
-                                  "--app-bar-mask-overscan": "30px",
+                                  "--app-bar-mask-overscan": "22px",
                                 } as CSSProperties
                               }
                             />

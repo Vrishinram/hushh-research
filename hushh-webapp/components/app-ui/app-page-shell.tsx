@@ -18,6 +18,10 @@ type AppPageShellProps<T extends ElementType> = {
   width?: AppPageShellWidth;
 } & Omit<ComponentPropsWithoutRef<T>, "as">;
 
+type AppPageRegionProps<T extends ElementType> = {
+  as?: T;
+} & Omit<ComponentPropsWithoutRef<T>, "as">;
+
 export function AppPageShell<T extends ElementType = "main">({
   as,
   width = "content",
@@ -33,6 +37,36 @@ export function AppPageShell<T extends ElementType = "main">({
         WIDTH_CLASS_MAP[width],
         className
       )}
+      {...props}
+    />
+  );
+}
+
+export function AppPageHeaderRegion<T extends ElementType = "div">({
+  as,
+  className,
+  ...props
+}: AppPageRegionProps<T>) {
+  const Component = as ?? "div";
+
+  return (
+    <Component
+      className={cn("app-page-header-region w-full min-w-0", className)}
+      {...props}
+    />
+  );
+}
+
+export function AppPageContentRegion<T extends ElementType = "div">({
+  as,
+  className,
+  ...props
+}: AppPageRegionProps<T>) {
+  const Component = as ?? "div";
+
+  return (
+    <Component
+      className={cn("app-page-content-region w-full min-w-0", className)}
       {...props}
     />
   );

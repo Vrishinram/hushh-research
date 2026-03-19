@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import { AppPageShell } from "@/components/app-ui/app-page-shell";
+import { AppPageContentRegion, AppPageShell } from "@/components/app-ui/app-page-shell";
 import { KaiFlow } from "@/components/kai/kai-flow";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { useVault } from "@/lib/vault/vault-context";
@@ -39,13 +39,13 @@ export default function KaiImportPage() {
       width="wide"
       className="relative pb-32"
     >
-      <div className="w-full">
+      <AppPageContentRegion>
         <KaiFlow
           userId={user.uid}
           mode="import"
           vaultOwnerToken={vaultOwnerToken ?? ""}
         />
-      </div>
+      </AppPageContentRegion>
     </AppPageShell>
   );
 }

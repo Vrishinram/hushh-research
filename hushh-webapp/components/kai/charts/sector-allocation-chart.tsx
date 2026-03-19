@@ -13,7 +13,7 @@
 
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import { memo, useMemo, useState, useEffect } from "react";
 import {
   BarChart,
   Bar,
@@ -73,6 +73,16 @@ interface SectorDatum {
   holdings: SectorHoldingItem[];
 }
 
+type SectorBarChartProps = {
+  chartConfig: ChartConfig;
+  chartHeight: number;
+  leftMargin: number;
+  rightMargin: number;
+  yAxisWidth: number;
+  showInlineValueLabels: boolean;
+  sectorData: { data: SectorDatum[]; total: number };
+};
+
 // Distinct palette so neighboring sectors are easy to scan.
 const CHART_COLORS = [
   "#2563eb",
@@ -105,6 +115,106 @@ function compactSectorLabel(value: string): string {
   if (value.length <= 16) return value;
   return `${value.slice(0, 15)}…`;
 }
+
+const SectorBarChart = memo(function SectorBarChart({
+  chartConfig,
+  chartHeight,
+  leftMargin,
+  rightMargin,
+  yAxisWidth,
+  showInlineValueLabels,
+  sectorData,
+}: SectorBarChartProps) {
+  return (
+    <SurfaceInset className="p-3 sm:p-4">
+      <ChartContainer
+        config={chartConfig}
+        className="w-full min-w-0"
+        style={{ height: `${chartHeight}px` }}
+      >
+        <BarChart
+          data={sectorData.data}
+          layout="vertical"
+          margin={{ top: 5, right: rightMargin, left: leftMargin, bottom: 5 }}
+        >
+          <XAxis
+            type="number"
+            tickFormatter={(value) => formatCurrency(value)}
+            axisLine={false}
+            tickLine={false}
+            tick={{ fontSize: 10, fill: "hsl(var(--foreground) / 0.72)" }}
+          />
+          <CartesianGrid
+            strokeDasharray="3 3"
+            stroke="hsl(var(--foreground) / 0.22)"
+            strokeOpacity={0.55}
+          />
+          <YAxis
+            type="category"
+            dataKey="name"
+            tickFormatter={(value) => compactSectorLabel(String(value))}
+            axisLine={false}
+            tickLine={false}
+            width={yAxisWidth}
+            tick={{ fontSize: 10, fill: "hsl(var(--foreground) / 0.72)" }}
+          />
+          <ChartTooltip
+            cursor={false}
+            content={
+              <ChartTooltipContent
+                hideLabel
+                formatter={(value, name, item) => {
+                  const payload = item.payload as {
+                    name: string;
+                    value: number;
+                    count: number;
+                  };
+                  return (
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        Sector Allocation
+                      </span>
+                      <span className="text-sm font-semibold">{payload.name}</span>
+                      <span className="text-base font-bold text-foreground">
+                        {formatCurrency(payload.value)}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {payload.count} holding{payload.count !== 1 ? "s" : ""}
+                      </span>
+                    </div>
+                  );
+                }}
+              />
+            }
+          />
+          <Bar
+            dataKey="value"
+            radius={[0, 4, 4, 0]}
+            animationDuration={550}
+            maxBarSize={24}
+          >
+            {showInlineValueLabels ? (
+              <LabelList
+                dataKey="value"
+                position="right"
+                className="fill-foreground"
+                fontSize={10}
+                formatter={(value: number) => formatCurrency(Number(value))}
+              />
+            ) : null}
+            {sectorData.data.map((entry, index) => (
+              <Cell
+                key={`cell-${index}`}
+                fill={entry.color}
+                style={{ cursor: "pointer" }}
+              />
+            ))}
+          </Bar>
+        </BarChart>
+      </ChartContainer>
+    </SurfaceInset>
+  );
+});
 
 export function SectorAllocationChart({
   holdings,
@@ -249,93 +359,15 @@ export function SectorAllocationChart({
       className={cn("h-full min-w-0", className)}
       contentClassName="space-y-3"
     >
-      <SurfaceInset className="p-3 sm:p-4">
-          <ChartContainer
-            config={chartConfig}
-            className="w-full min-w-0"
-            style={{ height: `${chartHeight}px` }}
-          >
-            <BarChart
-              data={sectorData.data}
-              layout="vertical"
-              margin={{ top: 5, right: rightMargin, left: leftMargin, bottom: 5 }}
-            >
-              <XAxis
-                type="number"
-                tickFormatter={(value) => formatCurrency(value)}
-                axisLine={false}
-                tickLine={false}
-                tick={{ fontSize: 10, fill: "hsl(var(--foreground) / 0.72)" }}
-              />
-              <CartesianGrid
-                strokeDasharray="3 3"
-                stroke="hsl(var(--foreground) / 0.22)"
-                strokeOpacity={0.55}
-              />
-              <YAxis
-                type="category"
-                dataKey="name"
-                tickFormatter={(value) => compactSectorLabel(String(value))}
-                axisLine={false}
-                tickLine={false}
-                width={yAxisWidth}
-                tick={{ fontSize: 10, fill: "hsl(var(--foreground) / 0.72)" }}
-              />
-              <ChartTooltip
-                cursor={false}
-                content={
-                  <ChartTooltipContent
-                    hideLabel
-                    formatter={(value, name, item) => {
-                      const payload = item.payload as {
-                        name: string;
-                        value: number;
-                        count: number;
-                      };
-                      return (
-                        <div className="flex flex-col gap-1">
-                          <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                            Sector Allocation
-                          </span>
-                          <span className="text-sm font-semibold">{payload.name}</span>
-                          <span className="text-base font-bold text-foreground">
-                            {formatCurrency(payload.value)}
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            {payload.count} holding{payload.count !== 1 ? "s" : ""}
-                          </span>
-                        </div>
-                      );
-                    }}
-                  />
-                }
-              />
-              <Bar
-                dataKey="value"
-                radius={[0, 4, 4, 0]}
-                animationDuration={800}
-                maxBarSize={24}
-              >
-                {showInlineValueLabels ? (
-                  <LabelList
-                    dataKey="value"
-                    position="right"
-                    className="fill-foreground"
-                    fontSize={10}
-                    formatter={(value: number) => formatCurrency(Number(value))}
-                  />
-                ) : null}
-                {sectorData.data.map((entry, index) => (
-                  <Cell
-                    key={`cell-${index}`}
-                    fill={entry.color}
-                    style={{ cursor: "pointer" }}
-                  />
-                ))}
-              </Bar>
-            </BarChart>
-          </ChartContainer>
-      </SurfaceInset>
+      <SectorBarChart
+        chartConfig={chartConfig}
+        chartHeight={chartHeight}
+        leftMargin={leftMargin}
+        rightMargin={rightMargin}
+        yAxisWidth={yAxisWidth}
+        showInlineValueLabels={showInlineValueLabels}
+        sectorData={sectorData}
+      />
 
       <SurfaceInset className="px-3 py-3 sm:px-4">
           <div className="space-y-2">
@@ -380,7 +412,7 @@ export function SectorAllocationChart({
                       )}
                     </button>
                   </CollapsibleTrigger>
-                  <CollapsibleContent className="overflow-hidden border-t border-border/50 data-[state=closed]:animate-accordion-up data-[state=open]:animate-accordion-down">
+                  <CollapsibleContent className="border-t border-border/50">
                     <div className="space-y-2 p-2.5">
                       <div className="flex flex-wrap gap-1.5">
                         {visibleHoldings.map((holding) => (

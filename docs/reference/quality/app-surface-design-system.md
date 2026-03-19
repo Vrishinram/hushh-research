@@ -62,6 +62,63 @@ Rules:
 5. Page files may control layout width and grid placement, but not reinvent card chrome.
 6. Nested content should use `SurfaceInset` or another semantic surface helper instead of raw `rounded-[..] border bg ...` blocks where possible.
 7. Feature/hero summary cards may use the `surface-feature` preset, but they must stay in the same visual family as default data surfaces.
+8. Standard Kai, RIA, and consent routes should use `SurfaceStack` to provide shared horizontal overscan and vertical spacing for card sections.
+9. `AppPageShell` owns route start and shared page gutter. Card breathing comes from `SurfaceStack`, not from per-page inline padding hacks.
+10. Outer app-facing surface shells must not rely on `overflow-hidden`; clipping is allowed only on inner media/chart/inset containers.
+
+### Card Depth Model
+
+Use the `Subtle Apple` depth model:
+
+1. Outer cards stay neutral in both light and dark mode.
+2. Shared depth comes from two root tokens only:
+   - `--app-card-shadow-standard`
+   - `--app-card-shadow-feature`
+3. Shared surface/background tokens come from:
+   - `--app-card-surface-compact`
+   - `--app-card-surface-default`
+   - `--app-card-surface-surface`
+   - `--app-card-surface-hero`
+4. Shared border tokens come from:
+   - `--app-card-border-standard`
+   - `--app-card-border-strong`
+5. Feature emphasis belongs inside the card:
+   - icon wells
+   - badges
+   - insets
+   - copy hierarchy
+6. Do not tint outer card chrome to communicate state.
+7. If a surface needs more presence, move from `surface` to `surface-feature` or `hero`; do not invent a new route-local shadow recipe.
+
+### Ripple Ownership and Clipping
+
+1. Every actionable shell should show Material ripple.
+2. The ripple host owns clipping.
+3. Rounded interactive shells must clip ripple to the exact visible radius.
+4. Outer cards remain `overflow-visible`; ripple, media, code panes, and chart plots clip inside their own inner boundaries.
+5. Standard shared actionables include:
+   - `Button`
+   - dropdown/select rows
+   - segmented controls / bottom nav items
+   - actionable settings rows
+   - actionable cards or list rows
+6. Do not add route-level ripple wrappers when a shared primitive already provides one.
+
+### Cache-First Vault UX
+
+1. Vault-backed routes should prefer cache-first rendering after unlock.
+2. The standard behavior is `SWR by route/session key`:
+   - render cached data immediately when valid
+   - refresh silently in the background only when the cache is stale
+   - dedupe in-flight refreshes
+   - do not re-fetch because of unchanged token churn
+3. Cache keys should be based on:
+   - `userId`
+   - route scope
+   - source selection
+   - critical params
+4. Visibility and interval refreshes should be stale-aware, not unconditional.
+5. Unlock warmup can seed cache, but route loaders must still own stale-refresh policy.
 
 ## Icon Policy
 

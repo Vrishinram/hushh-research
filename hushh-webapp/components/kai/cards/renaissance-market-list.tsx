@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Search, TrendingDown, TrendingUp } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { SurfaceInset } from "@/components/app-ui/surfaces";
 import {
   Select,
   SelectContent,
@@ -161,8 +162,8 @@ export function RiaPicksList({
     parsePositiveInteger(searchParams.get("picksPage"), 1)
   );
 
-  const syncPaginationParams = useMemo(
-    () => (nextPage: number, nextPageSize: number) => {
+  const syncPaginationParams = useCallback(
+    (nextPage: number, nextPageSize: number) => {
       const params = new URLSearchParams(searchParams.toString());
       if (nextPageSize === DEFAULT_PICKS_PAGE_SIZE) {
         params.delete("picksPageSize");
@@ -175,6 +176,9 @@ export function RiaPicksList({
         params.set("picksPage", String(nextPage));
       }
       const nextQuery = params.toString();
+      if (nextQuery === searchParams.toString()) {
+        return;
+      }
       router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false });
     },
     [pathname, router, searchParams]
@@ -472,7 +476,7 @@ export function RiaPicksList({
       </SettingsGroup>
 
       {filteredRows.length > pageSize ? (
-        <div className="flex flex-col gap-3 rounded-[24px] border border-border/80 bg-background/72 px-3 py-3 shadow-sm backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between sm:px-4">
+        <SurfaceInset className="flex flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
           <p className="text-xs leading-5 text-muted-foreground">
             Page {page} of {totalPages}
           </p>
@@ -518,7 +522,7 @@ export function RiaPicksList({
               Next
             </Button>
           </div>
-        </div>
+        </SurfaceInset>
       ) : null}
 
       <SettingsDetailPanel
@@ -535,7 +539,7 @@ export function RiaPicksList({
       >
         {selectedRow ? (
           <div className="space-y-4">
-            <div className="flex items-start gap-3 rounded-[24px] border border-foreground/10 bg-background/78 p-4 shadow-sm">
+            <SurfaceInset className="flex items-start gap-3 p-4">
               {renderSymbolMonogram(String(selectedRow.symbol || "—"))}
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
@@ -583,7 +587,7 @@ export function RiaPicksList({
                   ) : null}
                 </div>
               </div>
-            </div>
+            </SurfaceInset>
 
             <SettingsGroup eyebrow="Context" title="Market snapshot and conviction">
               <SettingsRow
