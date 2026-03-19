@@ -18,6 +18,15 @@ import { toast } from "sonner";
 
 import { DataTable } from "@/components/app-ui/data-table";
 import { PageHeader } from "@/components/app-ui/page-sections";
+import {
+  ChartSurfaceCard,
+  FallbackSurfaceCard,
+  SurfaceCard,
+  SurfaceCardContent,
+  SurfaceCardHeader,
+  SurfaceCardTitle,
+  SurfaceInset,
+} from "@/components/app-ui/surfaces";
 import { AssetAllocationDonut } from "@/components/kai/charts/asset-allocation-donut";
 import { GainLossDistributionChart } from "@/components/kai/charts/gain-loss-distribution-chart";
 import { HoldingsConcentrationChart } from "@/components/kai/charts/holdings-concentration-chart";
@@ -33,7 +42,6 @@ import { ProfileBasedPicksList } from "@/components/kai/cards/profile-based-pick
 import { useCache, type PortfolioData as CachedPortfolioData } from "@/lib/cache/cache-context";
 import { CacheSyncService } from "@/lib/cache/cache-sync-service";
 import { Button as MorphyButton } from "@/lib/morphy-ux/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/lib/morphy-ux/card";
 import { Icon } from "@/lib/morphy-ux/ui";
 import { KAI_EXPERIENCE_CONTRACT } from "@/lib/kai/experience-contract";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -165,21 +173,6 @@ function compareHoldingsByNameAsc<T extends { name?: string; symbol?: string }>(
     sensitivity: "base",
     numeric: true,
   });
-}
-
-function DataQualityFallback({ title, detail }: { title: string; detail: string }) {
-  return (
-    <Card variant="none" effect="glass" className="h-full min-w-0 rounded-2xl">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm">{title}</CardTitle>
-      </CardHeader>
-      <CardContent className="pt-0">
-        <div className="rounded-xl border border-dashed border-border/60 bg-background/60 p-3 text-xs text-muted-foreground">
-          {detail}
-        </div>
-      </CardContent>
-    </Card>
-  );
 }
 
 function deriveRiskBucket(holdings: ManagedHolding[]): string {
@@ -1642,20 +1635,20 @@ export function DashboardMasterView({
 
   if (isSourcesLoading && !displayedPortfolio) {
     return (
-      <div className="mx-auto flex w-full max-w-5xl items-center justify-center px-5 pb-6 pt-[var(--kai-view-top-gap,16px)] sm:px-8">
-        <Card variant="none" effect="glass" className="w-full rounded-[24px]">
-          <CardContent className="flex items-center justify-center gap-3 p-6 text-sm text-muted-foreground">
+      <div className="flex w-full items-center justify-center pb-6">
+        <SurfaceCard className="w-full">
+          <SurfaceCardContent className="flex items-center justify-center gap-3 p-6 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
             Loading portfolio sources...
-          </CardContent>
-        </Card>
+          </SurfaceCardContent>
+        </SurfaceCard>
       </div>
     );
   }
 
   if (!displayedPortfolio) {
     return (
-      <div className="mx-auto w-full max-w-5xl space-y-6 overflow-x-hidden px-5 pb-6 pt-[var(--kai-view-top-gap,16px)] sm:px-8">
+      <div className="w-full space-y-6 pb-6">
         <PageHeader
           eyebrow="Kai Portfolio"
           title="Portfolio"
@@ -1676,8 +1669,8 @@ export function DashboardMasterView({
           onManageConnections={plaidConfigured !== false ? () => void openPlaidLinkFlow() : undefined}
           isRefreshing={isPlaidRefreshing || isLinkingPlaid}
         />
-        <Card variant="none" effect="glass" className="rounded-[24px]">
-          <CardContent className="space-y-3 p-6">
+        <SurfaceCard>
+          <SurfaceCardContent className="space-y-3 p-6">
             <p className="text-sm font-semibold">No active portfolio source is ready yet.</p>
             <p className="text-sm text-muted-foreground">
               Import a statement for an editable source, or connect Plaid for read-only brokerage data.
@@ -1698,14 +1691,14 @@ export function DashboardMasterView({
                 </MorphyButton>
               </div>
             ) : null}
-          </CardContent>
-        </Card>
+          </SurfaceCardContent>
+        </SurfaceCard>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-8 overflow-x-hidden px-5 pb-6 pt-[var(--kai-view-top-gap,16px)] sm:px-8">
+    <div className="w-full space-y-8 pb-6">
       <PageHeader
         eyebrow="Kai Portfolio"
         title="Portfolio"
@@ -1728,19 +1721,15 @@ export function DashboardMasterView({
       />
 
       {sourcesError ? (
-        <Card variant="none" effect="glass" className="rounded-[22px] border border-amber-500/20">
-          <CardContent className="p-4 text-sm text-muted-foreground">
+        <SurfaceCard tone="warning">
+          <SurfaceCardContent className="p-4 text-sm text-muted-foreground">
             {sourcesError}
-          </CardContent>
-        </Card>
+          </SurfaceCardContent>
+        </SurfaceCard>
       ) : null}
 
-      <Card
-        variant="muted"
-        effect="fill"
-        className="overflow-hidden rounded-[26px] p-0 !border-transparent shadow-[0_14px_44px_rgba(15,23,42,0.06)]"
-      >
-        <CardContent className="space-y-6 p-6 sm:p-7">
+      <SurfaceCard tone="feature">
+        <SurfaceCardContent className="space-y-6 p-6 sm:p-7">
           <div className="flex flex-col items-center gap-2 text-center">
             <p className="text-sm font-medium text-muted-foreground">
               {sourceDisplayLabel} portfolio value
@@ -1784,7 +1773,7 @@ export function DashboardMasterView({
             </div>
           </div>
 
-          <div className="rounded-xl border border-border/60 bg-background/75 p-4 text-center">
+          <SurfaceInset className="text-center">
             <p className="text-sm font-semibold">
               {isPlaidView
                 ? freshness?.lastSyncedAt
@@ -1805,7 +1794,7 @@ export function DashboardMasterView({
                 </>
               )}
             </p>
-          </div>
+          </SurfaceInset>
 
           <div className="flex flex-col gap-2 sm:flex-row sm:justify-center">
             <MorphyButton
@@ -1840,8 +1829,8 @@ export function DashboardMasterView({
               </MorphyButton>
             ) : null}
           </div>
-        </CardContent>
-      </Card>
+        </SurfaceCardContent>
+      </SurfaceCard>
 
       <PlaidBrokerageSummarySection
         items={plaidItems}
@@ -1854,13 +1843,13 @@ export function DashboardMasterView({
       <section className="space-y-4">
         {hasEquitySectorAllocation ? (
           <SectorAllocationChart
-            className="min-w-0 overflow-hidden rounded-[22px]"
+            className="min-w-0"
             holdings={equitySectorChartHoldings}
             title="Equity Sector Allocation"
             subtitle={`${(equitySectorCoveragePct * 100).toFixed(0)}% of equity holdings have mapped sector labels. Denominator: ${formatCurrency(model.hero.totalValue)} total portfolio value.`}
           />
         ) : (
-          <DataQualityFallback
+          <FallbackSurfaceCard
             title="Equity Sector Allocation"
             detail="No equity holdings are currently available for sector-level allocation."
           />
@@ -1868,13 +1857,13 @@ export function DashboardMasterView({
 
         {hasNonEquityAllocation ? (
           <SectorAllocationChart
-            className="min-w-0 overflow-hidden rounded-[22px]"
+            className="min-w-0"
             holdings={nonEquityAllocationChartHoldings}
             title="Non-Equity Allocation"
             subtitle={`${(nonEquityCoveragePct * 100).toFixed(0)}% of non-equity holdings are mapped to canonical allocation buckets. Denominator: ${formatCurrency(model.hero.totalValue)} total portfolio value.`}
           />
         ) : (
-          <DataQualityFallback
+          <FallbackSurfaceCard
             title="Non-Equity Allocation"
             detail="No non-equity holdings are present in the current portfolio."
           />
@@ -1888,29 +1877,25 @@ export function DashboardMasterView({
       <TransactionActivity
         transactions={recentTransactions}
         maxItems={6}
-        className="rounded-[22px]"
+        className="min-w-0"
       />
 
-      <Card
-        variant="muted"
-        effect="fill"
-        className="rounded-[24px] p-0 !border-transparent shadow-[0_12px_36px_rgba(15,23,42,0.05)]"
-      >
-        <CardHeader className="pb-2 px-6 pt-6 sm:px-7">
-          <CardTitle className="text-xs uppercase tracking-widest text-muted-foreground">
+      <SurfaceCard>
+        <SurfaceCardHeader className="px-6 pb-2 pt-6 sm:px-7">
+          <SurfaceCardTitle className="text-xs uppercase tracking-widest text-muted-foreground">
             Investor Snapshot
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4 px-6 pb-6 pt-0 sm:px-7 sm:pb-7">
+          </SurfaceCardTitle>
+        </SurfaceCardHeader>
+        <SurfaceCardContent className="space-y-4 px-6 pb-6 pt-0 sm:px-7 sm:pb-7">
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-xl border border-border/60 bg-background/75 p-3">
+            <SurfaceInset className="p-3">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                 Debate Readiness
               </p>
               <p className="mt-1 text-2xl font-black">{investorSnapshot.readinessScore}</p>
               <p className="text-xs text-muted-foreground">Context quality score (0-100)</p>
-            </div>
-            <div className="rounded-xl border border-border/60 bg-background/75 p-3">
+            </SurfaceInset>
+            <SurfaceInset className="p-3">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                 Optimization Pressure
               </p>
@@ -1918,8 +1903,8 @@ export function DashboardMasterView({
               <p className="text-xs text-muted-foreground">
                 Portfolio value in losing positions
               </p>
-            </div>
-            <div className="rounded-xl border border-border/60 bg-background/75 p-3">
+            </SurfaceInset>
+            <SurfaceInset className="p-3">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                 Top 3 Concentration
               </p>
@@ -1927,8 +1912,8 @@ export function DashboardMasterView({
               <p className="text-xs text-muted-foreground">
                 Largest three holdings share
               </p>
-            </div>
-            <div className="rounded-xl border border-border/60 bg-background/75 p-3">
+            </SurfaceInset>
+            <SurfaceInset className="p-3">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                 Estimated Annual Income
               </p>
@@ -1936,37 +1921,33 @@ export function DashboardMasterView({
               <p className="text-xs text-muted-foreground">
                 Yield {formatPercent(investorSnapshot.annualYieldPct)}
               </p>
-            </div>
+            </SurfaceInset>
           </div>
 
           <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
-            <div className="rounded-lg border border-border/60 bg-background/70 px-3 py-2">
+            <SurfaceInset className="rounded-lg px-3 py-2">
               {investorSnapshot.losersCount} losers / {investorSnapshot.winnersCount} winners
-            </div>
-            <div className="rounded-lg border border-border/60 bg-background/70 px-3 py-2">
+            </SurfaceInset>
+            <SurfaceInset className="rounded-lg px-3 py-2">
               {investorSnapshot.uniqueSectors} sector buckets represented
-            </div>
-            <div className="rounded-lg border border-border/60 bg-background/70 px-3 py-2">
+            </SurfaceInset>
+            <SurfaceInset className="rounded-lg px-3 py-2">
               Cash allocation {formatPercent(investorSnapshot.cashPct)}
-            </div>
-            <div className="rounded-lg border border-border/60 bg-background/70 px-3 py-2">
+            </SurfaceInset>
+            <SurfaceInset className="rounded-lg px-3 py-2">
               Fixed income {formatPercent(investorSnapshot.fixedIncomePct)} / Real assets{" "}
               {formatPercent(investorSnapshot.realAssetsPct)}
-            </div>
+            </SurfaceInset>
           </div>
-        </CardContent>
-      </Card>
+        </SurfaceCardContent>
+      </SurfaceCard>
 
-      <Card
-        variant="muted"
-        effect="fill"
-        className="min-w-0 rounded-[24px] p-0 !border-transparent shadow-[0_12px_36px_rgba(15,23,42,0.05)]"
-      >
-        <CardHeader className="pb-2 px-6 pt-6 sm:px-7">
+      <SurfaceCard className="min-w-0">
+        <SurfaceCardHeader className="px-6 pb-2 pt-6 sm:px-7">
           <div className="flex items-center justify-between gap-2">
-            <CardTitle className="text-xs uppercase tracking-widest text-muted-foreground">
+            <SurfaceCardTitle className="text-xs uppercase tracking-widest text-muted-foreground">
               {isPlaidView ? "Brokerage Holdings" : "Current Holdings"}
-            </CardTitle>
+            </SurfaceCardTitle>
             {canEditStatement ? (
               <MorphyButton
                 variant="none"
@@ -1981,10 +1962,10 @@ export function DashboardMasterView({
               <span className="text-xs text-muted-foreground">Read-only source</span>
             )}
           </div>
-        </CardHeader>
+        </SurfaceCardHeader>
 
-        <CardContent className="space-y-4 px-6 pb-6 pt-0 sm:px-7 sm:pb-7">
-          <div className="rounded-xl border border-border/60 bg-background/70 px-3 py-2.5 text-xs text-muted-foreground">
+        <SurfaceCardContent className="space-y-4 px-6 pb-6 pt-0 sm:px-7 sm:pb-7">
+          <SurfaceInset className="px-3 py-2.5 text-xs text-muted-foreground">
             {canEditStatement ? (
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-semibold text-foreground">Change Summary</span>
@@ -2023,7 +2004,7 @@ export function DashboardMasterView({
                 Plaid holdings are broker-sourced and cannot be edited in Kai.
               </div>
             ) : null}
-          </div>
+          </SurfaceInset>
 
           <Tabs defaultValue="all" className="space-y-3">
             <div className="pb-1">
@@ -2147,8 +2128,8 @@ export function DashboardMasterView({
               </MorphyButton>
             </div>
           ) : null}
-        </CardContent>
-      </Card>
+        </SurfaceCardContent>
+      </SurfaceCard>
 
       <section className="space-y-3">
         <h2 className="app-section-heading px-1 uppercase tracking-[0.12em] text-muted-foreground">
@@ -2156,16 +2137,17 @@ export function DashboardMasterView({
         </h2>
         <div className="grid gap-4 lg:grid-cols-2">
           {model.quality.allocationReady ? (
-            <Card variant="none" effect="glass" className="min-w-0 overflow-hidden rounded-[22px]">
-              <CardHeader className="pb-2 px-5 pt-5">
-                <CardTitle className="text-sm">Allocation Mix</CardTitle>
-              </CardHeader>
-              <CardContent className="px-5 pb-5 pt-0">
+            <ChartSurfaceCard
+              title="Allocation Mix"
+              className="min-w-0"
+              contentClassName="space-y-0"
+            >
+              <SurfaceInset>
                 <AssetAllocationDonut data={allocationData} height={240} />
-              </CardContent>
-            </Card>
+              </SurfaceInset>
+            </ChartSurfaceCard>
           ) : (
-            <DataQualityFallback
+            <FallbackSurfaceCard
               title="Allocation Mix"
               detail="Insufficient statement allocation fields to build a reliable mix chart."
             />
@@ -2177,10 +2159,10 @@ export function DashboardMasterView({
               beginningValue={model.hero.beginningValue}
               endingValue={model.hero.endingValue}
               statementPeriod={model.hero.statementPeriod}
-              className="h-full min-w-0 overflow-hidden rounded-[22px]"
+              className="h-full min-w-0"
             />
           ) : (
-            <DataQualityFallback
+            <FallbackSurfaceCard
               title="Portfolio History"
               detail="Insufficient statement period values to plot a defensible history trend."
             />
@@ -2188,11 +2170,11 @@ export function DashboardMasterView({
 
           {model.quality.gainLossReady ? (
             <GainLossDistributionChart
-              className="min-w-0 overflow-hidden rounded-[22px]"
+              className="min-w-0"
               data={model.gainLossDistribution}
             />
           ) : (
-            <DataQualityFallback
+            <FallbackSurfaceCard
               title="Gain/Loss Distribution"
               detail="Statement lacks enough gain/loss percentages to build a reliable distribution."
             />
@@ -2200,11 +2182,11 @@ export function DashboardMasterView({
 
           {model.quality.concentrationReady ? (
             <HoldingsConcentrationChart
-              className="min-w-0 overflow-hidden rounded-[22px]"
+              className="min-w-0"
               data={model.concentration}
             />
           ) : (
-            <DataQualityFallback
+            <FallbackSurfaceCard
               title="Holdings Concentration"
               detail="Need at least three measurable holdings to compute concentration safely."
             />
@@ -2212,36 +2194,36 @@ export function DashboardMasterView({
         </div>
       </section>
 
-      <Card variant="none" effect="glass" className="min-w-0 overflow-hidden rounded-[22px]">
-        <CardContent className="p-4 sm:p-5">
+      <SurfaceCard className="min-w-0">
+        <SurfaceCardContent className="p-4 sm:p-5">
           <ProfileBasedPicksList
             userId={userId}
             vaultOwnerToken={vaultOwnerToken}
             symbols={holdingSymbols}
             onAdd={handleAnalyzeFromDashboard}
           />
-        </CardContent>
-      </Card>
+        </SurfaceCardContent>
+      </SurfaceCard>
 
-      <Card variant="none" effect="glass" className="min-w-0 overflow-hidden rounded-[24px]">
-        <CardHeader className="pb-2 px-5 pt-5 sm:px-6 sm:pt-6">
-          <CardTitle className="text-sm">Recommendations</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 px-5 pb-5 pt-0 sm:px-6 sm:pb-6">
+      <SurfaceCard className="min-w-0">
+        <SurfaceCardHeader>
+          <SurfaceCardTitle>Recommendations</SurfaceCardTitle>
+        </SurfaceCardHeader>
+        <SurfaceCardContent className="space-y-3">
           <p className="text-xs text-muted-foreground">
             {KAI_EXPERIENCE_CONTRACT.decisionConviction.dashboardRecommendationsDescription}
           </p>
           {model.recommendations.map((item) => (
-            <div key={item.title} className="rounded-xl border border-border/60 bg-background/70 p-3">
+            <SurfaceInset key={item.title} className="p-3">
               <p className="text-sm font-semibold">{item.title}</p>
               <p className="mt-1 text-xs text-muted-foreground">{item.detail}</p>
-            </div>
+            </SurfaceInset>
           ))}
-        </CardContent>
-      </Card>
+        </SurfaceCardContent>
+      </SurfaceCard>
 
-      <Card variant="none" effect="glass" className="rounded-[24px]">
-        <CardContent className="flex flex-col gap-3 p-5 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:p-6">
+      <SurfaceCard>
+        <SurfaceCardContent className="flex flex-col gap-3 p-5 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:p-6">
           <p>
             {canEditStatement
               ? "Imported statement data is synced across dashboard and holdings views."
@@ -2289,8 +2271,8 @@ export function DashboardMasterView({
               </MorphyButton>
             )}
           </div>
-        </CardContent>
-      </Card>
+        </SurfaceCardContent>
+      </SurfaceCard>
 
       <EditHoldingModal
         isOpen={isModalOpen}
