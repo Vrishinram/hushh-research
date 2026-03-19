@@ -1202,7 +1202,7 @@ export function DebateStreamView({
           break;
       }
     },
-    [decision, onDecisionSaved, resolveRoundForEnvelope, setBusyOperation, ticker, updateAgentState, userId]
+    [onDecisionSaved, resolveRoundForEnvelope, setBusyOperation, ticker, updateAgentState, userId]
   );
 
   useEffect(() => {
