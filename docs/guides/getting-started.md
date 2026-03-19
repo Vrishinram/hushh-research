@@ -69,12 +69,73 @@ make web PROFILE=prod-remote
 make backend PROFILE=local-uatdb
 ```
 
-Shortcut aliases still exist:
+Use `.venv` as the backend virtual environment. Do not maintain a second `venv` alongside it.
+
+---
+
+## Environment Setup
+
+The canonical env contract is documented in [../reference/operations/env-and-secrets.md](../reference/operations/env-and-secrets.md).
+
+Current default workflow uses runtime profiles rather than ad hoc manual env assembly.
+
+Bootstrap local profiles:
+
+```bash
+bash scripts/env/bootstrap_profiles.sh
+```
+
+Activate a profile into `consent-protocol/.env` and `hushh-webapp/.env.local`:
+
+```bash
+bash scripts/env/use_profile.sh local-uatdb
+```
+
+For `local-uatdb`, start the backend with the launcher instead of running
+`python`/`uvicorn` directly:
+
+```bash
+bash scripts/runtime/run_backend_local.sh local-uatdb
+```
+
+That launcher starts the local Cloud SQL proxy automatically when the active
+profile points at UAT Cloud SQL. It authenticates the proxy from
+`FIREBASE_SERVICE_ACCOUNT_JSON` in the active backend env, or from
+`CLOUDSQL_PROXY_CREDENTIALS_FILE` if you set one explicitly. It refuses to
+fall back to local `gcloud`/ADC credentials.
+
+Supported profile names:
+
+- `local-uatdb`
+- `uat-remote`
+- `prod-remote`
+
+Important env rules:
+
+- backend database configuration uses `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, and `DB_NAME`
+- backend signing/runtime secrets come from the documented `SECRET_KEY`, Firebase, and Google keys
+- frontend runtime uses `NEXT_PUBLIC_*` keys plus server-side fallback keys where documented
+- `DATABASE_URL` is not part of the supported runtime contract
+
+---
+
+## Running Locally
+
+Canonical launchers:
 
 ```bash
 make local
 make uat
 make prod
+```
+
+Shortcut aliases still exist:
+
+```bash
+make local-web
+make uat-web
+make prod-web
+make local-backend
 ```
 
 ## Decision Table
