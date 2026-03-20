@@ -24,7 +24,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/lib/morphy-ux/button";
-import { ROUTES } from "@/lib/navigation/routes";
+import { buildRiaWorkspaceRoute, ROUTES } from "@/lib/navigation/routes";
 import { usePersonaState } from "@/lib/persona/persona-context";
 import {
   isIAMSchemaNotReadyError,
@@ -387,9 +387,7 @@ export default function RiaHomePage() {
                       trailing={
                         client.investor_user_id ? (
                           <Button asChild variant="none" effect="fade" size="sm">
-                            <Link
-                              href={`/ria/workspace/${encodeURIComponent(client.investor_user_id)}`}
-                            >
+                            <Link href={buildRiaWorkspaceRoute(client.investor_user_id)}>
                               Open
                             </Link>
                           </Button>

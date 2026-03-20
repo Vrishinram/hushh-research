@@ -34,6 +34,7 @@ import {
   getLatestMarketSnapshotFromCache,
   pickPreferredMarketSnapshot,
 } from "@/lib/kai/market-snapshot";
+import { assignWindowLocation } from "@/lib/utils/browser-navigation";
 import {
   getInitialRoundCollapseState,
   getRoundCollapseStateForDecision,
@@ -1320,9 +1321,7 @@ export function DebateStreamView({
               action: {
                 label: "Open active",
                 onClick: () => {
-                  if (typeof window !== "undefined") {
-                    window.location.assign("/kai/analysis");
-                  }
+                  assignWindowLocation("/kai/analysis");
                 },
               },
             });

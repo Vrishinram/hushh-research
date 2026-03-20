@@ -26,11 +26,11 @@ Rules:
 1. The icon sits on the left and is centered against the full header block:
    - eyebrow
    - title
-   - description
-2. The icon well should feel sized for the full three-line unit, not only the title line.
-3. Titles and descriptions stay compact and readable on mobile first.
-4. Do not stack a second decorative icon inside the same header block.
-5. If a section already has a header icon, omit redundant per-row decorative icons unless the row needs them for real semantic distinction.
+2. On mobile, description becomes a full-width third row aligned with the page content edge, not nested under the icon.
+3. The icon well should feel sized for the title block, not stretched to a full three-row mobile stack.
+4. Titles and descriptions stay compact and readable on mobile first.
+5. Do not stack a second decorative icon inside the same header block.
+6. If a section already has a header icon, omit redundant per-row decorative icons unless the row needs them for real semantic distinction.
 
 ## Row and Card Interaction Contract
 
@@ -43,6 +43,15 @@ Rules:
 5. `SettingsRow` is the default interactive list row contract and should be reused outside Profile when the surface is row-like.
 6. Standalone actions should use the shared `Button` primitive so ripple, loading, and emphasis stay consistent across the app.
 7. Do not ship raw clickable pills or text links for primary app actions when a shared button or row primitive already exists.
+
+## Notification Bell Contract
+
+Rules:
+
+1. The bell is one notification surface, not a tabbed mini-app.
+2. Consent appears there only as a pinned `Consent Center` launcher module.
+3. The bell may summarize delivery state, but it must not duplicate the full consent center UI.
+4. Bell, profile, and compatibility aliases all launch the same shared consent sheet path.
 
 ## Surface Card Contract
 

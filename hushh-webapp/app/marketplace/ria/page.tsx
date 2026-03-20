@@ -1,16 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 import { RiaPageShell, RiaSurface } from "@/components/ria/ria-page-shell";
 import { ROUTES } from "@/lib/navigation/routes";
 import { RiaService, type MarketplaceRia } from "@/lib/services/ria-service";
 
 export default function MarketplaceRiaProfilePage() {
-  const params = useParams<{ riaId: string }>();
-  const riaId = String(params.riaId || "");
+  const searchParams = useSearchParams();
+  const riaId = useMemo(() => searchParams.get("riaId")?.trim() || "", [searchParams]);
   const [profile, setProfile] = useState<MarketplaceRia | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -26,6 +26,8 @@ export default function MarketplaceRiaProfilePage() {
 
     async function load() {
       if (!riaId) {
+        setProfile(null);
+        setError("Missing RIA profile identifier.");
         setLoading(false);
         return;
       }

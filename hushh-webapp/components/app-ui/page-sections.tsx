@@ -52,12 +52,39 @@ const ACCENT_STYLES: Record<SectionAccent, {
   },
 };
 
+function HeaderLeading({
+  icon,
+  leading,
+  iconClassName,
+  iconSize,
+}: {
+  icon?: LucideIcon;
+  leading?: ReactNode;
+  iconClassName: string;
+  iconSize: "md" | "lg";
+}) {
+  if (leading) {
+    return <div className="shrink-0 self-start pt-0.5">{leading}</div>;
+  }
+
+  if (!icon) {
+    return null;
+  }
+
+  return (
+    <span className={iconClassName}>
+      <Icon icon={icon} size={iconSize} />
+    </span>
+  );
+}
+
 export function PageHeader({
   eyebrow,
   title,
   description,
   actions,
   icon,
+  leading,
   accent = "default",
   className,
 }: {
@@ -66,6 +93,7 @@ export function PageHeader({
   description?: ReactNode;
   actions?: ReactNode;
   icon?: LucideIcon;
+  leading?: ReactNode;
   accent?: SectionAccent;
   className?: string;
 }) {
@@ -73,19 +101,18 @@ export function PageHeader({
   return (
     <header className={cn("space-y-[var(--page-header-stack-gap)]", className)}>
       <div className="flex flex-col gap-[var(--page-header-row-gap)] lg:flex-row lg:items-end lg:justify-between">
-        <div className="max-w-3xl">
+        <div className="max-w-3xl min-w-0 space-y-[var(--page-header-copy-gap)]">
           <div className="flex items-start gap-4 sm:gap-5">
-            {icon ? (
-              <span
-                className={cn(
-                  "inline-flex h-12 w-12 shrink-0 self-center items-center justify-center rounded-[22px] border sm:h-14 sm:w-14",
-                  styles.icon
-                )}
-              >
-                <Icon icon={icon} size="lg" />
-              </span>
-            ) : null}
-            <div className="min-w-0 space-y-[var(--page-header-copy-gap)]">
+            <HeaderLeading
+              icon={icon}
+              leading={leading}
+              iconSize="lg"
+              iconClassName={cn(
+                "inline-flex h-12 w-12 shrink-0 self-start items-center justify-center rounded-[22px] border sm:h-14 sm:w-14",
+                styles.icon
+              )}
+            />
+            <div className="min-w-0 space-y-2 sm:space-y-2.5">
               {eyebrow ? (
                 <p
                   className={cn(
@@ -96,25 +123,22 @@ export function PageHeader({
                   {eyebrow}
                 </p>
               ) : null}
-              <h1 className="text-[clamp(2.05rem,4.7vw,2.95rem)] font-semibold tracking-tight leading-[1.02] text-foreground">
+              <h1 className="text-[clamp(1.925rem,4.5vw,2.825rem)] font-semibold tracking-tight leading-[1.02] text-foreground">
                 {title}
               </h1>
-              {description ? (
-                <p className="max-w-2xl text-sm leading-7 text-muted-foreground sm:text-[15px]">
-                  {description}
-                </p>
-              ) : null}
             </div>
           </div>
+          {description ? (
+            <p className="max-w-2xl text-sm leading-7 text-muted-foreground sm:text-[15px]">
+              {description}
+            </p>
+          ) : null}
         </div>
-        {actions ? <div className="flex flex-wrap gap-[var(--page-header-actions-gap)]">{actions}</div> : null}
+        {actions ? (
+          <div className="flex flex-wrap gap-[var(--page-header-actions-gap)]">{actions}</div>
+        ) : null}
       </div>
-      <div
-        className={cn(
-          "h-px w-full bg-gradient-to-r",
-          styles.divider
-        )}
-      />
+      <div className={cn("h-px w-full bg-gradient-to-r", styles.divider)} />
     </header>
   );
 }
@@ -125,6 +149,7 @@ export function SectionHeader({
   description,
   actions,
   icon,
+  leading,
   accent = "default",
   className,
 }: {
@@ -133,6 +158,7 @@ export function SectionHeader({
   description?: ReactNode;
   actions?: ReactNode;
   icon?: LucideIcon;
+  leading?: ReactNode;
   accent?: SectionAccent;
   className?: string;
 }) {
@@ -140,19 +166,18 @@ export function SectionHeader({
   return (
     <div className={cn("space-y-[var(--section-header-stack-gap)]", className)}>
       <div className="flex flex-col gap-[var(--section-header-row-gap)] sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
+        <div className="min-w-0 space-y-[var(--section-header-copy-gap)]">
           <div className="flex items-start gap-3 sm:gap-4">
-            {icon ? (
-              <span
-                className={cn(
-                  "inline-flex h-10 w-10 shrink-0 self-center items-center justify-center rounded-[18px] border sm:h-11 sm:w-11",
-                  styles.icon
-                )}
-              >
-                <Icon icon={icon} size="md" />
-              </span>
-            ) : null}
-            <div className="min-w-0 space-y-[var(--section-header-copy-gap)]">
+            <HeaderLeading
+              icon={icon}
+              leading={leading}
+              iconSize="md"
+              iconClassName={cn(
+                "inline-flex h-10 w-10 shrink-0 self-start items-center justify-center rounded-[18px] border sm:h-11 sm:w-11",
+                styles.icon
+              )}
+            />
+            <div className="min-w-0 space-y-1.5 sm:space-y-2">
               {eyebrow ? (
                 <p
                   className={cn(
@@ -163,25 +188,24 @@ export function SectionHeader({
                   {eyebrow}
                 </p>
               ) : null}
-              <h2 className="text-lg font-semibold tracking-tight leading-[1.08] text-foreground sm:text-xl">
+              <h2 className="text-base font-semibold tracking-tight leading-[1.08] text-foreground sm:text-lg">
                 {title}
               </h2>
-              {description ? (
-                <p className="text-sm leading-6 text-muted-foreground sm:text-[15px]">
-                  {description}
-                </p>
-              ) : null}
             </div>
           </div>
+          {description ? (
+            <p className="text-sm leading-6 text-muted-foreground sm:text-[15px]">
+              {description}
+            </p>
+          ) : null}
         </div>
-        {actions ? <div className="flex shrink-0 flex-wrap gap-[var(--section-header-actions-gap)]">{actions}</div> : null}
+        {actions ? (
+          <div className="flex shrink-0 flex-wrap gap-[var(--section-header-actions-gap)]">
+            {actions}
+          </div>
+        ) : null}
       </div>
-      <div
-        className={cn(
-          "h-px w-full bg-gradient-to-r",
-          styles.divider
-        )}
-      />
+      <div className={cn("h-px w-full bg-gradient-to-r", styles.divider)} />
     </div>
   );
 }

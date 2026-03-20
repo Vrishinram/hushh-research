@@ -1,21 +1,26 @@
-import { redirect } from "next/navigation";
+"use client";
 
+import { useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+
+import { AppPageShell } from "@/components/app-ui/app-page-shell";
+import { HushhLoader } from "@/components/app-ui/hushh-loader";
 import { ROUTES } from "@/lib/navigation/routes";
 
-export default async function RiaRequestsAliasPage({
-  searchParams,
-}: {
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
-}) {
-  const resolvedSearchParams = (await searchParams) || {};
-  const params = new URLSearchParams();
-  const view = resolvedSearchParams.view;
+export default function RiaRequestsAliasPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
 
-  if (typeof view === "string" && view.trim()) {
-    params.set("view", view.trim());
-  } else {
-    params.set("view", "pending");
-  }
+  useEffect(() => {
+    const params = new URLSearchParams();
+    const view = searchParams.get("view")?.trim();
+    params.set("view", view || "pending");
+    router.replace(`${ROUTES.CONSENTS}?${params.toString()}`);
+  }, [router, searchParams]);
 
-  redirect(`${ROUTES.CONSENTS}?${params.toString()}`);
+  return (
+    <AppPageShell as="div" width="content" className="flex min-h-72 items-center justify-center">
+      <HushhLoader variant="inline" label="Redirecting to consents…" />
+    </AppPageShell>
+  );
 }

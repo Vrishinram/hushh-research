@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { ClipboardList, Loader2, Shield, Unplug, Waves } from "lucide-react";
 import { toast } from "sonner";
 
@@ -88,8 +88,8 @@ function visibleScopesForTemplate(
 }
 
 export default function RiaWorkspacePage() {
-  const params = useParams<{ clientId: string }>();
-  const clientId = String(params.clientId || "");
+  const searchParams = useSearchParams();
+  const clientId = useMemo(() => searchParams.get("clientId")?.trim() || "", [searchParams]);
   const { user } = useAuth();
 
   const [detail, setDetail] = useState<RiaClientDetail | null>(null);
@@ -104,7 +104,15 @@ export default function RiaWorkspacePage() {
   const [disconnecting, setDisconnecting] = useState(false);
 
   useEffect(() => {
-    if (!user || !clientId) {
+    if (!clientId) {
+      setDetail(null);
+      setWorkspace(null);
+      setDetailError("Missing investor workspace identifier.");
+      setLoading(false);
+      return;
+    }
+
+    if (!user) {
       setLoading(false);
       return;
     }
