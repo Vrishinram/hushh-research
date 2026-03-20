@@ -31,6 +31,7 @@ Rules:
 4. Titles and descriptions stay compact and readable on mobile first.
 5. Do not stack a second decorative icon inside the same header block.
 6. If a section already has a header icon, omit redundant per-row decorative icons unless the row needs them for real semantic distinction.
+7. Accent divider lines stay constant across the full width; do not fade them to transparent.
 
 ## Row and Card Interaction Contract
 
@@ -49,9 +50,10 @@ Rules:
 Rules:
 
 1. The bell is one notification surface, not a tabbed mini-app.
-2. Consent appears there only as a pinned `Consent Center` launcher module.
-3. The bell may summarize delivery state, but it must not duplicate the full consent center UI.
-4. Bell, profile, and compatibility aliases all launch the same shared consent sheet path.
+2. Consent appears there only as a single `Consent Center` launcher row at the top of the feed.
+3. Delivery diagnostics do not belong in the bell.
+4. Notifications remain visible until dismissed and should be ordered newest-first.
+5. Bell, profile, and compatibility aliases all launch the same shared consent sheet path.
 
 ## Surface Card Contract
 
@@ -88,7 +90,7 @@ Use the `Subtle Apple` depth model:
    - `--app-card-surface-default`
    - `--app-card-surface-surface`
    - `--app-card-surface-hero`
-4. Shared border tokens come from:
+4. Shared border tokens exist for inner insets and grouped structure:
    - `--app-card-border-standard`
    - `--app-card-border-strong`
 5. Feature emphasis belongs inside the card:
@@ -96,8 +98,9 @@ Use the `Subtle Apple` depth model:
    - badges
    - insets
    - copy hierarchy
-6. Do not tint outer card chrome to communicate state.
-7. If a surface needs more presence, move from `surface` to `surface-feature` or `hero`; do not invent a new route-local shadow recipe.
+6. Default outer shells are borderless glass. Do not add visible outline borders to make cards pop.
+7. Do not tint outer card chrome to communicate state.
+8. If a surface needs more presence, move from `surface` to `surface-feature` or `hero`; do not invent a new route-local shadow recipe.
 
 ### Ripple Ownership and Clipping
 

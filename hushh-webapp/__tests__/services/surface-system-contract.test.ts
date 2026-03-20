@@ -20,14 +20,16 @@ const SURFACE_CONTRACTS: SurfaceContract[] = [
     includes: [
       "CARD_PRESET_SHELL_CLASSES",
       "var(--app-card-surface-default)",
-      "var(--app-card-border-standard)",
       "var(--app-card-shadow-standard)",
       "var(--app-card-shadow-feature)",
       "overflow-visible",
       "MaterialRipple",
+      "ring-1 ring-sky-500/25 dark:ring-sky-400/30",
     ],
     excludes: [
       "showRipple ? \"overflow-hidden\" : \"\"",
+      "!border-[color:var(--app-card-border-standard)]",
+      "!border-[color:var(--app-card-border-strong)]",
     ],
   },
   {
@@ -45,8 +47,17 @@ const SURFACE_CONTRACTS: SurfaceContract[] = [
   },
   {
     file: "components/app-ui/page-sections.tsx",
-    includes: ["ACCENT_STYLES", "HeaderLeading", "text-sky-700", "text-emerald-700", "text-amber-700", "text-rose-700", "text-violet-700"],
-    excludes: ["NEUTRAL_SECTION_STYLE"],
+    includes: [
+      "ACCENT_STYLES",
+      "HeaderLeading",
+      "text-sky-700",
+      "text-emerald-700",
+      "text-amber-700",
+      "text-rose-700",
+      "text-violet-700",
+      "self-center",
+    ],
+    excludes: ["NEUTRAL_SECTION_STYLE", "bg-gradient-to-r"],
   },
   {
     file: "components/developers/developer-docs-hub.tsx",

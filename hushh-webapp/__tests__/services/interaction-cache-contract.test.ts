@@ -27,10 +27,10 @@ describe("interaction and cache contract", () => {
     expect(topAppBar).toContain('<Loader2 className="ml-auto h-4 w-4 animate-spin text-current" />');
     expect(taskCenter).toContain("Notifications");
     expect(taskCenter).toContain("Consent Center");
-    expect(taskCenter).toContain("Open consent center");
     expect(taskCenter).toContain('openConsentSheet({ view: "pending" })');
-    expect(taskCenter).not.toContain("SettingsSegmentedTabs");
-    expect(taskCenter).not.toContain("TaskCenterTab");
+    expect(taskCenter).not.toContain("Notification delivery");
+    expect(taskCenter).not.toContain("BellRing");
+    expect(taskCenter).not.toContain("useConsentNotificationState");
     expect(providers).toContain("ConsentSheetProvider");
 
     expect(materialRipple).toContain("morphy-ripple-host");
@@ -39,6 +39,7 @@ describe("interaction and cache contract", () => {
 
   it("keeps kai market home on stale-aware cache refreshes", () => {
     const kaiMarketHome = read("components/kai/views/kai-market-preview-view.tsx");
+    const riaPicksList = read("components/kai/cards/renaissance-market-list.tsx");
     const unlockWarmOrchestrator = read("lib/services/unlock-warm-orchestrator.ts");
 
     expect(kaiMarketHome).toContain("staleOnly?: boolean");
@@ -46,6 +47,9 @@ describe("interaction and cache contract", () => {
     expect(kaiMarketHome).toContain("cache.peek<KaiHomeInsightsV2>");
     expect(kaiMarketHome).toContain("persistKaiMarketHomePayload");
     expect(kaiMarketHome).toContain("refresh({ staleOnly: true })");
+    expect(riaPicksList).not.toContain("useSearchParams");
+    expect(riaPicksList).not.toContain("router.replace");
+    expect(riaPicksList).toContain("useState(DEFAULT_PICKS_PAGE_SIZE)");
     expect(unlockWarmOrchestrator).toContain("getKaiActivePickSource");
     expect(unlockWarmOrchestrator).toContain("persistKaiMarketHomePayload");
   });

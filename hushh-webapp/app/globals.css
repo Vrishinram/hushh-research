@@ -140,14 +140,14 @@ html body[data-scroll-locked] {
   --page-surface-overscan: 14px;
   --page-surface-gap-standard: 18px;
   --page-surface-gap-compact: 14px;
-  --page-header-stack-gap: 34px;
-  --page-header-row-gap: 28px;
-  --page-header-copy-gap: 16px;
+  --page-header-stack-gap: 28px;
+  --page-header-row-gap: 22px;
+  --page-header-copy-gap: 14px;
   --page-header-actions-gap: 10px;
-  --page-header-section-gap: 52px;
-  --section-header-stack-gap: 24px;
-  --section-header-row-gap: 22px;
-  --section-header-copy-gap: 14px;
+  --page-header-section-gap: 44px;
+  --section-header-stack-gap: 18px;
+  --section-header-row-gap: 16px;
+  --section-header-copy-gap: 12px;
   --section-header-actions-gap: 10px;
   --surface-shadow-overscan: 14px;
   --surface-stack-gap-standard: 22px;
@@ -292,6 +292,22 @@ html body[data-scroll-locked] {
   --md-ripple-pressed-color: var(--morphy-primary-start);
   --md-ripple-hover-opacity: 0.08;
   --md-ripple-pressed-opacity: 0.12;
+
+  /* Shared outer-card contract: glass-first, borderless by default. */
+  --app-card-surface-compact: rgba(255, 255, 255, 0.78);
+  --app-card-surface-default: rgba(255, 255, 255, 0.72);
+  --app-card-surface-surface: rgba(255, 255, 255, 0.76);
+  --app-card-surface-hero: rgba(255, 255, 255, 0.82);
+  --app-card-border-standard: rgba(15, 23, 42, 0.08);
+  --app-card-border-strong: rgba(15, 23, 42, 0.12);
+  --app-card-shadow-standard:
+    0 24px 56px -34px rgba(15, 23, 42, 0.28),
+    0 12px 24px -18px rgba(15, 23, 42, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  --app-card-shadow-feature:
+    0 30px 70px -36px rgba(15, 23, 42, 0.34),
+    0 18px 30px -20px rgba(15, 23, 42, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.58);
 }
 
 @media (min-width: 640px) {
@@ -300,13 +316,13 @@ html body[data-scroll-locked] {
     --page-surface-overscan: 18px;
     --page-surface-gap-standard: 22px;
     --page-surface-gap-compact: 18px;
-    --page-header-stack-gap: 38px;
-    --page-header-row-gap: 30px;
-    --page-header-copy-gap: 18px;
+    --page-header-stack-gap: 32px;
+    --page-header-row-gap: 24px;
+    --page-header-copy-gap: 16px;
     --page-header-actions-gap: 12px;
-    --page-header-section-gap: 56px;
-    --section-header-stack-gap: 26px;
-    --section-header-row-gap: 24px;
+    --page-header-section-gap: 48px;
+    --section-header-stack-gap: 20px;
+    --section-header-row-gap: 18px;
     --section-header-copy-gap: 14px;
     --section-header-actions-gap: 12px;
     --surface-shadow-overscan: 18px;
@@ -317,7 +333,7 @@ html body[data-scroll-locked] {
 
 .native-ios {
   --app-top-safe-offset: 2px;
-  --page-top-start: max(119px, calc(var(--top-shell-h) + 40px));
+  --page-top-start: max(106px, calc(var(--top-shell-h) + 26px));
 }
 
 .app-page-shell {
@@ -488,6 +504,21 @@ html.native-ios {
   --md-ripple-pressed-color: #3b82f6;
   --md-ripple-hover-opacity: 0.08;
   --md-ripple-pressed-opacity: 0.12;
+
+  --app-card-surface-compact: rgba(20, 24, 32, 0.72);
+  --app-card-surface-default: rgba(17, 21, 29, 0.78);
+  --app-card-surface-surface: rgba(15, 19, 27, 0.82);
+  --app-card-surface-hero: rgba(16, 20, 29, 0.88);
+  --app-card-border-standard: rgba(255, 255, 255, 0.08);
+  --app-card-border-strong: rgba(255, 255, 255, 0.12);
+  --app-card-shadow-standard:
+    0 28px 60px -38px rgba(0, 0, 0, 0.72),
+    0 14px 28px -20px rgba(2, 6, 23, 0.44),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  --app-card-shadow-feature:
+    0 34px 72px -38px rgba(0, 0, 0, 0.82),
+    0 18px 34px -20px rgba(2, 6, 23, 0.54),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
 }
 
 /* Hero card specific glass effect - automatically switches between light/dark modes */

@@ -36,27 +36,27 @@ const CARD_PRESET_SHELL_CLASSES: Record<
 > = {
   compact: {
     shell:
-      "!rounded-[20px] !border-[color:var(--app-card-border-standard)] !bg-[var(--app-card-surface-compact)] !shadow-[var(--app-card-shadow-standard)]",
+      "!rounded-[20px] !border-transparent !bg-[var(--app-card-surface-compact)] !shadow-[var(--app-card-shadow-standard)]",
     spacing: "p-0",
   },
   default: {
     shell:
-      "!rounded-[22px] !border-[color:var(--app-card-border-standard)] !bg-[var(--app-card-surface-default)] !shadow-[var(--app-card-shadow-standard)]",
+      "!rounded-[22px] !border-transparent !bg-[var(--app-card-surface-default)] !shadow-[var(--app-card-shadow-standard)]",
     spacing: "p-4 sm:p-6",
   },
   hero: {
     shell:
-      "!rounded-[28px] !border-[color:var(--app-card-border-strong)] !bg-[var(--app-card-surface-hero)] !shadow-[var(--app-card-shadow-feature)]",
+      "!rounded-[28px] !border-transparent !bg-[var(--app-card-surface-hero)] !shadow-[var(--app-card-shadow-feature)]",
     spacing: "p-0",
   },
   surface: {
     shell:
-      "!rounded-[24px] !border-[color:var(--app-card-border-standard)] !bg-[var(--app-card-surface-surface)] !shadow-[var(--app-card-shadow-standard)]",
+      "!rounded-[24px] !border-transparent !bg-[var(--app-card-surface-surface)] !shadow-[var(--app-card-shadow-standard)]",
     spacing: "min-w-0 p-0",
   },
   "surface-feature": {
     shell:
-      "!rounded-[24px] !border-[color:var(--app-card-border-strong)] !bg-[var(--app-card-surface-hero)] !shadow-[var(--app-card-shadow-feature)]",
+      "!rounded-[24px] !border-transparent !bg-[var(--app-card-surface-hero)] !shadow-[var(--app-card-shadow-feature)]",
     spacing: "min-w-0 p-0",
   },
 };
@@ -137,27 +137,31 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
       <Comp
         ref={ref}
         className={cn(
-          "relative !overflow-visible border border-solid transition-[border-color,box-shadow,background-color] duration-200",
+          "relative !overflow-visible border border-solid border-transparent transition-[border-color,box-shadow,background-color] duration-200",
           presetConfig.shell,
           "!text-card-foreground",
-          effect === "fade" ? "!backdrop-blur-none" : "backdrop-blur-xl backdrop-saturate-150",
+          effect === "fade"
+            ? "!backdrop-blur-none"
+            : "backdrop-blur-[18px] backdrop-saturate-[145%]",
           presetConfig.spacing,
-          showRipple ? "hover:!border-[var(--morphy-primary-start)]/18" : "",
           interactive ? "cursor-pointer" : "",
           fullHeight ? "h-full" : "",
-          selected ? "!border-[var(--morphy-primary-start)]/40" : "",
+          selected ? "ring-1 ring-sky-500/25 dark:ring-sky-400/30" : "",
           className
         )}
         {...props}
       >
-        {effect === "glass" && glassAccent !== "none" ? (
+        {effect === "glass" ? (
           <div
             aria-hidden
             className={cn(
               "pointer-events-none absolute inset-0",
-              glassAccent === "soft"
-                ? "bg-[radial-gradient(92%_75%_at_16%_14%,rgba(255,255,255,0.22)_0%,transparent_66%)] opacity-100 dark:bg-[radial-gradient(92%_75%_at_16%_14%,rgba(255,255,255,0.08)_0%,transparent_66%)]"
-                : "bg-[radial-gradient(92%_75%_at_16%_14%,rgba(255,255,255,0.28)_0%,transparent_60%),radial-gradient(78%_65%_at_86%_100%,rgba(15,23,42,0.06)_0%,transparent_64%)] opacity-100 dark:bg-[radial-gradient(92%_75%_at_16%_14%,rgba(255,255,255,0.1)_0%,transparent_60%),radial-gradient(78%_65%_at_86%_100%,rgba(255,255,255,0.03)_0%,transparent_64%)]"
+              glassAccent === "none" &&
+                "bg-[linear-gradient(180deg,rgba(255,255,255,0.44)_0%,rgba(255,255,255,0.12)_18%,transparent_38%),radial-gradient(130%_78%_at_50%_-8%,rgba(255,255,255,0.18)_0%,transparent_56%)] dark:bg-[linear-gradient(180deg,rgba(255,255,255,0.12)_0%,rgba(255,255,255,0.03)_18%,transparent_36%),radial-gradient(128%_74%_at_50%_-8%,rgba(255,255,255,0.08)_0%,transparent_56%)]",
+              glassAccent === "soft" &&
+                "bg-[linear-gradient(180deg,rgba(255,255,255,0.5)_0%,rgba(255,255,255,0.14)_18%,transparent_40%),radial-gradient(132%_82%_at_50%_-8%,rgba(255,255,255,0.24)_0%,transparent_54%)] dark:bg-[linear-gradient(180deg,rgba(255,255,255,0.16)_0%,rgba(255,255,255,0.04)_18%,transparent_38%),radial-gradient(128%_78%_at_50%_-8%,rgba(255,255,255,0.1)_0%,transparent_54%)]",
+              glassAccent === "balanced" &&
+                "bg-[linear-gradient(180deg,rgba(255,255,255,0.56)_0%,rgba(255,255,255,0.18)_18%,transparent_42%),radial-gradient(92%_72%_at_14%_16%,rgba(255,255,255,0.2)_0%,transparent_60%),radial-gradient(76%_60%_at_86%_104%,rgba(15,23,42,0.08)_0%,transparent_62%)] dark:bg-[linear-gradient(180deg,rgba(255,255,255,0.18)_0%,rgba(255,255,255,0.05)_18%,transparent_40%),radial-gradient(92%_72%_at_14%_16%,rgba(255,255,255,0.1)_0%,transparent_60%),radial-gradient(76%_60%_at_86%_104%,rgba(255,255,255,0.04)_0%,transparent_62%)]"
             )}
             style={{ borderRadius: "inherit" }}
           />

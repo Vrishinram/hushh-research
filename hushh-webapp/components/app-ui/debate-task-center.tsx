@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Bell,
-  BellRing,
   Loader2,
   CheckCircle2,
   XCircle,
@@ -14,6 +13,7 @@ import {
   X,
   RotateCw,
 } from "lucide-react";
+
 import { cn } from "@/lib/utils";
 import { Icon } from "@/lib/morphy-ux/ui";
 import { Button } from "@/lib/morphy-ux/button";
@@ -35,10 +35,7 @@ import { PlaidPortfolioService } from "@/lib/kai/brokerage/plaid-portfolio-servi
 import { getSessionItem, removeSessionItem } from "@/lib/utils/session-storage";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { useVault } from "@/lib/vault/vault-context";
-import {
-  useConsentNotificationState,
-  usePendingConsentCount,
-} from "@/components/consent/notification-provider";
+import { usePendingConsentCount } from "@/components/consent/notification-provider";
 import { useConsentSheet } from "@/components/consent/consent-sheet-controller";
 
 function statusLabel(task: DebateRunTask): string {
@@ -96,18 +93,26 @@ interface ImportBackgroundSnapshot {
   userId?: string;
 }
 
+type NotificationItem =
+  | {
+      kind: "debate";
+      id: string;
+      sortAt: number;
+      task: DebateRunTask;
+    }
+  | {
+      kind: "app";
+      id: string;
+      sortAt: number;
+      task: AppBackgroundTask;
+    };
+
 export function DebateTaskCenter({ triggerClassName }: DebateTaskCenterProps = {}) {
   const router = useRouter();
   const { userId } = useAuth();
   const { vaultOwnerToken } = useVault();
   const { openConsentSheet } = useConsentSheet();
   const pendingConsentCount = usePendingConsentCount();
-  const {
-    deliveryMode,
-    deliveryDetail,
-    retryPushRegistration,
-    isRetryingPushRegistration,
-  } = useConsentNotificationState();
   const [debateState, setDebateState] = useState(DebateRunManagerService.getState());
   const [appTaskState, setAppTaskState] = useState(AppBackgroundTaskService.getState());
   const [isBusy, setIsBusy] = useState<Record<string, boolean>>({});
@@ -130,6 +135,22 @@ export function DebateTaskCenter({ triggerClassName }: DebateTaskCenterProps = {
     if (!userId) return [];
     return appTaskState.tasks.filter((task) => task.userId === userId && !task.dismissedAt);
   }, [appTaskState.tasks, userId]);
+
+  const notifications = useMemo<NotificationItem[]>(() => {
+    const debateNotifications = debateTasks.map((task) => ({
+      kind: "debate" as const,
+      id: task.runId,
+      sortAt: Date.parse(task.updatedAt || task.startedAt),
+      task,
+    }));
+    const appNotifications = appTasks.map((task) => ({
+      kind: "app" as const,
+      id: task.taskId,
+      sortAt: Date.parse(task.updatedAt || task.startedAt),
+      task,
+    }));
+    return [...debateNotifications, ...appNotifications].sort((a, b) => b.sortAt - a.sortAt);
+  }, [appTasks, debateTasks]);
 
   const activeCount =
     debateTasks.filter((task) => task.status === "running").length +
@@ -225,15 +246,6 @@ export function DebateTaskCenter({ triggerClassName }: DebateTaskCenterProps = {
 
   if (!userId) return null;
 
-  const consentDeliverySummary =
-    deliveryMode === "push_active"
-      ? "Push delivery is active."
-      : deliveryMode === "push_blocked"
-        ? "Push delivery is blocked on this device."
-        : deliveryMode === "push_failed_fallback_active"
-          ? "Push registration failed. Inbox fallback is still active."
-          : "Notifications are inbox-only right now.";
-
   return (
     <DropdownMenu open={open} onOpenChange={setOpen} modal={false}>
       <DropdownMenuTrigger asChild>
@@ -253,117 +265,76 @@ export function DebateTaskCenter({ triggerClassName }: DebateTaskCenterProps = {
           ) : null}
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="end"
-        className="w-[360px] max-w-[calc(100vw-1rem)] p-0"
-      >
+      <DropdownMenuContent align="end" className="w-[360px] max-w-[calc(100vw-1rem)] p-0">
         <div className="border-b border-border/50 px-3 py-2">
           <p className="text-sm font-semibold">Notifications</p>
         </div>
-        <div className="max-h-[360px] overflow-y-auto">
-          <div className="space-y-4 border-b border-border/40 px-3 py-4">
-            <div className="rounded-[20px] border border-border/60 bg-background/72 p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <Icon icon={Shield} size="sm" className="text-sky-500" />
-                    <p className="text-sm font-semibold">Consent Center</p>
-                  </div>
+
+        <div className="max-h-[360px] overflow-y-auto px-3 py-4">
+          <div className="overflow-hidden rounded-[20px] border border-border/50 bg-background/72">
+            <button
+              type="button"
+              className="flex w-full items-start justify-between gap-3 px-3 py-3 text-left transition-colors hover:bg-muted/28"
+              onClick={() => {
+                setOpen(false);
+                openConsentSheet({ view: "pending" });
+              }}
+            >
+              <div className="flex min-w-0 items-start gap-3">
+                <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-sky-500/10 text-sky-600 dark:text-sky-300">
+                  <Icon icon={Shield} size="sm" />
+                </span>
+                <div className="min-w-0 space-y-1">
+                  <p className="text-sm font-semibold">Consent Center</p>
                   <p className="text-xs leading-5 text-muted-foreground">
                     {pendingConsentCount > 0
                       ? `${pendingConsentCount} request${pendingConsentCount === 1 ? "" : "s"} waiting for review.`
                       : "All caught up. Open the consent center anytime."}
                   </p>
                 </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
                 {pendingConsentCount > 0 ? (
                   <span className="inline-flex min-h-6 min-w-6 items-center justify-center rounded-full bg-sky-500 px-2 text-[11px] font-semibold text-white">
                     {pendingConsentCount}
                   </span>
                 ) : null}
+                <span className="inline-flex items-center rounded-full bg-muted/72 px-3 py-1.5 text-xs font-medium text-foreground">
+                  Open
+                </span>
               </div>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <Button
-                  variant="none"
-                  effect="fade"
-                  size="sm"
-                  onClick={() => {
-                    setOpen(false);
-                    openConsentSheet({ view: "pending" });
-                  }}
-                >
-                  Open consent center
-                </Button>
-              </div>
-            </div>
+            </button>
 
-            <div className="rounded-[20px] border border-border/60 bg-background/72 p-4">
-              <div className="flex items-start gap-2">
-                <Icon icon={BellRing} size="sm" className="mt-0.5 text-sky-500" />
-                <div className="space-y-1">
-                  <p className="text-sm font-semibold">Notification delivery</p>
-                  <p className="text-xs leading-5 text-muted-foreground">
-                    {consentDeliverySummary}
-                  </p>
-                  {deliveryDetail ? (
-                    <p className="text-xs leading-5 text-muted-foreground">{deliveryDetail}</p>
-                  ) : null}
-                </div>
-              </div>
-              {deliveryMode !== "push_active" ? (
-                <div className="mt-4">
-                  <Button
-                    variant="none"
-                    effect="fade"
-                    size="sm"
-                    disabled={isRetryingPushRegistration}
-                    onClick={() => retryPushRegistration()}
-                  >
-                    {isRetryingPushRegistration ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <RotateCw className="mr-2 h-4 w-4" />
-                    )}
-                    Retry push setup
-                  </Button>
-                </div>
-              ) : null}
-            </div>
-          </div>
-
-          <div className="px-3 py-4">
-            {debateTasks.length === 0 && appTasks.length === 0 ? (
-              <div className="rounded-[20px] border border-dashed border-border/60 bg-background/60 px-3 py-6 text-center text-sm text-muted-foreground">
+            {notifications.length === 0 ? (
+              <div className="border-t border-border/40 px-3 py-6 text-center text-sm text-muted-foreground">
                 No notifications yet.
               </div>
             ) : (
-              <div className="space-y-3">
-                <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
-                  Recent notifications
-                </p>
-                <div className="overflow-hidden rounded-[20px] border border-border/50 bg-background/70">
-                  {debateTasks.map((task) => (
+              <div className="border-t border-border/40">
+                {notifications.map((item) =>
+                  item.kind === "debate" ? (
                     <div
-                      key={task.runId}
+                      key={item.id}
                       className="border-b border-border/40 px-3 py-3 last:border-b-0"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
-                            {statusIcon(task)}
-                            <span className="text-sm font-semibold">{task.ticker}</span>
+                            {statusIcon(item.task)}
+                            <span className="text-sm font-semibold">{item.task.ticker}</span>
                             <span className="text-xs text-muted-foreground">
-                              {statusLabel(task)}
+                              {statusLabel(item.task)}
                             </span>
                           </div>
                           <p className="mt-1 text-xs text-muted-foreground">
-                            Started {new Date(task.startedAt).toLocaleTimeString()}
+                            Started {new Date(item.task.startedAt).toLocaleTimeString()}
                           </p>
-                          {task.persistenceState === "pending" ? (
+                          {item.task.persistenceState === "pending" ? (
                             <p className="mt-1 text-xs text-amber-500">Saving to history…</p>
                           ) : null}
-                          {task.persistenceState === "failed" ? (
+                          {item.task.persistenceState === "failed" ? (
                             <p className="mt-1 text-xs text-rose-500">
-                              {task.persistenceError || "History save failed."}
+                              {item.task.persistenceError || "History save failed."}
                             </p>
                           ) : null}
                         </div>
@@ -373,24 +344,24 @@ export function DebateTaskCenter({ triggerClassName }: DebateTaskCenterProps = {
                             effect="fade"
                             size="icon"
                             className="h-8 w-8"
-                            onClick={() => openAnalysis(task.runId)}
+                            onClick={() => openAnalysis(item.task.runId)}
                             aria-label="Open analysis"
                           >
                             <Icon icon={ExternalLink} size="xs" />
                           </Button>
-                          {task.status === "running" ? (
+                          {item.task.status === "running" ? (
                             <Button
                               variant="none"
                               effect="fade"
                               size="icon"
                               className="h-8 w-8"
-                              disabled={!vaultOwnerToken || Boolean(isBusy[task.runId])}
+                              disabled={!vaultOwnerToken || Boolean(isBusy[item.task.runId])}
                               onClick={() =>
-                                runAction(task.runId, async () => {
+                                runAction(item.task.runId, async () => {
                                   if (!vaultOwnerToken) return;
                                   await DebateRunManagerService.cancelRun({
-                                    runId: task.runId,
-                                    userId: task.userId,
+                                    runId: item.task.runId,
+                                    userId: item.task.userId,
                                     vaultOwnerToken,
                                   });
                                 })
@@ -399,16 +370,18 @@ export function DebateTaskCenter({ triggerClassName }: DebateTaskCenterProps = {
                             >
                               <Icon icon={X} size="xs" />
                             </Button>
-                          ) : task.persistenceState === "failed" ? (
+                          ) : item.task.persistenceState === "failed" ? (
                             <Button
                               variant="none"
                               effect="fade"
                               size="icon"
                               className="h-8 w-8"
-                              disabled={Boolean(isBusy[task.runId])}
+                              disabled={Boolean(isBusy[item.task.runId])}
                               onClick={() =>
-                                runAction(task.runId, async () => {
-                                  await DebateRunManagerService.retryTaskPersistence(task.runId);
+                                runAction(item.task.runId, async () => {
+                                  await DebateRunManagerService.retryTaskPersistence(
+                                    item.task.runId
+                                  );
                                 })
                               }
                               aria-label="Retry save"
@@ -416,13 +389,13 @@ export function DebateTaskCenter({ triggerClassName }: DebateTaskCenterProps = {
                               <Icon icon={RotateCw} size="xs" />
                             </Button>
                           ) : null}
-                          {task.status !== "running" ? (
+                          {item.task.status !== "running" ? (
                             <Button
                               variant="none"
                               effect="fade"
                               size="icon"
                               className="h-8 w-8"
-                              onClick={() => DebateRunManagerService.dismissTask(task.runId)}
+                              onClick={() => DebateRunManagerService.dismissTask(item.task.runId)}
                               aria-label="Dismiss task"
                             >
                               <Icon icon={X} size="xs" />
@@ -431,73 +404,81 @@ export function DebateTaskCenter({ triggerClassName }: DebateTaskCenterProps = {
                         </div>
                       </div>
                     </div>
-                  ))}
-                  {appTasks.map((task) => (
+                  ) : (
                     <div
-                      key={task.taskId}
+                      key={item.id}
                       className="border-b border-border/40 px-3 py-3 last:border-b-0"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
-                            {appTaskStatusIcon(task)}
-                            <span className="text-sm font-semibold">{task.title}</span>
+                            {appTaskStatusIcon(item.task)}
+                            <span className="text-sm font-semibold">{item.task.title}</span>
                             <span className="text-xs text-muted-foreground">
-                              {appTaskStatusLabel(task)}
+                              {appTaskStatusLabel(item.task)}
                             </span>
                           </div>
-                          <p className="mt-1 text-xs text-muted-foreground">{task.description}</p>
                           <p className="mt-1 text-xs text-muted-foreground">
-                            Started {new Date(task.startedAt).toLocaleTimeString()}
+                            {item.task.description}
                           </p>
-                          {task.error ? (
-                            <p className="mt-1 text-xs text-rose-500">{task.error}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Started {new Date(item.task.startedAt).toLocaleTimeString()}
+                          </p>
+                          {item.task.error ? (
+                            <p className="mt-1 text-xs text-rose-500">{item.task.error}</p>
                           ) : null}
                         </div>
                         <div className="flex items-center gap-1">
-                          {task.routeHref ? (
+                          {item.task.routeHref ? (
                             <Button
                               variant="none"
                               effect="fade"
                               size="icon"
                               className="h-8 w-8"
-                              onClick={() => router.push(task.routeHref!)}
+                              onClick={() => {
+                                const routeHref = item.task.routeHref;
+                                if (!routeHref) return;
+                                router.push(routeHref);
+                              }}
                               aria-label="Open related screen"
                             >
                               <Icon icon={ExternalLink} size="xs" />
                             </Button>
                           ) : null}
-                          {task.status === "running" &&
-                          (task.kind === "portfolio_import_stream" || task.kind === "plaid_refresh") ? (
+                          {item.task.status === "running" &&
+                          (item.task.kind === "portfolio_import_stream" ||
+                            item.task.kind === "plaid_refresh") ? (
                             <Button
                               variant="none"
                               effect="fade"
                               size="icon"
                               className="h-8 w-8"
-                              disabled={!vaultOwnerToken || Boolean(isBusy[task.taskId])}
+                              disabled={!vaultOwnerToken || Boolean(isBusy[item.task.taskId])}
                               onClick={() =>
-                                runAction(task.taskId, async () => {
-                                  if (task.kind === "portfolio_import_stream") {
-                                    await cancelPortfolioImportTask(task);
+                                runAction(item.task.taskId, async () => {
+                                  if (item.task.kind === "portfolio_import_stream") {
+                                    await cancelPortfolioImportTask(item.task);
                                     return;
                                   }
-                                  await cancelPlaidRefreshTask(task);
+                                  await cancelPlaidRefreshTask(item.task);
                                 })
                               }
                               aria-label={
-                                task.kind === "plaid_refresh" ? "Cancel refresh" : "Cancel import"
+                                item.task.kind === "plaid_refresh"
+                                  ? "Cancel refresh"
+                                  : "Cancel import"
                               }
                             >
                               <Icon icon={X} size="xs" />
                             </Button>
                           ) : null}
-                          {task.status !== "running" ? (
+                          {item.task.status !== "running" ? (
                             <Button
                               variant="none"
                               effect="fade"
                               size="icon"
                               className="h-8 w-8"
-                              onClick={() => AppBackgroundTaskService.dismissTask(task.taskId)}
+                              onClick={() => AppBackgroundTaskService.dismissTask(item.task.taskId)}
                               aria-label="Dismiss task"
                             >
                               <Icon icon={X} size="xs" />
@@ -506,23 +487,24 @@ export function DebateTaskCenter({ triggerClassName }: DebateTaskCenterProps = {
                         </div>
                       </div>
                     </div>
-                  ))}
-                </div>
+                  )
+                )}
               </div>
             )}
           </div>
         </div>
-        <div className="border-t border-border/40 px-3 py-2">
-          <button
-            type="button"
-            className={cn(
-              "text-xs text-muted-foreground transition-colors hover:text-foreground"
-            )}
-            onClick={() => openAnalysis(latestActiveTask?.runId)}
-          >
-            Open analysis workspace
-          </button>
-        </div>
+
+        {debateTasks.length > 0 ? (
+          <div className="border-t border-border/40 px-3 py-2">
+            <button
+              type="button"
+              className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+              onClick={() => openAnalysis(latestActiveTask?.runId)}
+            >
+              Open analysis workspace
+            </button>
+          </div>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );
