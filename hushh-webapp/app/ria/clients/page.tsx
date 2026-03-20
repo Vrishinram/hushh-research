@@ -78,10 +78,12 @@ function buildInviteLink(inviteToken: string) {
 
 function formatVerificationStatus(status?: string | null) {
   switch (status) {
-    case "finra_verified":
-      return "FINRA verified";
+    case "verified":
+      return "IAPD verified";
     case "active":
       return "Active";
+    case "bypassed":
+      return "Bypassed";
     case "submitted":
       return "Submitted";
     case "rejected":
@@ -95,7 +97,8 @@ function formatVerificationStatus(status?: string | null) {
 function verificationTone(status?: string | null): "neutral" | "warning" | "success" | "critical" {
   switch (status) {
     case "active":
-    case "finra_verified":
+    case "verified":
+    case "bypassed":
       return "success";
     case "submitted":
       return "warning";
@@ -196,6 +199,8 @@ export default function RiaClientsPage() {
   const router = useRouter();
   const { user } = useAuth();
   const { riaCapability, riaOnboardingStatus } = usePersonaState();
+  const advisoryVerificationStatus =
+    riaOnboardingStatus?.advisory_status || riaOnboardingStatus?.verification_status;
 
   const [items, setItems] = useState<RiaClientAccess[]>([]);
   const [loading, setLoading] = useState(true);
@@ -496,12 +501,12 @@ export default function RiaClientsPage() {
               items={[
                 {
                   label: "Verification",
-                  value: formatVerificationStatus(riaOnboardingStatus?.verification_status),
+                  value: formatVerificationStatus(advisoryVerificationStatus),
                   helper:
-                    verificationTone(riaOnboardingStatus?.verification_status) === "success"
+                    verificationTone(advisoryVerificationStatus) === "success"
                       ? "Requests and workspaces are enabled."
                       : "Trusted verification still gates advisor access.",
-                  tone: verificationTone(riaOnboardingStatus?.verification_status),
+                  tone: verificationTone(advisoryVerificationStatus),
                 },
                 {
                   label: "Connected",

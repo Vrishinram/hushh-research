@@ -37,10 +37,12 @@ import {
 
 function formatVerificationStatus(status?: string | null) {
   switch (status) {
-    case "finra_verified":
-      return "FINRA verified";
+    case "verified":
+      return "IAPD verified";
     case "active":
       return "Active";
+    case "bypassed":
+      return "Bypassed";
     case "submitted":
       return "Submitted";
     case "rejected":
@@ -54,7 +56,8 @@ function formatVerificationStatus(status?: string | null) {
 function verificationTone(status?: string | null): "neutral" | "warning" | "success" | "critical" {
   switch (status) {
     case "active":
-    case "finra_verified":
+    case "verified":
+    case "bypassed":
       return "success";
     case "submitted":
       return "warning";
@@ -86,7 +89,8 @@ function formatInviteStatus(status?: string | null) {
 function heroCopy(status?: string | null) {
   switch (status) {
     case "active":
-    case "finra_verified":
+    case "verified":
+    case "bypassed":
       return {
         title: "Your RIA workspace is ready.",
         description:
@@ -185,7 +189,9 @@ export default function RiaHomePage() {
   }, [riaCapability, user]);
 
   const verificationStatus =
-    (status || riaOnboardingStatus)?.verification_status || "draft";
+    (status || riaOnboardingStatus)?.advisory_status ||
+    (status || riaOnboardingStatus)?.verification_status ||
+    "draft";
   const hero = heroCopy(verificationStatus);
 
   const metrics = useMemo(() => {

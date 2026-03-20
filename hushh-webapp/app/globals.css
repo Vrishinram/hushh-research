@@ -139,7 +139,7 @@ html body[data-scroll-locked] {
   --top-shell-h: var(--top-shell-reserved-height);
   --top-glass-h: var(--top-shell-visual-height);
   --top-content-pad: var(--top-shell-reserved-height);
-  --page-top-start: max(92px, calc(var(--top-shell-reserved-height) + 16px));
+  --page-top-start: max(96px, calc(var(--top-shell-reserved-height) + 20px));
   --page-inline-gutter-standard: 20px;
   --page-surface-overscan: 14px;
   --page-surface-gap-standard: 18px;
@@ -337,7 +337,7 @@ html body[data-scroll-locked] {
 
 .native-ios {
   --app-top-safe-offset: 2px;
-  --page-top-start: calc(var(--top-shell-reserved-height) + 16px);
+  --page-top-start: calc(var(--top-shell-reserved-height) + 20px);
 }
 
 .app-page-shell {

@@ -660,10 +660,16 @@ export default function KaiAnalysisPage() {
               className="w-full"
             >
               <div className="flex justify-center">
-                <TabsList className="mx-auto grid h-10 w-full max-w-md grid-cols-3">
-                  <TabsTrigger value="debate">Debate</TabsTrigger>
-                  <TabsTrigger value="summary">Summary</TabsTrigger>
-                  <TabsTrigger value="detailed">Detailed View</TabsTrigger>
+                <TabsList className="mx-auto grid h-auto w-full max-w-xl grid-cols-1 gap-1 p-1 min-[430px]:grid-cols-3">
+                  <TabsTrigger value="debate" className="min-h-10 whitespace-normal px-3 py-2 text-center">
+                    Debate
+                  </TabsTrigger>
+                  <TabsTrigger value="summary" className="min-h-10 whitespace-normal px-3 py-2 text-center">
+                    Summary
+                  </TabsTrigger>
+                  <TabsTrigger value="detailed" className="min-h-10 whitespace-normal px-3 py-2 text-center">
+                    Detailed View
+                  </TabsTrigger>
                 </TabsList>
               </div>
               <TabsContent value="debate" className="mt-4 data-[state=inactive]:hidden" forceMount>
@@ -767,20 +773,18 @@ export default function KaiAnalysisPage() {
           <AppPageContentRegion>
             <SurfaceStack compact>
           {previewTickerFromQuery ? (
-            <div className="mx-auto w-full max-w-4xl">
-              <StockComparisonPreview
-                preview={stockPreview}
-                loading={stockPreviewLoading}
-                error={stockPreviewError}
-                onStartDebate={handleStartDebateFromPreview}
-                onOpenFullAnalysis={handleStartDebateFromPreview}
-                showOpenFullAnalysis={false}
-                compact
-              />
-            </div>
+            <StockComparisonPreview
+              preview={stockPreview}
+              loading={stockPreviewLoading}
+              error={stockPreviewError}
+              onStartDebate={handleStartDebateFromPreview}
+              onOpenFullAnalysis={handleStartDebateFromPreview}
+              showOpenFullAnalysis={false}
+              compact
+            />
           ) : null}
           {activeRunTask ? (
-            <SurfaceCard accent="sky" className="mx-auto w-full max-w-4xl">
+            <SurfaceCard accent="sky" className="w-full">
               <SurfaceCardContent className="px-3 py-2 text-xs text-sky-700 dark:text-sky-300">
               Analysis for <span className="font-semibold">{activeRunTask.ticker}</span> is still
               running in the background.
