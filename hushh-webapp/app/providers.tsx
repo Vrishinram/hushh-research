@@ -66,8 +66,8 @@ export function Providers({ children }: ProvidersProps) {
         "--top-tabs-total": topShellMetrics.hasTabs
           ? "calc(var(--top-tabs-h) + var(--top-tabs-gap))"
           : "0px",
-        "--top-systembar-row-gap": topShellMetrics.hasTabs ? "2px" : "0px",
-        "--top-fade-active": topShellMetrics.hasTabs ? "24px" : "22px",
+        "--top-systembar-row-gap": "4px",
+        "--top-fade-active": topShellMetrics.hasTabs ? "22px" : "18px",
         "--top-content-pad": "var(--top-shell-reserved-height)",
         "--kai-route-content-gap": topShellMetrics.hasTabs ? "28px" : "20px",
         "--kai-route-content-gap-sm": topShellMetrics.hasTabs ? "32px" : "24px",

@@ -196,7 +196,7 @@ export function RiaPicksList({
 
   useEffect(() => {
     setPage(1);
-  }, [activeSourceId, pageSize, query, rows.length, sectorFilter, tierFilter]);
+  }, [activeSourceId, pageSize, query, sectorFilter, tierFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
 

@@ -142,7 +142,7 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
           "!text-card-foreground",
           effect === "fade"
             ? "!backdrop-blur-none"
-            : "backdrop-blur-[18px] backdrop-saturate-[145%]",
+            : "backdrop-blur-[22px] backdrop-saturate-[155%] backdrop-contrast-[1.02]",
           presetConfig.spacing,
           interactive ? "cursor-pointer" : "",
           fullHeight ? "h-full" : "",
@@ -157,11 +157,11 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
             className={cn(
               "pointer-events-none absolute inset-0",
               glassAccent === "none" &&
-                "bg-[linear-gradient(180deg,rgba(255,255,255,0.56)_0%,rgba(255,255,255,0.2)_16%,rgba(255,255,255,0.04)_34%,transparent_52%),linear-gradient(180deg,rgba(148,163,184,0.06)_0%,transparent_68%)] dark:bg-[linear-gradient(180deg,rgba(255,255,255,0.08)_0%,rgba(255,255,255,0.03)_14%,transparent_30%),linear-gradient(180deg,rgba(15,23,42,0.2)_0%,transparent_70%)]",
+                "bg-[linear-gradient(180deg,rgba(255,255,255,0.22)_0%,rgba(255,255,255,0.12)_16%,rgba(255,255,255,0.04)_32%,transparent_48%),radial-gradient(135%_92%_at_50%_0%,rgba(255,255,255,0.28)_0%,transparent_54%),radial-gradient(135%_92%_at_50%_100%,rgba(148,163,184,0.09)_0%,transparent_60%)] dark:bg-[linear-gradient(180deg,rgba(255,255,255,0.045)_0%,rgba(255,255,255,0.018)_16%,transparent_30%),radial-gradient(135%_92%_at_50%_0%,rgba(255,255,255,0.05)_0%,transparent_56%),radial-gradient(135%_92%_at_50%_100%,rgba(0,0,0,0.18)_0%,transparent_62%)]",
               glassAccent === "soft" &&
-                "bg-[linear-gradient(180deg,rgba(255,255,255,0.62)_0%,rgba(255,255,255,0.24)_16%,rgba(255,255,255,0.06)_34%,transparent_54%),linear-gradient(180deg,rgba(191,219,254,0.08)_0%,transparent_70%)] dark:bg-[linear-gradient(180deg,rgba(255,255,255,0.1)_0%,rgba(255,255,255,0.04)_14%,transparent_32%),linear-gradient(180deg,rgba(30,41,59,0.24)_0%,transparent_74%)]",
+                "bg-[linear-gradient(180deg,rgba(255,255,255,0.26)_0%,rgba(255,255,255,0.14)_16%,rgba(255,255,255,0.05)_34%,transparent_52%),radial-gradient(135%_96%_at_50%_0%,rgba(255,255,255,0.32)_0%,transparent_54%),radial-gradient(135%_96%_at_50%_100%,rgba(148,163,184,0.11)_0%,transparent_62%)] dark:bg-[linear-gradient(180deg,rgba(255,255,255,0.055)_0%,rgba(255,255,255,0.022)_16%,transparent_32%),radial-gradient(135%_96%_at_50%_0%,rgba(255,255,255,0.06)_0%,transparent_56%),radial-gradient(135%_96%_at_50%_100%,rgba(0,0,0,0.22)_0%,transparent_64%)]",
               glassAccent === "balanced" &&
-                "bg-[linear-gradient(180deg,rgba(255,255,255,0.66)_0%,rgba(255,255,255,0.26)_16%,rgba(255,255,255,0.07)_36%,transparent_56%),radial-gradient(88%_56%_at_18%_0%,rgba(191,219,254,0.12)_0%,transparent_58%),linear-gradient(180deg,rgba(148,163,184,0.08)_0%,transparent_72%)] dark:bg-[linear-gradient(180deg,rgba(255,255,255,0.12)_0%,rgba(255,255,255,0.05)_14%,transparent_34%),radial-gradient(88%_56%_at_18%_0%,rgba(96,165,250,0.06)_0%,transparent_58%),linear-gradient(180deg,rgba(15,23,42,0.26)_0%,transparent_74%)]"
+                "bg-[linear-gradient(180deg,rgba(255,255,255,0.3)_0%,rgba(255,255,255,0.16)_16%,rgba(255,255,255,0.06)_36%,transparent_54%),radial-gradient(140%_100%_at_50%_0%,rgba(255,255,255,0.36)_0%,transparent_54%),radial-gradient(140%_100%_at_50%_100%,rgba(148,163,184,0.13)_0%,transparent_64%)] dark:bg-[linear-gradient(180deg,rgba(255,255,255,0.065)_0%,rgba(255,255,255,0.026)_16%,transparent_34%),radial-gradient(140%_100%_at_50%_0%,rgba(255,255,255,0.075)_0%,transparent_56%),radial-gradient(140%_100%_at_50%_100%,rgba(0,0,0,0.24)_0%,transparent_66%)]"
             )}
             style={{ borderRadius: "inherit" }}
           />

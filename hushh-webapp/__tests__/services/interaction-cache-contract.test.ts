@@ -14,6 +14,7 @@ function read(relativePath: string) {
 
 describe("interaction and cache contract", () => {
   it("keeps shared interaction shells aligned with full-surface ripple behavior", () => {
+    const globals = read("app/globals.css");
     const navbar = read("components/navbar.tsx");
     const topAppBar = read("components/app-ui/top-app-bar.tsx");
     const taskCenter = read("components/app-ui/debate-task-center.tsx");
@@ -32,8 +33,16 @@ describe("interaction and cache contract", () => {
     expect(taskCenter).not.toContain("BellRing");
     expect(taskCenter).not.toContain("useConsentNotificationState");
     expect(providers).toContain("ConsentSheetProvider");
+    expect(providers).toContain('"--top-systembar-row-gap": "4px"');
 
+    expect(globals).toContain("--top-shell-reserved-height");
+    expect(globals).toContain("--top-shell-visual-height");
+    expect(globals).toContain(".bar-glass-top::before");
+    expect(globals).toContain(".bar-glass-bottom::before");
+    expect(globals).toContain(".morphy-ripple-host");
+    expect(globals).not.toContain("html.native-ios body {\n    padding-top: env(safe-area-inset-top);");
     expect(materialRipple).toContain("morphy-ripple-host");
+    expect(materialRipple).toContain("overflow-hidden");
     expect(materialRipple).toContain('contain: "paint"');
   });
 

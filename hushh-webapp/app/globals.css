@@ -123,28 +123,32 @@ html body[data-scroll-locked] {
   --kai-route-tabs-content-gap: 8px;
   /* Global top-shell geometry contract (consumed by providers + top-app-bar).
    * Keep these tokens defined at root so web and native share deterministic spacing. */
-  --top-inset: var(--app-safe-area-top-effective);
+  --top-shell-safe-area: var(--app-safe-area-top-effective);
+  --top-inset: var(--top-shell-safe-area);
   --top-bar-h: 44px;
   --top-tabs-h: var(--kai-route-tabs-height);
   --top-tabs-gap: var(--kai-route-tabs-content-gap);
   --top-tabs-total: 0px;
   --top-fade-active: 14px;
   --top-systembar-row-gap: 4px;
-  --top-shell-h: calc(
+  --top-shell-row-gap: var(--top-systembar-row-gap);
+  --top-shell-reserved-height: calc(
     var(--top-inset) + var(--top-systembar-row-gap) + var(--top-bar-h) + var(--top-tabs-total)
   );
-  --top-glass-h: calc(var(--top-shell-h) + var(--top-fade-active));
-  --top-content-pad: var(--top-glass-h);
-  --page-top-start: max(92px, calc(var(--top-shell-h) + 20px));
+  --top-shell-visual-height: calc(var(--top-shell-reserved-height) + var(--top-fade-active));
+  --top-shell-h: var(--top-shell-reserved-height);
+  --top-glass-h: var(--top-shell-visual-height);
+  --top-content-pad: var(--top-shell-reserved-height);
+  --page-top-start: max(92px, calc(var(--top-shell-reserved-height) + 16px));
   --page-inline-gutter-standard: 20px;
   --page-surface-overscan: 14px;
   --page-surface-gap-standard: 18px;
   --page-surface-gap-compact: 14px;
-  --page-header-stack-gap: 28px;
-  --page-header-row-gap: 22px;
+  --page-header-stack-gap: 24px;
+  --page-header-row-gap: 20px;
   --page-header-copy-gap: 14px;
   --page-header-actions-gap: 10px;
-  --page-header-section-gap: 44px;
+  --page-header-section-gap: 40px;
   --section-header-stack-gap: 18px;
   --section-header-row-gap: 16px;
   --section-header-copy-gap: 12px;
@@ -294,20 +298,20 @@ html body[data-scroll-locked] {
   --md-ripple-pressed-opacity: 0.12;
 
   /* Shared outer-card contract: glass-first, borderless by default. */
-  --app-card-surface-compact: rgba(255, 255, 255, 0.88);
-  --app-card-surface-default: rgba(255, 255, 255, 0.82);
-  --app-card-surface-surface: rgba(255, 255, 255, 0.85);
-  --app-card-surface-hero: rgba(255, 255, 255, 0.9);
-  --app-card-border-standard: rgba(15, 23, 42, 0.08);
-  --app-card-border-strong: rgba(15, 23, 42, 0.12);
+  --app-card-surface-compact: rgba(255, 255, 255, 0.9);
+  --app-card-surface-default: rgba(255, 255, 255, 0.92);
+  --app-card-surface-surface: rgba(255, 255, 255, 0.94);
+  --app-card-surface-hero: rgba(255, 255, 255, 0.96);
+  --app-card-border-standard: rgba(15, 23, 42, 0.06);
+  --app-card-border-strong: rgba(15, 23, 42, 0.08);
   --app-card-shadow-standard:
-    0 22px 48px -30px rgba(15, 23, 42, 0.26),
-    0 10px 24px -18px rgba(15, 23, 42, 0.14),
-    inset 0 1px 0 rgba(255, 255, 255, 0.62);
+    0 26px 54px -30px rgba(15, 23, 42, 0.22),
+    0 12px 26px -18px rgba(15, 23, 42, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.82);
   --app-card-shadow-feature:
-    0 26px 58px -30px rgba(15, 23, 42, 0.32),
-    0 14px 28px -18px rgba(15, 23, 42, 0.16),
-    inset 0 1px 0 rgba(255, 255, 255, 0.68);
+    0 30px 62px -30px rgba(15, 23, 42, 0.28),
+    0 14px 28px -18px rgba(15, 23, 42, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.86);
 }
 
 @media (min-width: 640px) {
@@ -316,11 +320,11 @@ html body[data-scroll-locked] {
     --page-surface-overscan: 18px;
     --page-surface-gap-standard: 22px;
     --page-surface-gap-compact: 18px;
-    --page-header-stack-gap: 32px;
-    --page-header-row-gap: 24px;
+    --page-header-stack-gap: 28px;
+    --page-header-row-gap: 22px;
     --page-header-copy-gap: 16px;
     --page-header-actions-gap: 12px;
-    --page-header-section-gap: 48px;
+    --page-header-section-gap: 44px;
     --section-header-stack-gap: 20px;
     --section-header-row-gap: 18px;
     --section-header-copy-gap: 14px;
@@ -333,7 +337,7 @@ html body[data-scroll-locked] {
 
 .native-ios {
   --app-top-safe-offset: 2px;
-  --page-top-start: max(106px, calc(var(--top-shell-h) + 26px));
+  --page-top-start: calc(var(--top-shell-reserved-height) + 16px);
 }
 
 .app-page-shell {
@@ -372,7 +376,7 @@ html body[data-scroll-locked] {
   gap: var(--surface-stack-gap-compact);
 }
 
-/* Capacitor iOS uses `ios.contentInset = always`; don't double-count bottom safe area in app spacing. */
+/* Capacitor iOS uses `ios.contentInset = "never"` with CSS-owned insets; don't double-count shell spacing. */
 html.native-ios {
   /* Lift persistent bottom chrome above the iOS home indicator zone. */
   --app-bottom-chrome-lift: 10px;
@@ -505,20 +509,20 @@ html.native-ios {
   --md-ripple-hover-opacity: 0.08;
   --md-ripple-pressed-opacity: 0.12;
 
-  --app-card-surface-compact: rgba(17, 20, 27, 0.82);
-  --app-card-surface-default: rgba(14, 17, 24, 0.88);
-  --app-card-surface-surface: rgba(12, 15, 22, 0.92);
-  --app-card-surface-hero: rgba(10, 14, 20, 0.95);
+  --app-card-surface-compact: rgba(18, 22, 30, 0.76);
+  --app-card-surface-default: rgba(15, 19, 27, 0.82);
+  --app-card-surface-surface: rgba(13, 17, 24, 0.86);
+  --app-card-surface-hero: rgba(11, 15, 22, 0.9);
   --app-card-border-standard: rgba(255, 255, 255, 0.08);
   --app-card-border-strong: rgba(255, 255, 255, 0.12);
   --app-card-shadow-standard:
-    0 24px 54px -30px rgba(0, 0, 0, 0.78),
-    0 12px 26px -18px rgba(2, 6, 23, 0.56),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    0 28px 58px -30px rgba(0, 0, 0, 0.72),
+    0 14px 28px -18px rgba(2, 6, 23, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
   --app-card-shadow-feature:
-    0 30px 66px -30px rgba(0, 0, 0, 0.84),
-    0 16px 32px -18px rgba(2, 6, 23, 0.62),
-    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    0 34px 70px -30px rgba(0, 0, 0, 0.78),
+    0 18px 32px -18px rgba(2, 6, 23, 0.54),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 /* Hero card specific glass effect - automatically switches between light/dark modes */
@@ -707,7 +711,7 @@ html.native-ios {
       border-color 200ms ease-in-out;
   }
   html.native-ios body {
-    padding-top: env(safe-area-inset-top);
+    padding-top: 0;
     padding-left: env(safe-area-inset-left);
     padding-right: env(safe-area-inset-right);
   }
@@ -749,6 +753,13 @@ md-ripple.morphy-md-ripple {
   border-radius: inherit;
 }
 
+.morphy-ripple-host {
+  overflow: hidden;
+  isolation: isolate;
+  border-radius: inherit;
+  contain: paint;
+}
+
 /* Shared masked glass for top/bottom app chrome. */
 .bar-glass {
   --app-bar-glass-bg-light: rgba(255, 255, 255, 0.46);
@@ -756,25 +767,138 @@ md-ripple.morphy-md-ripple {
   --app-bar-glass-blur: 7px;
   --app-bar-border-top: 0;
   --app-bar-shadow: none;
-  background-color: var(--app-bar-glass-bg-light);
-  -webkit-backdrop-filter: blur(var(--app-bar-glass-blur)) saturate(135%);
-  backdrop-filter: blur(var(--app-bar-glass-blur)) saturate(135%);
+  --app-bar-mask-overscan: 26px;
+  position: relative;
   transform: translate3d(0, 0, 0);
   will-change: transform;
   backface-visibility: hidden;
-  contain: paint;
   isolation: isolate;
-  overflow: hidden;
-  border-top: var(--app-bar-border-top);
-  box-shadow: var(--app-bar-shadow);
-  mask-size: 100% 100%;
-  -webkit-mask-size: 100% 100%;
-  mask-repeat: no-repeat;
-  -webkit-mask-repeat: no-repeat;
+  overflow: visible;
 }
 
-.dark .bar-glass {
+.bar-glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-color: var(--app-bar-glass-bg-light);
+  -webkit-backdrop-filter: blur(var(--app-bar-glass-blur)) saturate(135%);
+  backdrop-filter: blur(var(--app-bar-glass-blur)) saturate(135%);
+  border-top: var(--app-bar-border-top);
+  box-shadow: var(--app-bar-shadow);
+  transform: translate3d(0, 0, 0);
+  will-change: transform;
+  backface-visibility: hidden;
+  mask-repeat: no-repeat;
+  -webkit-mask-repeat: no-repeat;
+  mask-size: 100% 100%;
+  -webkit-mask-size: 100% 100%;
+}
+
+.bar-glass::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.dark .bar-glass::before {
   background-color: var(--app-bar-glass-bg-dark);
+}
+
+.bar-glass-top::before {
+  inset: 0 0 calc(-1 * var(--app-bar-mask-overscan)) 0;
+  mask-image: linear-gradient(
+    to bottom,
+    black 0%,
+    black 46%,
+    rgba(0, 0, 0, 0.985) 58%,
+    rgba(0, 0, 0, 0.93) 72%,
+    rgba(0, 0, 0, 0.68) 86%,
+    rgba(0, 0, 0, 0.3) 95%,
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    black 0%,
+    black 46%,
+    rgba(0, 0, 0, 0.985) 58%,
+    rgba(0, 0, 0, 0.93) 72%,
+    rgba(0, 0, 0, 0.68) 86%,
+    rgba(0, 0, 0, 0.3) 95%,
+    transparent 100%
+  );
+}
+
+.bar-glass-top::after {
+  inset: 0 0 calc(-1 * var(--app-bar-mask-overscan)) 0;
+  opacity: 1;
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.16) 0%,
+    rgba(255, 255, 255, 0.11) 58%,
+    rgba(255, 255, 255, 0.05) 80%,
+    rgba(255, 255, 255, 0.015) 92%,
+    transparent 100%
+  );
+}
+
+.dark .bar-glass-top::after {
+  background: linear-gradient(
+    to bottom,
+    rgba(17, 20, 27, 0.14) 0%,
+    rgba(17, 20, 27, 0.1) 58%,
+    rgba(17, 20, 27, 0.05) 80%,
+    rgba(17, 20, 27, 0.015) 92%,
+    transparent 100%
+  );
+}
+
+.bar-glass-bottom::before {
+  inset: calc(-1 * var(--app-bar-mask-overscan)) 0 0 0;
+  mask-image: linear-gradient(
+    to top,
+    black 0%,
+    rgba(0, 0, 0, 0.985) 40%,
+    rgba(0, 0, 0, 0.93) 58%,
+    rgba(0, 0, 0, 0.72) 78%,
+    rgba(0, 0, 0, 0.34) 94%,
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to top,
+    black 0%,
+    rgba(0, 0, 0, 0.985) 40%,
+    rgba(0, 0, 0, 0.93) 58%,
+    rgba(0, 0, 0, 0.72) 78%,
+    rgba(0, 0, 0, 0.34) 94%,
+    transparent 100%
+  );
+}
+
+.bar-glass-bottom::after {
+  inset: calc(-1 * var(--app-bar-mask-overscan)) 0 0 0;
+  opacity: 1;
+  background: linear-gradient(
+    to top,
+    rgba(255, 255, 255, 0.15) 0%,
+    rgba(255, 255, 255, 0.1) 44%,
+    rgba(255, 255, 255, 0.045) 74%,
+    rgba(255, 255, 255, 0.015) 90%,
+    transparent 100%
+  );
+}
+
+.dark .bar-glass-bottom::after {
+  background: linear-gradient(
+    to top,
+    rgba(17, 20, 27, 0.15) 0%,
+    rgba(17, 20, 27, 0.1) 44%,
+    rgba(17, 20, 27, 0.045) 74%,
+    rgba(17, 20, 27, 0.015) 90%,
+    transparent 100%
+  );
 }
 
 /* Shared frosted surface for persistent chrome (tabs / bottom nav / command bar). */
