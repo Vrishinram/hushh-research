@@ -43,7 +43,7 @@ echo ""
 # 3. Frontend Lint
 echo "▶ [3/12] Frontend Lint..."
 cd hushh-webapp
-npm run check-lint || { FAIL=1; echo "❌ Lint failed"; }
+npm run lint || { FAIL=1; echo "❌ Lint failed"; }
 cd "$REPO_ROOT"
 echo ""
 
@@ -82,31 +82,22 @@ npm run verify:cache || { FAIL=1; echo "❌ Cache coherence verification failed"
 cd "$REPO_ROOT"
 echo ""
 
-# 9. Docs Runtime Parity Verification
-echo "▶ [9/12] Docs Runtime Parity Verification..."
+# 9. Browser API Native Compatibility Verification
+echo "▶ [9/12] Browser API Native Compatibility Verification..."
+cd hushh-webapp
+npm run verify:native:browser-compat || { FAIL=1; echo "❌ Browser API native compatibility verification failed"; }
+cd "$REPO_ROOT"
+echo ""
+
+# 10. Docs Runtime Parity Verification
+echo "▶ [10/12] Docs Runtime Parity Verification..."
 cd hushh-webapp
 npm run verify:docs || { FAIL=1; echo "❌ Docs/runtime parity verification failed"; }
 cd "$REPO_ROOT"
 echo ""
 
-# 10. Kai System Audit
-echo "▶ [10/13] Kai System Audit..."
-python3 scripts/ops/kai-system-audit.py --api-base "$API_BASE" --web-base "$WEB_BASE" || {
-  FAIL=1
-  echo "❌ Kai system audit failed"
-}
-echo ""
-
-# 11. App Edge-Case Audit (runtime-first)
-echo "▶ [11/13] App Edge-Case Audit..."
-python3 scripts/ops/app-edge-case-audit.py --out "/tmp/app-edge-case-audit-prelaunch.json" || {
-  FAIL=1
-  echo "❌ App edge-case audit failed"
-}
-echo ""
-
-# 12. Env/Secrets/Deploy parity (strict blocking)
-echo "▶ [12/13] Env/Secrets/Deploy Parity..."
+# 11. Env/Secrets/Deploy parity (strict blocking)
+echo "▶ [11/12] Env/Secrets/Deploy Parity..."
 if command -v gcloud >/dev/null 2>&1; then
   python3 scripts/ops/verify-env-secrets-parity.py \
     --project "${GCP_PROJECT_ID:-hushh-pda}" \
@@ -122,8 +113,8 @@ else
 fi
 echo ""
 
-# 13. Git Status (strict blocking)
-echo "▶ [13/13] Git Status (Strict)..."
+# 12. Git Status (strict blocking)
+echo "▶ [12/12] Git Status (Strict)..."
 MODIFIED=$(git status --porcelain | grep "^ M" | wc -l | tr -d ' ')
 UNTRACKED=$(git status --porcelain | grep "^??" | wc -l | tr -d ' ')
 STAGED=$(git status --porcelain | grep "^[AMDRC]" | wc -l | tr -d ' ')

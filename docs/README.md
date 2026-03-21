@@ -1,0 +1,78 @@
+# Hushh Documentation
+
+> Canonical entry point for repo-level documentation.
+
+Hushh is a personal agent platform built on four operational invariants:
+
+1. BYOK: server stores ciphertext only.
+2. Consent-first: every data access path is consent-gated.
+3. Tri-flow: web, iOS, and Android stay contract-aligned.
+4. Minimal browser storage: sensitive credentials remain in memory.
+
+For repo setup, see [`readme.md`](../readme.md) and [`getting_started.md`](../getting_started.md).
+
+## Domain Indexes
+
+| Domain | Index |
+| ---- | ---- |
+| Guides | [guides/README.md](./guides/README.md) |
+| Architecture | [reference/architecture/README.md](./reference/architecture/README.md) |
+| AI | [reference/ai/README.md](./reference/ai/README.md) |
+| IAM | [reference/iam/README.md](./reference/iam/README.md) |
+| Kai | [reference/kai/README.md](./reference/kai/README.md) |
+| Mobile | [reference/mobile/README.md](./reference/mobile/README.md) |
+| Operations | [reference/operations/README.md](./reference/operations/README.md) |
+| Quality / Design System | [reference/quality/README.md](./reference/quality/README.md) |
+| Streaming | [reference/streaming/README.md](./reference/streaming/README.md) |
+| Vision | [vision/README.md](./vision/README.md) |
+
+## Implementation Indexes
+
+| Code Domain | Index |
+| ---- | ---- |
+| Frontend/native package docs | [../hushh-webapp/docs/README.md](../hushh-webapp/docs/README.md) |
+| App UI shell and shared surfaces | [../hushh-webapp/components/app-ui/README.md](../hushh-webapp/components/app-ui/README.md) |
+| Consent UI and launchers | [../hushh-webapp/components/consent/README.md](../hushh-webapp/components/consent/README.md) |
+| Kai investor surfaces | [../hushh-webapp/components/kai/README.md](../hushh-webapp/components/kai/README.md) |
+| RIA surfaces | [../hushh-webapp/components/ria/README.md](../hushh-webapp/components/ria/README.md) |
+| Service layer and platform-aware calls | [../hushh-webapp/lib/services/README.md](../hushh-webapp/lib/services/README.md) |
+| Backend implementation docs | [../consent-protocol/docs/README.md](../consent-protocol/docs/README.md) |
+
+## Documentation Homes
+
+| Location | Scope | Entry Point |
+| -------- | ----- | ----------- |
+| `docs/` | Cross-cutting architecture, operations, quality, product references | [README.md](./README.md) |
+| `consent-protocol/docs/` | Backend implementation and protocol references | [README.md](../consent-protocol/docs/README.md) |
+| `hushh-webapp/docs/` | Frontend/native implementation references | [README.md](../hushh-webapp/docs/README.md) |
+
+## Directory Layout
+
+```text
+docs/
+  README.md
+  project_context_map.md
+  guides/
+    README.md
+  reference/
+    ai/
+      README.md
+    architecture/
+      README.md
+    iam/
+      README.md
+    kai/
+      README.md
+    mobile/
+      README.md
+    operations/
+      README.md
+    quality/
+      README.md
+    streaming/
+      README.md
+  vision/
+    README.md
+```
+
+Use kebab-case for non-index docs and keep only durable references in this tree.

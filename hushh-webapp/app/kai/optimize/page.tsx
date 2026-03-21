@@ -3,6 +3,19 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/firebase/auth-context";
+import {
+  AppPageContentRegion,
+  AppPageHeaderRegion,
+  AppPageShell,
+} from "@/components/app-ui/app-page-shell";
+import { PageHeader } from "@/components/app-ui/page-sections";
+import {
+  SurfaceCard,
+  SurfaceCardContent,
+  SurfaceCardHeader,
+  SurfaceCardTitle,
+  SurfaceStack,
+} from "@/components/app-ui/surfaces";
 import { useVault } from "@/lib/vault/vault-context";
 import { ApiService } from "@/lib/services/api-service";
 import { KaiProfileService, type KaiProfileV2 } from "@/lib/services/kai-profile-service";
@@ -10,7 +23,6 @@ import { useKaiSession } from "@/lib/stores/kai-session-store";
 import { consumeCanonicalKaiStream } from "@/lib/streaming/kai-stream-client";
 import type { KaiStreamEnvelope } from "@/lib/streaming/kai-stream-types";
 import { ensureKaiVaultOwnerToken, isKaiAuthStatus } from "@/lib/services/kai-token-guard";
-import { Card, CardContent, CardHeader, CardTitle } from "@/lib/morphy-ux/card";
 import { Button } from "@/lib/morphy-ux/button";
 import { StreamingAccordion } from "@/lib/morphy-ux/streaming-accordion";
 import { Progress } from "@/components/ui/progress";
@@ -32,6 +44,7 @@ import {
   ChartTooltipContent,
 } from "@/components/ui/chart";
 import { toInvestorStreamText } from "@/lib/copy/investor-language";
+import type { PortfolioSource } from "@/lib/kai/brokerage/portfolio-sources";
 
 type LoserInput = {
   symbol: string;
@@ -169,6 +182,9 @@ export default function PortfolioHealthPage() {
       }
     >;
     forceOptimize?: boolean;
+    portfolioSource?: PortfolioSource;
+    portfolioContext?: Record<string, unknown> | null;
+    sourceMetadata?: Record<string, unknown> | null;
   } | null;
 
   useEffect(() => {
@@ -238,6 +254,12 @@ export default function PortfolioHealthPage() {
       sectorCount,
     };
   }, [input]);
+
+  const sourceLabel = useMemo(() => {
+    const raw = String(input?.portfolioSource || "").trim().toLowerCase();
+    if (raw === "plaid") return "Plaid";
+    return "Statement";
+  }, [input?.portfolioSource]);
   
   const radarData = useMemo(() => {
     if (!result?.analytics?.health_radar) return [];
@@ -262,13 +284,13 @@ export default function PortfolioHealthPage() {
       
       if (!input) {
         setLoading(false);
-        setError("No Optimize Portfolio context found. Please start from the Kai dashboard.");
+        setError("No Optimize Portfolio context found. Please start from the Kai portfolio.");
         return;
       }
 
       if (!user) {
         setLoading(false);
-        setError("Missing session context. Please return to Kai dashboard.");
+        setError("Missing session context. Please return to Kai portfolio.");
         return;
       }
 
@@ -320,6 +342,7 @@ export default function PortfolioHealthPage() {
           top3_concentration_pct: Number(contextStats.top3WeightPct.toFixed(2)),
           sector_count: contextStats.sectorCount,
           force_optimize: Boolean(input.forceOptimize),
+          portfolio_source: input.portfolioSource ?? "statement",
         };
 
         let effectiveToken = await resolveToken(false);
@@ -578,19 +601,24 @@ export default function PortfolioHealthPage() {
     ].join("\n");
 
   return (
-    <div className="w-full mx-auto space-y-4 px-4 py-4 sm:px-6 sm:py-6 md:max-w-5xl">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Icon icon={Activity} size="md" className="text-emerald-500" />
-          <div>
-            <h1 className="text-xl font-semibold">Portfolio Optimization</h1>
-          </div>
-        </div>
-      </div>
+    <AppPageShell as="div" width="wide" className="pb-6 sm:pb-8">
+      <AppPageHeaderRegion>
+        <PageHeader
+          eyebrow="Kai Optimize"
+          title="Portfolio Optimization"
+          description="Use the active portfolio context to review risks, proposed actions, and streamed optimizer output in one place."
+          icon={Activity}
+          accent="emerald"
+        />
+      </AppPageHeaderRegion>
 
-      <Card variant="none" effect="glass" showRipple={false} className="border-border/40">
-        <CardContent className="p-4 sm:p-5">
+      <AppPageContentRegion>
+        <SurfaceStack>
+
+      <SurfaceCard>
+        <SurfaceCardContent className="p-4 sm:p-5">
           <div className="flex flex-wrap items-center gap-2 text-xs">
+            <Badge variant="outline">Source: {sourceLabel}</Badge>
             <Badge variant="secondary">{contextStats.holdingsCount} holdings</Badge>
             <Badge variant="secondary">{contextStats.losersCount} flagged losers</Badge>
             <Badge variant="secondary">Top 3 concentration {contextStats.top3WeightPct.toFixed(1)}%</Badge>
@@ -602,12 +630,15 @@ export default function PortfolioHealthPage() {
               <Badge variant="outline">Horizon: {kaiProfile.preferences.investment_horizon}</Badge>
             )}
           </div>
-        </CardContent>
-      </Card>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Optimize is using the active {sourceLabel.toLowerCase()} portfolio context selected from the Kai portfolio.
+          </p>
+        </SurfaceCardContent>
+      </SurfaceCard>
 
       {showLivePanels && (
-        <Card variant="none" effect="glass" showRipple={false} className="border-primary/20">
-          <CardContent className="p-4 sm:p-5 space-y-3">
+        <SurfaceCard accent="sky">
+          <SurfaceCardContent className="space-y-3 p-4 sm:p-5">
             <div className="flex items-center justify-between text-xs text-muted-foreground">
               <span>{resolvedStatus}</span>
               <span>{Math.round(resolvedProgress)}%</span>
@@ -619,8 +650,8 @@ export default function PortfolioHealthPage() {
                 isStreaming && "[&_[data-slot=progress-indicator]]:animate-pulse"
               )}
             />
-          </CardContent>
-        </Card>
+          </SurfaceCardContent>
+        </SurfaceCard>
       )}
 
       {showLivePanels && (
@@ -658,24 +689,24 @@ export default function PortfolioHealthPage() {
 
       {/* Neutral fallback card only when we have no result and no error */}
       {!loading && !error && !result && !isStreaming && (
-        <Card variant="none" effect="glass" showRipple={false}>
-          <CardHeader>
-            <CardTitle>Optimization Ready</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
+        <SurfaceCard>
+          <SurfaceCardHeader>
+            <SurfaceCardTitle>Optimization Ready</SurfaceCardTitle>
+          </SurfaceCardHeader>
+          <SurfaceCardContent className="space-y-2">
             <p className="text-sm text-muted-foreground">
               Optimizing suggestions using curated rulesets across your portfolio context.
             </p>
-          </CardContent>
-        </Card>
+          </SurfaceCardContent>
+        </SurfaceCard>
       )}
 
       {!loading && error && (
-        <Card variant="none" effect="glass" showRipple={false}>
-          <CardHeader>
-            <CardTitle>Optimization temporarily unavailable</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
+        <SurfaceCard tone="warning">
+          <SurfaceCardHeader>
+            <SurfaceCardTitle>Optimization temporarily unavailable</SurfaceCardTitle>
+          </SurfaceCardHeader>
+          <SurfaceCardContent className="space-y-3">
             <p className="text-sm text-muted-foreground">{error}</p>
             {errorCode === "OPTIMIZE_PARSE_FAILED" && (
               <p className="text-xs text-muted-foreground">
@@ -690,32 +721,32 @@ export default function PortfolioHealthPage() {
                 size="default"
                 variant="blue-gradient"
                 effect="fade"
-                onClick={() => router.push("/kai/dashboard")}
+                onClick={() => router.push("/kai/portfolio")}
               >
-                Back to dashboard
+                Back to portfolio
               </Button>
             </div>
-          </CardContent>
-        </Card>
+          </SurfaceCardContent>
+        </SurfaceCard>
       )}
 
       {/* Results - shown after streaming completes */}
       {isComplete && result && (
         <>
           {/* 1. High-Level Portfolio Health Summary - REBUILT LAYOUT */}
-          <Card variant="none" effect="glass" showRipple={false} className="border-white/10 overflow-hidden">
-            <CardHeader className="border-b border-border/5 bg-muted/5 px-6 py-4">
+          <SurfaceCard accent="sky">
+            <SurfaceCardHeader className="border-b border-border/5 bg-muted/5 px-6 py-4">
               <div className="flex items-center gap-2.5">
                 <div className="p-1.5 rounded-lg bg-primary/10">
                   <Icon icon={LayoutDashboard} size="sm" className="text-primary" />
                 </div>
-                <CardTitle className="text-sm font-bold uppercase tracking-widest text-foreground">
+                <SurfaceCardTitle className="text-sm font-bold uppercase tracking-widest text-foreground">
                   Portfolio Intelligence & Health
-                </CardTitle>
+                </SurfaceCardTitle>
               </div>
-            </CardHeader>
+            </SurfaceCardHeader>
             
-            <CardContent className="p-0">
+            <SurfaceCardContent className="p-0">
               <div className="flex flex-col md:grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-border/10">
                 
                 {/* LEFT COLUMN: Visual Analytics (The Graph) */}
@@ -862,8 +893,8 @@ export default function PortfolioHealthPage() {
 
                 </div>
               </div>
-            </CardContent>
-          </Card>
+            </SurfaceCardContent>
+          </SurfaceCard>
           {result.summary.portfolio_diagnostics && (
             <div className="p-4 md:p-6 grid gap-3 md:gap-4 grid-cols-1 sm:grid-cols-3">
                   {[
@@ -887,14 +918,14 @@ export default function PortfolioHealthPage() {
 
           {/* 1.5. Sector Transformation Analytics */}
           {sectorData.length > 0 && (
-            <Card variant="none" effect="glass" showRipple={false} className="border-white/5">
-              <CardHeader className="pb-0">
-                <CardTitle className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+            <SurfaceCard>
+              <SurfaceCardHeader className="pb-0">
+                <SurfaceCardTitle className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
                   <Icon icon={TrendingUp} size={12} className="text-primary" />
                   Sector Concentration Shift
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="pt-6">
+                </SurfaceCardTitle>
+              </SurfaceCardHeader>
+              <SurfaceCardContent className="pt-6">
                 <div className="h-64 w-full">
                   <ChartContainer config={chartConfig} className="h-full w-full">
                     <BarChart data={sectorData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
@@ -951,13 +982,14 @@ export default function PortfolioHealthPage() {
                     </BarChart>
                   </ChartContainer>
                 </div>
-              </CardContent>
-            </Card>
+              </SurfaceCardContent>
+            </SurfaceCard>
           )}
 
           {/* 2. Executive Rationale & Takeaways (Highest Prominence for Investors) */}
           {(result.portfolio_level_takeaways?.length || 0) > 0 && (
-            <div className="bg-muted/10 border border-primary/20 rounded-3xl p-8 backdrop-blur-xl relative overflow-hidden shadow-sm">
+            <SurfaceCard accent="sky" className="relative">
+              <SurfaceCardContent className="relative p-8">
                <div className="absolute top-0 right-0 p-4 opacity-5">
                  <Icon icon={ShieldCheck} size={128} className="text-foreground" />
                </div>
@@ -975,18 +1007,19 @@ export default function PortfolioHealthPage() {
                   ))}
                 </ul>
               </div>
-            </div>
+              </SurfaceCardContent>
+            </SurfaceCard>
           )}
 
           {/* 3. Simulated Outcome (Projected Improvement) */}
-          <Card variant="none" effect="glass" showRipple={false} className="border-primary/20 bg-muted/10">
-            <CardHeader>
+          <SurfaceCard accent="emerald">
+            <SurfaceCardHeader>
               <div className="flex items-center gap-2">
                 <Icon icon={Zap} size="md" className="text-primary animate-pulse" />
-                <CardTitle className="text-sm font-black uppercase tracking-widest">Simulated Alignment Outcome</CardTitle>
+                <SurfaceCardTitle className="text-sm font-black uppercase tracking-widest">Simulated Alignment Outcome</SurfaceCardTitle>
               </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
+            </SurfaceCardHeader>
+            <SurfaceCardContent className="space-y-4">
               <p className="text-sm text-foreground/80 font-medium">
                 By executing these {result.losers.length} adjustments, your portfolio's alpha alignment score is projected to move from <span className="text-red-400 font-black">{typeof result.summary.health_score === 'number' ? result.summary.health_score.toFixed(0) : "0"}</span> to <span className="text-emerald-400 font-black text-lg">{typeof result.summary.projected_health_score === 'number' ? `${result.summary.projected_health_score.toFixed(0)}+` : "92+"}</span>.
               </p>
@@ -1005,19 +1038,19 @@ export default function PortfolioHealthPage() {
                    </div>
                 </div>
               </div>
-            </CardContent>
-          </Card>
+            </SurfaceCardContent>
+          </SurfaceCard>
 
           {/* 4. Optimization Strategy (The "How") */}
           {result.losers.some(l => l.action && l.action.toLowerCase() !== 'hold') && (
-            <Card variant="none" effect="glass" showRipple={false} className="border-white/10 overflow-hidden">
-              <CardHeader className="pb-0">
+            <SurfaceCard accent="amber">
+              <SurfaceCardHeader className="pb-0">
                 <div className="flex items-center gap-2">
                   <Icon icon={Target} size="md" className="text-primary" />
-                  <CardTitle>Optimization Trade Strategy</CardTitle>
+                  <SurfaceCardTitle>Optimization Trade Strategy</SurfaceCardTitle>
                 </div>
-              </CardHeader>
-              <CardContent className="space-y-8 pt-6">
+              </SurfaceCardHeader>
+              <SurfaceCardContent className="space-y-8 pt-6">
                 {[
                   {
                     title: "Capital Harvest (Reduce/Exit)",
@@ -1102,20 +1135,20 @@ export default function PortfolioHealthPage() {
                     </div>
                   );
                 })}
-              </CardContent>
-            </Card>
+              </SurfaceCardContent>
+            </SurfaceCard>
           )}
 
           {/* 5. Detailed Rebalance Plans (Scenario Logic) */}
           {result.summary.plans && (
-            <Card variant="none" effect="glass" showRipple={false} className="border-white/5 overflow-hidden">
-              <CardHeader className="pb-4">
-                <CardTitle className="text-xs font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+            <SurfaceCard>
+              <SurfaceCardHeader className="pb-4">
+                <SurfaceCardTitle className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-muted-foreground">
                   <Icon icon={LayoutDashboard} size="sm" className="text-primary" />
                   Proposed Rebalance Path Scenarios
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
+                </SurfaceCardTitle>
+              </SurfaceCardHeader>
+              <SurfaceCardContent>
                 <Tabs defaultValue="standard" className="w-full">
                   <TabsList className="bg-muted p-1 rounded-2xl h-12 w-full grid grid-cols-3">
                     {(["minimal", "standard", "maximal"] as const).map((key) => (
@@ -1188,40 +1221,42 @@ export default function PortfolioHealthPage() {
                     );
                   })}
                 </Tabs>
-              </CardContent>
-            </Card>
+              </SurfaceCardContent>
+            </SurfaceCard>
           )}
 
           {/* 6. Contextual Rubric & Extraction Status (Lower Prominence) */}
           <div className="grid gap-6 md:grid-cols-2">
-            <Card variant="none" effect="glass" showRipple={false} className="border-white/5 opacity-80 hover:opacity-100 transition-opacity">
-              <CardHeader className="py-4">
-                <CardTitle className="text-[10px] font-black uppercase tracking-widest">Renaissance Alignment Context</CardTitle>
-              </CardHeader>
-              <CardContent className="pb-4">
+            <SurfaceCard className="opacity-80 transition-opacity hover:opacity-100">
+              <SurfaceCardHeader className="py-4">
+                <SurfaceCardTitle className="text-[10px] font-black uppercase tracking-widest">Renaissance Alignment Context</SurfaceCardTitle>
+              </SurfaceCardHeader>
+              <SurfaceCardContent className="pb-4">
                 <pre className="whitespace-pre-wrap text-[11px] text-muted-foreground/80 leading-relaxed font-medium">
                   {result.criteria_context}
                 </pre>
-              </CardContent>
-            </Card>
+              </SurfaceCardContent>
+            </SurfaceCard>
 
             {streamedText && (
-              <Card variant="none" effect="glass" showRipple={false} className="border-primary/10 overflow-hidden">
-                <CardHeader className="py-4">
-                  <CardTitle className="text-[10px] font-black uppercase tracking-widest">
+              <SurfaceCard accent="sky">
+                <SurfaceCardHeader className="py-4">
+                  <SurfaceCardTitle className="text-[10px] font-black uppercase tracking-widest">
                     Alpha Analysis Runtime Transcript
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="pt-0 pb-4">
+                  </SurfaceCardTitle>
+                </SurfaceCardHeader>
+                <SurfaceCardContent className="pt-0 pb-4">
                   <pre className="max-h-56 overflow-y-auto whitespace-pre-wrap break-words rounded-xl border border-border/40 bg-muted/20 p-3 text-[11px] leading-relaxed text-muted-foreground">
                     {streamedText}
                   </pre>
-                </CardContent>
-              </Card>
+                </SurfaceCardContent>
+              </SurfaceCard>
             )}
           </div>
         </>
       )}
-    </div>
+        </SurfaceStack>
+      </AppPageContentRegion>
+    </AppPageShell>
   );
 }

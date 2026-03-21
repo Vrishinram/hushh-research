@@ -96,7 +96,7 @@ make verify-setup         # Verify hooks and remotes are configured
     ```bash
     ./scripts/test-ci-local.sh
     ```
-    This ensures your changes will pass GitHub Actions CI. See [CI Configuration Reference](docs/reference/ci.md) for details.
+    This ensures your changes will pass GitHub Actions CI. See [CI Configuration Reference](docs/reference/operations/ci.md) for details.
 6.  **Test Locally**: Verify the change on all supported platforms (simulators/emulators).
 7.  **Submit a Pull Request**: targeted at the `main` branch.
     - `main` is protected: PRs require approval and CI checks.
@@ -149,7 +149,7 @@ Attach a screen recording or screenshot of the feature in action.
 - **[Contributing Guide](contributing.md)**: Workflow and guidelines (this file)
 - **[Project Context Map](docs/project_context_map.md)**: Understanding the codebase
 - **[New Feature Checklist](docs/guides/new-feature.md)**: Building new features
-- **[Route Contracts](docs/reference/route_contracts.md)**: API contract documentation
+- **[Route Contracts](docs/reference/architecture/route-contracts.md)**: API and shell contract documentation
 
 ---
 

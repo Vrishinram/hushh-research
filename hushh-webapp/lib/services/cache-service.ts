@@ -16,6 +16,16 @@ interface CacheEntry<T> {
   ttl: number;
 }
 
+export interface CacheSnapshot<T> {
+  data: T;
+  timestamp: number;
+  ttl: number;
+  ageMs: number;
+  expiresAt: number;
+  isFresh: boolean;
+  isStale: boolean;
+}
+
 type CacheEvent =
   | { type: "set"; key: string }
   | { type: "invalidate"; keys: string[] }
@@ -50,20 +60,39 @@ class CacheService {
    * Get cached data if not expired
    */
   get<T>(key: string): T | null {
-    const entry = this.cache.get(key) as CacheEntry<T> | undefined;
+    const snapshot = this.peek<T>(key);
+    if (!snapshot) {
+      return null;
+    }
+    if (snapshot.isStale) {
+      this.cache.delete(key);
+      return null;
+    }
+    return snapshot.data;
+  }
 
+  /**
+   * Inspect a cache entry without invalidating it.
+   */
+  peek<T>(key: string): CacheSnapshot<T> | null {
+    const entry = this.cache.get(key) as CacheEntry<T> | undefined;
     if (!entry) {
       return null;
     }
 
-    // Check if expired
-    const now = Date.now();
-    if (now - entry.timestamp > entry.ttl) {
-      this.cache.delete(key);
-      return null;
-    }
+    const ageMs = Math.max(0, Date.now() - entry.timestamp);
+    const expiresAt = entry.timestamp + entry.ttl;
+    const isFresh = ageMs <= entry.ttl;
 
-    return entry.data;
+    return {
+      data: entry.data,
+      timestamp: entry.timestamp,
+      ttl: entry.ttl,
+      ageMs,
+      expiresAt,
+      isFresh,
+      isStale: !isFresh,
+    };
   }
 
   /**
@@ -142,9 +171,13 @@ class CacheService {
       CACHE_KEYS.ACTIVE_CONSENTS(userId),
       CACHE_KEYS.PENDING_CONSENTS(userId),
       CACHE_KEYS.CONSENT_AUDIT_LOG(userId),
+      CACHE_KEYS.CONSENT_CENTER(userId, "all"),
       CACHE_KEYS.PORTFOLIO_DATA(userId),
       CACHE_KEYS.KAI_PROFILE(userId),
       CACHE_KEYS.ANALYSIS_HISTORY(userId),
+      CACHE_KEYS.PERSONA_STATE(userId),
+      CACHE_KEYS.RIA_ONBOARDING_STATUS(userId),
+      CACHE_KEYS.RIA_ROSTER_SUMMARY(userId),
     ]);
 
     for (const key of this.cache.keys()) {
@@ -152,7 +185,10 @@ class CacheService {
         key.startsWith(`domain_data_${userId}_`) ||
         key.startsWith(`domain_blob_${userId}_`) ||
         key.startsWith(`stock_context_${userId}_`) ||
-        key.startsWith(`kai_market_home_${userId}_`)
+        key.startsWith(`kai_market_home_${userId}_`) ||
+        key.startsWith(`consent_center_${userId}_`) ||
+        key.startsWith(`marketplace_rias_`) ||
+        key.startsWith(`marketplace_investors_`)
       ) {
         keysToDelete.add(key);
       }
@@ -224,13 +260,23 @@ export const CACHE_KEYS = {
   ENCRYPTED_DOMAIN_BLOB: (userId: string, domain: string) => `domain_blob_${userId}_${domain}`,
   PENDING_CONSENTS: (userId: string) => `pending_consents_${userId}`,
   CONSENT_AUDIT_LOG: (userId: string) => `consent_audit_log_${userId}`,
+  CONSENT_CENTER: (userId: string, scopeKey: string) => `consent_center_${userId}_${scopeKey}`,
+  PERSONA_STATE: (userId: string) => `persona_state_${userId}`,
+  RIA_ONBOARDING_STATUS: (userId: string) => `ria_onboarding_status_${userId}`,
+  RIA_ROSTER_SUMMARY: (userId: string) => `ria_roster_summary_${userId}`,
   KAI_PROFILE: (userId: string) => `kai_profile_${userId}`,
   ANALYSIS_HISTORY: (userId: string) => `analysis_history_${userId}`,
   STOCK_CONTEXT: (userId: string, ticker: string) => `stock_context_${userId}_${ticker}`,
-  KAI_MARKET_HOME: (userId: string, symbolsKey: string, daysBack: number) =>
-    `kai_market_home_${userId}_${symbolsKey}_${daysBack}`,
+  KAI_MARKET_HOME: (
+    userId: string,
+    symbolsKey: string,
+    daysBack: number,
+    pickSource: string = "default"
+  ) => `kai_market_home_${userId}_${symbolsKey}_${daysBack}_${pickSource}`,
   KAI_DASHBOARD_PROFILE_PICKS: (userId: string, symbolsKey: string, limit: number) =>
     `kai_dashboard_profile_picks_${userId}_${symbolsKey}_${limit}`,
+  MARKETPLACE_RIAS_SEARCH: (queryKey: string) => `marketplace_rias_${queryKey}`,
+  MARKETPLACE_INVESTORS_SEARCH: (queryKey: string) => `marketplace_investors_${queryKey}`,
 } as const;
 
 // TTL constants

@@ -39,8 +39,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import {
+  SurfaceCard,
+  SurfaceCardContent,
+  SurfaceCardDescription,
+  SurfaceCardHeader,
+  SurfaceCardTitle,
+  SurfaceInset,
+} from "@/components/app-ui/surfaces";
 import { Button } from "@/lib/morphy-ux/button";
 import { format } from "date-fns";
 import { HushhLoader } from "@/components/app-ui/hushh-loader";
@@ -513,33 +520,33 @@ function DebateInputsCard({
   const quickStartTickers = eligibleSymbols.length > 0 ? eligibleSymbols : historyTickers;
 
   return (
-    <Card className="rounded-2xl border border-border/60 bg-background/75 shadow-sm">
-      <CardHeader>
+    <SurfaceCard>
+      <SurfaceCardHeader>
         <div className="flex items-center justify-between gap-2">
-          <CardTitle className="flex items-center gap-2 text-sm">
+          <SurfaceCardTitle className="flex items-center gap-2 text-sm">
             <Icon icon={MessageSquareText} size="sm" className="text-primary" />
             Debate Inputs
-          </CardTitle>
+          </SurfaceCardTitle>
           <Badge variant="secondary" className="text-[11px] font-semibold">
             {eligibleSymbols.length} eligible
           </Badge>
         </div>
-        <CardDescription>
+        <SurfaceCardDescription>
           Start a debate directly from history using your current vault portfolio context.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
+        </SurfaceCardDescription>
+      </SurfaceCardHeader>
+      <SurfaceCardContent className="space-y-4">
         {loading ? (
-          <div className="rounded-xl border border-dashed border-border/60 bg-background/80 p-3 text-sm text-muted-foreground">
+          <SurfaceInset className="border-dashed p-3 text-sm text-muted-foreground">
             Loading debate context from vault...
-          </div>
+          </SurfaceInset>
         ) : !hasPortfolio ? (
-          <div className="rounded-xl border border-dashed border-border/60 bg-background/80 p-3 text-sm text-muted-foreground">
+          <SurfaceInset className="border-dashed p-3 text-sm text-muted-foreground">
             No imported statement found for this user yet. Import/connect a statement to unlock portfolio-based debate inputs.
-          </div>
+          </SurfaceInset>
         ) : (
           <>
-            <div className="rounded-xl border border-border/60 bg-background/80 p-3">
+            <SurfaceInset className="p-3">
               <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <span>Overall readiness</span>
                 <span className="font-semibold text-foreground">
@@ -547,7 +554,7 @@ function DebateInputsCard({
                 </span>
               </div>
               <Progress value={snapshot?.readinessScore || 0} className="mt-2 h-2" />
-            </div>
+            </SurfaceInset>
 
             <DebateReadinessChart
               data={coverageRows.map((row) => ({
@@ -560,19 +567,19 @@ function DebateInputsCard({
 
             <div className="grid gap-3 sm:grid-cols-2">
               {coverageRows.map((row) => (
-                <div key={row.key} className="rounded-xl border border-border/60 bg-background/80 p-3">
+                <SurfaceInset key={row.key} className="p-3">
                   <div className="flex items-center justify-between text-sm">
                     <span className="font-semibold">{row.label}</span>
                     <span className="text-muted-foreground">{Math.round(row.value)}%</span>
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">{row.detail}</p>
-                </div>
+                </SurfaceInset>
               ))}
             </div>
           </>
         )}
 
-        <div className="rounded-xl border border-border/60 bg-background/80 p-3">
+        <SurfaceInset className="p-3">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
             Quick Start
           </p>
@@ -596,10 +603,10 @@ function DebateInputsCard({
               No eligible symbols yet. Import a statement first.
             </p>
           )}
-        </div>
+        </SurfaceInset>
 
         {exclusionSummary.length > 0 ? (
-          <div className="rounded-xl border border-border/60 bg-background/80 p-3">
+          <SurfaceInset className="p-3">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
               Exclusion Reasons
             </p>
@@ -613,10 +620,10 @@ function DebateInputsCard({
                 </span>
               ))}
             </div>
-          </div>
+          </SurfaceInset>
         ) : null}
-      </CardContent>
-    </Card>
+      </SurfaceCardContent>
+    </SurfaceCard>
   );
 }
 
@@ -890,7 +897,7 @@ export function AnalysisHistoryDashboard({
   // ----- Loading state -----
   if (loading) {
     return (
-      <div className="px-4 sm:px-6 pb-safe max-w-4xl mx-auto">
+      <div className="w-full pb-safe">
         <div className="flex min-h-52 items-center justify-center rounded-2xl border border-border/40 bg-card/60">
           <HushhLoader variant="inline" label="Loading analysis history…" />
         </div>
@@ -901,7 +908,7 @@ export function AnalysisHistoryDashboard({
   // ----- Empty state -----
   if (entries.length === 0) {
     return (
-      <div className="space-y-6 px-4 sm:px-6 pb-safe max-w-4xl mx-auto">
+      <div className="w-full space-y-6 pb-safe">
         <EmptyState />
         {showDebateInputs ? (
           <DebateInputsCard
@@ -917,7 +924,7 @@ export function AnalysisHistoryDashboard({
 
   // ----- Populated state -----
   return (
-    <div className="space-y-6 px-4 sm:px-6 pb-safe max-w-4xl mx-auto">
+    <div className="w-full space-y-6 pb-safe">
       {/* Header (search is global in Kai layout) */}
       <div className="flex items-center gap-2">
         <Icon icon={Search} size="sm" className="text-muted-foreground" />
@@ -930,21 +937,21 @@ export function AnalysisHistoryDashboard({
       </div>
 
       {/* Data Table */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-10">
-        <DataTable
-          columns={columns}
-          data={entries}
-          searchKey="ticker"
-          searchPlaceholder="Search analysis history by ticker..."
-          enableSearch
-          filterKey="decision"
-          filterOptions={[
-            { label: "Buy", value: "buy" },
-            { label: "Hold / Watch", value: "hold" },
-            { label: "Reduce", value: "reduce" },
-          ]}
-        />
-      </div>
+      <DataTable
+        columns={columns}
+        data={entries}
+        searchKey="ticker"
+        searchPlaceholder="Search analysis history by ticker..."
+        enableSearch
+        filterKey="decision"
+        filterOptions={[
+          { label: "Buy", value: "buy" },
+          { label: "Hold / Watch", value: "hold" },
+          { label: "Reduce", value: "reduce" },
+        ]}
+        tableContainerClassName="rounded-[22px] border-border/60 bg-background/60"
+        tableClassName="min-w-[640px]"
+      />
 
       {showDebateInputs ? (
         <DebateInputsCard

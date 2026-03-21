@@ -38,7 +38,13 @@ import type { GeneratedVaultKeyMode } from "@/lib/services/vault-bootstrap-servi
 import { VaultMethodService, type VaultMethod } from "@/lib/services/vault-method-service";
 import { VaultMethodPromptLocalService } from "@/lib/services/vault-method-prompt-local-service";
 import { resolvePasskeyRpId } from "@/lib/vault/passkey-rp";
-import { toInvestorLoading, toInvestorMessage } from "@/lib/copy/investor-language";
+import { copyToClipboard } from "@/lib/utils/clipboard";
+import { reloadWindow } from "@/lib/utils/browser-navigation";
+import {
+  toInvestorLoading,
+  toInvestorMessage,
+  toInvestorVaultUnlockError,
+} from "@/lib/copy/investor-language";
 
 type VaultStep =
   | "checking"
@@ -156,19 +162,20 @@ export function VaultFlow({
               .find((wrapper) => !!wrapper) ?? null;
           const nextQuickMethod = (quickMethod?.method as GeneratedVaultKeyMode | undefined) ?? null;
           setAvailableGeneratedMethod(nextQuickMethod);
-          if (
-            (vaultData.primaryMethod === "generated_default_native_biometric" ||
-              vaultData.primaryMethod === "generated_default_web_prf" ||
-              vaultData.primaryMethod === "generated_default_native_passkey_prf") &&
-            !nextQuickMethod
-          ) {
+          const primaryPrefersQuickMethod =
+            vaultData.primaryMethod === "generated_default_native_biometric" ||
+            vaultData.primaryMethod === "generated_default_web_prf" ||
+            vaultData.primaryMethod === "generated_default_native_passkey_prf";
+
+          if (primaryPrefersQuickMethod && !nextQuickMethod) {
             setVaultMode("passphrase");
             setUnlockWithPassphraseFallback(true);
-            if (Capacitor.isNativePlatform()) {
-              setUnlockHint(
-                toInvestorMessage("VAULT_PASSKEY_ENROLL_REQUIRED")
-              );
-            }
+            setUnlockHint(
+              toInvestorMessage("VAULT_PASSKEY_ENROLL_REQUIRED")
+            );
+          } else if (primaryPrefersQuickMethod && nextQuickMethod) {
+            setVaultMode(nextQuickMethod);
+            setUnlockWithPassphraseFallback(false);
           } else if (
             primaryWrapper.method === "generated_default_native_biometric" ||
             primaryWrapper.method === "generated_default_web_prf" ||
@@ -290,7 +297,7 @@ export function VaultFlow({
       }
     } catch (err: any) {
       console.error("Unlock error:", err);
-      const message = toInvestorMessage("VAULT_UNLOCK_FAILED");
+      const message = toInvestorVaultUnlockError(err);
       setError(message);
       toast.error(message);
     } finally {
@@ -339,13 +346,7 @@ export function VaultFlow({
       await finalizeUnlock(decryptedKey);
     } catch (err: any) {
       console.error("Generated vault unlock failed:", err);
-      const rawMessage = err?.message || "Failed to unlock with secure default key.";
-      const message =
-        typeof rawMessage === "string" &&
-        (rawMessage.includes("VAULT_PASSKEY_RP_MISMATCH") ||
-          rawMessage.toLowerCase().includes("rp id is not allowed"))
-          ? toInvestorMessage("VAULT_PASSKEY_ENROLL_REQUIRED")
-          : rawMessage;
+      const message = toInvestorVaultUnlockError(err);
       setError(message);
       toast.error(message);
     } finally {
@@ -375,7 +376,7 @@ export function VaultFlow({
       }
     } catch (err: unknown) {
       console.error("Recovery key unlock failed:", err);
-      const message = "We could not unlock with that recovery key. Please try again.";
+      const message = toInvestorVaultUnlockError(err);
       setError(message);
       toast.error(message);
     } finally {
@@ -383,8 +384,13 @@ export function VaultFlow({
     }
   };
 
-  const handleCopyRecoveryKey = () => {
-    navigator.clipboard.writeText(recoveryKey);
+  const handleCopyRecoveryKey = async () => {
+    const copiedToClipboard = await copyToClipboard(recoveryKey);
+    if (!copiedToClipboard) {
+      toast.error("Could not copy the recovery key on this device.");
+      return;
+    }
+
     setCopied(true);
     toast.success("Recovery key copied to clipboard");
     setTimeout(() => setCopied(false), 2000);
@@ -475,7 +481,7 @@ export function VaultFlow({
               </div>
               <p className="text-muted-foreground">{error}</p>
               <Button
-                onClick={() => window.location.reload()}
+                onClick={reloadWindow}
                 variant="none"
                 className="border border-input bg-background hover:bg-accent hover:text-accent-foreground"
               >
@@ -655,9 +661,6 @@ export function VaultFlow({
                   />
                 </div>
               )}
-              {error && (
-                <p className="text-sm text-destructive">{error}</p>
-              )}
               <div className="flex flex-col gap-3 pt-2">
                 {shouldShowPassphraseUnlock && (
                   <Button
@@ -801,9 +804,6 @@ export function VaultFlow({
                   }
                   className="h-11 px-3 font-mono text-base sm:h-12 sm:px-4 sm:text-lg"
                 />
-                {error && (
-                  <p className="text-sm text-destructive">{error}</p>
-                )}
               </div>
               <div className="flex flex-col gap-3 pt-2">
                 <Button

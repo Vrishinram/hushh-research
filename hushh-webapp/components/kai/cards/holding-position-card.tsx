@@ -1,6 +1,6 @@
 "use client";
 
-import { Pencil, Trash2, Sparkles } from "lucide-react";
+import { BarChart3, Pencil, Trash2 } from "lucide-react";
 
 import { Button } from "@/lib/morphy-ux/button";
 import { Card, CardContent } from "@/lib/morphy-ux/card";
@@ -39,7 +39,7 @@ export function HoldingPositionCard({ holding, onAnalyze, onManage }: HoldingPos
   const positive = holding.gainLossValue >= 0;
 
   return (
-    <Card variant="none" effect="glass" className="rounded-2xl p-0" showRipple>
+    <Card variant="none" effect="glass" preset="default" showRipple>
       <CardContent className="space-y-3 p-4">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
@@ -102,7 +102,7 @@ export function HoldingPositionCard({ holding, onAnalyze, onManage }: HoldingPos
               size="sm"
               onClick={() => onAnalyze(holding.symbol)}
             >
-              <Icon icon={Sparkles} size="sm" className="mr-1.5" />
+              <Icon icon={BarChart3} size="sm" className="mr-1.5" />
               Connect Kai
             </Button>
           </div>

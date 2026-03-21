@@ -41,9 +41,15 @@ import {
   setOnboardingRequiredCookie,
 } from "@/lib/services/onboarding-route-cookie";
 import { UserLocalStateService } from "@/lib/services/user-local-state-service";
+import {
+  clearSessionStorage,
+  removeLocalItem,
+  removeSessionItem,
+} from "@/lib/utils/session-storage";
 
 // Pre-compute platform check to avoid dynamic imports in callbacks
 const IS_NATIVE = typeof window !== "undefined" && Capacitor.isNativePlatform();
+const AUTH_SESSION_INVALIDATED_EVENT = "auth-session-invalidated";
 
 // ============================================================================
 // Types
@@ -59,7 +65,7 @@ interface AuthContextType {
   // Methods
   sendOTP: (phoneNumber: string) => Promise<ConfirmationResult>;
   verifyOTP: (otp: string) => Promise<User>;
-  signOut: () => Promise<void>;
+  signOut: (options?: { redirectTo?: string }) => Promise<void>;
   checkAuth: () => Promise<void>; // Manually trigger auth check (e.g. after native login)
   setNativeUser: (user: User | null) => void; // Helper to manually set user state
 }
@@ -179,8 +185,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
             );
             // DEFENSIVE CLEANUP: Remove any legacy vault_key from storage
             // Vault key should be managed by VaultContext (memory-only)
-            localStorage.removeItem("vault_key");
-            sessionStorage.removeItem("vault_key");
+            removeLocalItem("vault_key");
+            removeSessionItem("vault_key");
 
             // Reactive state will handle UI updates (e.g. VaultLockGuard will see locked vault)
             // No need to force reload, which causes loops on some Android devices
@@ -224,8 +230,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, [checkAuth]); // FIXED: Removed `user` from dependencies to prevent render loop
 
   // Sign out
-  const signOut = async (): Promise<void> => {
+  const signOut = useCallback(async (options?: { redirectTo?: string }): Promise<void> => {
     const currentUid = user?.uid ?? null;
+    const redirectTo = options?.redirectTo || ROUTES.HOME;
     try {
       // Delete FCM token before signing out (requires auth)
       if (currentUid) {
@@ -261,13 +268,28 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       // DEFENSIVE CLEANUP: Remove any legacy vault_key from storage
       // Vault key should be managed by VaultContext (memory-only)
-      localStorage.removeItem("vault_key");
-      localStorage.removeItem("user_id");
-      sessionStorage.clear();
+      removeLocalItem("vault_key");
+      removeLocalItem("user_id");
+      clearSessionStorage();
 
-      router.push(ROUTES.HOME);
+      router.push(redirectTo);
     }
-  };
+  }, [router, user]);
+
+  useEffect(() => {
+    const handleAuthInvalidated = (event: Event) => {
+      const customEvent = event as CustomEvent<{ reason?: string; path?: string }>;
+      console.warn(
+        "🔒 [AuthProvider] Auth session invalidated:",
+        customEvent.detail?.reason || "unknown reason"
+      );
+      void signOut({ redirectTo: ROUTES.LOGIN });
+    };
+
+    window.addEventListener(AUTH_SESSION_INVALIDATED_EVENT, handleAuthInvalidated);
+    return () =>
+      window.removeEventListener(AUTH_SESSION_INVALIDATED_EVENT, handleAuthInvalidated);
+  }, [signOut]);
 
   // OTP Stubs (unchanged)
   const sendOTP = async (phone: string): Promise<ConfirmationResult> => {

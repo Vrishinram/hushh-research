@@ -11,6 +11,7 @@ import {
 import { resolvePasskeyRpId } from "@/lib/vault/passkey-rp";
 import { auth } from "@/lib/firebase/config";
 import { apiJson } from "@/lib/services/api-client";
+import { getLocalItem, getSessionItem } from "@/lib/utils/session-storage";
 import type {
   GeneratedVaultProvisionResult,
   GeneratedVaultSupport,
@@ -491,8 +492,8 @@ export class VaultService {
     try {
       if (typeof window !== "undefined") {
         return (
-          window.localStorage.getItem("debug_vault_owner") === "true" ||
-          window.sessionStorage.getItem("debug_vault_owner") === "true"
+          getLocalItem("debug_vault_owner") === "true" ||
+          getSessionItem("debug_vault_owner") === "true"
         );
       }
     } catch {
@@ -670,7 +671,7 @@ export class VaultService {
    * Check if a vault exists for the given user
    * Cached per session to avoid repeated API calls across page navigations.
    * iOS: Uses HushhVault native plugin
-   * Web: Calls /api/vault/check
+   * Web: Calls /api/vault/check (backed by bootstrap-state on the server)
    */
   static async checkVault(userId: string): Promise<boolean> {
     const cache = CacheService.getInstance();
@@ -710,7 +711,10 @@ export class VaultService {
         headers["Authorization"] = `Bearer ${authToken}`;
       }
 
-      const response = await fetch(url, { headers });
+      const response = await fetch(url, {
+        headers,
+        signal: AbortSignal.timeout(15000),
+      });
       if (!response.ok) {
         console.error("❌ [VaultService] checkVault failed:", response.status);
         throw new Error("Vault check failed");

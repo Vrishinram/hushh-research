@@ -9,23 +9,31 @@
 
 The Hushh mobile app uses **Next.js static export** in a native WebView, with **native plugins** handling security-critical operations. Both iOS and Android achieve feature parity through aligned plugin implementations.
 
+Program parity is enforced against the **entire visible route tree**, not only Kai core pages. The source of truth is:
+
+- `hushh-webapp/route-contracts.json`
+- `hushh-webapp/mobile-parity-registry.json`
+
+Every visible page route must be classified as native-supported or explicitly exempt, and browser-sensitive behavior must either run through shared wrappers or be documented as an accepted exception.
+
 ### Dev mode (hot reload) vs plugin parity
 
 - The **WebView UI** can point to a running `next dev` server for hot reload.
 - **Native plugins must always call the Python backend** (FastAPI) via `NEXT_PUBLIC_BACKEND_URL` for parity with production.
 - Next.js `app/api/**` routes are treated as **web-only proxy routes**; native plugins are the proxy layer on mobile.
 
-Recommended commands (from `hushh-webapp`):
+Recommended commands:
 
-- Terminal A: `npm run dev`
-- Terminal B:
-  - Android: `npm run cap:android:dev:run`
-  - iOS: `npm run cap:ios:dev:run`
+- Terminal A (repo root): `make local-backend`
+- Terminal B (repo root):
+  - Android: `cd hushh-webapp && npm run cap:android:run -- --profile local-uatdb --fresh`
+  - iOS: `cd hushh-webapp && npm run cap:ios:run -- --profile local-uatdb --fresh`
 
 Required env:
 
 - `NEXT_PUBLIC_BACKEND_URL` must point to your dev/staging Python backend.
   - If you use a local backend on your host machine, remember Android emulator needs `10.0.2.2` instead of `localhost`.
+  - The runtime profile launcher handles that rewrite automatically in `capacitor.config.ts` for Android when the active profile uses localhost.
 
 ### Passkey domain association (production)
 
@@ -55,6 +63,33 @@ Notes:
 - Native PRF passkey status:
   - iOS: implemented via `HushhVault.registerPasskeyPrf/authenticatePasskeyPrf` (requires iOS 18+).
   - Android: PRF native passkey methods are still pending; biometric/passphrase fallback remains active.
+- Vault preference/native fallback status:
+  - `storePreferencesToCloud()` is the canonical shipped native-safe path for encrypted preference writes.
+  - `deletePreferences()` remains intentionally unsupported in the web fallback.
+  - New mobile features must not depend on local-only preference deletion semantics without updating the parity contract first.
+
+### Full parity audit lane
+
+Before calling iOS/Android parity complete, run:
+
+- `cd hushh-webapp && npm run verify:capacitor:audit`
+
+That release gate includes:
+
+- full route-contract verification
+- native plugin parity verification
+- Capacitor route classification verification
+- Capacitor runtime config verification
+- mobile Firebase artifact verification
+- docs/runtime parity verification
+- browser-API/native compatibility audit
+- iOS project sanity (`xcodebuild -list`)
+- Android project sanity (`./gradlew tasks --all`)
+
+Accepted parity exceptions currently documented in the registry:
+
+- Android native passkey PRF is still pending.
+- Cloud-backed vault preference methods remain the canonical mobile-safe path for some preference flows.
 
 ### Firebase artifact safety (no secret leak in git)
 
@@ -107,6 +142,22 @@ All 10 plugins exist on both platforms with matching methods:
 | **HushhNotifications** | `HushhNotifications` | Push token registration | `HushhNotificationsPlugin.swift` | `HushhNotificationsPlugin.kt` |
 
 > Note: HushhKeystore uses jsName `HushhKeychain` for historical compatibility.
+
+## Route Coverage
+
+Visible page routes are governed through `pageContracts[]` in `hushh-webapp/route-contracts.json`. That coverage includes:
+
+- product routes (`/kai`, `/consents`, `/profile`, `/marketplace`, `/ria`)
+- `/developers`
+- public/auth content pages (`/`, `/login`, `/logout`)
+- visible lab routes
+- redirect-only compatibility pages that still ship in the app shell
+
+Do not add a visible route without:
+
+1. adding it to `pageContracts[]`
+2. classifying it in `mobile-parity-registry.json`
+3. ensuring its route-facing browser APIs are wrapped or explicitly exempted
 
 ---
 
@@ -571,7 +622,7 @@ The app follows a **Layered Navigation** model:
 | Level  | Description | Examples                      | Back Button        |
 | ------ | ----------- | ----------------------------- | ------------------ |
 | **1**  | Root Tabs   | `/kai`, `/consents`, `/profile` | Exit/Lock Dialog |
-| **2+** | Sub Pages   | `/kai/onboarding`, `/kai/import`, `/kai/dashboard` | Navigate to Parent |
+| **2+** | Sub Pages   | `/kai/onboarding`, `/kai/import`, `/kai/portfolio` | Navigate to Parent |
 
 ### Exit Dialog Security
 
@@ -642,7 +693,7 @@ For Server-Sent Events (SSE) streaming on native:
 
 Before releasing mobile updates:
 
-- [ ] All required plugins registered on both platforms (see `docs/reference/mobile-kai-parity-map.md`)
+- [ ] All required plugins registered on both platforms (see `docs/reference/kai/mobile-kai-parity-map.md`)
 - [ ] Firebase authentication works (Google Sign-In)
 - [ ] Apple Sign-In works on iOS
 - [ ] Vault operations work end-to-end
@@ -661,7 +712,7 @@ For `CAPACITOR_BUILD=true` (`output: "export"`), treat App Router files as the o
 
 Required rule:
 - Do not depend on legacy alias redirects for mobile navigation.
-- Keep only canonical pages: `/`, `/login`, `/kai`, `/kai/onboarding`, `/kai/import`, `/kai/dashboard`.
+- Keep only canonical pages: `/`, `/login`, `/kai`, `/kai/onboarding`, `/kai/import`, `/kai/plaid/oauth/return`, `/kai/portfolio`.
 - Any removed alias route must stay removed from both `app/` and `next.config.ts`.
 
 ---

@@ -6,10 +6,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { HushhLoader } from "@/components/app-ui/hushh-loader";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { OnboardingLocalService } from "@/lib/services/onboarding-local-service";
-import { isOnboardingFlowActiveCookieEnabled } from "@/lib/services/onboarding-route-cookie";
 import { IntroStep } from "@/components/onboarding/IntroStep";
 import { PreviewCarouselStep } from "@/components/onboarding/PreviewCarouselStep";
 import { ROUTES } from "@/lib/navigation/routes";
+import { resolveAppEnvironment } from "@/lib/app-env";
+import { PostAuthRouteService } from "@/lib/services/post-auth-route-service";
+import { assignWindowLocation } from "@/lib/utils/browser-navigation";
 
 type HomeStep = "intro" | "preview";
 
@@ -21,23 +23,20 @@ function HomeContent() {
   const { user, loading } = useAuth();
   const [step, setStep] = useState<HomeStep | null>(null);
 
-  const forceOnboardingInDev =
-    process.env.NODE_ENV !== "production" &&
-    (process.env.NEXT_PUBLIC_ENVIRONMENT_MODE ?? "").toLowerCase() ===
-      "development";
+  const forceOnboardingInDev = resolveAppEnvironment() === "development";
 
   // Debug helper (browser console): resets Steps 1-2 visibility flag.
   useEffect(() => {
     if (process.env.NODE_ENV === "production") return;
     if (typeof window === "undefined") return;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     (window as any).resetOnboardingMarketing = async () => {
       await OnboardingLocalService.clearMarketingSeen();
-      window.location.href = "/";
+      assignWindowLocation("/");
     };
 
     return () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       delete (window as any).resetOnboardingMarketing;
     };
   }, []);
@@ -47,10 +46,23 @@ function HomeContent() {
     if (loading) return;
 
     if (user) {
-      const nextPath = isOnboardingFlowActiveCookieEnabled()
-        ? ROUTES.KAI_IMPORT
-        : ROUTES.KAI_HOME;
-      router.push(nextPath);
+      void (async () => {
+        try {
+          const idToken = await user.getIdToken().catch(() => undefined);
+          const nextPath = await PostAuthRouteService.resolveAfterLogin({
+            userId: user.uid,
+            redirectPath: ROUTES.KAI_HOME,
+            idToken,
+          });
+          if (!cancelled) {
+            router.push(nextPath);
+          }
+        } catch {
+          if (!cancelled) {
+            router.push(ROUTES.KAI_HOME);
+          }
+        }
+      })();
       return;
     }
 

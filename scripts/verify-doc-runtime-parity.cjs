@@ -2,6 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { execSync } = require("node:child_process");
 
 const repoRoot = path.resolve(__dirname, "..");
 
@@ -34,6 +35,10 @@ const OPERATIONAL_DOC_TARGETS = [
 ];
 
 const FIRST_PARTY_DOC_TARGETS = [
+  "readme.md",
+  "getting_started.md",
+  "TESTING.md",
+  "contributing.md",
   "docs",
   "consent-protocol/docs",
   "hushh-webapp/docs",
@@ -52,15 +57,28 @@ const GENERATED_ARTIFACT_DIRS = [
 const REQUIRED_CANONICAL_ROUTES = {
   HOME: "/",
   LOGIN: "/login",
+  LOGOUT: "/logout",
+  LABS_PROFILE_APPEARANCE: "/labs/profile-appearance",
+  PROFILE: "/profile",
+  CONSENTS: "/consents",
+  MARKETPLACE: "/marketplace",
+  MARKETPLACE_RIA_PROFILE: "/marketplace/ria",
+  RIA_HOME: "/ria",
+  RIA_ONBOARDING: "/ria/onboarding",
+  RIA_CLIENTS: "/ria/clients",
+  RIA_REQUESTS: "/ria/requests",
+  RIA_SETTINGS: "/ria/settings",
   KAI_HOME: "/kai",
   KAI_ONBOARDING: "/kai/onboarding",
   KAI_IMPORT: "/kai/import",
-  KAI_DASHBOARD: "/kai/dashboard",
+  KAI_DASHBOARD: "/kai/portfolio",
+  KAI_ANALYSIS: "/kai/analysis",
+  KAI_OPTIMIZE: "/kai/optimize",
 };
 
 const REQUIRED_OPERATIONAL_MARKERS = [
   {
-    file: "docs/reference/api-contracts.md",
+    file: "docs/reference/architecture/api-contracts.md",
     patterns: [
       "/api/kai/market/insights/{user_id}",
       "layout_version",
@@ -72,7 +90,7 @@ const REQUIRED_OPERATIONAL_MARKERS = [
     ],
   },
   {
-    file: "docs/reference/streaming-contract.md",
+    file: "docs/reference/streaming/streaming-contract.md",
     patterns: [
       "\"event\": \"decision\"",
       "short_recommendation",
@@ -81,6 +99,69 @@ const REQUIRED_OPERATIONAL_MARKERS = [
       "analysis_mode",
     ],
   },
+];
+
+const REMOVED_SCRIPT_REFERENCES = [
+  "npm run check-lint",
+  "npm run ci:simulate",
+  "npm run verify:vault-schema",
+  "npm run sync:mobile-firebase:b64",
+  "npm run verify:shadcn-parity",
+  "npm run cap:android:dev:run",
+  "npm run cap:ios:dev:run",
+];
+
+const REMOVED_FILE_REFERENCES = [
+  "scripts/test-ci-simulation.sh",
+  "scripts/ci-simulate.sh",
+];
+
+const STALE_DOC_REFERENCE_PATTERNS = [
+  "docs/reference/ci.md",
+  "docs/reference/route_contracts.md",
+  "docs/reference/architecture.md",
+  "docs/reference/consent_protocol.md",
+  "docs/reference/database_service_layer.md",
+  "docs/reference/developer_api.md",
+  "docs/guides/mobile_development.md",
+  "docs/technical/",
+  "docs/business/",
+];
+
+const REQUIRED_DOMAIN_INDEXES = [
+  "docs/guides/README.md",
+  "docs/reference/architecture/README.md",
+  "docs/reference/quality/README.md",
+  "docs/reference/kai/README.md",
+  "docs/reference/mobile/README.md",
+  "docs/reference/operations/README.md",
+  "docs/reference/streaming/README.md",
+];
+
+const REQUIRED_SOURCE_TREE_INDEXES = [
+  "hushh-webapp/components/app-ui/README.md",
+  "hushh-webapp/components/consent/README.md",
+  "hushh-webapp/components/kai/README.md",
+  "hushh-webapp/components/ria/README.md",
+  "hushh-webapp/lib/services/README.md",
+];
+
+const REQUIRED_ROOT_DOC_LINKS = [
+  "./guides/README.md",
+  "./reference/architecture/README.md",
+  "./reference/ai/README.md",
+  "./reference/iam/README.md",
+  "./reference/kai/README.md",
+  "./reference/mobile/README.md",
+  "./reference/operations/README.md",
+  "./reference/quality/README.md",
+  "./reference/streaming/README.md",
+  "./vision/README.md",
+  "../hushh-webapp/components/app-ui/README.md",
+  "../hushh-webapp/components/consent/README.md",
+  "../hushh-webapp/components/kai/README.md",
+  "../hushh-webapp/components/ria/README.md",
+  "../hushh-webapp/lib/services/README.md",
 ];
 
 function fail(message) {
@@ -189,6 +270,63 @@ function scanSpeculativeOperationalContent(files) {
   }
 }
 
+function verifyNoRemovedScriptReferences(files) {
+  const offenders = [];
+
+  for (const file of files) {
+    const src = read(file);
+    for (const command of REMOVED_SCRIPT_REFERENCES) {
+      if (src.includes(command)) {
+        offenders.push(`${file}: stale command reference "${command}"`);
+      }
+    }
+  }
+
+  if (offenders.length) {
+    fail(`Stale script references found in docs:\n${offenders.map((x) => `- ${x}`).join("\n")}`);
+  } else {
+    ok("Docs do not reference removed/stale package scripts");
+  }
+}
+
+function verifyNoRemovedFileReferences(files) {
+  const offenders = [];
+
+  for (const file of files) {
+    const src = read(file);
+    for (const removedPath of REMOVED_FILE_REFERENCES) {
+      if (src.includes(removedPath)) {
+        offenders.push(`${file}: stale file reference "${removedPath}"`);
+      }
+    }
+  }
+
+  if (offenders.length) {
+    fail(`Stale file references found in docs:\n${offenders.map((x) => `- ${x}`).join("\n")}`);
+  } else {
+    ok("Docs do not reference removed helper scripts");
+  }
+}
+
+function verifyNoStaleDocReferences(files) {
+  const offenders = [];
+
+  for (const file of files) {
+    const src = read(file);
+    for (const staleRef of STALE_DOC_REFERENCE_PATTERNS) {
+      if (src.includes(staleRef)) {
+        offenders.push(`${file}: stale doc reference "${staleRef}"`);
+      }
+    }
+  }
+
+  if (offenders.length) {
+    fail(`Stale doc references found:\n${offenders.map((x) => `- ${x}`).join("\n")}`);
+  } else {
+    ok("Docs do not reference deleted legacy doc paths");
+  }
+}
+
 function looksLikePath(token) {
   if (!token.includes("/")) return false;
   if (token.includes(" ")) return false;
@@ -290,11 +428,30 @@ function verifyCanonicalRouteContract(operationalDocs) {
 }
 
 function verifyNoGeneratedArtifacts() {
-  const offenders = GENERATED_ARTIFACT_DIRS.filter((dir) => exists(dir));
+  const offenders = [];
+
+  for (const dir of GENERATED_ARTIFACT_DIRS) {
+    try {
+      const tracked = execSync(`git ls-files -- "${dir}"`, {
+        cwd: repoRoot,
+        stdio: ["ignore", "pipe", "ignore"],
+        encoding: "utf8",
+      })
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
+      if (tracked.length > 0) {
+        offenders.push(`${dir} (tracked files present)`);
+      }
+    } catch {
+      // ignore git invocation failures and continue best-effort checks
+    }
+  }
+
   if (offenders.length) {
-    fail(`Generated native artifact trees must not exist in workspace:\n${offenders.map((x) => `- ${x}`).join("\n")}`);
+    fail(`Generated native artifact trees must not be tracked:\n${offenders.map((x) => `- ${x}`).join("\n")}`);
   } else {
-    ok("No generated iOS artifact doc/build trees present");
+    ok("No generated iOS artifact doc/build trees are tracked");
   }
 }
 
@@ -321,6 +478,29 @@ function verifyRequiredOperationalMarkers() {
   }
 }
 
+function verifyRequiredDocIndexes() {
+  const missing = [...REQUIRED_DOMAIN_INDEXES, ...REQUIRED_SOURCE_TREE_INDEXES].filter(
+    (file) => !exists(file)
+  );
+
+  if (missing.length) {
+    fail(`Required documentation indexes are missing:\n${missing.map((x) => `- ${x}`).join("\n")}`);
+  } else {
+    ok("Required documentation index files exist");
+  }
+}
+
+function verifyRootDocHubLinks() {
+  const rootDocs = read("docs/README.md");
+  const missing = REQUIRED_ROOT_DOC_LINKS.filter((link) => !rootDocs.includes(link));
+
+  if (missing.length) {
+    fail(`docs/README.md is missing required north-star index links:\n${missing.map((x) => `- ${x}`).join("\n")}`);
+  } else {
+    ok("docs/README.md links to the required domain and source-tree indexes");
+  }
+}
+
 function main() {
   const operationalDocs = collectDocs(OPERATIONAL_DOC_TARGETS);
   const firstPartyDocs = collectDocs(FIRST_PARTY_DOC_TARGETS);
@@ -335,7 +515,12 @@ function main() {
   scanLegacyRoutesInOperationalDocs(operationalDocs);
   scanUnresolvedMarkers(firstPartyDocs);
   scanSpeculativeOperationalContent(operationalDocs);
-  verifyDocPathReferences(operationalDocs);
+  verifyNoRemovedScriptReferences(firstPartyDocs);
+  verifyNoRemovedFileReferences(firstPartyDocs);
+  verifyNoStaleDocReferences(firstPartyDocs);
+  verifyDocPathReferences(firstPartyDocs);
+  verifyRequiredDocIndexes();
+  verifyRootDocHubLinks();
   verifyCanonicalRouteContract(operationalDocs);
   verifyRequiredOperationalMarkers();
   verifyNoGeneratedArtifacts();

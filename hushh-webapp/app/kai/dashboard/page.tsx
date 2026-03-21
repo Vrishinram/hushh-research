@@ -1,53 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 
-import { KaiFlow, type FlowState } from "@/components/kai/kai-flow";
-import { useAuth } from "@/lib/firebase/auth-context";
-import { useStepProgress } from "@/lib/progress/step-progress-context";
-import { useVault } from "@/lib/vault/vault-context";
+import { AppPageShell } from "@/components/app-ui/app-page-shell";
+import { HushhLoader } from "@/components/app-ui/hushh-loader";
+import { ROUTES } from "@/lib/navigation/routes";
 
-export default function KaiDashboardPage() {
-  const { user, loading: authLoading } = useAuth();
-  const { vaultOwnerToken } = useVault();
-  const { registerSteps, completeStep, reset } = useStepProgress();
-
-  const [initialized, setInitialized] = useState(false);
-  const [flowState, setFlowState] = useState<FlowState>("checking");
+export default function LegacyKaiDashboardRedirect() {
+  const router = useRouter();
 
   useEffect(() => {
-    if (authLoading) return;
-    if (!initialized) {
-      registerSteps(2);
-      setInitialized(true);
-    }
-    if (user) {
-      completeStep();
-    }
-    return () => reset();
-  }, [authLoading, completeStep, initialized, registerSteps, reset, user]);
-
-  useEffect(() => {
-    if (!initialized) return;
-    if (flowState !== "checking") {
-      completeStep();
-    }
-  }, [completeStep, flowState, initialized]);
-
-  if (authLoading || !user) {
-    return null;
-  }
+    router.replace(ROUTES.KAI_DASHBOARD);
+  }, [router]);
 
   return (
-    <div className="relative w-full overflow-x-hidden">
-      <div className="w-full pb-32">
-        <KaiFlow
-          userId={user.uid}
-          mode="dashboard"
-          vaultOwnerToken={vaultOwnerToken ?? ""}
-          onStateChange={setFlowState}
-        />
-      </div>
-    </div>
+    <AppPageShell as="div" width="content" className="flex min-h-72 items-center justify-center">
+      <HushhLoader variant="inline" label="Redirecting to portfolio…" />
+    </AppPageShell>
   );
 }

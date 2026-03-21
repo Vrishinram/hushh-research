@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
 import { useAuth } from "@/hooks/use-auth";
@@ -12,7 +12,6 @@ import { getKaiChromeState } from "@/lib/navigation/kai-chrome-state";
 import { WorldModelService } from "@/lib/services/world-model-service";
 import { executeKaiCommand } from "@/lib/kai/command-executor";
 import type { KaiCommandAction } from "@/lib/kai/kai-command-types";
-import { useNavigation } from "@/lib/navigation/navigation-context";
 import { DebateRunManagerService } from "@/lib/services/debate-run-manager";
 import { AppBackgroundTaskService } from "@/lib/services/app-background-task-service";
 import { executeVoiceResponse } from "@/lib/voice/voice-response-executor";
@@ -86,7 +85,9 @@ export function KaiCommandBarGlobal() {
   const pathname = usePathname();
   const { user, loading } = useAuth();
   const { isVaultUnlocked, vaultOwnerToken, vaultKey, tokenExpiresAt } = useVault();
-  const { handleBack } = useNavigation();
+  const handleBack = useCallback(() => {
+    router.back();
+  }, [router]);
   const setAnalysisParams = useKaiSession((s) => s.setAnalysisParams);
   const busyOperations = useKaiSession((s) => s.busyOperations);
   const analysisParams = useKaiSession((s) => s.analysisParams);

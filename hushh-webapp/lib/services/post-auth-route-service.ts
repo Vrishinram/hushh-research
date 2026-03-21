@@ -2,6 +2,7 @@
 
 import { PreVaultOnboardingService } from "@/lib/services/pre-vault-onboarding-service";
 import { PreVaultUserStateService } from "@/lib/services/pre-vault-user-state-service";
+import { RiaService } from "@/lib/services/ria-service";
 import { ROUTES } from "@/lib/navigation/routes";
 
 const PRE_VAULT_ROUTE = ROUTES.KAI_ONBOARDING;
@@ -16,11 +17,37 @@ export class PostAuthRouteService {
   static async resolveAfterLogin(params: {
     userId: string;
     redirectPath?: string;
+    idToken?: string;
   }): Promise<string> {
     const fallbackRoute = normalizeRedirectPath(params.redirectPath);
     const remoteState = await PreVaultUserStateService.bootstrapState(params.userId);
+    const canOverrideWithPersona =
+      !params.redirectPath ||
+      fallbackRoute === ROUTES.KAI_HOME ||
+      fallbackRoute === ROUTES.KAI_ONBOARDING;
+
+    if (params.idToken && canOverrideWithPersona) {
+      try {
+        const personaState = await RiaService.getPersonaState(params.idToken);
+        if (personaState.iam_schema_ready && personaState.active_persona === "ria") {
+          return ROUTES.RIA_HOME;
+        }
+      } catch (error) {
+        console.warn("[PostAuthRouteService] Failed to resolve persona state:", error);
+      }
+    }
 
     if (remoteState.hasVault) {
+      const onboardingResolved = PreVaultUserStateService.isOnboardingResolved(remoteState);
+      if (
+        remoteState.preOnboardingCompleted === false &&
+        !onboardingResolved
+      ) {
+        return PRE_VAULT_ROUTE;
+      }
+      if (fallbackRoute === ROUTES.KAI_ONBOARDING && onboardingResolved) {
+        return ROUTES.KAI_HOME;
+      }
       return fallbackRoute;
     }
 

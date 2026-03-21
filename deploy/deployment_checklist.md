@@ -24,7 +24,8 @@
   - Cloud Build API
   - Container Registry API
   - Secret Manager API
-  - Cloud SQL Admin API
+  - Cloud Scheduler API
+  - Cloud Storage API
 
 ---
 
@@ -54,19 +55,45 @@
   echo -n '<value>' | gcloud secrets versions add <SECRET_NAME> --data-file=- --project hushh-pda
   ```
 
-- [x] Verify all 10 required backend secrets exist:
+- [x] Verify all 11 required backend secrets exist:
   - [x] `SECRET_KEY`
   - [x] `VAULT_ENCRYPTION_KEY`
   - [x] `GOOGLE_API_KEY`
   - [x] `FIREBASE_SERVICE_ACCOUNT_JSON`
+  - [x] `FIREBASE_AUTH_SERVICE_ACCOUNT_JSON`
   - [x] `FRONTEND_URL`
   - [x] `DB_USER`
   - [x] `DB_PASSWORD`
   - [x] `APP_REVIEW_MODE`
   - [x] `REVIEWER_UID`
-  - [x] `MCP_DEVELOPER_TOKEN`
   
   **Note:** `DB_HOST`, `DB_PORT`, `DB_NAME`, `CONSENT_SSE_ENABLED`, `SYNC_REMOTE_ENABLED`, `DEVELOPER_API_ENABLED`, and `CORS_ALLOWED_ORIGINS` are Cloud Run env vars (not secrets). Do not use `DATABASE_URL`; migrations use DB_* only. Delete `DATABASE_URL` from Secret Manager for strict parity.
+
+- [x] Ensure GitHub Actions has `GCP_SA_KEY` configured for prod workflows.
+
+- [x] Provision/verify logical backup infrastructure (bucket + job + scheduler)
+
+  ```bash
+  PROJECT_ID=hushh-pda REGION=us-central1 bash deploy/backup/setup_prod_logical_backup.sh
+  ```
+
+- [x] Run pre-deploy logical backup freshness gate (read-only)
+
+  ```bash
+  python3 scripts/ops/logical_backup_freshness_check.py \
+    --project-id hushh-pda \
+    --bucket hushh-pda-prod-db-backups \
+    --prefix prod/supabase-logical \
+    --max-age-hours 30 \
+    --report-path /tmp/prod-backup-posture-report.json
+  ```
+
+- [x] Run migration governance + DB drift gate
+
+  ```bash
+  python3 scripts/ops/db_migration_release_guard.py \
+    --report-path /tmp/db-migration-guard-report.json
+  ```
 
 ---
 
@@ -97,7 +124,14 @@
   ```
 
 - [x] Backend env: Cloud Run sets `ENVIRONMENT=production` and `GOOGLE_GENAI_USE_VERTEXAI=True` (Vertex AI for Gemini)
-- [x] Regulated defaults verified: `APP_REVIEW_MODE=false`, `DEVELOPER_API_ENABLED=false`, `CONSENT_SSE_ENABLED=false`, `SYNC_REMOTE_ENABLED=false`
+- [x] Regulated defaults verified for production: `APP_REVIEW_MODE=false`, `DEVELOPER_API_ENABLED=false`, `CONSENT_SSE_ENABLED=false`, `SYNC_REMOTE_ENABLED=false`
+
+- [x] UAT runtime overrides verified when deploying `deploy_uat`
+  - `CONSENT_SSE_ENABLED=true`
+  - `PLAID_ENV=production`
+  - `CORS_ALLOWED_ORIGINS=https://uat.kai.hushh.ai,<current-run-url>`
+  - `PLAID_SECRET` uses the live/shared credential set, not sandbox
+  - `RIA_DEV_BYPASS_ENABLED=true` when UAT should expose the non-prod Dev Bypass onboarding path
 
 ---
 

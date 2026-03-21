@@ -19,7 +19,7 @@ import {
   Link2,
   Target,
   Crown,
-  Sparkles, // Use Sparkles for QUEEN if Crown is for KING
+  Star,
   Trophy,
   Medal,
 } from "lucide-react";
@@ -83,14 +83,14 @@ export interface DecisionResult {
       bull_case?: string;
       bear_case?: string;
     };
-    quant_metrics?: Record<string, any>;
+    quant_metrics?: Record<string, unknown>;
     key_metrics?: {
-      fundamental?: Record<string, any>;
+      fundamental?: Record<string, unknown>;
       sentiment?: {
         sentiment_score?: number;
         catalyst_count?: number;
       };
-      valuation?: Record<string, any>;
+      valuation?: Record<string, unknown>;
     };
     all_sources?: string[];
     risk_persona_alignment?: string;
@@ -438,7 +438,7 @@ const barChartConfig = {
   },
 } satisfies ChartConfig;
 
-function QuantMetricsBarChart({ metrics }: { metrics: Record<string, any> }) {
+function QuantMetricsBarChart({ metrics }: { metrics: Record<string, unknown> }) {
   const compactMetricLabel = (value: string) => {
     const text = String(value || "");
     if (text.length <= 20) return text;
@@ -447,17 +447,16 @@ function QuantMetricsBarChart({ metrics }: { metrics: Record<string, any> }) {
 
   const data = useMemo(() => {
     return Object.entries(metrics)
-      .filter(([, v]) => typeof v === "number" && v !== 0 && !Number.isNaN(v))
+      .filter((entry): entry is [string, number] => {
+        const value = entry[1];
+        return typeof value === "number" && value !== 0 && !Number.isNaN(value);
+      })
       .slice(0, 6)
       .map(([key, value]) => ({
         name: key.replace(/_/g, " ").replace(/\b\w/g, (l: string) => l.toUpperCase()),
-        value: Math.abs(value as number) >= 1e9
-          ? (value as number) / 1e9
-          : Math.abs(value as number) >= 1e6
-          ? (value as number) / 1e6
-          : (value as number),
-        isNegative: (value as number) < 0,
-        fill: (value as number) < 0 ? "var(--color-negative)" : "var(--color-value)",
+        value: Math.abs(value) >= 1e9 ? value / 1e9 : Math.abs(value) >= 1e6 ? value / 1e6 : value,
+        isNegative: value < 0,
+        fill: value < 0 ? "var(--color-negative)" : "var(--color-value)",
       }));
   }, [metrics]);
 
@@ -690,7 +689,7 @@ function RenaissanceBadge({ tier, score }: { tier: "ACE" | "KING" | "QUEEN" | "J
     },
     QUEEN: {
       color: "bg-violet-100 text-violet-700 border-violet-200 dark:bg-violet-950/30 dark:text-violet-400 dark:border-violet-800",
-      icon: <Icon icon={Sparkles} size="xs" className="fill-current" />,
+      icon: <Icon icon={Star} size="xs" className="fill-current" />,
       label: "Renaissance Queen",
     },
     JACK: {
@@ -961,7 +960,7 @@ export function DecisionCard({ result }: { result: DecisionResult }) {
           <div className="p-5 bg-primary/5 border border-primary/20 rounded-2xl space-y-3">
             <div className="flex items-center justify-between gap-2">
               <p className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-1.5">
-                <Icon icon={Sparkles} size="xs" />
+                <Icon icon={Target} size="xs" />
                 Chief Strategist Synthesis
               </p>
               {llmSynthesis?.fallback && (

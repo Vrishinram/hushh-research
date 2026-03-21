@@ -5,19 +5,53 @@
 
 export const ROUTES = {
   HOME: "/",
+  DEVELOPERS: "/developers",
   LOGIN: "/login",
   LOGOUT: "/logout",
-  PRIVACY: "/privacy",
-  DOCS: "/docs",
+  LABS_PROFILE_APPEARANCE: "/labs/profile-appearance",
   PROFILE: "/profile",
   CONSENTS: "/consents",
+  MARKETPLACE: "/marketplace",
+  MARKETPLACE_RIA_PROFILE: "/marketplace/ria",
+  RIA_HOME: "/ria",
+  RIA_ONBOARDING: "/ria/onboarding",
+  RIA_CLIENTS: "/ria/clients",
+  RIA_WORKSPACE: "/ria/workspace",
+  RIA_REQUESTS: "/ria/requests",
+  RIA_PICKS: "/ria/picks",
+  RIA_SETTINGS: "/ria/settings",
   KAI_HOME: "/kai",
   KAI_ONBOARDING: "/kai/onboarding",
   KAI_IMPORT: "/kai/import",
-  KAI_DASHBOARD: "/kai/dashboard",
+  KAI_PLAID_OAUTH_RETURN: "/kai/plaid/oauth/return",
+  KAI_PORTFOLIO: "/kai/portfolio",
+  KAI_INVESTMENTS: "/kai/investments",
+  KAI_DASHBOARD: "/kai/portfolio",
   KAI_ANALYSIS: "/kai/analysis",
   KAI_OPTIMIZE: "/kai/optimize",
 } as const;
+
+function withQuery(pathname: string, entries: Record<string, string | null | undefined>) {
+  const params = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(entries)) {
+    const normalized = String(value ?? "").trim();
+    if (normalized) {
+      params.set(key, normalized);
+    }
+  }
+
+  const query = params.toString();
+  return query ? `${pathname}?${query}` : pathname;
+}
+
+export function buildMarketplaceRiaProfileRoute(riaId?: string | null) {
+  return withQuery(ROUTES.MARKETPLACE_RIA_PROFILE, { riaId });
+}
+
+export function buildRiaWorkspaceRoute(clientId?: string | null) {
+  return withQuery(ROUTES.RIA_WORKSPACE, { clientId });
+}
 
 export function isKaiOnboardingRoute(pathname: string): boolean {
   return (
@@ -29,10 +63,13 @@ export function isKaiOnboardingRoute(pathname: string): boolean {
 export function isPublicRoute(pathname: string): boolean {
   return (
     pathname === ROUTES.HOME ||
+    pathname === ROUTES.DEVELOPERS ||
     pathname === ROUTES.LOGIN ||
-    pathname === ROUTES.DOCS ||
     pathname === ROUTES.LOGOUT ||
-    pathname === ROUTES.PRIVACY ||
     pathname === ROUTES.PROFILE
   );
+}
+
+export function isRiaRoute(pathname: string): boolean {
+  return pathname === ROUTES.RIA_HOME || pathname.startsWith(`${ROUTES.RIA_HOME}/`);
 }

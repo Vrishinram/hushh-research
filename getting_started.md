@@ -150,7 +150,7 @@ Hushh uses **SQLAlchemy with Supabase's Session Pooler** for direct PostgreSQL c
 - Service layer validates consent tokens before database operations
 - No direct database access from API routes
 
-See `docs/reference/database_service_layer.md` for detailed architecture.
+See `docs/reference/architecture/README.md` for the current architecture and data-layer references.
 
 ### Option B: Local PostgreSQL
 
@@ -216,8 +216,7 @@ python -m uvicorn server:app --reload --port 8000
 ### Terminal 2: Frontend (Next.js)
 
 ```bash
-cd hushh-webapp
-npm run dev
+make local-web
 
 # Expected output:
 # ▲ Next.js 16.x.x
@@ -381,7 +380,7 @@ pip install -r requirements.txt
 ```bash
 # Clear Next.js cache
 rm -rf .next
-npm run dev
+make local-web
 ```
 
 ### iOS build fails
@@ -412,11 +411,11 @@ print('DB URL (masked):', get_database_url()[:50] + '...')
 
 ## 11. Next Steps
 
-- **Architecture**: Read `docs/reference/architecture.md`
-- **Consent Protocol**: Read `docs/reference/consent_protocol.md`
-- **Mobile**: Read `docs/guides/mobile_development.md`
-- **API Reference**: Read `docs/reference/developer_api.md`
-- **Kai Agent**: Read `docs/vision/kai/readme.md`
+- **Architecture**: Read `docs/reference/architecture/README.md`
+- **Consent + IAM**: Read `docs/reference/iam/README.md`
+- **Mobile**: Read `docs/reference/mobile/README.md`
+- **API Reference**: Read `docs/reference/architecture/api-contracts.md`
+- **Kai Agent**: Read `docs/reference/kai/README.md`
 
 ---
 
@@ -444,7 +443,7 @@ See `.vscode/launch.json` for:
 
 - **Documentation**: `/docs` directory
 - **Issues**: GitHub Issues
-- **Architecture Questions**: Check `docs/technical/`
+- **Architecture Questions**: Check `docs/reference/architecture/README.md`
 
 ---
 

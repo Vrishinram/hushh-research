@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getRedirectResult } from "firebase/auth";
 import { Phone, Shield } from "lucide-react";
@@ -23,6 +23,7 @@ import {
 } from "@/lib/services/onboarding-route-cookie";
 import { ROUTES } from "@/lib/navigation/routes";
 import { type KaiLegalDocumentType } from "@/lib/legal/kai-legal-content";
+import { trackEvent } from "@/lib/observability/client";
 
 export function AuthStep({
   redirectPath,
@@ -34,6 +35,7 @@ export function AuthStep({
   const router = useRouter();
   const { user, loading: authLoading, setNativeUser } = useAuth();
   const { registerSteps, completeStep, reset } = useStepProgress();
+  const lastNavigationKeyRef = useRef<string | null>(null);
 
   const [reviewModeConfig, setReviewModeConfig] = useState<{ enabled: boolean }>(
     { enabled: false }
@@ -47,11 +49,20 @@ export function AuthStep({
   }, []);
 
   const resolveAndNavigate = useCallback(
-    async (userId: string) => {
+    async (userId: string, idToken?: string) => {
+      const navigationKey = `${userId}:${redirectPath || ROUTES.KAI_HOME}`;
+      if (lastNavigationKeyRef.current === navigationKey) {
+        return;
+      }
+      lastNavigationKeyRef.current = navigationKey;
+
       try {
+        const resolvedIdToken =
+          idToken || (user ? await user.getIdToken().catch(() => undefined) : undefined);
         const resolvedPath = await PostAuthRouteService.resolveAfterLogin({
           userId,
           redirectPath,
+          idToken: resolvedIdToken,
         });
 
         const resumeImportFlow =
@@ -64,12 +75,16 @@ export function AuthStep({
       } catch (error) {
         console.warn("[AuthStep] Failed to resolve post-auth route:", error);
         const fallbackPath = redirectPath || ROUTES.KAI_HOME;
-        setOnboardingRequiredCookie(fallbackPath === ROUTES.KAI_ONBOARDING);
-        setOnboardingFlowActiveCookie(fallbackPath === ROUTES.KAI_IMPORT);
-        router.push(fallbackPath);
+        const safeFallbackPath =
+          fallbackPath === ROUTES.KAI_ONBOARDING || fallbackPath === ROUTES.KAI_IMPORT
+            ? ROUTES.KAI_HOME
+            : fallbackPath;
+        setOnboardingRequiredCookie(safeFallbackPath === ROUTES.KAI_ONBOARDING);
+        setOnboardingFlowActiveCookie(safeFallbackPath === ROUTES.KAI_IMPORT);
+        router.push(safeFallbackPath);
       }
     },
-    [redirectPath, router]
+    [redirectPath, router, user]
   );
 
   const debugLog = (...args: unknown[]) => {
@@ -96,11 +111,15 @@ export function AuthStep({
     completeStep();
 
     getRedirectResult(auth)
-      .then((result) => {
+      .then(async (result) => {
         if (result?.user) {
+          trackEvent("auth_succeeded", {
+            action: "redirect",
+            result: "success",
+          });
           debugLog("[AuthStep] Redirect result found, navigating to:", redirectPath);
           setNativeUser(result.user);
-          void resolveAndNavigate(result.user.uid);
+          void resolveAndNavigate(result.user.uid, await result.user.getIdToken());
         }
       })
       .catch((err) => {
@@ -108,8 +127,12 @@ export function AuthStep({
       });
 
     if (user) {
+      trackEvent("auth_succeeded", {
+        action: "redirect",
+        result: "success",
+      });
       debugLog("[AuthStep] User authenticated, navigating to:", redirectPath);
-      void resolveAndNavigate(user.uid);
+      void resolveAndNavigate(user.uid, undefined);
     }
   }, [
     redirectPath,
@@ -136,6 +159,9 @@ export function AuthStep({
   }
 
   const handleGoogleLogin = async () => {
+    trackEvent("auth_started", {
+      action: "google",
+    });
     try {
       const authResult = await AuthService.signInWithGoogle();
       const authenticatedUser = authResult.user;
@@ -143,20 +169,37 @@ export function AuthStep({
       debugLog("[AuthStep] signInWithGoogle returned user");
 
       if (authenticatedUser) {
+        trackEvent("auth_succeeded", {
+          action: "google",
+          result: "success",
+        });
         setNativeUser(authenticatedUser);
-        await resolveAndNavigate(authenticatedUser.uid);
+        await resolveAndNavigate(authenticatedUser.uid, await authenticatedUser.getIdToken());
       } else {
         debugError("[AuthStep] No user returned from signInWithGoogle");
+        trackEvent("auth_failed", {
+          action: "google",
+          result: "error",
+          error_class: "missing_user",
+        });
         morphyToast.error("Sign-in completed but no user session was returned.", {
           description: "Please try again.",
         });
       }
     } catch (err: any) {
       debugError("[AuthStep] Google login failed", err);
+      trackEvent("auth_failed", {
+        action: "google",
+        result: "error",
+        error_class: "auth_failed",
+      });
     }
   };
 
   const handleAppleLogin = async () => {
+    trackEvent("auth_started", {
+      action: "apple",
+    });
     try {
       const authResult = await AuthService.signInWithApple();
       const authenticatedUser = authResult.user;
@@ -164,20 +207,37 @@ export function AuthStep({
       debugLog("[AuthStep] signInWithApple returned user");
 
       if (authenticatedUser) {
+        trackEvent("auth_succeeded", {
+          action: "apple",
+          result: "success",
+        });
         setNativeUser(authenticatedUser);
-        await resolveAndNavigate(authenticatedUser.uid);
+        await resolveAndNavigate(authenticatedUser.uid, await authenticatedUser.getIdToken());
       } else {
         debugError("[AuthStep] No user returned from signInWithApple");
+        trackEvent("auth_failed", {
+          action: "apple",
+          result: "error",
+          error_class: "missing_user",
+        });
         morphyToast.error("Sign-in completed but no user session was returned.", {
           description: "Please try again.",
         });
       }
     } catch (err: any) {
       debugError("[AuthStep] Apple login failed", err);
+      trackEvent("auth_failed", {
+        action: "apple",
+        result: "error",
+        error_class: "auth_failed",
+      });
     }
   };
 
   const handleReviewerLogin = async () => {
+    trackEvent("auth_started", {
+      action: "reviewer",
+    });
     try {
       if (!reviewModeConfig.enabled) {
         throw new Error("Reviewer mode is not enabled");
@@ -188,13 +248,27 @@ export function AuthStep({
       const authenticatedUser = authResult.user;
 
       if (authenticatedUser) {
+        trackEvent("auth_succeeded", {
+          action: "reviewer",
+          result: "success",
+        });
         setNativeUser(authenticatedUser);
-        await resolveAndNavigate(authenticatedUser.uid);
+        await resolveAndNavigate(authenticatedUser.uid, await authenticatedUser.getIdToken());
       } else {
+        trackEvent("auth_failed", {
+          action: "reviewer",
+          result: "error",
+          error_class: "missing_user",
+        });
         morphyToast.error("Reviewer login failed: no user session returned.");
       }
     } catch (err: any) {
       debugError("[AuthStep] Reviewer login failed", err);
+      trackEvent("auth_failed", {
+        action: "reviewer",
+        result: "error",
+        error_class: "auth_failed",
+      });
       morphyToast.error(err.message || "Failed to sign in as reviewer");
     }
   };
@@ -234,7 +308,7 @@ export function AuthStep({
       <div
         className={
           compact
-            ? "mx-auto flex min-h-[100dvh] w-full max-w-md flex-col px-8 pt-[calc(16px+env(safe-area-inset-top))] pb-[var(--app-screen-footer-pad)]"
+            ? "mx-auto flex min-h-[100dvh] w-full max-w-md flex-col px-8 pt-[calc(16px+var(--app-safe-area-top-effective,0px))] pb-[var(--app-screen-footer-pad)]"
             : "mx-auto flex min-h-[100dvh] w-full max-w-md flex-col px-8 pt-10 pb-[var(--app-screen-footer-pad)]"
         }
       >

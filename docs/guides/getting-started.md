@@ -1,229 +1,192 @@
 # Getting Started
 
-> Prerequisites, environment setup, running locally, CI, and deployment.
-
----
+This is the canonical contributor setup path for the monorepo.
 
 ## Prerequisites
 
-| Tool    | Version   | Install                                |
-| ------- | --------- | -------------------------------------- |
-| Node.js | 20+       | [nodejs.org](https://nodejs.org/)      |
-| Python  | 3.13+     | [python.org](https://python.org/)      |
-| pnpm    | 9+        | `npm install -g pnpm` (or use npm)     |
-| Git     | latest    | [git-scm.com](https://git-scm.com/)   |
+Required for the core web + backend contributor flow:
 
-Optional for mobile builds:
+| Tool | Required version | Why |
+| --- | --- | --- |
+| `git` | current | clone the repo and use worktrees/branches |
+| `make` | current | canonical command surface (`make bootstrap`, `make doctor`, `make dev`) |
+| `node` | `>=20` | Next.js 16 / frontend toolchain |
+| `npm` | `>=10` | lockfile-compatible package install |
+| `python3` | `>=3.13` | FastAPI backend, bootstrap, CI parity |
+| `jq` | current | profile/bootstrap/deploy helper scripts |
 
-| Tool     | Version | Purpose             |
-| -------- | ------- | ------------------- |
-| Xcode    | 16+     | iOS builds          |
-| CocoaPods| latest  | iOS dependencies    |
-| Android Studio | latest | Android builds |
+Optional, depending on the work you need to do:
 
----
+| Tool | Needed when | Notes |
+| --- | --- | --- |
+| `gcloud` | hydrating profiles from GCP, checking live UAT/prod parity, deploying | bootstrap still works without it, but falls back to templates/cached values |
+| `cloud-sql-proxy` | running `local-uatdb` backend | not needed for `uat-remote` or `prod-remote` |
+| Xcode / Android Studio | native/mobile work | not part of the core first-run path |
 
-## Clone and Setup
+## What You Are Running
+
+- Frontend: Next.js 16 + React 19 + Capacitor
+- Backend: FastAPI on Python 3.13
+- Storage: Postgres with encrypted world-model blob/index separation
+- Auth: Firebase
+- Runtime profiles:
+  - `local-uatdb`: local frontend + local backend, backed by UAT resources
+  - `uat-remote`: local frontend against deployed UAT backend
+  - `prod-remote`: local frontend against deployed production backend
+
+## First Run
 
 ```bash
 git clone https://github.com/hushh-labs/hushh-research.git
 cd hushh-research
+make bootstrap
+make web PROFILE=uat-remote
 ```
 
-### Backend Environment
+`make bootstrap` is the only supported first-run entrypoint. It:
+
+- configures monorepo hooks and the consent-protocol upstream remote
+- installs frontend dependencies
+- creates the backend `.venv` and installs requirements
+- hydrates the three canonical runtime profiles from GCP when available
+- falls back to templates and cached local values when GCP access is unavailable
+- runs `make doctor PROFILE=uat-remote`
+
+The default first-run recommendation is `uat-remote` because it is the fastest path to a working app: local frontend, deployed UAT backend, no local backend or Cloud SQL proxy required.
+
+## Canonical Commands
+
+Use these commands instead of manually assembling `.env` files or inventing a new launch flow.
 
 ```bash
-cd consent-protocol
-python -m venv .venv
-source .venv/bin/activate        # macOS/Linux
-# .venv\Scripts\activate         # Windows
+make doctor PROFILE=local-uatdb
+make doctor PROFILE=uat-remote
+make doctor PROFILE=prod-remote
 
-pip install -r requirements.txt
+make dev PROFILE=local-uatdb
+make web PROFILE=uat-remote
+make web PROFILE=prod-remote
+make backend PROFILE=local-uatdb
 ```
 
-Create `.env` from the example:
+Use `.venv` as the backend virtual environment. Do not maintain a second `venv` alongside it.
+
+---
+
+## Environment Setup
+
+The canonical env contract is documented in [../reference/operations/env-and-secrets.md](../reference/operations/env-and-secrets.md).
+
+Current default workflow uses runtime profiles rather than ad hoc manual env assembly.
+
+Bootstrap local profiles:
 
 ```bash
-cp .env.example .env
+bash scripts/env/bootstrap_profiles.sh
 ```
 
-Required variables in `.env`:
-
-| Variable               | Purpose                          | Example                          |
-| ---------------------- | -------------------------------- | -------------------------------- |
-| `DB_USER`              | Supabase pooler user             | `postgres.xxxxx`                 |
-| `DB_PASSWORD`          | Supabase pooler password         | `your-password`                  |
-| `DB_HOST`              | Supabase pooler host             | `aws-1-us-east-1.pooler.supabase.com` |
-| `DB_PORT`              | Supabase pooler port             | `5432`                           |
-| `DB_NAME`              | Database name                    | `postgres`                       |
-| `GOOGLE_API_KEY`       | Gemini API key                   | `AIza...`                        |
-| `CONSENT_TOKEN_SECRET` | HMAC signing secret              | `your-secret`                    |
-| `FIREBASE_*`           | Firebase Admin SDK config        | (see `.env.example`)             |
-
-### Frontend Environment
+Activate a profile into `consent-protocol/.env` and `hushh-webapp/.env.local`:
 
 ```bash
-cd hushh-webapp
-npm install
+bash scripts/env/use_profile.sh local-uatdb
 ```
 
-Create `.env.local`:
+For `local-uatdb`, start the backend with the launcher instead of running
+`python`/`uvicorn` directly:
 
 ```bash
-cp .env.example .env.local   # if exists, otherwise create manually
+bash scripts/runtime/run_backend_local.sh local-uatdb
 ```
 
-Required variables in `.env.local`:
+That launcher starts the local Cloud SQL proxy automatically when the active
+profile points at UAT Cloud SQL. It authenticates the proxy from
+`FIREBASE_SERVICE_ACCOUNT_JSON` in the active backend env, or from
+`CLOUDSQL_PROXY_CREDENTIALS_FILE` if you set one explicitly. It refuses to
+fall back to local `gcloud`/ADC credentials.
 
-| Variable                            | Purpose                  |
-| ----------------------------------- | ------------------------ |
-| `NEXT_PUBLIC_BACKEND_URL`           | Backend URL              |
-| `NEXT_PUBLIC_FIREBASE_API_KEY`      | Firebase web config      |
-| `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`  | Firebase auth domain     |
-| `NEXT_PUBLIC_FIREBASE_PROJECT_ID`   | Firebase project ID      |
-| `NEXT_PUBLIC_FIREBASE_VAPID_KEY`    | FCM VAPID key            |
+Supported profile names:
+
+- `local-uatdb`
+- `uat-remote`
+- `prod-remote`
+
+Important env rules:
+
+- backend database configuration uses `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, and `DB_NAME`
+- backend signing/runtime secrets come from the documented `SECRET_KEY`, Firebase, and Google keys
+- frontend runtime uses `NEXT_PUBLIC_*` keys plus server-side fallback keys where documented
+- `DATABASE_URL` is not part of the supported runtime contract
 
 ---
 
 ## Running Locally
 
-### Backend (Terminal 1)
+Canonical launchers:
 
 ```bash
-cd consent-protocol
-source .venv/bin/activate
-python -m uvicorn server:app --host 0.0.0.0 --port 8000 --reload
+make local
+make uat
+make prod
 ```
 
-Health check: `curl http://localhost:8000/health`
-
-### Frontend (Terminal 2)
+Shortcut aliases still exist:
 
 ```bash
-cd hushh-webapp
-npm run dev
+make local-web
+make uat-web
+make prod-web
+make local-backend
 ```
 
-Open: `http://localhost:3000`
+## Decision Table
 
-### Both Together
+| I need to… | Use this profile | Run this |
+| --- | --- | --- |
+| get the app running as fast as possible on first clone | `uat-remote` | `make web PROFILE=uat-remote` |
+| run the full local stack | `local-uatdb` | `make dev PROFILE=local-uatdb` |
+| debug the local frontend against UAT | `uat-remote` | `make web PROFILE=uat-remote` |
+| inspect production behavior safely from local web | `prod-remote` | `make web PROFILE=prod-remote` |
+| run only the local backend | `local-uatdb` | `make backend PROFILE=local-uatdb` |
+| confirm a profile is coherent before booting | any | `make doctor PROFILE=<profile>` |
+| bootstrap without GCP access yet | `uat-remote` first | `make bootstrap`, then read the doctor output for missing secrets/placeholders |
 
-| Server   | URL                      | Health Check                        |
-| -------- | ------------------------ | ----------------------------------- |
-| Backend  | `http://localhost:8000`  | `curl http://localhost:8000/health` |
-| Frontend | `http://localhost:3000`  | Open in browser                     |
+## Expected Endpoints
 
----
+For `local-uatdb`:
 
-## Running CI Locally
+- frontend: `http://localhost:3000`
+- backend: `http://127.0.0.1:8000`
+- health: `curl http://127.0.0.1:8000/health`
 
-### Frontend
+For remote profiles:
+
+- frontend: `http://localhost:3000`
+- backend target is whatever `make doctor PROFILE=<profile>` reports from the canonical profile file
+
+## Important Rules
+
+- Use only `local-uatdb`, `uat-remote`, or `prod-remote`
+- Use only the canonical profile files:
+  - `consent-protocol/.env.local-uatdb.local`
+  - `consent-protocol/.env.uat-remote.local`
+  - `consent-protocol/.env.prod-remote.local`
+  - `hushh-webapp/.env.local-uatdb.local`
+  - `hushh-webapp/.env.uat-remote.local`
+  - `hushh-webapp/.env.prod-remote.local`
+- Do not rely on `*.dev.local`, `*.uat.local`, or `*.prod.local`
+- Do not rely on server-side localhost or production fallbacks in hosted environments
+- Do not run local UAT DB access with raw `uvicorn`; use `make backend PROFILE=local-uatdb`
+
+## Verification Before You Start Coding
 
 ```bash
-cd hushh-webapp
-npx eslint .                    # Linting
-npx tsc --noEmit                # Type checking
-npx vitest run                  # Tests
+bash scripts/ci/orchestrate.sh all
+make doctor PROFILE=uat-remote
+make verify-docs
 ```
 
-### Backend
+## Next Reads
 
-```bash
-cd consent-protocol
-source .venv/bin/activate
-ruff check .                    # Linting
-mypy .                          # Type checking (if configured)
-pytest                          # Tests
-```
-
----
-
-## Deployment
-
-### Cloud Run (Backend)
-
-The backend deploys to Google Cloud Run via GitHub Actions.
-
-**CI workflow**: `.github/workflows/ci.yml`  
-**Production deploy workflow**: `.github/workflows/deploy-production.yml`
-
-| Trigger | Action |
-| ------- | ------ |
-| Push / PR on any branch | Runs CI checks only |
-| Push to `deploy` branch | Runs production deployment |
-| Manual deploy trigger | Actions > Deploy to Production > scope: `backend` / `frontend` / `all` |
-| Manual CI trigger | Actions > Tri-Flow CI > scope: `backend` / `frontend` / `all` |
-
-**Manual deploy**:
-
-```bash
-cd consent-protocol
-gcloud run deploy consent-protocol \
-  --source . \
-  --region us-east1 \
-  --port 8000 \
-  --allow-unauthenticated
-```
-
-### GCP Secret Manager
-
-Backend secrets are stored in GCP Secret Manager and injected at runtime:
-
-| Secret                         | Description              |
-| ------------------------------ | ------------------------ |
-| `GOOGLE_API_KEY`               | Gemini API key           |
-| `DB_USER`                      | Database user            |
-| `DB_PASSWORD`                  | Database password        |
-| `DB_HOST`                      | Database host            |
-| `CONSENT_TOKEN_SECRET`         | Token signing secret     |
-| `FIREBASE_PROJECT_ID`          | Firebase project         |
-| `FIREBASE_SERVICE_ACCOUNT_KEY` | Firebase admin SDK       |
-
-### Frontend (Vercel / Static)
-
-The frontend deploys as a static Next.js build:
-
-```bash
-cd hushh-webapp
-npm run build
-```
-
-For Capacitor mobile builds, see [Mobile Development](./mobile.md).
-
----
-
-## Database Migrations
-
-SQL migrations live in `consent-protocol/db/migrations/`. Apply them in order:
-
-```bash
-# Example: apply migration 013
-psql $DATABASE_URL < db/migrations/013_jsonb_merge_rpc.sql
-```
-
-Or apply directly in the Supabase SQL Editor.
-
----
-
-## Troubleshooting
-
-| Problem                                          | Solution                                                    |
-| ------------------------------------------------ | ----------------------------------------------------------- |
-| `ModuleNotFoundError: google.genai`              | `pip install google-genai` (not `google-generativeai`)      |
-| Backend returns 401 on all requests              | Vault not unlocked -- unlock vault first to get VAULT_OWNER token |
-| Frontend shows blank page                        | Check `.env.local` has correct `NEXT_PUBLIC_BACKEND_URL`    |
-| `Illegal header value` in Cloud Run              | API key has trailing newline -- check `config.py` strips it |
-| iOS build fails with hex digit error             | Plugin IDs in `project.pbxproj` must be 24-char hex (0-9, A-F) |
-| `fetch is not defined` on native                 | Use `ApiService` instead of direct `fetch()` calls          |
-| ESLint reports `no direct fetch`                 | Add to fetch override list in `eslint.config.mjs` if SSE    |
-| Database connection timeout                       | Check `DB_HOST` uses Supabase Session Pooler, not direct    |
-| Portfolio data not rendering after import         | `normalizeStoredPortfolio()` may need updating for new fields|
-
----
-
-## See Also
-
-- [Architecture](../reference/architecture.md) -- System overview
-- [Agent Development](../../consent-protocol/docs/reference/agent-development.md) -- Building new agents
-- [Mobile Development](./mobile.md) -- Capacitor iOS/Android
-- [New Feature Checklist](./new-feature.md) -- Adding a feature end-to-end
+- [Environment Model](./environment-model.md)
+- [Advanced Ops](./advanced-ops.md)
+- [Architecture](../reference/architecture/architecture.md)

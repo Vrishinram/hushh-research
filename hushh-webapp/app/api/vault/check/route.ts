@@ -3,36 +3,39 @@
 /**
  * Check Vault Existence API
  *
- * SYMMETRIC WITH NATIVE:
- * This route proxies to Python backend /db/vault/check
- * to maintain consistency with iOS/Android native plugins.
+ * Legacy-compatible web vault existence check.
  *
- * Native (Swift/Kotlin): POST /db/vault/check → Python
- * Web (Next.js): GET /api/vault/check → Python (proxy)
+ * The public route shape stays `/api/vault/check`, but the web implementation
+ * now proxies through the current `/db/vault/bootstrap-state` backend contract
+ * so placeholder rows and vault status stay aligned with the modern shell.
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
+
+import { getPythonApiUrl } from "@/app/api/_utils/backend";
+import {
+  createUpstreamHeaders,
+  resolveRequestId,
+  withRequestIdJson,
+} from "@/app/api/_utils/request-id";
 import { validateFirebaseToken } from "@/lib/auth/validate";
 import { isDevelopment, logSecurityEvent } from "@/lib/config";
-import { getPythonApiUrl } from "@/app/api/_utils/backend";
 
 export const dynamic = "force-dynamic";
 
-// Python backend URL (same as native apps use)
 const PYTHON_API_URL = getPythonApiUrl();
 
 export async function GET(request: NextRequest) {
+  const requestId = resolveRequestId(request);
+
   try {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get("userId");
 
     if (!userId) {
-      return NextResponse.json({ error: "userId required" }, { status: 400 });
+      return withRequestIdJson(requestId, { error: "userId required" }, { status: 400 });
     }
 
-    // =========================================================================
-    // FIREBASE AUTH: Identity verification required
-    // =========================================================================
     const authHeader = request.headers.get("Authorization");
 
     if (!authHeader && !isDevelopment()) {
@@ -40,13 +43,13 @@ export async function GET(request: NextRequest) {
         reason: "No auth header",
         userId,
       });
-      return NextResponse.json(
+      return withRequestIdJson(
+        requestId,
         { error: "Authorization required", code: "AUTH_REQUIRED" },
         { status: 401 }
       );
     }
 
-    // Validate Firebase token (skip in development if no header)
     if (authHeader) {
       const validation = await validateFirebaseToken(authHeader);
 
@@ -55,7 +58,8 @@ export async function GET(request: NextRequest) {
           reason: validation.error,
           userId,
         });
-        return NextResponse.json(
+        return withRequestIdJson(
+          requestId,
           {
             error: `Authentication failed: ${validation.error}`,
             code: "AUTH_INVALID",
@@ -65,22 +69,24 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // =========================================================================
-    // PROXY TO PYTHON BACKEND (Same as native iOS/Android)
-    // =========================================================================
-    const response = await fetch(`${PYTHON_API_URL}/db/vault/check`, {
+    const response = await fetch(`${PYTHON_API_URL}/db/vault/bootstrap-state`, {
       method: "POST",
-      headers: {
+      headers: createUpstreamHeaders(requestId, {
         "Content-Type": "application/json",
         ...(authHeader ? { Authorization: authHeader } : {}),
-      },
+      }),
+      signal: AbortSignal.timeout(15000),
       body: JSON.stringify({ userId }),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("[API] Python backend error:", response.status, errorText);
-      return NextResponse.json(
+      console.error(
+        `[API] request_id=${requestId} vault_check backend_error status=${response.status}`,
+        errorText
+      );
+      return withRequestIdJson(
+        requestId,
         { error: "Backend error", hasVault: false },
         { status: response.status }
       );
@@ -92,10 +98,12 @@ export async function GET(request: NextRequest) {
       userId,
       exists: data.hasVault,
     });
-    return NextResponse.json({ hasVault: data.hasVault });
+
+    return withRequestIdJson(requestId, { hasVault: data.hasVault });
   } catch (error) {
-    console.error("[API] Vault check error:", error);
-    return NextResponse.json(
+    console.error(`[API] request_id=${requestId} vault_check error:`, error);
+    return withRequestIdJson(
+      requestId,
       { error: "Failed to check vault status", hasVault: false },
       { status: 500 }
     );

@@ -20,11 +20,12 @@ import os
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Optional, Union
+from urllib.parse import quote_plus
 
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
-from sqlalchemy.pool import NullPool
+from sqlalchemy.pool import NullPool, QueuePool
 
 load_dotenv()
 
@@ -32,6 +33,24 @@ logger = logging.getLogger(__name__)
 
 # Singleton engine instance
 _engine: Optional[Engine] = None
+
+
+def _env_truthy(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        logger.warning("Invalid %s=%r; using default %s", name, raw, default)
+        return default
 
 
 class DatabaseExecutionError(RuntimeError):
@@ -54,7 +73,8 @@ def get_db_engine() -> Engine:
     """
     Get SQLAlchemy engine using session pooler credentials.
 
-    Uses NullPool to let Supabase's session pooler handle connection pooling.
+    Uses QueuePool by default to avoid reconnecting on every query. Set
+    DB_DISABLE_POOL=true to force NullPool when needed.
 
     Returns:
         SQLAlchemy Engine instance
@@ -68,20 +88,59 @@ def get_db_engine() -> Engine:
         db_user = os.getenv("DB_USER")
         db_password = os.getenv("DB_PASSWORD")
         db_host = os.getenv("DB_HOST")
+        db_unix_socket = os.getenv("DB_UNIX_SOCKET")
         db_port = os.getenv("DB_PORT", "5432")
         db_name = os.getenv("DB_NAME", "postgres")
 
-        if not all([db_user, db_password, db_host]):
+        if not db_user or not db_password or not (db_host or db_unix_socket):
             raise EnvironmentError(
-                "Database credentials not set. Required: DB_USER, DB_PASSWORD, DB_HOST. "
+                "Database credentials not set. Required: DB_USER, DB_PASSWORD, and one of DB_HOST/DB_UNIX_SOCKET. "
                 "Optional: DB_PORT (default 5432), DB_NAME (default postgres)"
             )
+        if db_unix_socket:
+            # Cloud SQL Unix socket path must be passed in query host param.
+            encoded_socket = quote_plus(db_unix_socket)
+            database_url = (
+                f"postgresql+psycopg2://{db_user}:{db_password}@/{db_name}?host={encoded_socket}"
+            )
+            target = db_unix_socket
+        else:
+            ssl_suffix = (
+                "?sslmode=require"
+                if ("supabase.com" in str(db_host) or "pooler.supabase" in str(db_host))
+                else ""
+            )
+            database_url = f"postgresql+psycopg2://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}{ssl_suffix}"
+            target = f"{db_host}:{db_port}/{db_name}"
 
-        database_url = f"postgresql+psycopg2://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}?sslmode=require"
+        logger.info(f"Initializing database connection to {target}")
 
-        logger.info(f"Initializing database connection to {db_host}:{db_port}/{db_name}")
-        _engine = create_engine(database_url, poolclass=NullPool)
-        logger.info("Database engine initialized")
+        engine_kwargs: dict[str, Any] = {}
+        if _env_truthy("DB_DISABLE_POOL", default=False):
+            engine_kwargs["poolclass"] = NullPool
+            pool_description = "NullPool (disabled)"
+        else:
+            pool_size = max(1, _env_int("DB_POOL_SIZE", default=5))
+            max_overflow = max(0, _env_int("DB_MAX_OVERFLOW", default=10))
+            pool_timeout = max(1, _env_int("DB_POOL_TIMEOUT_SECONDS", default=30))
+            pool_recycle = max(30, _env_int("DB_POOL_RECYCLE_SECONDS", default=1800))
+            engine_kwargs.update(
+                {
+                    "poolclass": QueuePool,
+                    "pool_size": pool_size,
+                    "max_overflow": max_overflow,
+                    "pool_timeout": pool_timeout,
+                    "pool_recycle": pool_recycle,
+                    "pool_pre_ping": True,
+                }
+            )
+            pool_description = (
+                f"QueuePool(size={pool_size}, overflow={max_overflow}, "
+                f"timeout={pool_timeout}s, recycle={pool_recycle}s)"
+            )
+
+        _engine = create_engine(database_url, **engine_kwargs)
+        logger.info("Database engine initialized (%s)", pool_description)
 
     return _engine
 

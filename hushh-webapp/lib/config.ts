@@ -1,17 +1,26 @@
 // lib/config.ts
 
+import { resolveAppEnvironment } from "./app-env";
+
 /**
  * Environment Configuration
  *
- * ENVIRONMENT_MODE controls consent validation behavior:
- * - "development": Auto-grant consent for smoother testing
- * - "production": Full consent validation required
+ * Runtime behavior is keyed off canonical frontend environment identity:
+ * NEXT_PUBLIC_APP_ENV=development|uat|production.
  *
- * Matches consent-protocol MCP server PRODUCTION_MODE pattern.
+ * Legacy compatibility fallback is preserved inside resolveAppEnvironment()
+ * for NEXT_PUBLIC_OBSERVABILITY_ENV and NEXT_PUBLIC_ENVIRONMENT_MODE.
  */
 
-const getEnvironmentMode = () =>
-  process.env.ENVIRONMENT_MODE || process.env.NODE_ENV || "production";
+const getEnvironmentMode = () => resolveAppEnvironment();
+
+function normalizeUrl(value: string | undefined | null): string {
+  return String(value || "").trim().replace(/\/+$/, "");
+}
+
+function resolveBrowserDefaultBackendUrl(): string {
+  return getEnvironmentMode() === "development" ? "http://127.0.0.1:8000" : "";
+}
 
 export const ENVIRONMENT_MODE = getEnvironmentMode();
 
@@ -20,13 +29,14 @@ export const isProduction = () => getEnvironmentMode() === "production";
 
 // Backend URL for Python consent-protocol server
 export const BACKEND_URL =
-  process.env.BACKEND_URL ||
-  process.env.NEXT_PUBLIC_BACKEND_URL ||
-  "http://127.0.0.1:8000";
+  normalizeUrl(process.env.BACKEND_URL) ||
+  normalizeUrl(process.env.NEXT_PUBLIC_BACKEND_URL) ||
+  resolveBrowserDefaultBackendUrl();
 
 // Frontend URL
 export const FRONTEND_URL =
-  process.env.NEXT_PUBLIC_FRONTEND_URL || "http://localhost:3000";
+  normalizeUrl(process.env.NEXT_PUBLIC_FRONTEND_URL) ||
+  (getEnvironmentMode() === "development" ? "http://localhost:3000" : "");
 
 // ============================================================================
 // SECURITY EVENT TYPES
