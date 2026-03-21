@@ -41,7 +41,7 @@ This document captures the repo implementation for the GA4 + GTM + Firebase + De
   - `app/api/_utils/request-id.ts`
 - Request-ID propagation and response header on high-volume routes:
   - `app/api/kai/[...path]/route.ts`
-  - `app/api/world-model/[...path]/route.ts`
+  - `app/api/pkm/[...path]/route.ts`
   - `app/api/vault/check/route.ts`
   - `app/api/vault/get/route.ts`
   - `app/api/vault/bootstrap-state/route.ts`
@@ -68,7 +68,7 @@ This document captures the repo implementation for the GA4 + GTM + Firebase + De
 - Checks include:
   - key table counts
   - vault method coverage
-  - world-model coherence (`data` vs `index`)
+  - PKM coherence (`blobs` vs `index`)
   - market cache freshness drift
   - consent audit 24h activity
 - Emits one structured JSON summary log line with aggregate-only metrics.

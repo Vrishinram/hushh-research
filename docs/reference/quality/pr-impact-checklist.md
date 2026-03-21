@@ -1,6 +1,6 @@
 # PR Impact Checklist
 
-Mandatory impact mapping for any change touching Kai, world model, routes, or mobile parity.
+Mandatory impact mapping for any change touching Kai, PKM, routes, or mobile parity.
 
 ## Required PR Fields
 

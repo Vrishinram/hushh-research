@@ -100,17 +100,17 @@ POST /api/consent/vault-owner-token  (Firebase Bearer)
 | GET | `/api/consent/history` | Paginated consent audit history |
 | GET | `/api/consent/active` | Active (non-expired) tokens |
 
-#### World Model
+#### Personal Knowledge Model
 
 | Method | Path | Description |
 | ------ | ---- | ----------- |
-| POST | `/api/world-model/store-domain` | Store encrypted domain data + update index |
-| GET | `/api/world-model/data/{user_id}` | Get full encrypted data blob |
-| GET | `/api/world-model/domain-data/{user_id}/{domain}` | Get encrypted domain data |
-| DELETE | `/api/world-model/domain-data/{user_id}/{domain}` | Delete a domain |
-| GET | `/api/world-model/metadata/{user_id}` | Get world model metadata for UI |
-| GET | `/api/world-model/scopes/{user_id}` | Get available scopes for user |
-| POST | `/api/world-model/get-context` | Get user context for analysis |
+| POST | `/api/pkm/store-domain` | Store encrypted PKM domain data + update index |
+| GET | `/api/pkm/data/{user_id}` | Get full encrypted PKM payload |
+| GET | `/api/pkm/domain-data/{user_id}/{domain}` | Get encrypted PKM domain data |
+| DELETE | `/api/pkm/domain-data/{user_id}/{domain}` | Delete a PKM domain |
+| GET | `/api/pkm/metadata/{user_id}` | Get PKM metadata for UI |
+| GET | `/api/pkm/scopes/{user_id}` | Get available PKM scope handles for the user |
+| POST | `/api/pkm/get-context` | Get user context for analysis |
 
 #### Kai Chat
 
@@ -128,7 +128,7 @@ POST /api/consent/vault-owner-token  (Firebase Bearer)
 | ------ | ---- | ----------- |
 | POST | `/api/kai/portfolio/import` | Import brokerage statement (CSV/PDF) |
 | POST | `/api/kai/portfolio/import/stream` | Streaming import with deterministic Gemini extraction, thought telemetry, and strict quality-gate aborts |
-| GET | `/api/kai/portfolio/summary/{user_id}` | Portfolio summary from world model |
+| GET | `/api/kai/portfolio/summary/{user_id}` | Portfolio summary from PKM discovery metadata |
 | GET | `/api/kai/dashboard/profile-picks/{user_id}` | Real profile-based picks for dashboard cards (`symbols`, `limit`) |
 | POST | `/api/kai/portfolio/analyze-losers` | Analyze losers vs Renaissance |
 | POST | `/api/kai/portfolio/analyze-losers/stream` | Streaming losers analysis (SSE, deterministic config, cash-excluded investable universe) |
@@ -184,8 +184,8 @@ Operational note:
 #### Kai Personalization
 
 Kai personalization no longer uses dedicated `/api/kai/preferences/*` endpoints.
-Optional intro fields are persisted in encrypted world-model path `financial.profile`.
-Frontend reads/writes these fields through the centralized onboarding/profile flows that call world-model APIs.
+Optional intro fields are persisted in encrypted PKM path `financial.profile`.
+Frontend reads/writes these fields through the centralized onboarding/profile flows that call PKM APIs.
 
 #### Account & Sync
 
@@ -246,12 +246,12 @@ Security invariant:
 
 | Method | Path | Replacement |
 | ------ | ---- | ----------- |
-| POST | `/api/v1/food-data` | `GET /api/world-model/domain-data/{uid}/{discovered_domain}` after runtime domain discovery, or the publishable flow `/api/v1/user-scopes/{uid}` → `/api/v1/request-consent` → `/api/consent/data` |
-| POST | `/api/v1/professional-data` | `GET /api/world-model/domain-data/{uid}/{discovered_domain}` after runtime domain discovery, or the publishable flow `/api/v1/user-scopes/{uid}` → `/api/v1/request-consent` → `/api/consent/data` |
-| DELETE | `/api/world-model/attributes/{uid}/{domain}/{key}` | Client-side BYOK operation |
-| POST | `/api/kai/decision/store` | `POST /api/world-model/store-domain` with domain=`financial` |
+| POST | `/api/v1/food-data` | `GET /api/pkm/domain-data/{uid}/{discovered_domain}` after runtime domain discovery, or the publishable flow `/api/v1/user-scopes/{uid}` → `/api/v1/request-consent` → `/api/consent/data` |
+| POST | `/api/v1/professional-data` | `GET /api/pkm/domain-data/{uid}/{discovered_domain}` after runtime domain discovery, or the publishable flow `/api/v1/user-scopes/{uid}` → `/api/v1/request-consent` → `/api/consent/data` |
+| DELETE | `/api/pkm/attributes/{uid}/{domain}/{key}` | Client-side BYOK operation |
+| POST | `/api/kai/decision/store` | `POST /api/pkm/store-domain` with domain=`financial` |
 | GET | `/api/kai/decision/{id}` | `GET /api/kai/decisions/{user_id}` |
-| DELETE | `/api/kai/decision/{id}` | `POST /api/world-model/store-domain` with domain=`financial` |
+| DELETE | `/api/kai/decision/{id}` | `POST /api/pkm/store-domain` with domain=`financial` |
 | `*` | `/api/identity/*` | Removed from app surface; compatibility stubs return `410` |
 
 ---
@@ -379,8 +379,8 @@ Production policy:
 ### Available Scopes
 
 ```
-world_model.read
-world_model.write
+pkm.read
+pkm.write
 attr.{domain}.*
 attr.{domain}.{subintent}.*
 attr.{domain}.{subintent}.{attribute}
@@ -388,7 +388,7 @@ attr.{domain}.{subintent}.{attribute}
 
 Scope strings are dynamic. Do not hardcode domain keys. Discover user-available scopes via:
 
-- `GET /api/world-model/scopes/{user_id}`
+- `GET /api/pkm/scopes/{user_id}`
 - `GET /api/v1/user-scopes/{user_id}?token=<developer-token>`
 - `discover_user_domains(user_id)` in MCP
 
@@ -443,5 +443,5 @@ See [Architecture: Tri-Flow](./architecture.md#tri-flow-architecture) for the fu
 ## See Also
 
 - [Architecture](./architecture.md) -- System overview and tri-flow
-- [World Model](../../../consent-protocol/docs/reference/world-model.md) -- Data storage endpoints
+- [Personal Knowledge Model](../../../consent-protocol/docs/reference/personal-knowledge-model.md) -- Data storage endpoints
 - [Consent Protocol](../../../consent-protocol/docs/reference/consent-protocol.md) -- Token lifecycle

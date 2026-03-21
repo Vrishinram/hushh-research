@@ -33,7 +33,7 @@ import { Button } from "@/lib/morphy-ux/button";
 import { useStepProgress } from "@/lib/progress/step-progress-context";
 import { useVault } from "@/lib/vault/vault-context";
 import { useAuth } from "@/lib/firebase";
-import { WorldModelService } from "@/lib/services/world-model-service";
+import { WorldModelService } from "@/lib/services/personal-knowledge-model-service";
 import { normalizeStoredPortfolio } from "@/lib/utils/portfolio-normalize";
 import { useCache, type PortfolioData as CachedPortfolioData } from "@/lib/cache/cache-context";
 import { CacheSyncService } from "@/lib/cache/cache-sync-service";

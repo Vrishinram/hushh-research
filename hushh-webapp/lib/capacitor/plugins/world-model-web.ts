@@ -35,7 +35,7 @@ export class HushhWorldModelWeb
     suggestedDomains: string[];
     lastUpdated: string | null;
   }> {
-    const response = await fetch(`/api/world-model/metadata/${options.userId}`, {
+    const response = await fetch(`/api/pkm/metadata/${options.userId}`, {
       headers: {
         Authorization: await this.getAuthHeader(options.vaultOwnerToken),
       },
@@ -79,7 +79,7 @@ export class HushhWorldModelWeb
     allScopes: string[];
     wildcardScopes: string[];
   }> {
-    const response = await fetch(`/api/world-model/scopes/${options.userId}`, {
+    const response = await fetch(`/api/pkm/scopes/${options.userId}`, {
       headers: {
         Authorization: await this.getAuthHeader(options.vaultOwnerToken),
       },
@@ -90,12 +90,37 @@ export class HushhWorldModelWeb
     }
 
     const data = await response.json();
+    const rawScopes: string[] = Array.isArray(data.scopes)
+      ? data.scopes
+      : Array.isArray(data.all_scopes)
+        ? data.all_scopes
+        : [];
+    const groupedDomains = new Map<string, string[]>();
+    for (const scope of rawScopes) {
+      const match = /^attr\.([a-zA-Z0-9_]+)/.exec(scope);
+      if (!match) continue;
+      const domain = match[1] ?? "";
+      if (!domain) continue;
+      const existing = groupedDomains.get(domain) || [];
+      existing.push(scope);
+      groupedDomains.set(domain, existing);
+    }
 
     return {
       userId: data.user_id,
-      availableDomains: data.available_domains || [],
-      allScopes: data.all_scopes || [],
-      wildcardScopes: data.wildcard_scopes || [],
+      availableDomains:
+        data.available_domains ||
+        [...groupedDomains.entries()].map(([domain, scopes]) => ({
+          domain,
+          displayName: domain.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase()),
+          scopes,
+        })),
+      allScopes: rawScopes,
+      wildcardScopes:
+        data.wildcard_scopes ||
+        rawScopes.filter(
+          (scope) => scope === "pkm.read" || scope === "world_model.read" || scope.endsWith(".*")
+        ),
     };
   }
 
@@ -110,7 +135,7 @@ export class HushhWorldModelWeb
     data_version?: number;
     updated_at?: string;
   }> {
-    const response = await fetch(`/api/world-model/data/${options.userId}`, {
+    const response = await fetch(`/api/pkm/data/${options.userId}`, {
       headers: {
         Authorization: await this.getAuthHeader(options.vaultOwnerToken),
       },
@@ -131,11 +156,22 @@ export class HushhWorldModelWeb
       iv: string;
       tag: string;
       algorithm?: string;
+      segments?: Record<
+        string,
+        {
+          ciphertext: string;
+          iv: string;
+          tag: string;
+          algorithm?: string;
+        }
+      >;
     };
     summary: Record<string, unknown>;
+    structureDecision?: Record<string, unknown>;
+    manifest?: Record<string, unknown>;
     vaultOwnerToken?: string;
   }): Promise<{ success: boolean }> {
-    const response = await fetch("/api/world-model/store-domain", {
+    const response = await fetch("/api/pkm/store-domain", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -149,8 +185,11 @@ export class HushhWorldModelWeb
           iv: options.encryptedBlob.iv,
           tag: options.encryptedBlob.tag,
           algorithm: options.encryptedBlob.algorithm || "aes-256-gcm",
+          segments: options.encryptedBlob.segments || {},
         },
         summary: options.summary,
+        structure_decision: options.structureDecision,
+        manifest: options.manifest,
       }),
     });
 
@@ -171,10 +210,24 @@ export class HushhWorldModelWeb
       iv: string;
       tag: string;
       algorithm?: string;
+      segments?: Record<
+        string,
+        {
+          ciphertext: string;
+          iv: string;
+          tag: string;
+          algorithm?: string;
+        }
+      >;
     };
+    storage_mode?: string;
+    data_version?: number;
+    updated_at?: string;
+    manifest_revision?: number;
+    segment_ids?: string[];
   }> {
     const response = await fetch(
-      `/api/world-model/domain-data/${options.userId}/${options.domain}`,
+      `/api/pkm/domain-data/${options.userId}/${options.domain}`,
       {
         headers: {
           Authorization: await this.getAuthHeader(options.vaultOwnerToken),
@@ -195,7 +248,7 @@ export class HushhWorldModelWeb
     vaultOwnerToken?: string;
   }): Promise<{ success: boolean }> {
     const response = await fetch(
-      `/api/world-model/domain-data/${options.userId}/${options.domain}`,
+      `/api/pkm/domain-data/${options.userId}/${options.domain}`,
       {
         method: "DELETE",
         headers: {

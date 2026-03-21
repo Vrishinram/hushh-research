@@ -11,4 +11,4 @@ Use this as the north-star entrypoint for runtime contracts and system structure
 - [cache-coherence.md](./cache-coherence.md): cache invalidation and freshness model.
 - [runtime-db-fact-sheet.md](./runtime-db-fact-sheet.md): runtime storage facts and boundaries.
 - [data-provenance-ledger.md](./data-provenance-ledger.md): provenance and audit data model.
-- [world-model-compatibility-playbook.md](./world-model-compatibility-playbook.md): world-model compatibility rules.
+- [pkm-cutover-runbook.md](./pkm-cutover-runbook.md): PKM cutover and compatibility rules.

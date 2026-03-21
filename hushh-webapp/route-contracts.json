@@ -191,6 +191,24 @@
       }
     },
     {
+      "id": "pkmProxy",
+      "webRouteFiles": [
+        "hushh-webapp/app/api/pkm/[...path]/route.ts"
+      ],
+      "backend": {
+        "file": "consent-protocol/api/routes/pkm.py",
+        "routerPrefix": "/api/pkm",
+        "paths": [
+          "/metadata/{user_id}",
+          "/store-domain",
+          "/data/{user_id}",
+          "/domain-data/{user_id}/{domain}",
+          "/manifest/{user_id}/{domain}",
+          "/scopes/{user_id}"
+        ]
+      }
+    },
+    {
       "id": "worldModelProxy",
       "webRouteFiles": [
         "hushh-webapp/app/api/world-model/[...path]/route.ts",
@@ -488,7 +506,7 @@
         "hushh-webapp/components/kai/views/portfolio-review-view.tsx"
       ],
       "serviceFiles": [
-        "hushh-webapp/lib/services/world-model-service.ts",
+        "hushh-webapp/lib/services/personal-knowledge-model-service.ts",
         "hushh-webapp/lib/services/api-service.ts"
       ],
       "apiContractIds": [
@@ -514,7 +532,7 @@
         "hushh-webapp/components/kai/kai-command-bar-global.tsx"
       ],
       "serviceFiles": [
-        "hushh-webapp/lib/services/world-model-service.ts",
+        "hushh-webapp/lib/services/personal-knowledge-model-service.ts",
         "hushh-webapp/lib/services/api-service.ts",
         "hushh-webapp/lib/kai/ticker-universe-cache.ts"
       ],
@@ -631,7 +649,7 @@
       "id": "profilePage",
       "pageFile": "hushh-webapp/app/profile/page.tsx",
       "serviceFiles": [
-        "hushh-webapp/lib/services/world-model-service.ts",
+        "hushh-webapp/lib/services/personal-knowledge-model-service.ts",
         "hushh-webapp/lib/services/account-service.ts",
         "hushh-webapp/lib/services/vault-service.ts",
         "hushh-webapp/lib/services/ria-service.ts"
@@ -648,6 +666,41 @@
         "vaultWebProxy",
         "vaultOwnerToken",
         "accountDelete"
+      ]
+    },
+    {
+      "id": "pkmViewerPage",
+      "pageFile": "hushh-webapp/app/profile/pkm/page.tsx",
+      "serviceFiles": [
+        "hushh-webapp/lib/services/personal-knowledge-model-service.ts"
+      ],
+      "apiContractIds": [
+        "pkmProxy",
+        "vaultWebProxy",
+        "vaultOwnerToken"
+      ],
+      "nativeContractIds": [
+        "worldModelProxy",
+        "vaultWebProxy",
+        "vaultOwnerToken"
+      ]
+    },
+    {
+      "id": "pkmAgentLabPage",
+      "pageFile": "hushh-webapp/app/profile/pkm-agent-lab/page.tsx",
+      "serviceFiles": [
+        "hushh-webapp/lib/services/personal-knowledge-model-service.ts",
+        "hushh-webapp/lib/services/developer-portal-service.ts"
+      ],
+      "apiContractIds": [
+        "pkmProxy",
+        "developerPortalProxy",
+        "vaultOwnerToken"
+      ],
+      "nativeContractIds": [
+        "worldModelProxy",
+        "vaultWebProxy",
+        "vaultOwnerToken"
       ]
     },
     {

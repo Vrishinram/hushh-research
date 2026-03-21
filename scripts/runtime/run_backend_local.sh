@@ -140,6 +140,52 @@ with socket.socket() as sock:
 PY
 }
 
+listener_pids() {
+  local port="$1"
+  lsof -t -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk '!seen[$0]++'
+}
+
+stop_existing_repo_backend() {
+  local pids
+  pids="$(listener_pids 8000 || true)"
+  if [ -z "$pids" ]; then
+    return 0
+  fi
+
+  local pid
+  local cmd
+  local safe_to_kill=true
+  for pid in $pids; do
+    cmd="$(ps -o command= -p "$pid" 2>/dev/null || true)"
+    if [[ "$cmd" == *"uvicorn server:app"* ]] || [[ "$cmd" == *"--multiprocessing-fork"* ]]; then
+      continue
+    fi
+    safe_to_kill=false
+    break
+  done
+
+  if [ "$safe_to_kill" != "true" ]; then
+    echo "Backend port 8000 is already in use by a non-local-backend process." >&2
+    echo "Stop the existing backend process before starting ${PROFILE}." >&2
+    exit 1
+  fi
+
+  echo "Stopping existing local backend on :8000..."
+  for pid in $pids; do
+    kill "$pid" >/dev/null 2>&1 || true
+  done
+
+  local waited=0
+  while port_is_listening 127.0.0.1 8000; do
+    if [ "$waited" -ge 40 ]; then
+      echo "Timed out waiting for backend port 8000 to become free." >&2
+      exit 1
+    fi
+    sleep 0.25
+    waited=$((waited + 1))
+  done
+}
+
 verify_iam_readiness() {
   local profile="$1"
   if [ "$profile" != "local-uatdb" ]; then
@@ -158,9 +204,7 @@ run_preflight() {
   verify_iam_readiness "$profile"
 
   if port_is_listening 127.0.0.1 8000; then
-    echo "Backend port 8000 is already in use." >&2
-    echo "Stop the existing backend process before starting ${profile}." >&2
-    exit 1
+    stop_existing_repo_backend
   fi
 }
 

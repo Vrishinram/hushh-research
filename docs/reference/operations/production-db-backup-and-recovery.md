@@ -137,8 +137,8 @@ Weekly integrity verification:
 Monthly restore drill:
 1. Restore latest logical dump into isolated non-prod Postgres/Supabase target.
 2. Run sanity checks:
-- key table counts (`consent_audit`, `vault_keys`, `world_model_data`, `world_model_index_v2`, `kai_market_cache_entries`, `tickers`)
-- coherence checks (world-model data/index integrity)
+- key table counts (`consent_audit`, `vault_keys`, `pkm_index`, `pkm_blobs`, `kai_market_cache_entries`, `tickers`)
+- coherence checks (PKM blob/index integrity)
 3. Record:
 - drill start/end time
 - observed restore duration (RTO)

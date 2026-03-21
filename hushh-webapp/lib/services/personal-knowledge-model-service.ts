@@ -1,18 +1,18 @@
-// hushh-webapp/lib/services/world-model-service.ts
+// hushh-webapp/lib/services/personal-knowledge-model-service.ts
 /**
- * World Model Service - Frontend service for world model operations.
+ * Personal Knowledge Model service for PKM operations.
  *
  * Provides platform-aware methods for:
- * - Fetching user metadata
+ * - Fetching PKM metadata
  * - Storing encrypted domain data blobs (BYOK)
  * - Scope validation
  *
- * Tri-Flow Compliant: Uses HushhWorldModel plugin on native, ApiService.apiFetch() on web.
- * 
+ * Tri-Flow compliant: uses HushhWorldModel on native and ApiService.apiFetch() on web.
+ *
  * IMPORTANT: This service MUST NOT use direct fetch("/api/...") calls.
  * All web requests go through ApiService.apiFetch() for consistent auth handling.
- * 
- * Caching: Uses CacheService for in-memory caching with TTL to reduce API calls.
+ *
+ * Caching: uses CacheService for in-memory caching with TTL to reduce API calls.
  */
 
 import { Capacitor } from "@capacitor/core";
@@ -21,6 +21,10 @@ import { CacheSyncService } from "@/lib/cache/cache-sync-service";
 import type { PortfolioData as CachedPortfolioData } from "@/lib/cache/cache-context";
 import { ApiService } from "./api-service";
 import { CacheService, CACHE_KEYS, CACHE_TTL } from "./cache-service";
+import {
+  buildWorldModelStructureArtifacts,
+  type DomainManifest,
+} from "@/lib/personal-knowledge-model/manifest";
 
 // ==================== Types ====================
 
@@ -49,11 +53,20 @@ export interface EncryptedValue {
   iv: string;
   tag: string;
   algorithm?: string;
+  segments?: Record<string, EncryptedValue>;
 }
 
 export interface EncryptedUserBlob extends EncryptedValue {
   dataVersion?: number;
   updatedAt?: string;
+}
+
+export interface EncryptedDomainBlob extends EncryptedValue {
+  storageMode?: "domain" | "legacy_full_blob";
+  dataVersion?: number;
+  updatedAt?: string;
+  manifestRevision?: number;
+  segmentIds?: string[];
 }
 
 export interface StoreDomainDataResult {
@@ -83,12 +96,15 @@ export interface ScopeDiscovery {
 // ==================== Service ====================
 
 export class WorldModelService {
+  private static readonly PKM_API_PREFIX = "/api/pkm";
   private static metadataInflight = new Map<string, Promise<WorldModelMetadata>>();
   private static encryptedDataInflight = new Map<string, Promise<EncryptedUserBlob | null>>();
-  private static domainDataInflight = new Map<string, Promise<EncryptedValue | null>>();
+  private static domainDataInflight = new Map<string, Promise<EncryptedDomainBlob | null>>();
+  private static domainManifestInflight = new Map<string, Promise<DomainManifest | null>>();
   private static tickerSyncInflight = new Map<string, Promise<void>>();
   private static tickerSyncSignatureByUser = new Map<string, string>();
   private static tickerSyncLastAt = new Map<string, number>();
+  private static migrationInflight = new Map<string, Promise<void>>();
   private static readonly TICKER_SYNC_THROTTLE_MS = 5 * 60 * 1000;
 
   private static inflightKey(
@@ -127,16 +143,135 @@ export class WorldModelService {
 
   private static cacheDecryptedBlob(params: {
     userId: string;
-    encryptedBlob: EncryptedUserBlob | EncryptedValue;
+    marker: string;
     fullBlob: Record<string, unknown>;
   }): void {
     const cache = CacheService.getInstance();
     const cacheKey = CACHE_KEYS.WORLD_MODEL_DECRYPTED_BLOB(params.userId);
     const entry: DecryptedFullBlobCacheEntry = {
-      marker: this.buildEncryptedBlobMarker(params.encryptedBlob),
+      marker: params.marker,
       blob: this.cloneRecord(params.fullBlob),
     };
     cache.set(cacheKey, entry, CACHE_TTL.SESSION);
+  }
+
+  private static buildCompositeBlobMarker(blobs: Array<EncryptedDomainBlob | EncryptedUserBlob>): string {
+    const parts = blobs
+      .map((blob) => this.buildEncryptedBlobMarker(blob))
+      .sort();
+    return `composed:${parts.join("||")}`;
+  }
+
+  private static canonicalSegmentId(segmentId: string): string {
+    const normalized = String(segmentId || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_]/g, "_")
+      .replace(/^_+|_+$/g, "");
+    return normalized || "root";
+  }
+
+  private static partitionDomainDataIntoSegments(domainData: Record<string, unknown>): Record<string, unknown> {
+    const segmented: Record<string, unknown> = {};
+    const rootPayload: Record<string, unknown> = {};
+
+    for (const [key, value] of Object.entries(domainData || {})) {
+      const segmentId = this.canonicalSegmentId(key);
+      const isSegmentCandidate =
+        value !== null &&
+        value !== undefined &&
+        (Array.isArray(value) || typeof value === "object");
+      if (!isSegmentCandidate || segmentId === "root") {
+        rootPayload[key] = value;
+        continue;
+      }
+      segmented[segmentId] = value;
+    }
+
+    if (Object.keys(rootPayload).length > 0 || Object.keys(segmented).length === 0) {
+      segmented.root = rootPayload;
+    }
+
+    return segmented;
+  }
+
+  private static async encryptDomainForStorage(params: {
+    vaultKey: string;
+    domainData: Record<string, unknown>;
+  }): Promise<EncryptedValue> {
+    const { HushhVault } = await import("@/lib/capacitor");
+    const fullEncrypted = await HushhVault.encryptData({
+      plaintext: JSON.stringify(params.domainData),
+      keyHex: params.vaultKey,
+    });
+
+    const segmentedPayloads = this.partitionDomainDataIntoSegments(params.domainData);
+    const segments: Record<string, EncryptedValue> = {};
+    await Promise.all(
+      Object.entries(segmentedPayloads).map(async ([segmentId, segmentValue]) => {
+        const encrypted = await HushhVault.encryptData({
+          plaintext: JSON.stringify(segmentValue),
+          keyHex: params.vaultKey,
+        });
+        segments[segmentId] = {
+          ciphertext: encrypted.ciphertext,
+          iv: encrypted.iv,
+          tag: encrypted.tag,
+          algorithm: "aes-256-gcm",
+        };
+      })
+    );
+
+    return {
+      ciphertext: fullEncrypted.ciphertext,
+      iv: fullEncrypted.iv,
+      tag: fullEncrypted.tag,
+      algorithm: "aes-256-gcm",
+      segments,
+    };
+  }
+
+  private static async decryptDomainBlob(params: {
+    vaultKey: string;
+    domain: string;
+    blob: EncryptedDomainBlob;
+  }): Promise<Record<string, unknown>> {
+    const { decryptData } = await import("@/lib/vault/encrypt");
+    const segments = params.blob.segments || {};
+    if (Object.keys(segments).length === 0) {
+      const decrypted = await decryptData(
+        {
+          ciphertext: params.blob.ciphertext,
+          iv: params.blob.iv,
+          tag: params.blob.tag,
+          encoding: "base64",
+          algorithm: (params.blob.algorithm || "aes-256-gcm") as "aes-256-gcm",
+        },
+        params.vaultKey
+      );
+      return JSON.parse(decrypted) as Record<string, unknown>;
+    }
+
+    const domainData: Record<string, unknown> = {};
+    for (const [segmentId, encryptedSegment] of Object.entries(segments)) {
+      const decrypted = await decryptData(
+        {
+          ciphertext: encryptedSegment.ciphertext,
+          iv: encryptedSegment.iv,
+          tag: encryptedSegment.tag,
+          encoding: "base64",
+          algorithm: (encryptedSegment.algorithm || "aes-256-gcm") as "aes-256-gcm",
+        },
+        params.vaultKey
+      );
+      const parsed = JSON.parse(decrypted);
+      if (segmentId === "root" && parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        Object.assign(domainData, parsed as Record<string, unknown>);
+        continue;
+      }
+      domainData[segmentId] = parsed;
+    }
+    return domainData;
   }
 
   static peekCachedEncryptedBlob(userId: string): EncryptedUserBlob | null {
@@ -162,7 +297,10 @@ export class WorldModelService {
     const cachedEncrypted = this.peekCachedEncryptedBlob(userId);
     if (cachedEncrypted) {
       const marker = this.buildEncryptedBlobMarker(cachedEncrypted);
-      if (cachedDecrypted.marker !== marker) {
+      if (
+        cachedDecrypted.marker !== marker &&
+        !cachedDecrypted.marker.startsWith("composed:")
+      ) {
         return null;
       }
     }
@@ -468,7 +606,7 @@ export class WorldModelService {
         }
 
         // Web: Use ApiService.apiFetch() for tri-flow compliance
-        const response = await ApiService.apiFetch(`/api/world-model/metadata/${userId}`, {
+        const response = await ApiService.apiFetch(`${this.PKM_API_PREFIX}/metadata/${userId}`, {
           headers: this.getAuthHeaders(vaultOwnerToken),
         });
 
@@ -584,6 +722,8 @@ export class WorldModelService {
     domain: string;
     encryptedBlob: EncryptedValue;
     summary: Record<string, unknown>;
+    structureDecision?: Record<string, unknown>;
+    manifest?: DomainManifest;
     portfolioData?: CachedPortfolioData;
     expectedDataVersion?: number;
     vaultOwnerToken?: string;
@@ -597,8 +737,11 @@ export class WorldModelService {
           iv: params.encryptedBlob.iv,
           tag: params.encryptedBlob.tag,
           algorithm: params.encryptedBlob.algorithm || "aes-256-gcm",
+          segments: params.encryptedBlob.segments,
         },
         summary: params.summary,
+        structureDecision: params.structureDecision,
+        manifest: params.manifest,
         vaultOwnerToken: this.getVaultOwnerToken(params.vaultOwnerToken),
       });
 
@@ -625,15 +768,18 @@ export class WorldModelService {
         iv: params.encryptedBlob.iv,
         tag: params.encryptedBlob.tag,
         algorithm: params.encryptedBlob.algorithm || "aes-256-gcm",
+        segments: params.encryptedBlob.segments,
       },
       summary: params.summary,
+      structure_decision: params.structureDecision,
+      manifest: params.manifest,
     };
     if (Number.isFinite(params.expectedDataVersion)) {
       payload.expected_data_version = Math.max(0, Number(params.expectedDataVersion));
     }
 
     // Web: Use ApiService.apiFetch() for tri-flow compliance
-    const response = await ApiService.apiFetch("/api/world-model/store-domain", {
+    const response = await ApiService.apiFetch(`${this.PKM_API_PREFIX}/store-domain`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -736,7 +882,7 @@ export class WorldModelService {
     }
 
     // Web: Use ApiService.apiFetch() for tri-flow compliance
-    const response = await ApiService.apiFetch(`/api/world-model/scopes/${userId}`, {
+    const response = await ApiService.apiFetch(`${this.PKM_API_PREFIX}/scopes/${userId}`, {
       headers: this.getAuthHeaders(vaultOwnerToken),
     });
 
@@ -745,13 +891,82 @@ export class WorldModelService {
     }
 
     const data = await response.json();
+    const rawScopes: string[] = Array.isArray(data.scopes)
+      ? data.scopes
+      : Array.isArray(data.all_scopes)
+        ? data.all_scopes
+        : [];
+    const groupedDomains = new Map<string, string[]>();
+    for (const scope of rawScopes) {
+      const match = /^attr\.([a-zA-Z0-9_]+)/.exec(scope);
+      if (!match) continue;
+      const domain = match[1] ?? "";
+      if (!domain) continue;
+      const existing = groupedDomains.get(domain) || [];
+      existing.push(scope);
+      groupedDomains.set(domain, existing);
+    }
 
     return {
       userId: data.user_id,
-      availableDomains: data.available_domains || [],
-      allScopes: data.all_scopes || [],
-      wildcardScopes: data.wildcard_scopes || [],
+      availableDomains:
+        data.available_domains ||
+        [...groupedDomains.entries()].map(([domain, scopes]) => ({
+          domain,
+          displayName: domain.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase()),
+          scopes,
+        })),
+      allScopes: rawScopes,
+      wildcardScopes:
+        data.wildcard_scopes ||
+        rawScopes.filter(
+          (scope) => scope === "pkm.read" || scope === "world_model.read" || scope.endsWith(".*")
+        ),
     };
+  }
+
+  static async getDomainManifest(
+    userId: string,
+    domain: string,
+    vaultOwnerToken?: string
+  ): Promise<DomainManifest | null> {
+    const dedupeKey = this.inflightKey([
+      "domain_manifest",
+      userId,
+      domain,
+      vaultOwnerToken ? "vault_owner" : "anonymous",
+    ]);
+    const existingRequest = this.domainManifestInflight.get(dedupeKey);
+    if (existingRequest) {
+      return existingRequest;
+    }
+
+    const request = (async (): Promise<DomainManifest | null> => {
+      const response = await ApiService.apiFetch(
+        `${this.PKM_API_PREFIX}/manifest/${userId}/${domain}`,
+        {
+          headers: this.getAuthHeaders(vaultOwnerToken),
+        }
+      );
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          return null;
+        }
+        throw new Error(`Failed to get domain manifest: ${response.status}`);
+      }
+
+      return (await response.json()) as DomainManifest;
+    })();
+
+    this.domainManifestInflight.set(dedupeKey, request);
+    try {
+      return await request;
+    } finally {
+      if (this.domainManifestInflight.get(dedupeKey) === request) {
+        this.domainManifestInflight.delete(dedupeKey);
+      }
+    }
   }
 
   /**
@@ -810,7 +1025,7 @@ export class WorldModelService {
           };
         }
       } else {
-        const response = await ApiService.apiFetch(`/api/world-model/data/${userId}`, {
+        const response = await ApiService.apiFetch(`${this.PKM_API_PREFIX}/data/${userId}`, {
           headers: this.getAuthHeaders(vaultOwnerToken),
         });
 
@@ -862,40 +1077,89 @@ export class WorldModelService {
     vaultOwnerToken?: string;
   }): Promise<Record<string, unknown>> {
     const cache = CacheService.getInstance();
-    const encrypted = await this.getEncryptedData(params.userId, params.vaultOwnerToken);
-    if (!encrypted) {
+    let metadata: WorldModelMetadata | null = null;
+    try {
+      metadata = await this.getMetadata(params.userId, false, params.vaultOwnerToken);
+    } catch {
+      metadata = null;
+    }
+    const availableDomains = metadata?.domains.map((domain) => domain.key).filter(Boolean) || [];
+
+    const legacyEncrypted = await this.getEncryptedData(params.userId, params.vaultOwnerToken);
+    const domainBlobs = await Promise.all(
+      availableDomains.map((domain) => this.getDomainData(params.userId, domain, params.vaultOwnerToken))
+    );
+    const materializedDomainBlobs = domainBlobs.filter(
+      (blob): blob is EncryptedDomainBlob => Boolean(blob)
+    );
+
+    if (!legacyEncrypted && materializedDomainBlobs.length === 0) {
       cache.invalidate(CACHE_KEYS.WORLD_MODEL_DECRYPTED_BLOB(params.userId));
       return {};
     }
 
-    const marker = this.buildEncryptedBlobMarker(encrypted);
+    const marker = this.buildCompositeBlobMarker([
+      ...(legacyEncrypted ? [legacyEncrypted] : []),
+      ...materializedDomainBlobs,
+    ]);
     const decryptedCacheKey = CACHE_KEYS.WORLD_MODEL_DECRYPTED_BLOB(params.userId);
     const cachedDecrypted = cache.get<DecryptedFullBlobCacheEntry>(decryptedCacheKey);
     if (cachedDecrypted?.marker === marker && cachedDecrypted.blob) {
       return this.cloneRecord(cachedDecrypted.blob);
     }
 
-    const { decryptData } = await import("@/lib/vault/encrypt");
-    const decrypted = await decryptData(
-      {
-        ciphertext: encrypted.ciphertext,
-        iv: encrypted.iv,
-        tag: encrypted.tag,
-        encoding: "base64",
-        algorithm: (encrypted.algorithm || "aes-256-gcm") as "aes-256-gcm",
-      },
-      params.vaultKey
+    let parsedBlob: Record<string, unknown> = {};
+
+    const legacyBlobCandidate =
+      materializedDomainBlobs.find((blob) => blob.storageMode === "legacy_full_blob") || legacyEncrypted;
+    if (legacyBlobCandidate) {
+      const { decryptData } = await import("@/lib/vault/encrypt");
+      const decrypted = await decryptData(
+        {
+          ciphertext: legacyBlobCandidate.ciphertext,
+          iv: legacyBlobCandidate.iv,
+          tag: legacyBlobCandidate.tag,
+          encoding: "base64",
+          algorithm: (legacyBlobCandidate.algorithm || "aes-256-gcm") as "aes-256-gcm",
+        },
+        params.vaultKey
+      );
+      const parsed = JSON.parse(decrypted);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        parsedBlob = parsed as Record<string, unknown>;
+      }
+    }
+
+    await Promise.all(
+      availableDomains.map(async (domain, index) => {
+        const blob = domainBlobs[index];
+        if (!blob || blob.storageMode === "legacy_full_blob") {
+          return;
+        }
+        parsedBlob[domain] = await this.decryptDomainBlob({
+          vaultKey: params.vaultKey,
+          domain,
+          blob,
+        });
+      })
     );
 
-    const parsed = JSON.parse(decrypted);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return {};
-    }
-    const parsedBlob = parsed as Record<string, unknown>;
     this.cacheDecryptedBlob({
       userId: params.userId,
-      encryptedBlob: encrypted,
+      marker,
       fullBlob: parsedBlob,
+    });
+    void this.maybeMigrateLegacyBlobToPkm({
+      userId: params.userId,
+      vaultKey: params.vaultKey,
+      vaultOwnerToken: params.vaultOwnerToken,
+      legacyEncrypted,
+      fullBlob: parsedBlob,
+      metadata,
+      fetchedDomains: availableDomains.map((domain, index) => ({
+        domain,
+        blob: domainBlobs[index] || null,
+      })),
     });
     void this.maybeSyncTickersFromFinancialBlob({
       userId: params.userId,
@@ -903,6 +1167,101 @@ export class WorldModelService {
       vaultOwnerToken: params.vaultOwnerToken,
     });
     return this.cloneRecord(parsedBlob);
+  }
+
+  private static async maybeMigrateLegacyBlobToPkm(params: {
+    userId: string;
+    vaultKey: string;
+    vaultOwnerToken?: string;
+    legacyEncrypted: EncryptedUserBlob | null;
+    fullBlob: Record<string, unknown>;
+    metadata: WorldModelMetadata | null;
+    fetchedDomains: Array<{ domain: string; blob: EncryptedDomainBlob | null }>;
+  }): Promise<void> {
+    if (!params.legacyEncrypted) {
+      return;
+    }
+
+    const candidateDomains = Object.keys(params.fullBlob).filter((domain) => {
+      const value = params.fullBlob[domain];
+      return Boolean(value && typeof value === "object" && !Array.isArray(value));
+    });
+    if (candidateDomains.length === 0) {
+      return;
+    }
+
+    const hasDomainBlob = new Set(
+      params.fetchedDomains
+        .filter(({ blob }) => Boolean(blob && blob.storageMode === "domain"))
+        .map(({ domain }) => domain)
+    );
+    const domainsToMigrate = candidateDomains.filter((domain) => !hasDomainBlob.has(domain));
+    if (domainsToMigrate.length === 0) {
+      return;
+    }
+
+    const dedupeKey = this.inflightKey([
+      "pkm_migration",
+      params.userId,
+      params.legacyEncrypted.updatedAt || "na",
+      params.legacyEncrypted.dataVersion || "na",
+    ]);
+    const existing = this.migrationInflight.get(dedupeKey);
+    if (existing) {
+      return existing;
+    }
+
+    const request = (async () => {
+      for (const domain of domainsToMigrate) {
+        const domainValue = params.fullBlob[domain];
+        if (!domainValue || typeof domainValue !== "object" || Array.isArray(domainValue)) {
+          continue;
+        }
+        const domainData = this.cloneRecord(domainValue as Record<string, unknown>);
+        const previousManifest = await this.getDomainManifest(
+          params.userId,
+          domain,
+          params.vaultOwnerToken
+        ).catch(() => null);
+        const structureArtifacts = buildWorldModelStructureArtifacts({
+          domain,
+          domainData,
+          previousManifest,
+        });
+        const summary =
+          params.metadata?.domains.find((entry) => entry.key === domain)?.summary || {};
+        const portfolioData = this.resolvePortfolioDataForDomain({
+          domain,
+          domainData,
+        });
+        const encryptedBlob = await this.encryptDomainForStorage({
+          vaultKey: params.vaultKey,
+          domainData,
+        });
+        await this.storeDomainData({
+          userId: params.userId,
+          domain,
+          encryptedBlob,
+          summary: {
+            ...summary,
+            ...structureArtifacts.manifest.summary_projection,
+          },
+          structureDecision: structureArtifacts.structureDecision,
+          manifest: structureArtifacts.manifest,
+          portfolioData,
+          vaultOwnerToken: params.vaultOwnerToken,
+        });
+      }
+    })();
+
+    this.migrationInflight.set(dedupeKey, request);
+    try {
+      await request;
+    } finally {
+      if (this.migrationInflight.get(dedupeKey) === request) {
+        this.migrationInflight.delete(dedupeKey);
+      }
+    }
   }
 
   /**
@@ -941,24 +1300,17 @@ export class WorldModelService {
     encryptedBlob: EncryptedValue;
     fullBlob: Record<string, unknown>;
   }> {
-    const { HushhVault } = await import("@/lib/capacitor");
     const fullBlob = {
       ...params.baseFullBlob,
       [params.domain]: params.domainData,
     };
-
-    const encrypted = await HushhVault.encryptData({
-      plaintext: JSON.stringify(fullBlob),
-      keyHex: params.vaultKey,
+    const encrypted = await this.encryptDomainForStorage({
+      vaultKey: params.vaultKey,
+      domainData: params.domainData,
     });
 
     return {
-      encryptedBlob: {
-        ciphertext: encrypted.ciphertext,
-        iv: encrypted.iv,
-        tag: encrypted.tag,
-        algorithm: "aes-256-gcm",
-      },
+      encryptedBlob: encrypted,
       fullBlob,
     };
   }
@@ -1015,16 +1367,27 @@ export class WorldModelService {
     updatedAt?: string;
     fullBlob: Record<string, unknown>;
   }> {
+    const previousManifest = await this.getDomainManifest(
+      params.userId,
+      params.domain,
+      params.vaultOwnerToken
+    ).catch(() => null);
     const merged = await this.mergeAndEncryptPreparedBlob({
       baseFullBlob: params.baseFullBlob,
       vaultKey: params.vaultKey,
       domain: params.domain,
       domainData: params.domainData,
     });
+    const structureArtifacts = buildWorldModelStructureArtifacts({
+      domain: params.domain,
+      domainData: params.domainData,
+      previousManifest,
+    });
 
     const summaryWithIntent = {
       domain_intent: params.domain,
       ...params.summary,
+      ...structureArtifacts.manifest.summary_projection,
     };
     const portfolioData = this.resolvePortfolioDataForDomain({
       domain: params.domain,
@@ -1036,6 +1399,8 @@ export class WorldModelService {
       domain: params.domain,
       encryptedBlob: merged.encryptedBlob,
       summary: summaryWithIntent,
+      structureDecision: structureArtifacts.structureDecision,
+      manifest: structureArtifacts.manifest,
       portfolioData,
       expectedDataVersion: params.expectedDataVersion,
       vaultOwnerToken: params.vaultOwnerToken,
@@ -1056,7 +1421,133 @@ export class WorldModelService {
       };
       this.cacheDecryptedBlob({
         userId: params.userId,
-        encryptedBlob: encryptedBlobForCache,
+        marker: this.buildCompositeBlobMarker([encryptedBlobForCache]),
+        fullBlob: merged.fullBlob,
+      });
+    }
+
+    return {
+      success: result.success,
+      conflict: result.conflict,
+      message: result.message,
+      dataVersion: result.dataVersion,
+      updatedAt: result.updatedAt,
+      fullBlob: merged.fullBlob,
+    };
+  }
+
+  /**
+   * Persist a prepared PKM domain using caller-provided structure artifacts.
+   * This is used by tools like PKM Agent Lab so the saved backend shape matches
+   * the previewed domain, manifest, and scope plan exactly.
+   */
+  static async storePreparedDomain(params: {
+    userId: string;
+    vaultKey: string;
+    domain: string;
+    domainData: Record<string, unknown>;
+    summary: Record<string, unknown>;
+    structureDecision?: Record<string, unknown>;
+    manifest?: DomainManifest | null;
+    expectedDataVersion?: number;
+    vaultOwnerToken?: string;
+  }): Promise<{
+    success: boolean;
+    conflict?: boolean;
+    message?: string;
+    dataVersion?: number;
+    updatedAt?: string;
+    fullBlob: Record<string, unknown>;
+  }> {
+    const baseFullBlob = await this.loadFullBlob({
+      userId: params.userId,
+      vaultKey: params.vaultKey,
+      vaultOwnerToken: params.vaultOwnerToken,
+    }).catch(() => ({} as Record<string, unknown>));
+
+    return this.storePreparedDomainWithPreparedBlob({
+      ...params,
+      baseFullBlob,
+    });
+  }
+
+  static async storePreparedDomainWithPreparedBlob(params: {
+    userId: string;
+    vaultKey: string;
+    domain: string;
+    domainData: Record<string, unknown>;
+    summary: Record<string, unknown>;
+    baseFullBlob: Record<string, unknown>;
+    structureDecision?: Record<string, unknown>;
+    manifest?: DomainManifest | null;
+    expectedDataVersion?: number;
+    vaultOwnerToken?: string;
+  }): Promise<{
+    success: boolean;
+    conflict?: boolean;
+    message?: string;
+    dataVersion?: number;
+    updatedAt?: string;
+    fullBlob: Record<string, unknown>;
+  }> {
+    const previousManifest = await this.getDomainManifest(
+      params.userId,
+      params.domain,
+      params.vaultOwnerToken
+    ).catch(() => null);
+    const merged = await this.mergeAndEncryptPreparedBlob({
+      baseFullBlob: params.baseFullBlob,
+      vaultKey: params.vaultKey,
+      domain: params.domain,
+      domainData: params.domainData,
+    });
+    const fallbackArtifacts = buildWorldModelStructureArtifacts({
+      domain: params.domain,
+      domainData: params.domainData,
+      previousManifest,
+    });
+    const manifest = params.manifest || fallbackArtifacts.manifest;
+    const structureDecision = params.structureDecision || fallbackArtifacts.structureDecision;
+
+    const summaryWithIntent = {
+      domain_intent: params.domain,
+      ...params.summary,
+      ...(manifest?.summary_projection || {}),
+    };
+    const portfolioData = this.resolvePortfolioDataForDomain({
+      domain: params.domain,
+      domainData: params.domainData,
+    });
+
+    const result = await this.storeDomainData({
+      userId: params.userId,
+      domain: params.domain,
+      encryptedBlob: merged.encryptedBlob,
+      summary: summaryWithIntent,
+      structureDecision,
+      manifest,
+      portfolioData,
+      expectedDataVersion: params.expectedDataVersion,
+      vaultOwnerToken: params.vaultOwnerToken,
+    });
+
+    if (result.success && params.domain === "financial") {
+      void this.maybeSyncTickersFromFinancialBlob({
+        userId: params.userId,
+        fullBlob: merged.fullBlob,
+        vaultOwnerToken: params.vaultOwnerToken,
+      });
+    }
+
+    if (result.success) {
+      const encryptedBlobForCache: EncryptedUserBlob = {
+        ...merged.encryptedBlob,
+        dataVersion: result.dataVersion,
+        updatedAt: result.updatedAt,
+      };
+      this.cacheDecryptedBlob({
+        userId: params.userId,
+        marker: this.buildCompositeBlobMarker([encryptedBlobForCache]),
         fullBlob: merged.fullBlob,
       });
     }
@@ -1083,10 +1574,10 @@ export class WorldModelService {
     userId: string,
     domain: string,
     vaultOwnerToken?: string
-  ): Promise<EncryptedValue | null> {
+  ): Promise<EncryptedDomainBlob | null> {
     const cache = CacheService.getInstance();
     const cacheKey = CACHE_KEYS.ENCRYPTED_DOMAIN_BLOB(userId, domain);
-    const cached = cache.get<EncryptedValue>(cacheKey);
+    const cached = cache.get<EncryptedDomainBlob>(cacheKey);
     if (cached) {
       return cached;
     }
@@ -1103,8 +1594,8 @@ export class WorldModelService {
       return existingRequest;
     }
 
-    const request = (async (): Promise<EncryptedValue | null> => {
-      let encryptedBlob: EncryptedValue | null = null;
+    const request = (async (): Promise<EncryptedDomainBlob | null> => {
+      let encryptedBlob: EncryptedDomainBlob | null = null;
 
       if (Capacitor.isNativePlatform()) {
         const result = await HushhWorldModel.getDomainData({
@@ -1113,17 +1604,45 @@ export class WorldModelService {
           vaultOwnerToken: this.getVaultOwnerToken(vaultOwnerToken),
         });
         if (result.encrypted_blob) {
+          const nativeSegments =
+            result.encrypted_blob.segments && typeof result.encrypted_blob.segments === "object"
+              ? Object.fromEntries(
+                  Object.entries(result.encrypted_blob.segments).map(([segmentId, segmentBlob]) => [
+                    segmentId,
+                    {
+                      ciphertext: (segmentBlob as Record<string, unknown>).ciphertext as string,
+                      iv: (segmentBlob as Record<string, unknown>).iv as string,
+                      tag: (segmentBlob as Record<string, unknown>).tag as string,
+                      algorithm:
+                        ((segmentBlob as Record<string, unknown>).algorithm as string) ||
+                        "aes-256-gcm",
+                    },
+                  ])
+                )
+              : undefined;
           encryptedBlob = {
             ciphertext: result.encrypted_blob.ciphertext,
             iv: result.encrypted_blob.iv,
             tag: result.encrypted_blob.tag,
             algorithm: result.encrypted_blob.algorithm || "aes-256-gcm",
+            segments: nativeSegments,
+            storageMode:
+              (result.storage_mode as "domain" | "legacy_full_blob" | undefined) || "domain",
+            dataVersion:
+              typeof result.data_version === "number" ? result.data_version : undefined,
+            updatedAt:
+              typeof result.updated_at === "string" ? result.updated_at : undefined,
+            manifestRevision:
+              typeof result.manifest_revision === "number" ? result.manifest_revision : undefined,
+            segmentIds: Array.isArray(result.segment_ids)
+              ? (result.segment_ids as string[])
+              : undefined,
           };
         }
       } else {
         // Web: Use ApiService.apiFetch() for tri-flow compliance
         const response = await ApiService.apiFetch(
-          `/api/world-model/domain-data/${userId}/${domain}`,
+          `${this.PKM_API_PREFIX}/domain-data/${userId}/${domain}`,
           {
             headers: this.getAuthHeaders(vaultOwnerToken),
           }
@@ -1138,11 +1657,39 @@ export class WorldModelService {
 
         const data = await response.json();
         if (data.encrypted_blob) {
+          const segments =
+            data.encrypted_blob.segments && typeof data.encrypted_blob.segments === "object"
+              ? Object.fromEntries(
+                  Object.entries(data.encrypted_blob.segments as Record<string, unknown>).map(
+                    ([segmentId, segmentBlob]) => [
+                      segmentId,
+                      {
+                        ciphertext: (segmentBlob as Record<string, unknown>).ciphertext as string,
+                        iv: (segmentBlob as Record<string, unknown>).iv as string,
+                        tag: (segmentBlob as Record<string, unknown>).tag as string,
+                        algorithm:
+                          ((segmentBlob as Record<string, unknown>).algorithm as string) ||
+                          "aes-256-gcm",
+                      },
+                    ]
+                  )
+                )
+              : undefined;
           encryptedBlob = {
             ciphertext: data.encrypted_blob.ciphertext,
             iv: data.encrypted_blob.iv,
             tag: data.encrypted_blob.tag,
             algorithm: data.encrypted_blob.algorithm || "aes-256-gcm",
+            segments,
+            storageMode:
+              (data.storage_mode as "domain" | "legacy_full_blob" | undefined) || "domain",
+            dataVersion: typeof data.data_version === "number" ? data.data_version : undefined,
+            updatedAt: typeof data.updated_at === "string" ? data.updated_at : undefined,
+            manifestRevision:
+              typeof data.manifest_revision === "number" ? data.manifest_revision : undefined,
+            segmentIds: Array.isArray(data.segment_ids)
+              ? (data.segment_ids as string[])
+              : undefined,
           };
         }
       }
@@ -1164,6 +1711,37 @@ export class WorldModelService {
         this.domainDataInflight.delete(dedupeKey);
       }
     }
+  }
+
+  static async loadDomainData(params: {
+    userId: string;
+    domain: string;
+    vaultKey: string;
+    vaultOwnerToken?: string;
+  }): Promise<Record<string, unknown> | null> {
+    const blob = await this.getDomainData(params.userId, params.domain, params.vaultOwnerToken);
+    if (!blob) {
+      return null;
+    }
+
+    if (blob.storageMode === "legacy_full_blob") {
+      const fullBlob = await this.loadFullBlob({
+        userId: params.userId,
+        vaultKey: params.vaultKey,
+        vaultOwnerToken: params.vaultOwnerToken,
+      });
+      const domainData = fullBlob[params.domain];
+      if (!domainData || typeof domainData !== "object" || Array.isArray(domainData)) {
+        return {};
+      }
+      return domainData as Record<string, unknown>;
+    }
+
+    return this.decryptDomainBlob({
+      vaultKey: params.vaultKey,
+      domain: params.domain,
+      blob,
+    });
   }
 
   /**
@@ -1197,7 +1775,7 @@ export class WorldModelService {
 
     // Web: Use ApiService.apiFetch() for tri-flow compliance
     const response = await ApiService.apiFetch(
-      `/api/world-model/domain-data/${userId}/${domain}`,
+      `${this.PKM_API_PREFIX}/domain-data/${userId}/${domain}`,
       {
         method: "DELETE",
         headers: this.getAuthHeaders(vaultOwnerToken),
@@ -1213,5 +1791,7 @@ export class WorldModelService {
   }
 }
 
-// Export default instance for convenience
-export default WorldModelService;
+export const PersonalKnowledgeModelService = WorldModelService;
+
+// WorldModelService remains as a compatibility alias during the PKM cutover.
+export default PersonalKnowledgeModelService;

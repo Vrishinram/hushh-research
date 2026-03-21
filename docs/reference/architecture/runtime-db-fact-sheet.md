@@ -1,67 +1,99 @@
 # Runtime DB Fact Sheet (Sanitized)
 
-This appendix records a read-only schema snapshot of the runtime Postgres database used in local development. It is documentation-only and intentionally excludes credentials, row payloads, and any user-secret values.
+This appendix records the runtime database shape that matters for Kai, PKM, consent, and IAM. It is documentation-only and intentionally excludes credentials, row payloads, and any user-secret values.
 
-Note: the original snapshot below predates the Investor + RIA IAM rollout. Current runtime also includes the IAM/public-workflow tables listed under "Post-IAM Extension Tables".
-
-- Captured at (UTC): `2026-03-02T03:52:45Z`
-- Source: read-only introspection using local `consent-protocol/.env` connectivity
+- Captured at (UTC): `2026-03-20T00:00:00Z`
+- Source: read-only introspection against the live UAT-backed local environment
 - Schema: `public`
 
-## Public Tables (13)
+## Canonical PKM Tables
 
-1. `consent_audit`
-2. `consent_exports`
-3. `domain_registry`
-4. `kai_market_cache_entries`
-5. `renaissance_avoid`
-6. `renaissance_screening_criteria`
-7. `renaissance_universe`
-8. `tickers`
-9. `user_push_tokens`
-10. `vault_key_wrappers`
-11. `vault_keys`
-12. `world_model_data`
-13. `world_model_index_v2`
+1. `pkm_index`
+2. `pkm_blobs`
+3. `pkm_manifests`
+4. `pkm_manifest_paths`
+5. `pkm_scope_registry`
+6. `pkm_events`
+7. `pkm_migration_state`
 
-## Post-IAM Extension Tables
+## Legacy Transition Tables
 
-These tables are part of the current runtime architecture after the IAM rollout and should be treated as expected runtime schema, even though they were added after the original 13-table snapshot.
+These tables exist only for the bounded encrypted-user cutover window. No new product writes should target them.
+
+1. legacy encrypted blob table
+2. legacy metadata index table
+
+## Shared Application Tables
 
 1. `actor_profiles`
-2. `ria_profiles`
-3. `ria_firms`
-4. `ria_firm_memberships`
-5. `ria_verification_events`
-6. `advisor_investor_relationships`
-7. `ria_client_invites`
-8. `consent_scope_templates`
-9. `marketplace_public_profiles`
-10. `runtime_persona_state` (transitional compatibility only)
+2. `advisor_investor_relationships`
+3. `consent_audit`
+4. `consent_exports`
+5. `consent_scope_templates`
+6. `developer_applications`
+7. `developer_apps`
+8. `developer_tokens`
+9. `domain_registry`
+10. `kai_market_cache_entries`
+11. `kai_plaid_items`
+12. `kai_plaid_link_sessions`
+13. `kai_plaid_refresh_runs`
+14. `kai_portfolio_source_preferences`
+15. `marketplace_public_profiles`
+16. `renaissance_avoid`
+17. `renaissance_screening_criteria`
+18. `renaissance_universe`
+19. `ria_client_invites`
+20. `ria_firm_memberships`
+21. `ria_firms`
+22. `ria_profiles`
+23. `ria_verification_events`
+24. `runtime_persona_state`
+25. `tickers`
+26. `user_push_tokens`
+27. `vault_key_wrappers`
+28. `vault_keys`
 
 ## Key Column Snapshots
 
-### `world_model_data`
+### `pkm_blobs`
 
 - `user_id` (`text`)
-- `encrypted_data_ciphertext` (`text`)
-- `encrypted_data_iv` (`text`)
-- `encrypted_data_tag` (`text`)
+- `domain` (`text`)
+- `segment_id` (`text`)
+- `ciphertext` (`text`)
+- `iv` (`text`)
+- `tag` (`text`)
 - `algorithm` (`text`)
-- `data_version` (`integer`)
+- `content_revision` (`integer`)
+- `manifest_revision` (`integer`)
+- `size_bytes` (`integer`)
 - `created_at` (`timestamp with time zone`)
 - `updated_at` (`timestamp with time zone`)
 
-### `world_model_index_v2`
+### `pkm_index`
 
 - `user_id` (`text`)
-- `domain_summaries` (`jsonb`)
 - `available_domains` (`ARRAY`)
-- `computed_tags` (`ARRAY`)
+- `domain_freshness` (`jsonb`)
+- `summary_projection` (`jsonb`)
+- `capability_flags` (`jsonb`)
 - `activity_score` (`numeric`)
 - `last_active_at` (`timestamp with time zone`)
 - `total_attributes` (`integer`)
-- `model_version` (`integer`)
+- `created_at` (`timestamp with time zone`)
+- `updated_at` (`timestamp with time zone`)
+
+### `pkm_scope_registry`
+
+- `user_id` (`text`)
+- `domain` (`text`)
+- `scope_handle` (`text`)
+- `scope_label` (`text`)
+- `segment_ids` (`ARRAY`)
+- `sensitivity_tier` (`text`)
+- `manifest_revision` (`integer`)
+- `exposure_enabled` (`boolean`)
 - `created_at` (`timestamp with time zone`)
 - `updated_at` (`timestamp with time zone`)
 
@@ -92,10 +124,9 @@ These tables are part of the current runtime architecture after the IAM rollout 
 The `public` schema also includes extension/operator functions (vector/trigram) that are omitted here for readability. Core app-facing functions observed:
 
 1. `consent_audit_notify()`
-2. `get_user_world_model_metadata(p_user_id text)`
-3. `update_world_model_data_timestamp()`
-4. `merge_domain_summary(p_user_id text, p_domain text, p_summary jsonb)` (optional accelerator path)
-5. `remove_domain_summary_key(p_user_id text, p_domain text, p_key text)` (optional accelerator path)
+2. `auto_register_domain(p_domain text, p_label text, p_category text, p_description text)`
+3. legacy metadata compatibility helper retained during cutover
+4. legacy timestamp compatibility helper retained during cutover
 
 ## Reproducibility
 

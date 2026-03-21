@@ -11,6 +11,7 @@ Hushh is a **consent-first personal data agent system** with:
 - **Zero-knowledge vault** encrypted on-device
 - **VAULT_OWNER tokens** for secure vault access (stateless, self-contained)
 - **Modular agents** (Food, Professional, Kai) with uniform consent validation
+- **Personal Knowledge Model (PKM)** for segmented encrypted memory and consented retrieval
 - **Multi-platform** support: Web, iOS, Android
 
 ---
@@ -146,7 +147,7 @@ Hushh uses **SQLAlchemy with Supabase's Session Pooler** for direct PostgreSQL c
    ```
 
 **Architecture:**
-- All database access goes through service layer (`VaultDBService`, `ConsentDBService`, `WorldModelService`)
+- All database access goes through service layer (`VaultDBService`, `ConsentDBService`, `PersonalKnowledgeModelService`)
 - Service layer validates consent tokens before database operations
 - No direct database access from API routes
 
@@ -204,7 +205,7 @@ python -m uvicorn server:app --reload --port 8000
 
 # Expected output:
 # ✅ Added CORS origin from FRONTEND_URL: http://localhost:3000
-# 🚀 Hushh Consent Protocol server initialized - KAI V2 + PHASE 2 + WORLD MODEL ENABLED
+# 🚀 Hushh Consent Protocol server initialized - KAI V2 + PHASE 2 + PKM ENABLED
 # INFO: Uvicorn running on http://0.0.0.0:8000
 ```
 
@@ -447,4 +448,4 @@ See `.vscode/launch.json` for:
 
 ---
 
-_Last Updated: February 2026 | Version: 6.0 | Kai Portfolio UX + World Model Release_
+_Last Updated: March 2026 | Version: 6.1 | Kai Portfolio UX + PKM Release_

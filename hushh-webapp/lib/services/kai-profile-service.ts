@@ -1,6 +1,6 @@
 "use client";
 
-import { WorldModelService } from "@/lib/services/world-model-service";
+import { WorldModelService } from "@/lib/services/personal-knowledge-model-service";
 import { CacheService, CACHE_KEYS, CACHE_TTL } from "@/lib/services/cache-service";
 
 const FINANCIAL_DOMAIN = "financial";
