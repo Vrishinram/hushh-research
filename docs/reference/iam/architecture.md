@@ -59,9 +59,9 @@ Private data is always consent-gated and scoped.
 ### Storage Boundary
 
 1. Relational tables own identity, consent workflow, verification/compliance, firm membership, public discovery, and query-heavy shared market datasets.
-2. `world_model_data` stores encrypted user-owned private content only.
-3. `world_model_index_v2` stores sanitized metadata only.
-4. RIA verification/compliance and relationship workflow do not belong in the world model.
+2. `pkm_blobs` stores encrypted user-owned private content only.
+3. `pkm_index` stores sanitized metadata only.
+4. RIA verification/compliance and relationship workflow do not belong in the PKM.
 
 ## Change Control
 

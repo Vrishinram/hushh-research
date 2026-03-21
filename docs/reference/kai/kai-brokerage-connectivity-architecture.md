@@ -55,7 +55,7 @@ Kai exposes three portfolio views:
 
 ## Persistence Model
 
-### Editable world-model contract
+### Editable PKM contract
 
 - `financial.sources.statement`
 - `financial.sources.plaid`
@@ -78,7 +78,7 @@ Kai exposes three portfolio views:
 - `kai_portfolio_source_preferences`
   - active source selection
 
-Plaid access tokens never live in the world model.
+Plaid access tokens never live in the PKM.
 
 ## OAuth and Web Callback Model
 
@@ -159,4 +159,4 @@ Execution principles:
 - broker-adapter based, not Plaid based
 - explicit human approval by default
 - audit logging and idempotency mandatory
-- post-trade reconciliation writes back into the world model as a separate source of truth
+- post-trade reconciliation writes back into the PKM as a separate source of truth

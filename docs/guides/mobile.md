@@ -296,7 +296,7 @@ lib/
 │       ├── sync-web.ts
 │       ├── settings-web.ts
 │       ├── vault-web.ts
-│       └── world-model-web.ts
+│       └── pkm web compatibility bridge
 └── services/
     ├── api-service.ts    # Platform-aware API routing
     ├── auth-service.ts   # Native auth abstraction

@@ -19,7 +19,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { HushhLoader } from "@/components/app-ui/hushh-loader";
 import { SurfaceCard, SurfaceCardContent } from "@/components/app-ui/surfaces";
-import { WorldModelService } from "@/lib/services/world-model-service";
+import { WorldModelService } from "@/lib/services/personal-knowledge-model-service";
 import { normalizeStoredPortfolio } from "@/lib/utils/portfolio-normalize";
 import { useCache } from "@/lib/cache/cache-context";
 import { CacheSyncService } from "@/lib/cache/cache-sync-service";

@@ -10,7 +10,7 @@ Next.js + React + Capacitor client for Kai and consent-first personal data flows
 
 Core invariants:
 - No direct `fetch()` in feature components (service layer only).
-- Vault/world-model operations require consent token + vault context.
+- Vault/PKM operations require consent token + vault context.
 - Encrypted-at-rest only (no plaintext fallback mode).
 
 ## Current Route Architecture

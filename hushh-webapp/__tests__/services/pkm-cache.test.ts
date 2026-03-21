@@ -20,9 +20,9 @@ vi.mock("@/lib/services/api-service", () => ({
 
 import { CacheSyncService } from "@/lib/cache/cache-sync-service";
 import { CacheService, CACHE_KEYS } from "@/lib/services/cache-service";
-import { WorldModelService } from "@/lib/services/world-model-service";
+import { WorldModelService } from "@/lib/services/personal-knowledge-model-service";
 
-describe("World model cache behavior", () => {
+describe("PKM cache behavior", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     CacheService.getInstance().clear();
@@ -55,7 +55,7 @@ describe("World model cache behavior", () => {
 
   it("reads encrypted user/domain blobs from cache on subsequent calls", async () => {
     apiFetchMock.mockImplementation(async (url: string) => {
-      if (url.includes("/api/world-model/data/user-1")) {
+      if (url.includes("/api/pkm/data/user-1")) {
         return new Response(
           JSON.stringify({
             ciphertext: "ciphertext-user",
@@ -65,7 +65,7 @@ describe("World model cache behavior", () => {
           { status: 200, headers: { "Content-Type": "application/json" } }
         );
       }
-      if (url.includes("/api/world-model/domain-data/user-1/financial")) {
+      if (url.includes("/api/pkm/domain-data/user-1/financial")) {
         return new Response(
           JSON.stringify({
             encrypted_blob: {
@@ -101,7 +101,7 @@ describe("World model cache behavior", () => {
     expect(apiFetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("writes through and invalidates cache keys on world model CRUD sync hooks", () => {
+  it("writes through and invalidates cache keys on PKM CRUD sync hooks", () => {
     const cache = CacheService.getInstance();
     const userId = "user-1";
 
@@ -130,7 +130,7 @@ describe("World model cache behavior", () => {
     });
 
     expect(cache.get(CACHE_KEYS.PORTFOLIO_DATA(userId))).toBeTruthy();
-    expect(cache.get(CACHE_KEYS.WORLD_MODEL_BLOB(userId))).toBeTruthy();
+    expect(cache.get(CACHE_KEYS.WORLD_MODEL_BLOB(userId))).toBeNull();
     expect(cache.get(CACHE_KEYS.ENCRYPTED_DOMAIN_BLOB(userId, "financial"))).toBeTruthy();
     expect(cache.get(CACHE_KEYS.WORLD_MODEL_METADATA(userId))).toBeTruthy();
 

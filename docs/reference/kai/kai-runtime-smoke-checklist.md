@@ -21,9 +21,9 @@ Use this lightweight checklist instead of expanding automated test coverage.
 3. Confirm stage timeline streams and holdings preview increments.
 4. Confirm no stream reset when vault is created/unlocked mid-import.
 
-## 2) World Model Integrity
+## 2) PKM Integrity
 1. Run:
-   - manual spot-check via Kai dashboard and `/api/world-model/metadata/{user_id}` in the API docs or local API client
+   - manual spot-check via Kai dashboard and `/api/pkm/metadata/{user_id}` in the API docs or local API client
 2. Confirm:
    - blob domains align with index/registry,
    - `financial` canonical summary count is non-zero when holdings exist,
@@ -40,7 +40,7 @@ Use this lightweight checklist instead of expanding automated test coverage.
 ## 4) Debate Output Reliability
 1. Run stock analysis from dashboard/portfolio flow.
 2. Confirm quick recommendation card appears with final decision.
-3. Confirm decision card world-model context shows non-zero holdings count when applicable.
+3. Confirm decision card PKM context shows non-zero holdings count when applicable.
 4. If providers degrade, confirm degraded messaging appears without hard failure.
 
 ## 5) Toast Readability

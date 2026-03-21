@@ -296,7 +296,7 @@ export function PortfolioOverviewView({
               <p className="text-sm text-muted-foreground">
                 Kai tracks your portfolio using encrypted data in your personal vault.
                 All analysis happens with your privacy intact. Holdings data is organized
-                into the financial domain of your World Model.
+                into the financial domain of your Personal Knowledge Model.
               </p>
             </div>
           </div>

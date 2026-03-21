@@ -209,7 +209,7 @@ Agent Kai stock analysis plugin.
 **Returns:** Full analysis response object.
 
 Kai no longer exposes plugin methods for `/api/kai/preferences/*`.
-Optional onboarding profile data is stored in encrypted world-model path `financial.profile`.
+Optional onboarding profile data is stored in encrypted PKM path `financial.profile`.
 
 ---
 

@@ -14,8 +14,9 @@ import { useCallback, useRef } from "react";
 import { toast } from "sonner";
 import { useVault } from "@/lib/vault/vault-context";
 import { ApiService } from "@/lib/services/api-service";
-import { WorldModelService } from "@/lib/services/world-model-service";
+import { WorldModelService } from "@/lib/services/personal-knowledge-model-service";
 import { CacheSyncService } from "@/lib/cache/cache-sync-service";
+import { projectDomainDataForScope } from "@/lib/personal-knowledge-model/manifest";
 
 // ============================================================================
 // Types
@@ -45,18 +46,57 @@ interface UseConsentActionsOptions {
 // Helpers: Scope detection and vault data endpoint
 // ============================================================================
 
-/** world_model.read or attr.{domain}.* (domain: alphanumeric + underscore only) */
+/** pkm.read or attr.{domain}.* (domain: alphanumeric + underscore only) */
+const PKM_READ = "pkm.read";
 const WORLD_MODEL_READ = "world_model.read";
-const ATTR_SCOPE_REGEX = /^attr\.([a-zA-Z0-9_]+)\.\*$/;
+const ATTR_SCOPE_REGEX = /^attr\.([a-zA-Z0-9_]+)(?:\.(.+))?$/;
 
 function isWorldModelScope(scope: string): boolean {
-  return scope === WORLD_MODEL_READ || ATTR_SCOPE_REGEX.test(scope);
+  return scope === PKM_READ || scope === WORLD_MODEL_READ || scope.startsWith("attr.");
 }
 
-/** Parse attr.{domain}.* to domain, or null if not matching. */
-function parseAttrScopeDomain(scope: string): string | null {
-  const m = scope.match(ATTR_SCOPE_REGEX);
-  return m?.[1] ?? null;
+function parseAttrScope(scope: string): {
+  domain: string;
+  path: string | null;
+  isWildcard: boolean;
+} | null {
+  const match = scope.match(ATTR_SCOPE_REGEX);
+  if (!match) return null;
+  const domain = match[1] ?? "";
+  const remainder = match[2] ?? "";
+  const isWildcard = remainder === "*" || remainder.endsWith(".*");
+  const normalizedPath = remainder.replace(/\.\*$/, "").trim();
+  return {
+    domain,
+    path: normalizedPath && normalizedPath !== "*" ? normalizedPath : null,
+    isWildcard,
+  };
+}
+
+function resolveApprovedPaths(scope: string, manifest: {
+  externalizable_paths?: string[];
+  paths?: Array<{ json_path?: string }>;
+  manifest_version?: number;
+} | null): string[] {
+  const parsed = parseAttrScope(scope);
+  if (!parsed) {
+    return [];
+  }
+  if (!parsed.path) {
+    return manifest?.externalizable_paths || [];
+  }
+
+  const manifestPaths = (manifest?.paths || [])
+    .map((entry) => entry.json_path)
+    .filter((path): path is string => typeof path === "string" && path.length > 0);
+
+  if (!parsed.isWildcard) {
+    return [parsed.path];
+  }
+
+  return manifestPaths.filter(
+    (path) => path === parsed.path || path.startsWith(`${parsed.path}.`)
+  );
 }
 
 function getScopeDataEndpoint(scope: string): string | null {
@@ -171,64 +211,67 @@ export function useConsentActions(options: UseConsentActionsOptions = {}) {
         // World model scopes: build export from world model blob (BYOK)
         if (isWorldModelScope(consent.scope)) {
           try {
-            const metadata = await WorldModelService.getMetadata(userId, false, vaultOwnerToken);
-            const availableDomains = metadata.domains.map((d) => d.key);
-
-            if (consent.scope === WORLD_MODEL_READ) {
+            if (consent.scope === PKM_READ || consent.scope === WORLD_MODEL_READ) {
+              const fullBlob = await WorldModelService.loadFullBlob({
+                userId,
+                vaultKey,
+                vaultOwnerToken,
+              });
+              const availableDomains = Object.keys(fullBlob);
               if (availableDomains.length === 0) {
                 scopeData = {};
                 console.info("[Consent] Consent approved with empty world model export (no domains)");
               } else {
-                const firstDomain = availableDomains[0];
-                const blob = firstDomain
-                  ? await WorldModelService.getDomainData(userId, firstDomain, vaultOwnerToken)
-                  : null;
-                if (!blob) {
-                  scopeData = {};
-                  console.info("[Consent] Consent approved with empty world model export (no data)");
-                } else {
-                  const { decryptData } = await import("@/lib/vault/encrypt");
-                  const decrypted = await decryptData(
-                    {
-                      ciphertext: blob.ciphertext,
-                      iv: blob.iv,
-                      tag: blob.tag,
-                      encoding: "base64",
-                      algorithm: (blob.algorithm || "aes-256-gcm") as "aes-256-gcm",
-                    },
-                    vaultKey
-                  );
-                  const full = JSON.parse(decrypted) as Record<string, unknown>;
-                  scopeData = {};
-                  for (const key of availableDomains) {
-                    if (Object.prototype.hasOwnProperty.call(full, key)) {
-                      scopeData[key] = full[key];
-                    }
-                  }
-                }
+                scopeData = {
+                  ...fullBlob,
+                  __export_metadata: {
+                    scope: consent.scope,
+                    export_timestamp: new Date().toISOString(),
+                    available_domains: availableDomains,
+                  },
+                };
               }
             } else {
-              const domain = parseAttrScopeDomain(consent.scope);
-              if (!domain) {
+              const parsedScope = parseAttrScope(consent.scope);
+              if (!parsedScope) {
                 scopeData = {};
               } else {
-                const blob = await WorldModelService.getDomainData(userId, domain, vaultOwnerToken);
+                const blob = await WorldModelService.getDomainData(
+                  userId,
+                  parsedScope.domain,
+                  vaultOwnerToken
+                );
                 if (!blob) {
-                  scopeData = { [domain]: {} };
+                  scopeData = { [parsedScope.domain]: {} };
                 } else {
-                  const { decryptData } = await import("@/lib/vault/encrypt");
-                  const decrypted = await decryptData(
-                    {
-                      ciphertext: blob.ciphertext,
-                      iv: blob.iv,
-                      tag: blob.tag,
-                      encoding: "base64",
-                      algorithm: (blob.algorithm || "aes-256-gcm") as "aes-256-gcm",
+                  const domainData =
+                    await WorldModelService.loadDomainData({
+                      userId,
+                      domain: parsedScope.domain,
+                      vaultKey,
+                      vaultOwnerToken,
+                    });
+                  const resolvedDomainData = domainData || {};
+                  const manifest = await WorldModelService.getDomainManifest(
+                    userId,
+                    parsedScope.domain,
+                    vaultOwnerToken
+                  ).catch(() => null);
+                  const approvedPaths = resolveApprovedPaths(consent.scope, manifest);
+                  scopeData = {
+                    ...projectDomainDataForScope({
+                      domain: parsedScope.domain,
+                      scope: consent.scope,
+                      domainData: resolvedDomainData,
+                    }),
+                    __export_metadata: {
+                      scope: consent.scope,
+                      source_domain: parsedScope.domain,
+                      manifest_version: manifest?.manifest_version ?? null,
+                      approved_paths: approvedPaths,
+                      export_timestamp: new Date().toISOString(),
                     },
-                    vaultKey
-                  );
-                  const full = JSON.parse(decrypted) as Record<string, unknown>;
-                  scopeData = { [domain]: full[domain] ?? {} };
+                  };
                 }
               }
             }

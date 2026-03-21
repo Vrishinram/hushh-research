@@ -45,8 +45,8 @@
   - `components/kai/views/columns.tsx`
 - Menu trigger stops row click propagation for reliable touch behavior.
 
-## Kai Preferences (World Model)
-- Preferences are persisted to encrypted world model path `financial.profile` via:
+## Kai Preferences (PKM)
+- Preferences are persisted to encrypted PKM path `financial.profile` via:
   - `lib/services/kai-profile-service.ts` (`KaiProfileService.savePreferences`, `KaiProfileService.setOnboardingCompleted`)
 - Onboarding flow (post-auth + vault unlock):
   - `app/kai/onboarding/page.tsx` (wizard -> persona -> dashboard)

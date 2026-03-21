@@ -16,7 +16,7 @@ These are invariants. If a change violates one, it is the wrong change.
    - The backend stores ciphertext only.
 2. **Consent-First**
    - "Signed in" is not consent.
-   - Every vault/world-model/agent operation requires a valid consent token with correct scope.
+   - Every vault/PKM/agent operation requires a valid consent token with correct scope.
    - No backdoors or bypasses for dev/testing.
 3. **Tri-Flow (Web + iOS + Android)**
    - Every data feature must work on Web, iOS, and Android (or be explicitly marked platform-specific).
@@ -79,22 +79,22 @@ System overview: `docs/reference/architecture/architecture.md`
 Kai interconnection map: `docs/reference/kai/kai-interconnection-map.md`
 Kai blast radius matrix: `docs/reference/kai/kai-change-impact-matrix.md`
 
-## Dynamic Domains & Scopes (World Model)
+## Dynamic Domains & Scopes (PKM)
 
-World-model storage is encrypted and domain-driven.
+PKM storage is encrypted and domain-driven.
 
-- Encrypted blobs: `world_model_data` (ciphertext)
-- Non-encrypted index/metadata: `world_model_index_v2`
+- Encrypted blobs: `pkm_blobs` (ciphertext)
+- Non-encrypted index/metadata: `pkm_index`
 - Scope pattern: `attr.{domain}.{attribute_key}` (with wildcards like `attr.food.*`)
 
 Primary references:
-- `consent-protocol/docs/reference/world-model.md`
+- `consent-protocol/docs/reference/personal-knowledge-model.md`
 - `consent-protocol/docs/reference/consent-protocol.md`
 
 Storage boundary:
 - Relational tables own identity, consent workflow, compliance, public discovery, and query-heavy shared market datasets.
-- `world_model_data` stores encrypted private user content only.
-- `world_model_index_v2` stores sanitized metadata only.
+- `pkm_blobs` stores encrypted private user content only.
+- `pkm_index` stores sanitized metadata only.
 - The same boundary applies to both Investor and RIA personas. RIA does not introduce a second private data plane.
 
 Persona state:
@@ -109,7 +109,7 @@ Current onboarding/tour domain usage:
 - `kai_profile` (encrypted) is canonical for onboarding completion and nav-tour completion/skips.
 - Local pending stores are temporary per-user+device and sync after vault unlock.
 
-Documentation work-in-progress is tracked in `consent-protocol/COMPLIANCE_PROGRESS.md`.
+PKM cutover and migration guidance is tracked in `docs/reference/architecture/pkm-cutover-runbook.md`.
 
 ## When Adding A Feature
 

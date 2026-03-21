@@ -557,7 +557,7 @@ function useKaiMarketHomeController() {
   } = useVault();
 
   const [payload, setPayload] = useState<KaiHomeInsightsV2 | null>(null);
-  const [loadingInitial, setLoadingInitial] = useState(true);
+  const [_loadingInitial, setLoadingInitial] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activePickSource, setActivePickSource] = useState("default");
@@ -965,7 +965,6 @@ function useKaiMarketHomeController() {
 
   return {
     payload,
-    loadingInitial,
     refreshing,
     error,
     activePickSource,
@@ -977,7 +976,6 @@ function useKaiMarketHomeController() {
 export function KaiMarketPreviewView() {
   const {
     payload,
-    loadingInitial,
     refreshing,
     error,
     activePickSource,
@@ -1056,20 +1054,6 @@ export function KaiMarketPreviewView() {
 
       <AppPageContentRegion>
         <SurfaceStack>
-      {loadingInitial && !hasPayload ? (
-        <SurfaceCard tone="warning">
-          <SurfaceCardContent className="space-y-3 text-left">
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              <p className="text-sm font-semibold">Loading market snapshot...</p>
-            </div>
-            <p className="text-xs leading-5 text-muted-foreground">
-              Restoring the latest available market cache while live data catches up.
-            </p>
-          </SurfaceCardContent>
-        </SurfaceCard>
-      ) : null}
-
       {error ? (
         <SurfaceCard tone="critical">
           <SurfaceCardContent className="space-y-3 text-left">
@@ -1092,140 +1076,146 @@ export function KaiMarketPreviewView() {
         </SurfaceCard>
       ) : null}
 
-      <section className="space-y-4">
-        <SectionHeader
-          eyebrow="Spotlight"
-          title="Today’s spotlight"
-          description="High-value names that deserve a quick read before you scan the rest of the tape."
-          icon={Target}
-          accent="amber"
-        />
-        {spotlightRows.length > 0 ? (
-          <div className="grid gap-3 lg:grid-cols-2">
-            {spotlightRows.map((row) => (
-              <SpotlightCard
-                key={row.symbol}
-                title={String(row.company_name || row.symbol || "Unknown")}
-                price={formatSpotlightPrice(row.price)}
-                decision={toSpotlightDecision(row.recommendation)}
-                confidenceLabel={spotlightConfidenceLabel(row)}
-                summary={summarizeSpotlight(row)}
-                context={spotlightContextLabel(row)}
-                contextHref={toSafeHttpUrl(row.headline_url)}
-              />
-            ))}
-          </div>
-        ) : (
-          <SurfaceCard tone="warning">
-            <SurfaceCardContent className="text-sm text-muted-foreground">
-              No spotlight insights are available right now.
-            </SurfaceCardContent>
-          </SurfaceCard>
-        )}
-      </section>
-
-      <section className="space-y-4">
-        <SectionHeader
-          eyebrow="Pulse"
-          title="Market overview"
-          description="A denser read of the current tape with stronger status cues and less filler."
-          icon={ChartColumnIncreasing}
-          accent="sky"
-          actions={
-            marketStatus ? (
-              <Badge variant="outline" className={cn("font-medium", marketStatus.className)}>
-                {marketStatus.label}
-              </Badge>
-            ) : null
-          }
-        />
-        <MarketOverviewGrid metrics={overviewMetrics} />
-      </section>
-
-      <section className="space-y-4">
-        <SectionHeader
-          eyebrow="Advisor signals"
-          title="RIA’s picks"
-          description="Choose the default Kai list or any connected advisor source. Kai remembers the last active selection and uses it for market and stock comparison surfaces."
-          icon={BriefcaseBusiness}
-          accent="emerald"
-        />
-        <RiaPicksList
-          rows={pickRows}
-          sources={pickSources}
-          activeSourceId={activePickSource}
-          onSourceChange={handlePickSourceChange}
-        />
-      </section>
-
-      <section className="space-y-4">
-        <SectionHeader
-          eyebrow="Signal"
-          title="Scenario simulation"
-          description="One compact scenario worth keeping in mind while the market context is still warm."
-          icon={Activity}
-          accent="violet"
-        />
-        {scenarioSignal ? (
-          <SurfaceCard accent="violet">
-            <SurfaceCardContent className="space-y-3">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <p className="text-sm font-semibold tracking-tight text-foreground">
-                  {scenarioSignal.title}
-                </p>
-                <span className="rounded-full bg-violet-500/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-300">
-                  {Number.isFinite(scenarioSignal.confidence)
-                    ? `${(scenarioSignal.confidence * 100).toFixed(0)}% confidence`
-                    : "Signal"}
-                </span>
+      {hasPayload ? (
+        <>
+          <section className="space-y-4">
+            <SectionHeader
+              eyebrow="Spotlight"
+              title="Today’s spotlight"
+              description="High-value names that deserve a quick read before you scan the rest of the tape."
+              icon={Target}
+              accent="amber"
+            />
+            {spotlightRows.length > 0 ? (
+              <div className="grid gap-3 lg:grid-cols-2">
+                {spotlightRows.map((row) => (
+                  <SpotlightCard
+                    key={row.symbol}
+                    title={String(row.company_name || row.symbol || "Unknown")}
+                    price={formatSpotlightPrice(row.price)}
+                    decision={toSpotlightDecision(row.recommendation)}
+                    confidenceLabel={spotlightConfidenceLabel(row)}
+                    summary={summarizeSpotlight(row)}
+                    context={spotlightContextLabel(row)}
+                    contextHref={toSafeHttpUrl(row.headline_url)}
+                  />
+                ))}
               </div>
-              <p className="text-sm leading-6 text-muted-foreground">{scenarioSignal.summary}</p>
-            </SurfaceCardContent>
-          </SurfaceCard>
-        ) : (
-          <SurfaceCard tone="warning">
-            <SurfaceCardContent className="text-sm text-muted-foreground">
-              Scenario insight is unavailable at the moment.
-            </SurfaceCardContent>
-          </SurfaceCard>
-        )}
-      </section>
+            ) : (
+              <SurfaceCard tone="warning">
+                <SurfaceCardContent className="text-sm text-muted-foreground">
+                  No spotlight insights are available right now.
+                </SurfaceCardContent>
+              </SurfaceCard>
+            )}
+          </section>
 
-      {themeItems.length > 0 ? (
-        <section className="space-y-4">
-          <SectionHeader
-            eyebrow="Narratives"
-            title="Themes in focus"
-            description="Compact narratives that can shape how the next debate or trade idea gets framed."
-            icon={Cpu}
-            accent="violet"
-          />
-          <ThemeFocusList themes={themeItems} />
-        </section>
-      ) : null}
+          <section className="space-y-4">
+            <SectionHeader
+              eyebrow="Pulse"
+              title="Market overview"
+              description="A denser read of the current tape with stronger status cues and less filler."
+              icon={ChartColumnIncreasing}
+              accent="sky"
+              actions={
+                marketStatus ? (
+                  <Badge variant="outline" className={cn("font-medium", marketStatus.className)}>
+                    {marketStatus.label}
+                  </Badge>
+                ) : null
+              }
+            />
+            <MarketOverviewGrid metrics={overviewMetrics} />
+          </section>
 
-      <section className="space-y-4">
-        <SectionHeader
-          eyebrow="Headlines"
-          title="News"
-          description="A vertical news read that stays mobile-friendly without sideways scrolling."
-          icon={Newspaper}
-          accent="rose"
-        />
-        <NewsTape rows={payload?.news_tape || []} />
-      </section>
+          <section className="space-y-4">
+            <SectionHeader
+              eyebrow="Advisor signals"
+              title="RIA’s picks"
+              description="Choose the default Kai list or any connected advisor source. Kai remembers the last active selection and uses it for market and stock comparison surfaces."
+              icon={BriefcaseBusiness}
+              accent="emerald"
+            />
+            <RiaPicksList
+              rows={pickRows}
+              sources={pickSources}
+              activeSourceId={activePickSource}
+              onSourceChange={handlePickSourceChange}
+            />
+          </section>
 
-      {showConnectPortfolio ? (
-        <section className="space-y-4">
-          <SectionHeader
-            eyebrow="Portfolio context"
-            title="Bring your own positions"
-            description="Connecting a portfolio makes the market page and downstream debate surfaces meaningfully more personal."
-            icon={BriefcaseBusiness}
-            accent="emerald"
-          />
-          <ConnectPortfolioCta />
-        </section>
+          <section className="space-y-4">
+            <SectionHeader
+              eyebrow="Signal"
+              title="Scenario simulation"
+              description="One compact scenario worth keeping in mind while the market context is still warm."
+              icon={Activity}
+              accent="violet"
+            />
+            {scenarioSignal ? (
+              <SurfaceCard accent="violet">
+                <SurfaceCardContent className="space-y-3">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <p className="text-sm font-semibold tracking-tight text-foreground">
+                      {scenarioSignal.title}
+                    </p>
+                    <span className="rounded-full bg-violet-500/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-300">
+                      {Number.isFinite(scenarioSignal.confidence)
+                        ? `${(scenarioSignal.confidence * 100).toFixed(0)}% confidence`
+                        : "Signal"}
+                    </span>
+                  </div>
+                  <p className="text-sm leading-6 text-muted-foreground">
+                    {scenarioSignal.summary}
+                  </p>
+                </SurfaceCardContent>
+              </SurfaceCard>
+            ) : (
+              <SurfaceCard tone="warning">
+                <SurfaceCardContent className="text-sm text-muted-foreground">
+                  Scenario insight is unavailable at the moment.
+                </SurfaceCardContent>
+              </SurfaceCard>
+            )}
+          </section>
+
+          {themeItems.length > 0 ? (
+            <section className="space-y-4">
+              <SectionHeader
+                eyebrow="Narratives"
+                title="Themes in focus"
+                description="Compact narratives that can shape how the next debate or trade idea gets framed."
+                icon={Cpu}
+                accent="violet"
+              />
+              <ThemeFocusList themes={themeItems} />
+            </section>
+          ) : null}
+
+          <section className="space-y-4">
+            <SectionHeader
+              eyebrow="Headlines"
+              title="News"
+              description="A vertical news read that stays mobile-friendly without sideways scrolling."
+              icon={Newspaper}
+              accent="rose"
+            />
+            <NewsTape rows={payload?.news_tape || []} />
+          </section>
+
+          {showConnectPortfolio ? (
+            <section className="space-y-4">
+              <SectionHeader
+                eyebrow="Portfolio context"
+                title="Bring your own positions"
+                description="Connecting a portfolio makes the market page and downstream debate surfaces meaningfully more personal."
+                icon={BriefcaseBusiness}
+                accent="emerald"
+              />
+              <ConnectPortfolioCta />
+            </section>
+          ) : null}
+        </>
       ) : null}
         </SurfaceStack>
       </AppPageContentRegion>

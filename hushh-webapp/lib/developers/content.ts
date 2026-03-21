@@ -56,7 +56,7 @@ export const DEVELOPER_SECTIONS: DeveloperSection[] = [
   {
     id: "dynamic-scopes",
     label: "Dynamic Scopes",
-    summary: "Scopes come from the user’s indexed world model, not a hardcoded list.",
+    summary: "Scopes come from the user’s indexed Personal Knowledge Model, not a hardcoded list.",
   },
   {
     id: "consent-flow",
@@ -95,7 +95,7 @@ export const PUBLIC_TOOL_NAMES = [
 ] as const;
 
 export const PUBLIC_SCOPE_PATTERNS = [
-  "world_model.read",
+  "pkm.read",
   "world_model.write",
   "attr.{domain}.*",
   "attr.{domain}.{subintent}.*",
@@ -168,7 +168,7 @@ export const FAQ_ITEMS: DeveloperFaqItem[] = [
   {
     question: "Are scopes fixed?",
     answer:
-      "No. Scopes are discovered per user from the indexed world model. Always discover first, then request one of the returned scope strings.",
+      "No. Scopes are discovered per user from the indexed Personal Knowledge Model. Always discover first, then request one of the returned scope strings.",
   },
   {
     question: "Does developer login grant data access?",
@@ -213,7 +213,7 @@ export const DEVELOPER_SAMPLE_PAYLOADS: DeveloperSamplePayload[] = [
   "user_id": "kai_test_user",
   "available_domains": ["financial"],
   "scopes": [
-    "world_model.read",
+    "pkm.read",
     "attr.financial.*",
     "attr.financial.portfolio.*",
     "attr.financial.profile.*",

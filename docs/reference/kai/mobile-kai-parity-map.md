@@ -29,7 +29,7 @@ Route-level and feature-level parity contract for Kai on Web, iOS, and Android.
 
 | Area | Why Web-Only | Native Fallback / Equivalent |
 | --- | --- | --- |
-| `HushhDatabase` plugin | IndexedDB-oriented web storage abstraction | Native uses vault/world-model APIs and platform storage plugins |
+| `HushhDatabase` plugin | IndexedDB-oriented web storage abstraction | Native uses vault/PKM APIs and platform storage plugins |
 | Next.js API route files | App Router proxy layer exists only in web build | Native plugins call backend directly via shared service contract |
 
 ## Parity Verification Commands

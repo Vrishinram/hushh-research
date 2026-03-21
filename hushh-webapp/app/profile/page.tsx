@@ -7,6 +7,7 @@ import {
   Bug,
   Cloud,
   Code2,
+  Database,
   Fingerprint,
   Folder,
   KeyRound,
@@ -83,7 +84,10 @@ import {
   type VaultCapabilityMatrix,
   type VaultMethod,
 } from "@/lib/services/vault-method-service";
-import { WorldModelService, type DomainSummary } from "@/lib/services/world-model-service";
+import {
+  PersonalKnowledgeModelService,
+  type DomainSummary,
+} from "@/lib/services/personal-knowledge-model-service";
 import { useVault } from "@/lib/vault/vault-context";
 
 type ProfileTab = "account" | "preferences" | "privacy";
@@ -421,7 +425,7 @@ export default function ProfilePage() {
           return;
         }
 
-        const metadata = await WorldModelService.getMetadata(
+        const metadata = await PersonalKnowledgeModelService.getMetadata(
           user.uid,
           false,
           vaultOwnerToken || undefined
@@ -432,7 +436,7 @@ export default function ProfilePage() {
           completeStep();
         }
       } catch (error) {
-        console.error("Failed to load world model data:", error);
+        console.error("Failed to load PKM data:", error);
         if (!cancelled) completeStep();
       } finally {
         if (!cancelled) setLoadingDomains(false);
@@ -1001,6 +1005,20 @@ export default function ProfilePage() {
                 description="Bug reports, support, and direct product feedback."
                 chevron
                 onClick={() => updateProfileView({ tab: "account", panel: "support" })}
+              />
+              <SettingsRow
+                icon={Database}
+                title="PKM Viewer"
+                description="Browse your live Personal Knowledge Model domains, scopes, manifests, and decrypted first-party previews."
+                chevron
+                onClick={() => router.push("/profile/pkm")}
+              />
+              <SettingsRow
+                icon={Code2}
+                title="PKM Agent Lab"
+                description="Inspect structured Personal Knowledge Model routing and manifest drafts with your live vault context."
+                chevron
+                onClick={() => router.push("/profile/pkm-agent-lab")}
               />
             </SettingsGroup>
 

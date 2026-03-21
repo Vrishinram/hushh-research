@@ -1,6 +1,6 @@
 import type { PortfolioData } from "@/lib/cache/cache-context";
 import { CacheService, CACHE_KEYS, CACHE_TTL } from "@/lib/services/cache-service";
-import type { WorldModelMetadata } from "@/lib/services/world-model-service";
+import type { WorldModelMetadata } from "@/lib/services/personal-knowledge-model-service";
 import { removeSessionItemsByPrefix } from "@/lib/utils/session-storage";
 
 type DomainSummaryPatch = Record<string, unknown>;
@@ -35,19 +35,53 @@ function deriveAttributeCount(
 }
 
 function sanitizeDomainSummary(summary: DomainSummaryPatch): Record<string, unknown> {
-  const blocked = new Set(["holdings", "vault_key", "password"]);
+  const blocked = new Set([
+    "holdings",
+    "vault_key",
+    "password",
+    "risk_profile",
+    "risk_bucket",
+    "risk_score",
+    "recent_decisions",
+    "analysis_recent_decisions",
+    "analysis_decisions",
+    "decisions",
+    "portfolio_total_value",
+    "total_value",
+  ]);
   const sanitized: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(summary)) {
-    if (key.toLowerCase() === "total_value") {
+    const normalized = key.toLowerCase();
+    if (blocked.has(normalized)) continue;
+    if (
+      ["attribute_count", "holdings_count", "item_count", "path_count", "externalizable_path_count", "manifest_version", "top_level_scope_count"].includes(
+        normalized
+      )
+    ) {
       const parsed = toNumber(value);
       if (parsed !== null) {
-        sanitized.portfolio_total_value = parsed;
+        sanitized[normalized] = parsed;
       }
       continue;
     }
-    if (blocked.has(key.toLowerCase())) continue;
-    sanitized[key] = value;
+    if (
+      typeof value === "boolean" &&
+      (normalized.startsWith("has_") ||
+        normalized.endsWith("_enabled") ||
+        normalized.endsWith("_available"))
+    ) {
+      sanitized[normalized] = value;
+      continue;
+    }
+    if (
+      typeof value === "string" &&
+      ["last_structured_at", "last_content_at", "storage_mode", "domain_contract_version"].includes(
+        normalized
+      )
+    ) {
+      sanitized[normalized] = value;
+    }
   }
 
   return sanitized;
@@ -169,12 +203,12 @@ export class CacheSyncService {
     }
 
     if (options?.encryptedBlob) {
-      cache.set(CACHE_KEYS.WORLD_MODEL_BLOB(userId), options.encryptedBlob, CACHE_TTL.SESSION);
       cache.set(
         CACHE_KEYS.ENCRYPTED_DOMAIN_BLOB(userId, domain),
         options.encryptedBlob,
         CACHE_TTL.SESSION
       );
+      cache.invalidate(CACHE_KEYS.WORLD_MODEL_BLOB(userId));
     } else {
       cache.invalidate(CACHE_KEYS.ENCRYPTED_DOMAIN_BLOB(userId, domain));
       cache.invalidate(CACHE_KEYS.WORLD_MODEL_BLOB(userId));
@@ -301,6 +335,13 @@ export class CacheSyncService {
     if (ticker) {
       cache.invalidate(CACHE_KEYS.STOCK_CONTEXT(userId, ticker.toUpperCase()));
     }
+  }
+
+  static getAnalysisHistorySnapshot(
+    userId: string
+  ): Record<string, unknown[]> | null {
+    const cache = CacheService.getInstance();
+    return cache.get<Record<string, unknown[]>>(CACHE_KEYS.ANALYSIS_HISTORY(userId)) ?? null;
   }
 
   static onAnalysisHistoryStored(

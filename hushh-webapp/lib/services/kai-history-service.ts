@@ -1,7 +1,7 @@
 /**
  * Kai Analysis History Service
  *
- * Manages analysis history within the encrypted world model blob.
+ * Manages analysis history within the encrypted PKM financial domain.
  * Uses FIFO strategy: max 3 analyses per ticker, newest first.
  *
  * Canonical storage path:
@@ -18,9 +18,8 @@
  * }
  */
 
-import { WorldModelService } from "./world-model-service";
+import { WorldModelService } from "./personal-knowledge-model-service";
 import { CacheSyncService } from "@/lib/cache/cache-sync-service";
-import { CacheService, CACHE_KEYS, CACHE_TTL } from "@/lib/services/cache-service";
 
 
 const MAX_HISTORY_PER_TICKER = 3;
@@ -379,6 +378,9 @@ export class KaiHistoryService {
       // Invalidate caches after successful save
       if (result.success) {
         CacheSyncService.onAnalysisHistoryStored(userId, historyMap, entry.ticker);
+        CacheSyncService.onAnalysisHistoryMutated(userId, entry.ticker, {
+          preserveHistoryCache: true,
+        });
       }
 
       return result.success;
@@ -416,10 +418,7 @@ export class KaiHistoryService {
     vaultOwnerToken?: string;
   }): Promise<AnalysisHistoryMap> {
     const { userId, vaultKey, vaultOwnerToken } = params;
-    const cache = CacheService.getInstance();
-    const cacheKey = CACHE_KEYS.ANALYSIS_HISTORY(userId);
-
-    const cached = cache.get<AnalysisHistoryMap>(cacheKey);
+    const cached = CacheSyncService.getAnalysisHistorySnapshot(userId);
     if (cached) {
       return sanitizeHistoryMap(cached as unknown as Record<string, unknown>);
     }
@@ -431,7 +430,7 @@ export class KaiHistoryService {
         vaultOwnerToken,
       });
       const historyMap = extractHistoryMap(fullBlob);
-      cache.set(cacheKey, historyMap, CACHE_TTL.SESSION);
+      CacheSyncService.onAnalysisHistoryStored(userId, historyMap);
       return historyMap;
     } catch (error) {
       console.error("[KaiHistory] Failed to get history:", error);
@@ -530,6 +529,9 @@ export class KaiHistoryService {
 
       if (result.success) {
         CacheSyncService.onAnalysisHistoryStored(userId, historyMap, tickerKey);
+        CacheSyncService.onAnalysisHistoryMutated(userId, tickerKey, {
+          preserveHistoryCache: true,
+        });
       }
 
       return result.success;
@@ -582,6 +584,9 @@ export class KaiHistoryService {
 
       if (result.success) {
         CacheSyncService.onAnalysisHistoryStored(userId, historyMap, tickerKey);
+        CacheSyncService.onAnalysisHistoryMutated(userId, tickerKey, {
+          preserveHistoryCache: true,
+        });
       }
 
       return result.success;

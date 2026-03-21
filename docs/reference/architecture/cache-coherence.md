@@ -14,8 +14,8 @@ Source files:
 ## Key Taxonomy
 
 Fixed user keys:
-- `world_model_metadata_${userId}`
-- `world_model_blob_${userId}`
+- PKM metadata cache key for the user
+- PKM encrypted blob cache key for the user
 - `vault_status_${userId}`
 - `vault_check_${userId}`
 - `active_consents_${userId}`
@@ -41,8 +41,8 @@ Backend Kai market cache tiers (generalized modules):
 
 ## Mutation -> Cache Sync Matrix
 
-- World model store domain: `CacheSyncService.onWorldModelDomainStored(...)`
-- World model clear domain: `CacheSyncService.onWorldModelDomainCleared(...)`
+- PKM store domain: `CacheSyncService.onWorldModelDomainStored(...)`
+- PKM clear domain: `CacheSyncService.onWorldModelDomainCleared(...)`
 - Portfolio upsert/save: `CacheSyncService.onPortfolioUpserted(...)`
 - Vault setup/check state changes: `CacheSyncService.onVaultStateChanged(...)`
 - Consent approve/deny/revoke: `CacheSyncService.onConsentMutated(...)`
@@ -61,10 +61,10 @@ Backend Kai market cache tiers (generalized modules):
 Do:
 - Centralize invalidation/write-through in `CacheSyncService`.
 - Write through encrypted blob keys when CRUD payloads already include ciphertext.
-- Patch cached world-model metadata in-place when safe summary fields are provided.
+- Patch cached PKM metadata in-place when safe summary fields are provided.
 - Keep `CacheContext` as state mirror only.
 - Use `invalidateUser(userId)` when purging a full user session.
-- Keep domain blob + metadata reconciliation aligned with world-model index semantics.
+- Keep domain blob + metadata reconciliation aligned with PKM index semantics.
 
 Don't:
 - Add ad-hoc `CacheService.getInstance().invalidate(...)` calls in mutation flows.

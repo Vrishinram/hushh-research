@@ -58,7 +58,7 @@ function assertNotContains(relPath, snippets) {
 
 function checkRequiredCoordinatorUsage() {
   const required = [
-    ["lib/services/world-model-service.ts", ["CacheSyncService.onWorldModelDomainStored", "CacheSyncService.onWorldModelDomainCleared"]],
+    ["lib/services/personal-knowledge-model-service.ts", ["CacheSyncService.onWorldModelDomainStored", "CacheSyncService.onWorldModelDomainCleared"]],
     ["lib/services/vault-service.ts", ["CacheSyncService.onVaultStateChanged"]],
     ["lib/services/kai-history-service.ts", ["CacheSyncService.onAnalysisHistoryMutated"]],
     ["lib/consent/use-consent-actions.ts", ["CacheSyncService.onConsentMutated"]],
@@ -108,7 +108,7 @@ function checkBypassPatterns() {
 function checkMutationServiceHints() {
   // Best-effort hard checks: these service files include mutation calls and must include CacheSyncService.
   const serviceFiles = [
-    "lib/services/world-model-service.ts",
+    "lib/services/personal-knowledge-model-service.ts",
     "lib/services/vault-service.ts",
     "lib/services/kai-history-service.ts",
   ];
