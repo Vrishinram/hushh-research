@@ -43,6 +43,8 @@ IAM_MIGRATION_FILES = (
     "022_ria_invites.sql",
     "027_relationship_disconnect_status.sql",
     "028_professional_regulatory_capabilities.sql",
+    "029_kai_gmail_receipts.sql",
+    "033_kai_gmail_receipts_checksum_index_relax.sql",
 )
 WORLD_MODEL_MIGRATION_FILES = (
     "030_pkm_cutover.sql",
@@ -797,6 +799,9 @@ async def run_full_migration(pool: asyncpg.Pool):
         "consent_audit",
         "user_push_tokens",
         "internal_access_events",
+        "kai_gmail_connections",
+        "kai_gmail_sync_runs",
+        "kai_gmail_receipts",
         "world_model_data",
         "world_model_index_v2",
         "domain_registry",
@@ -849,7 +854,10 @@ async def run_full_migration(pool: asyncpg.Pool):
     await create_kai_market_cache_entries(pool)
     print("[14/14] Creating developer registry (public MCP beta auth)...")
     await create_developer_registry(pool)
-    print("[15/15] Applying world model evolution migrations...")
+    print("[15/16] Applying IAM + Gmail schema migrations...")
+    await run_iam_migration(pool)
+
+    print("[16/16] Applying world model evolution migrations...")
     await run_world_model_migration(pool)
 
     print("\n✅ Full migration complete!")
@@ -942,7 +950,10 @@ async def run_init_migration(pool: asyncpg.Pool):
     await create_kai_market_cache_entries(pool)
     print("[14/14] Creating developer registry (public MCP beta auth)...")
     await create_developer_registry(pool)
-    print("[15/15] Applying world model evolution migrations...")
+    print("[15/16] Applying IAM + Gmail schema migrations...")
+    await run_iam_migration(pool)
+
+    print("[16/16] Applying world model evolution migrations...")
     await run_world_model_migration(pool)
 
     print("\nAll tables initialized successfully!")
@@ -974,6 +985,9 @@ async def show_status(pool: asyncpg.Pool):
         "consent_audit",
         "user_push_tokens",
         "internal_access_events",
+        "kai_gmail_connections",
+        "kai_gmail_sync_runs",
+        "kai_gmail_receipts",
         "world_model_data",
         "world_model_index_v2",
         "domain_registry",
