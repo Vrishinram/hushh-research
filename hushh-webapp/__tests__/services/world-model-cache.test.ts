@@ -130,7 +130,7 @@ describe("World model cache behavior", () => {
     });
 
     expect(cache.get(CACHE_KEYS.PORTFOLIO_DATA(userId))).toBeTruthy();
-    expect(cache.get(CACHE_KEYS.WORLD_MODEL_BLOB(userId))).toBeTruthy();
+    expect(cache.get(CACHE_KEYS.WORLD_MODEL_BLOB(userId))).toBeNull();
     expect(cache.get(CACHE_KEYS.ENCRYPTED_DOMAIN_BLOB(userId, "financial"))).toBeTruthy();
     expect(cache.get(CACHE_KEYS.WORLD_MODEL_METADATA(userId))).toBeTruthy();
 

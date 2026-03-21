@@ -16,7 +16,7 @@ No broad cross-domain wildcard scopes are allowed by default.
 
 | Template ID | Actor Direction | Scope Set | Default Duration |
 | --- | --- | --- | --- |
-| `ria_financial_summary_v1` | RIA -> Investor | `attr.financial.*`, `world_model.read` | `7d` |
+| `ria_financial_summary_v1` | RIA -> Investor | `attr.financial.*`, `pkm.read` | `7d` |
 | `ria_risk_profile_v1` | RIA -> Investor | `attr.financial.risk.*`, `attr.professional.*` | `7d` |
 | `investor_advisor_disclosure_v1` | Investor -> RIA | `attr.ria.disclosures.*`, `attr.ria.strategy.*` | `7d` |
 

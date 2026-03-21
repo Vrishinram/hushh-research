@@ -19,7 +19,7 @@ Core invariants:
 1. BYOK: user-private payloads stay encrypted client-side.
 2. Consent-first: data access is token-gated and audited.
 3. Tri-flow: web, iOS, and Android stay contract-aligned.
-4. Canonical private data plane: world-model data remains the user-private storage boundary.
+4. Canonical private data plane: PKM remains the user-private storage boundary.
 
 ---
 
@@ -45,7 +45,7 @@ All live routers are registered in `consent-protocol/server.py`.
 | `investors` | `/api/investors` | investor discovery/profile surface |
 | `tickers` | `/api/tickers` | ticker search and holdings sync helpers |
 | `identity` | compatibility identity endpoints | compatibility shims for identity flows |
-| `world_model` | `/api/world-model` | store-domain, data, domain-data, metadata, scopes, context |
+| `pkm` | `/api/pkm` | store-domain, data, domain-data, metadata, scopes, context |
 | `account` | `/api/account` | account deletion and management |
 | `iam` | `/api/iam` | IAM actor and policy surface |
 | `ria` | `/api/ria` | advisor onboarding and workspace flows |
@@ -58,19 +58,19 @@ Not currently registered:
 - no live `/api/sync` router
 - no `api/routes/kai/preferences.py` module
 
-### World-Model Runtime Surface
+### PKM Runtime Surface
 
-The backend router is the authoritative world-model contract. Current supported path families include:
+The backend router is the authoritative PKM contract. Current supported path families include:
 
-- `POST /api/world-model/store-domain`
-- `GET /api/world-model/data/{user_id}`
-- `GET|DELETE /api/world-model/domain-data/{user_id}/{domain}`
-- `POST /api/world-model/reconcile/{user_id}`
-- `DELETE /api/world-model/attributes/{user_id}/{domain}/{attribute_key}` returning legacy-removal behavior
-- `GET /api/world-model/metadata/{user_id}`
-- `GET /api/world-model/domain-registry`
-- `GET /api/world-model/scopes/{user_id}`
-- `POST /api/world-model/get-context`
+- `POST /api/pkm/store-domain`
+- `GET /api/pkm/data/{user_id}`
+- `GET|DELETE /api/pkm/domain-data/{user_id}/{domain}`
+- `POST /api/pkm/reconcile/{user_id}`
+- `DELETE /api/pkm/attributes/{user_id}/{domain}/{attribute_key}` returning legacy-removal behavior
+- `GET /api/pkm/metadata/{user_id}`
+- `GET /api/pkm/domain-registry`
+- `GET /api/pkm/scopes/{user_id}`
+- `POST /api/pkm/get-context`
 
 Removed legacy read surfaces such as `/index`, `/attributes`, `/domains`, `/portfolio`, and `/portfolios` are not part of the supported contract.
 
@@ -84,7 +84,7 @@ FastAPI route -> service -> DatabaseClient / external adapter -> PostgreSQL or r
 
 Representative services:
 
-- `WorldModelService`
+- `PersonalKnowledgeModelService`
 - `ConsentDBService`
 - `ChatDBService`
 - `UniverseListService`
@@ -118,7 +118,7 @@ consent-protocol/
       session.py
       sse.py
       tickers.py
-      world_model.py
+      pkm.py
       kai/
         __init__.py
         analyze.py

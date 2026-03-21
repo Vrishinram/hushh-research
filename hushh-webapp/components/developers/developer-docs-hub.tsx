@@ -1136,7 +1136,7 @@ export function DeveloperDocsHub({ initialOrigin = null }: { initialOrigin?: str
                 <PageHeader
                   eyebrow="Developer Hub"
                   title="Build consent-aware Kai integrations with dynamic scopes"
-                  description="Use MCP or the API to discover user-specific scopes from the world model, request consent inside Kai, and read only the approved slice through one scalable contract."
+                  description="Use MCP or the API to discover user-specific scopes from the Personal Knowledge Model, request consent inside Kai, and read only the approved slice through one scalable contract."
                   icon={Code2}
                   accent="sky"
                   actions={
@@ -1351,8 +1351,8 @@ export function DeveloperDocsHub({ initialOrigin = null }: { initialOrigin?: str
               header={
                 <SectionHeader
                   eyebrow="Dynamic Scopes"
-                  title="Scopes are discovered from the user’s indexed world model"
-                  description="The public grammar is fixed, but the user-specific scope strings are generated from the indexed world model and the domain registry."
+                  title="Scopes are discovered from the user’s indexed PKM"
+                  description="The public grammar is fixed, but the user-specific scope strings are generated from the indexed Personal Knowledge Model and the domain registry."
                   icon={ScanSearch}
                   accent="violet"
                   actions={
@@ -1679,7 +1679,7 @@ export function DeveloperDocsHub({ initialOrigin = null }: { initialOrigin?: str
                 <p className="text-sm font-semibold text-foreground">Quick checks</p>
                 <p className="text-sm leading-6 text-muted-foreground">
                   If remote MCP fails, confirm the developer token is active, the environment URL
-                  matches the page you are using, and the user has a populated indexed world model.
+                  matches the page you are using, and the user has a populated indexed PKM.
                 </p>
                 <p className="text-sm leading-6 text-muted-foreground">
                   If a scope request fails, discover the user’s scopes again instead of retrying a

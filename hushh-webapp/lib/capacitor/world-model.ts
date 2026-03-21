@@ -59,8 +59,19 @@ export interface HushhWorldModelPlugin {
       iv: string;
       tag: string;
       algorithm?: string;
+      segments?: Record<
+        string,
+        {
+          ciphertext: string;
+          iv: string;
+          tag: string;
+          algorithm?: string;
+        }
+      >;
     };
     summary: Record<string, unknown>;
+    structureDecision?: Record<string, unknown>;
+    manifest?: Record<string, unknown>;
     vaultOwnerToken?: string;
   }): Promise<{ success: boolean }>;
 
@@ -74,7 +85,21 @@ export interface HushhWorldModelPlugin {
       iv: string;
       tag: string;
       algorithm?: string;
+      segments?: Record<
+        string,
+        {
+          ciphertext: string;
+          iv: string;
+          tag: string;
+          algorithm?: string;
+        }
+      >;
     };
+    storage_mode?: string;
+    data_version?: number;
+    updated_at?: string;
+    manifest_revision?: number;
+    segment_ids?: string[];
   }>;
 
   clearDomain(options: {

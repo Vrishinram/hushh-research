@@ -572,7 +572,7 @@ export default function RiaWorkspacePage() {
                 ) : (
                   <p className="text-sm leading-6 text-muted-foreground">
                     The readable workspace summary will appear here after the investor approves an
-                    active scope bundle and the world model is indexed.
+                    active scope bundle and the Personal Knowledge Model is indexed.
                   </p>
                 )}
               </RiaSurface>

@@ -21,7 +21,7 @@ Use this lightweight checklist instead of expanding automated test coverage.
 3. Confirm stage timeline streams and holdings preview increments.
 4. Confirm no stream reset when vault is created/unlocked mid-import.
 
-## 2) World Model Integrity
+## 2) PKM Integrity
 1. Run:
    - manual spot-check via Kai dashboard and `/api/world-model/metadata/{user_id}` in the API docs or local API client
 2. Confirm:

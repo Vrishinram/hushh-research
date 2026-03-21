@@ -19,8 +19,19 @@ interface StoreDomainRequest {
     iv: string;
     tag: string;
     algorithm?: string;
+    segments?: Record<
+      string,
+      {
+        ciphertext: string;
+        iv: string;
+        tag: string;
+        algorithm?: string;
+      }
+    >;
   };
   summary: Record<string, unknown>;
+  structure_decision?: Record<string, unknown>;
+  manifest?: Record<string, unknown>;
   expected_data_version?: number;
 }
 
@@ -50,7 +61,7 @@ export async function POST(request: NextRequest) {
     // Forward to backend
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8001";
     const backendResponse = await fetch(
-      `${backendUrl}/api/world-model/store-domain`,
+      `${backendUrl}/api/pkm/store-domain`,
       {
         method: "POST",
         headers: {

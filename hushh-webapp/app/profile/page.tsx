@@ -1002,6 +1002,13 @@ export default function ProfilePage() {
                 chevron
                 onClick={() => updateProfileView({ tab: "account", panel: "support" })}
               />
+              <SettingsRow
+                icon={Code2}
+                title="PKM Agent Lab"
+                description="Inspect structured Personal Knowledge Model routing and manifest drafts with your live vault context."
+                chevron
+                onClick={() => router.push("/profile/pkm-agent-lab")}
+              />
             </SettingsGroup>
 
             <SettingsGroup eyebrow="Session">
