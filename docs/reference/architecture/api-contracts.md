@@ -251,7 +251,7 @@ Security invariant:
 | DELETE | `/api/pkm/attributes/{uid}/{domain}/{key}` | Client-side BYOK operation |
 | POST | `/api/kai/decision/store` | `POST /api/pkm/store-domain` with domain=`financial` |
 | GET | `/api/kai/decision/{id}` | `GET /api/kai/decisions/{user_id}` |
-| DELETE | `/api/kai/decision/{id}` | `POST /api/world-model/store-domain` with domain=`financial` |
+| DELETE | `/api/kai/decision/{id}` | `POST /api/pkm/store-domain` with domain=`financial` |
 | `*` | `/api/identity/*` | Removed from app surface; compatibility stubs return `410` |
 
 ---
@@ -388,7 +388,7 @@ attr.{domain}.{subintent}.{attribute}
 
 Scope strings are dynamic. Do not hardcode domain keys. Discover user-available scopes via:
 
-- `GET /api/world-model/scopes/{user_id}`
+- `GET /api/pkm/scopes/{user_id}`
 - `GET /api/v1/user-scopes/{user_id}?token=<developer-token>`
 - `discover_user_domains(user_id)` in MCP
 

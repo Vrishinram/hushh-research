@@ -14,9 +14,9 @@ import { useCallback, useRef } from "react";
 import { toast } from "sonner";
 import { useVault } from "@/lib/vault/vault-context";
 import { ApiService } from "@/lib/services/api-service";
-import { WorldModelService } from "@/lib/services/world-model-service";
+import { WorldModelService } from "@/lib/services/personal-knowledge-model-service";
 import { CacheSyncService } from "@/lib/cache/cache-sync-service";
-import { projectDomainDataForScope } from "@/lib/world-model/manifest";
+import { projectDomainDataForScope } from "@/lib/personal-knowledge-model/manifest";
 
 // ============================================================================
 // Types

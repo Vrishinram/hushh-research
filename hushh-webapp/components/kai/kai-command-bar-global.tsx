@@ -13,7 +13,7 @@ import { morphyToast as toast } from "@/lib/morphy-ux/morphy";
 import { ROUTES } from "@/lib/navigation/routes";
 import { useVault } from "@/lib/vault/vault-context";
 import { getKaiChromeState } from "@/lib/navigation/kai-chrome-state";
-import { WorldModelService } from "@/lib/services/world-model-service";
+import { WorldModelService } from "@/lib/services/personal-knowledge-model-service";
 import { ApiService, type KaiStockPreviewResponse } from "@/lib/services/api-service";
 import { getKaiActivePickSource } from "@/lib/kai/pick-source-selection";
 

@@ -27,7 +27,7 @@ Optional, depending on the work you need to do:
 
 - Frontend: Next.js 16 + React 19 + Capacitor
 - Backend: FastAPI on Python 3.13
-- Storage: Postgres with encrypted world-model blob/index separation
+- Storage: Postgres with encrypted PKM blob/index separation
 - Auth: Firebase
 - Runtime profiles:
   - `local-uatdb`: local frontend + local backend, backed by UAT resources

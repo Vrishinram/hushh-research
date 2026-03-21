@@ -43,4 +43,4 @@ Package-specific test setup lives with the package documentation:
 
 - Use `./scripts/test-ci-local.sh` before opening a PR when a change spans multiple surfaces.
 - If you touch API routes or plugin contracts, run `cd hushh-webapp && npm run verify:routes`.
-- If you touch encryption, consent, or world-model behavior, prefer adding or updating backend tests under `consent-protocol/tests/` and relevant frontend service tests under `hushh-webapp/__tests__/services/`.
+- If you touch encryption, consent, or PKM behavior, prefer adding or updating backend tests under `consent-protocol/tests/` and relevant frontend service tests under `hushh-webapp/__tests__/services/`.

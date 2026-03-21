@@ -35,7 +35,7 @@ import { AppBackgroundTaskService } from "@/lib/services/app-background-task-ser
 import { PlaidPortfolioService } from "@/lib/kai/brokerage/plaid-portfolio-service";
 import { CacheSyncService } from "@/lib/cache/cache-sync-service";
 import { UnlockWarmOrchestrator } from "@/lib/services/unlock-warm-orchestrator";
-import { WorldModelService } from "@/lib/services/world-model-service";
+import { WorldModelService } from "@/lib/services/personal-knowledge-model-service";
 
 interface UsePortfolioSourcesParams {
   userId: string | null | undefined;

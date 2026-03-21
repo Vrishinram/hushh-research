@@ -1,18 +1,18 @@
-// hushh-webapp/lib/services/world-model-service.ts
+// hushh-webapp/lib/services/personal-knowledge-model-service.ts
 /**
- * World Model Service - Frontend service for world model operations.
+ * Personal Knowledge Model service for PKM operations.
  *
  * Provides platform-aware methods for:
- * - Fetching user metadata
+ * - Fetching PKM metadata
  * - Storing encrypted domain data blobs (BYOK)
  * - Scope validation
  *
- * Tri-Flow Compliant: Uses HushhWorldModel plugin on native, ApiService.apiFetch() on web.
- * 
+ * Tri-Flow compliant: uses HushhWorldModel on native and ApiService.apiFetch() on web.
+ *
  * IMPORTANT: This service MUST NOT use direct fetch("/api/...") calls.
  * All web requests go through ApiService.apiFetch() for consistent auth handling.
- * 
- * Caching: Uses CacheService for in-memory caching with TTL to reduce API calls.
+ *
+ * Caching: uses CacheService for in-memory caching with TTL to reduce API calls.
  */
 
 import { Capacitor } from "@capacitor/core";
@@ -24,7 +24,7 @@ import { CacheService, CACHE_KEYS, CACHE_TTL } from "./cache-service";
 import {
   buildWorldModelStructureArtifacts,
   type DomainManifest,
-} from "@/lib/world-model/manifest";
+} from "@/lib/personal-knowledge-model/manifest";
 
 // ==================== Types ====================
 
@@ -1437,6 +1437,132 @@ export class WorldModelService {
   }
 
   /**
+   * Persist a prepared PKM domain using caller-provided structure artifacts.
+   * This is used by tools like PKM Agent Lab so the saved backend shape matches
+   * the previewed domain, manifest, and scope plan exactly.
+   */
+  static async storePreparedDomain(params: {
+    userId: string;
+    vaultKey: string;
+    domain: string;
+    domainData: Record<string, unknown>;
+    summary: Record<string, unknown>;
+    structureDecision?: Record<string, unknown>;
+    manifest?: DomainManifest | null;
+    expectedDataVersion?: number;
+    vaultOwnerToken?: string;
+  }): Promise<{
+    success: boolean;
+    conflict?: boolean;
+    message?: string;
+    dataVersion?: number;
+    updatedAt?: string;
+    fullBlob: Record<string, unknown>;
+  }> {
+    const baseFullBlob = await this.loadFullBlob({
+      userId: params.userId,
+      vaultKey: params.vaultKey,
+      vaultOwnerToken: params.vaultOwnerToken,
+    }).catch(() => ({} as Record<string, unknown>));
+
+    return this.storePreparedDomainWithPreparedBlob({
+      ...params,
+      baseFullBlob,
+    });
+  }
+
+  static async storePreparedDomainWithPreparedBlob(params: {
+    userId: string;
+    vaultKey: string;
+    domain: string;
+    domainData: Record<string, unknown>;
+    summary: Record<string, unknown>;
+    baseFullBlob: Record<string, unknown>;
+    structureDecision?: Record<string, unknown>;
+    manifest?: DomainManifest | null;
+    expectedDataVersion?: number;
+    vaultOwnerToken?: string;
+  }): Promise<{
+    success: boolean;
+    conflict?: boolean;
+    message?: string;
+    dataVersion?: number;
+    updatedAt?: string;
+    fullBlob: Record<string, unknown>;
+  }> {
+    const previousManifest = await this.getDomainManifest(
+      params.userId,
+      params.domain,
+      params.vaultOwnerToken
+    ).catch(() => null);
+    const merged = await this.mergeAndEncryptPreparedBlob({
+      baseFullBlob: params.baseFullBlob,
+      vaultKey: params.vaultKey,
+      domain: params.domain,
+      domainData: params.domainData,
+    });
+    const fallbackArtifacts = buildWorldModelStructureArtifacts({
+      domain: params.domain,
+      domainData: params.domainData,
+      previousManifest,
+    });
+    const manifest = params.manifest || fallbackArtifacts.manifest;
+    const structureDecision = params.structureDecision || fallbackArtifacts.structureDecision;
+
+    const summaryWithIntent = {
+      domain_intent: params.domain,
+      ...params.summary,
+      ...(manifest?.summary_projection || {}),
+    };
+    const portfolioData = this.resolvePortfolioDataForDomain({
+      domain: params.domain,
+      domainData: params.domainData,
+    });
+
+    const result = await this.storeDomainData({
+      userId: params.userId,
+      domain: params.domain,
+      encryptedBlob: merged.encryptedBlob,
+      summary: summaryWithIntent,
+      structureDecision,
+      manifest,
+      portfolioData,
+      expectedDataVersion: params.expectedDataVersion,
+      vaultOwnerToken: params.vaultOwnerToken,
+    });
+
+    if (result.success && params.domain === "financial") {
+      void this.maybeSyncTickersFromFinancialBlob({
+        userId: params.userId,
+        fullBlob: merged.fullBlob,
+        vaultOwnerToken: params.vaultOwnerToken,
+      });
+    }
+
+    if (result.success) {
+      const encryptedBlobForCache: EncryptedUserBlob = {
+        ...merged.encryptedBlob,
+        dataVersion: result.dataVersion,
+        updatedAt: result.updatedAt,
+      };
+      this.cacheDecryptedBlob({
+        userId: params.userId,
+        marker: this.buildCompositeBlobMarker([encryptedBlobForCache]),
+        fullBlob: merged.fullBlob,
+      });
+    }
+
+    return {
+      success: result.success,
+      conflict: result.conflict,
+      message: result.message,
+      dataVersion: result.dataVersion,
+      updatedAt: result.updatedAt,
+      fullBlob: merged.fullBlob,
+    };
+  }
+
+  /**
    * Get encrypted domain data blob for decryption on client.
    * This retrieves the encrypted blob stored via storeDomainData().
    * 
@@ -1667,5 +1793,5 @@ export class WorldModelService {
 
 export const PersonalKnowledgeModelService = WorldModelService;
 
-// Export default instance for convenience
-export default WorldModelService;
+// WorldModelService remains as a compatibility alias during the PKM cutover.
+export default PersonalKnowledgeModelService;

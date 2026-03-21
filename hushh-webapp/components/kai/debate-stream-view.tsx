@@ -22,7 +22,7 @@ import { CACHE_KEYS, CacheService } from "@/lib/services/cache-service";
 import type { KaiStreamEnvelope } from "@/lib/streaming/kai-stream-types";
 import { useKaiSession } from "@/lib/stores/kai-session-store";
 import { KaiProfileService } from "@/lib/services/kai-profile-service";
-import { WorldModelService } from "@/lib/services/world-model-service";
+import { WorldModelService } from "@/lib/services/personal-knowledge-model-service";
 import { cn } from "@/lib/utils";
 import { toInvestorMessage, toInvestorStreamText } from "@/lib/copy/investor-language";
 import type { PortfolioSource } from "@/lib/kai/brokerage/portfolio-sources";

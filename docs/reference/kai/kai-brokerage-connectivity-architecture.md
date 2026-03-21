@@ -55,7 +55,7 @@ Kai exposes three portfolio views:
 
 ## Persistence Model
 
-### Editable world-model contract
+### Editable PKM contract
 
 - `financial.sources.statement`
 - `financial.sources.plaid`

@@ -557,7 +557,7 @@ function useKaiMarketHomeController() {
   } = useVault();
 
   const [payload, setPayload] = useState<KaiHomeInsightsV2 | null>(null);
-  const [loadingInitial, setLoadingInitial] = useState(true);
+  const [_loadingInitial, setLoadingInitial] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activePickSource, setActivePickSource] = useState("default");
@@ -965,7 +965,6 @@ function useKaiMarketHomeController() {
 
   return {
     payload,
-    loadingInitial,
     refreshing,
     error,
     activePickSource,
@@ -977,7 +976,6 @@ function useKaiMarketHomeController() {
 export function KaiMarketPreviewView() {
   const {
     payload,
-    loadingInitial,
     refreshing,
     error,
     activePickSource,
@@ -986,7 +984,6 @@ export function KaiMarketPreviewView() {
   } = useKaiMarketHomeController();
 
   const hasPayload = Boolean(payload);
-  const showRefreshPlaceholder = refreshing && hasPayload;
   const overviewMetrics = useMemo(() => toOverviewMetrics(payload), [payload]);
   const marketStatus = useMemo(() => marketStatusBadge(payload), [payload]);
   const themeItems = useMemo(() => toThemeItems(payload), [payload]);
@@ -1057,20 +1054,6 @@ export function KaiMarketPreviewView() {
 
       <AppPageContentRegion>
         <SurfaceStack>
-      {loadingInitial && !hasPayload ? (
-        <SurfaceCard tone="warning">
-          <SurfaceCardContent className="space-y-3 text-left">
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              <p className="text-sm font-semibold">Loading market snapshot...</p>
-            </div>
-            <p className="text-xs leading-5 text-muted-foreground">
-              Restoring the latest available market cache while live data catches up.
-            </p>
-          </SurfaceCardContent>
-        </SurfaceCard>
-      ) : null}
-
       {error ? (
         <SurfaceCard tone="critical">
           <SurfaceCardContent className="space-y-3 text-left">
@@ -1093,20 +1076,7 @@ export function KaiMarketPreviewView() {
         </SurfaceCard>
       ) : null}
 
-      {showRefreshPlaceholder ? (
-        <SurfaceCard tone="warning">
-          <SurfaceCardContent className="space-y-3 text-left">
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              <p className="text-sm font-semibold">Refreshing market snapshot...</p>
-            </div>
-            <p className="text-xs leading-5 text-muted-foreground">
-              Kai is replacing the previous market cards with a fresh snapshot before showing the
-              next view.
-            </p>
-          </SurfaceCardContent>
-        </SurfaceCard>
-      ) : (
+      {hasPayload ? (
         <>
           <section className="space-y-4">
             <SectionHeader
@@ -1246,7 +1216,7 @@ export function KaiMarketPreviewView() {
             </section>
           ) : null}
         </>
-      )}
+      ) : null}
         </SurfaceStack>
       </AppPageContentRegion>
     </AppPageShell>

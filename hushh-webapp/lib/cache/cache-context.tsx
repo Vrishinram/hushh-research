@@ -23,7 +23,7 @@ import {
   useMemo,
 } from "react";
 import { CacheService, CACHE_KEYS, CACHE_TTL } from "@/lib/services/cache-service";
-import type { WorldModelMetadata } from "@/lib/services/world-model-service";
+import type { WorldModelMetadata } from "@/lib/services/personal-knowledge-model-service";
 
 // ==================== Types ====================
 

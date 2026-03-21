@@ -11,11 +11,15 @@ from pathlib import Path
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
-CHECK_DIRS = [
-    ROOT / "consent-protocol" / "docs",
-    ROOT / "docs",
-    ROOT / "hushh-webapp" / "docs",
-]
+SKIP_PARTS = {
+    ".git",
+    ".next",
+    "node_modules",
+    "dist",
+    "build",
+    "coverage",
+    "temp",
+}
 ALLOWLIST = {
     ROOT / "docs" / "reference" / "architecture" / "pkm-cutover-runbook.md",
 }
@@ -23,15 +27,14 @@ ALLOWLIST = {
 
 def main() -> int:
     failures: list[str] = []
-    for directory in CHECK_DIRS:
-        if not directory.exists():
+    for path in ROOT.rglob("*.md"):
+        if any(part in SKIP_PARTS for part in path.parts):
             continue
-        for path in directory.rglob("*.md"):
-            if path in ALLOWLIST:
-                continue
-            text = path.read_text(encoding="utf-8")
-            if "world model" in text.lower():
-                failures.append(str(path.relative_to(ROOT)))
+        if path in ALLOWLIST:
+            continue
+        text = path.read_text(encoding="utf-8")
+        if "world model" in text.lower():
+            failures.append(str(path.relative_to(ROOT)))
 
     if failures:
         print("Found stale 'world model' references in docs:")

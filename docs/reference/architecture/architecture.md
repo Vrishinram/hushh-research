@@ -253,10 +253,10 @@ hushh-webapp/
 Runtime data is split into:
 
 - relational operational state in PostgreSQL
-- encrypted user-private payloads in the world-model data plane
+- encrypted user-private payloads in the PKM data plane
 - public/shared marketplace, IAM, and system-curated datasets in relational tables
 
-The world-model boundary is the only supported private data plane for investor and RIA user-owned content.
+The PKM boundary is the only supported private data plane for investor and RIA user-owned content.
 
 ---
 
@@ -266,5 +266,5 @@ The world-model boundary is the only supported private data plane for investor a
 - route governance: [route-contracts.md](./route-contracts.md)
 - DB/runtime fact sheet: [runtime-db-fact-sheet.md](./runtime-db-fact-sheet.md)
 - env and secrets contract: [../operations/env-and-secrets.md](../operations/env-and-secrets.md)
-- backend world-model reference: [../../../consent-protocol/docs/reference/world-model.md](../../../consent-protocol/docs/reference/world-model.md)
+- backend PKM reference: [../../../consent-protocol/docs/reference/personal-knowledge-model.md](../../../consent-protocol/docs/reference/personal-knowledge-model.md)
 - backend consent reference: [../../../consent-protocol/docs/reference/consent-protocol.md](../../../consent-protocol/docs/reference/consent-protocol.md)

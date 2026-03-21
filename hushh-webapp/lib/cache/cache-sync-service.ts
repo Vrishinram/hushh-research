@@ -1,6 +1,6 @@
 import type { PortfolioData } from "@/lib/cache/cache-context";
 import { CacheService, CACHE_KEYS, CACHE_TTL } from "@/lib/services/cache-service";
-import type { WorldModelMetadata } from "@/lib/services/world-model-service";
+import type { WorldModelMetadata } from "@/lib/services/personal-knowledge-model-service";
 import { removeSessionItemsByPrefix } from "@/lib/utils/session-storage";
 
 type DomainSummaryPatch = Record<string, unknown>;
@@ -335,6 +335,13 @@ export class CacheSyncService {
     if (ticker) {
       cache.invalidate(CACHE_KEYS.STOCK_CONTEXT(userId, ticker.toUpperCase()));
     }
+  }
+
+  static getAnalysisHistorySnapshot(
+    userId: string
+  ): Record<string, unknown[]> | null {
+    const cache = CacheService.getInstance();
+    return cache.get<Record<string, unknown[]>>(CACHE_KEYS.ANALYSIS_HISTORY(userId)) ?? null;
   }
 
   static onAnalysisHistoryStored(

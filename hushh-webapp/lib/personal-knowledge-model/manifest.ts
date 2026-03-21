@@ -123,7 +123,7 @@ function walkValue(
       consent_label: titleizePath(pathKey),
       sensitivity_label: sensitivityLabel,
       segment_id: path[0] || "root",
-      source_agent: "world_model_structure_agent",
+      source_agent: "pkm_structure_agent",
     });
   }
 
@@ -207,7 +207,7 @@ export function buildWorldModelStructureArtifacts(params: {
     summary_projection: summaryProjection,
     sensitivity_labels: sensitivityLabels,
     confidence: 1,
-    source_agent: "world_model_structure_agent",
+    source_agent: "pkm_structure_agent",
     contract_version: 1,
   };
 

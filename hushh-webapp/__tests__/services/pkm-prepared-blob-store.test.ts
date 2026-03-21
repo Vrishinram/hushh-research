@@ -23,9 +23,9 @@ vi.mock("@/lib/firebase/config", () => ({
   resetRecaptcha: vi.fn(),
 }));
 
-import { WorldModelService } from "@/lib/services/world-model-service";
+import { WorldModelService } from "@/lib/services/personal-knowledge-model-service";
 
-describe("WorldModelService.storeMergedDomainWithPreparedBlob", () => {
+describe("PersonalKnowledgeModelService.storeMergedDomainWithPreparedBlob", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     encryptDataMock.mockResolvedValue({
@@ -59,7 +59,7 @@ describe("WorldModelService.storeMergedDomainWithPreparedBlob", () => {
       food: { favorite: "sushi" },
     });
     expect(loadSpy).not.toHaveBeenCalled();
-    expect(encryptDataMock).toHaveBeenCalledTimes(1);
+    expect(encryptDataMock).toHaveBeenCalledTimes(2);
     expect(storeSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: "user-1",

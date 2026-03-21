@@ -51,7 +51,7 @@ import {
 import { Button } from "@/lib/morphy-ux/button";
 import { format } from "date-fns";
 import { HushhLoader } from "@/components/app-ui/hushh-loader";
-import { WorldModelService } from "@/lib/services/world-model-service";
+import { WorldModelService } from "@/lib/services/personal-knowledge-model-service";
 import { CacheService, CACHE_KEYS } from "@/lib/services/cache-service";
 import { mapPortfolioToDashboardViewModel } from "@/components/kai/views/dashboard-data-mapper";
 import type { PortfolioData } from "@/components/kai/types/portfolio";
