@@ -12,18 +12,13 @@ import {
   Vault,
 } from "lucide-react";
 
-import {
-  AppPageContentRegion,
-  AppPageHeaderRegion,
-  AppPageShell,
-} from "@/components/app-ui/app-page-shell";
-import { PageHeader, SectionHeader } from "@/components/app-ui/page-sections";
+import { SectionHeader } from "@/components/app-ui/page-sections";
 import {
   SurfaceCard,
   SurfaceCardContent,
   SurfaceInset,
-  SurfaceStack,
 } from "@/components/app-ui/surfaces";
+import { PkmSettingsShell } from "@/components/profile/pkm-settings-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/lib/morphy-ux/morphy";
 import { useAuth } from "@/hooks/use-auth";
@@ -235,278 +230,266 @@ export default function PkmViewerPage() {
   }
 
   return (
-    <AppPageShell>
-      <AppPageHeaderRegion>
-        <PageHeader
-          eyebrow="Profile / Personal Knowledge Model"
-          title="PKM Viewer"
-          description="Inspect your current domains, manifests, scope registry, encrypted segment layout, and first-party decrypted payload preview."
-          actions={
-            <Button
-              variant="none"
-              effect="fade"
-              onClick={() => void handleRefresh()}
-              disabled={!user || !isVaultUnlocked || bootstrapLoading}
-            >
-              {bootstrapLoading ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="mr-2 h-4 w-4" />
-              )}
-              Refresh
-            </Button>
-          }
-        />
-      </AppPageHeaderRegion>
+    <PkmSettingsShell
+      activePage="viewer"
+      title="PKM Viewer"
+      description="Inspect your current domains, manifests, scope registry, encrypted segment layout, and first-party decrypted payload preview."
+      actions={
+        <Button
+          variant="none"
+          effect="fade"
+          onClick={() => void handleRefresh()}
+          disabled={!user || !isVaultUnlocked || bootstrapLoading}
+        >
+          {bootstrapLoading ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <RefreshCw className="mr-2 h-4 w-4" />
+          )}
+          Refresh
+        </Button>
+      }
+    >
+      <SurfaceInset className="space-y-3 px-4 py-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="secondary">{user ? "Signed in" : "Signed out"}</Badge>
+          <Badge variant="secondary">{isVaultUnlocked ? "Vault unlocked" : "Vault locked"}</Badge>
+          <Badge variant="secondary">
+            {metadata ? `${metadata.domains.length} domains` : "No PKM loaded"}
+          </Badge>
+          {metadata ? <Badge variant="secondary">{metadata.totalAttributes} attributes</Badge> : null}
+          {scopeDiscovery ? <Badge variant="secondary">{scopeDiscovery.allScopes.length} scopes</Badge> : null}
+        </div>
+        {!user ? (
+          <div className="flex items-center gap-2 text-sm text-amber-700">
+            <ShieldAlert className="h-4 w-4" />
+            Sign in first to inspect your PKM.
+          </div>
+        ) : null}
+        {user && !isVaultUnlocked ? (
+          <div className="flex items-center gap-2 text-sm text-amber-700">
+            <Vault className="h-4 w-4" />
+            Unlock your vault from Profile before loading PKM data.
+          </div>
+        ) : null}
+        {bootstrapError ? (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-3 text-sm text-red-700">
+            {bootstrapError}
+          </div>
+        ) : null}
+      </SurfaceInset>
 
-      <AppPageContentRegion>
-        <SurfaceStack>
-          <SurfaceInset className="space-y-3 px-4 py-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="secondary">{user ? "Signed in" : "Signed out"}</Badge>
-              <Badge variant="secondary">{isVaultUnlocked ? "Vault unlocked" : "Vault locked"}</Badge>
-              <Badge variant="secondary">
-                {metadata ? `${metadata.domains.length} domains` : "No PKM loaded"}
-              </Badge>
-              {metadata ? (
-                <Badge variant="secondary">{metadata.totalAttributes} attributes</Badge>
-              ) : null}
-              {scopeDiscovery ? (
-                <Badge variant="secondary">{scopeDiscovery.allScopes.length} scopes</Badge>
-              ) : null}
+      <div className="grid gap-4 xl:grid-cols-[300px_minmax(0,1fr)]">
+        <SurfaceInset className="space-y-4 px-4 py-4">
+          <SectionHeader
+            eyebrow="Domains"
+            title="Current PKM domains"
+            description="Select a domain to inspect how it is stored and exposed."
+            icon={FolderTree}
+            accent="sky"
+          />
+          {metadata?.domains.length ? (
+            <div className="space-y-3">
+              {metadata.domains.map((domain) => {
+                const isActive = selectedDomain === domain.key;
+                return (
+                  <button
+                    key={domain.key}
+                    type="button"
+                    className={`w-full rounded-2xl border px-4 py-3 text-left transition ${
+                      isActive
+                        ? "border-sky-400 bg-sky-50/80"
+                        : "border-border bg-background hover:bg-muted/40"
+                    }`}
+                    onClick={() => setSelectedDomain(domain.key)}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold">{domain.displayName}</p>
+                        <p className="text-xs text-muted-foreground">{domain.key}</p>
+                      </div>
+                      <Badge variant="secondary">{domain.attributeCount}</Badge>
+                    </div>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Updated {formatTimestamp(domain.lastUpdated)}
+                    </p>
+                  </button>
+                );
+              })}
             </div>
-            {!user ? (
-              <div className="flex items-center gap-2 text-sm text-amber-700">
-                <ShieldAlert className="h-4 w-4" />
-                Sign in first to inspect your PKM.
+          ) : (
+            <SurfaceCard tone="warning">
+              <SurfaceCardContent className="text-sm text-muted-foreground">
+                No PKM domains are available yet for this account.
+              </SurfaceCardContent>
+            </SurfaceCard>
+          )}
+        </SurfaceInset>
+
+        <div className="space-y-4">
+          <SurfaceInset className="space-y-4 px-4 py-4">
+            <SectionHeader
+              eyebrow="Overview"
+              title={selectedSummary?.displayName || "Select a domain"}
+              description="Backend organization, segment layout, and scope exposure for the selected PKM domain."
+              icon={Database}
+              accent="violet"
+            />
+            {selectedSummary ? (
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <SurfaceCard>
+                  <SurfaceCardContent className="space-y-1">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Last updated</p>
+                    <p className="text-sm font-semibold">{formatTimestamp(selectedSummary.lastUpdated)}</p>
+                  </SurfaceCardContent>
+                </SurfaceCard>
+                <SurfaceCard>
+                  <SurfaceCardContent className="space-y-1">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Storage mode</p>
+                    <p className="text-sm font-semibold">
+                      {domainState.encrypted?.storageMode || "domain"}
+                    </p>
+                  </SurfaceCardContent>
+                </SurfaceCard>
+                <SurfaceCard>
+                  <SurfaceCardContent className="space-y-1">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Data version</p>
+                    <p className="text-sm font-semibold">
+                      {domainState.encrypted?.dataVersion ?? "Unavailable"}
+                    </p>
+                  </SurfaceCardContent>
+                </SurfaceCard>
+                <SurfaceCard>
+                  <SurfaceCardContent className="space-y-1">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Manifest version</p>
+                    <p className="text-sm font-semibold">
+                      {domainState.manifest?.manifest_version ?? "Unavailable"}
+                    </p>
+                  </SurfaceCardContent>
+                </SurfaceCard>
               </div>
-            ) : null}
-            {user && !isVaultUnlocked ? (
-              <div className="flex items-center gap-2 text-sm text-amber-700">
-                <Vault className="h-4 w-4" />
-                Unlock your vault from Profile before loading PKM data.
-              </div>
-            ) : null}
-            {bootstrapError ? (
+            ) : (
+              <SurfaceCard tone="warning">
+                <SurfaceCardContent className="text-sm text-muted-foreground">
+                  Choose a domain from the left to inspect it.
+                </SurfaceCardContent>
+              </SurfaceCard>
+            )}
+            {domainState.error ? (
               <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-3 text-sm text-red-700">
-                {bootstrapError}
+                {domainState.error}
               </div>
             ) : null}
           </SurfaceInset>
 
-          <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
-            <SurfaceInset className="space-y-4 px-4 py-4">
-              <SectionHeader
-                eyebrow="Domains"
-                title="Current PKM domains"
-                description="Select a domain to inspect how it is stored and exposed."
-                icon={FolderTree}
-                accent="sky"
-              />
-              {metadata?.domains.length ? (
-                <div className="space-y-3">
-                  {metadata.domains.map((domain) => {
-                    const isActive = selectedDomain === domain.key;
-                    return (
-                      <button
-                        key={domain.key}
-                        type="button"
-                        className={`w-full rounded-2xl border px-4 py-3 text-left transition ${
-                          isActive
-                            ? "border-sky-400 bg-sky-50/80"
-                            : "border-border bg-background hover:bg-muted/40"
-                        }`}
-                        onClick={() => setSelectedDomain(domain.key)}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-semibold">{domain.displayName}</p>
-                            <p className="text-xs text-muted-foreground">{domain.key}</p>
-                          </div>
-                          <Badge variant="secondary">{domain.attributeCount}</Badge>
-                        </div>
-                        <p className="mt-2 text-xs text-muted-foreground">
-                          Updated {formatTimestamp(domain.lastUpdated)}
-                        </p>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <SurfaceCard tone="warning">
-                  <SurfaceCardContent className="text-sm text-muted-foreground">
-                    No PKM domains are available yet for this account.
-                  </SurfaceCardContent>
-                </SurfaceCard>
-              )}
-            </SurfaceInset>
-
-            <SurfaceStack compact>
+          {selectedSummary ? (
+            <>
               <SurfaceInset className="space-y-4 px-4 py-4">
                 <SectionHeader
-                  eyebrow="Overview"
-                  title={selectedSummary?.displayName || "Select a domain"}
-                  description="Backend organization, segment layout, and scope exposure for the selected PKM domain."
-                  icon={Database}
-                  accent="violet"
+                  eyebrow="Segments"
+                  title="Encrypted segment layout"
+                  description="These are the segment ids used to organize encrypted PKM storage for this domain."
+                  icon={KeyRound}
+                  accent="emerald"
                 />
-                {selectedSummary ? (
-                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                    <SurfaceCard>
-                      <SurfaceCardContent className="space-y-1">
-                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Last updated</p>
-                        <p className="text-sm font-semibold">{formatTimestamp(selectedSummary.lastUpdated)}</p>
-                      </SurfaceCardContent>
-                    </SurfaceCard>
-                    <SurfaceCard>
-                      <SurfaceCardContent className="space-y-1">
-                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Storage mode</p>
-                        <p className="text-sm font-semibold">
-                          {domainState.encrypted?.storageMode || "domain"}
-                        </p>
-                      </SurfaceCardContent>
-                    </SurfaceCard>
-                    <SurfaceCard>
-                      <SurfaceCardContent className="space-y-1">
-                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Data version</p>
-                        <p className="text-sm font-semibold">
-                          {domainState.encrypted?.dataVersion ?? "Unavailable"}
-                        </p>
-                      </SurfaceCardContent>
-                    </SurfaceCard>
-                    <SurfaceCard>
-                      <SurfaceCardContent className="space-y-1">
-                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Manifest version</p>
-                        <p className="text-sm font-semibold">
-                          {domainState.manifest?.manifest_version ?? "Unavailable"}
-                        </p>
-                      </SurfaceCardContent>
-                    </SurfaceCard>
+                <div className="flex flex-wrap gap-2">
+                  {(domainState.encrypted?.segmentIds || domainState.manifest?.segment_ids || ["root"]).map(
+                    (segmentId) => (
+                      <Badge key={segmentId} variant="secondary">
+                        {segmentId}
+                      </Badge>
+                    )
+                  )}
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Ciphertext is stored in `pkm_blobs`, while manifest and scope exposure live in
+                  `pkm_manifests`, `pkm_manifest_paths`, and `pkm_scope_registry`.
+                </p>
+              </SurfaceInset>
+
+              <SurfaceInset className="space-y-4 px-4 py-4">
+                <SectionHeader
+                  eyebrow="Scopes"
+                  title="Scope registry"
+                  description="These are the scope handles that map the domain into shareable PKM access boundaries."
+                  icon={FolderTree}
+                  accent="amber"
+                />
+                {selectedScopeEntries.length ? (
+                  <div className="space-y-3">
+                    {selectedScopeEntries.map((scope) => (
+                      <div key={scope.scope_handle} className="rounded-2xl border p-4">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant="secondary">{scope.scope_label}</Badge>
+                          <Badge variant="outline">{scope.scope_handle}</Badge>
+                          {(scope.segment_ids || []).map((segmentId) => (
+                            <Badge key={segmentId} variant="secondary">
+                              {segmentId}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 ) : (
                   <SurfaceCard tone="warning">
                     <SurfaceCardContent className="text-sm text-muted-foreground">
-                      Choose a domain from the left to inspect it.
+                      No scope registry entries are available for this domain yet.
                     </SurfaceCardContent>
                   </SurfaceCard>
                 )}
-                {domainState.error ? (
-                  <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-3 text-sm text-red-700">
-                    {domainState.error}
-                  </div>
-                ) : null}
               </SurfaceInset>
 
-              {selectedSummary ? (
-                <>
-                  <SurfaceInset className="space-y-4 px-4 py-4">
-                    <SectionHeader
-                      eyebrow="Segments"
-                      title="Encrypted segment layout"
-                      description="These are the segment ids used to organize encrypted PKM storage for this domain."
-                      icon={KeyRound}
-                      accent="emerald"
-                    />
-                    <div className="flex flex-wrap gap-2">
-                      {(domainState.encrypted?.segmentIds || domainState.manifest?.segment_ids || ["root"]).map(
-                        (segmentId) => (
-                          <Badge key={segmentId} variant="secondary">
-                            {segmentId}
-                          </Badge>
-                        )
-                      )}
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      Ciphertext is stored in `pkm_blobs`, while manifest and scope exposure live in
-                      `pkm_manifests`, `pkm_manifest_paths`, and `pkm_scope_registry`.
-                    </p>
-                  </SurfaceInset>
-
-                  <SurfaceInset className="space-y-4 px-4 py-4">
-                    <SectionHeader
-                      eyebrow="Scopes"
-                      title="Scope registry"
-                      description="These are the scope handles that map the domain into shareable PKM access boundaries."
-                      icon={FolderTree}
-                      accent="amber"
-                    />
-                    {selectedScopeEntries.length ? (
-                      <div className="space-y-3">
-                        {selectedScopeEntries.map((scope) => (
-                          <div key={scope.scope_handle} className="rounded-2xl border p-4">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <Badge variant="secondary">{scope.scope_label}</Badge>
-                              <Badge variant="outline">{scope.scope_handle}</Badge>
-                              {(scope.segment_ids || []).map((segmentId) => (
-                                <Badge key={segmentId} variant="secondary">
-                                  {segmentId}
-                                </Badge>
-                              ))}
-                            </div>
-                          </div>
-                        ))}
+              <SurfaceInset className="space-y-4 px-4 py-4">
+                <SectionHeader
+                  eyebrow="Manifest"
+                  title="Manifest paths"
+                  description="The internal PKM path map that connects structure, sensitivity, and segment placement."
+                  icon={FileJson}
+                  accent="rose"
+                />
+                <div className="max-h-[360px] space-y-2 overflow-auto rounded-2xl border p-3">
+                  {selectedPaths.length ? (
+                    selectedPaths.map((path) => (
+                      <div key={path.json_path} className="rounded-xl border bg-muted/20 px-3 py-2 text-sm">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-medium">{path.json_path}</span>
+                          <Badge variant="outline">{path.path_type}</Badge>
+                          <Badge variant="secondary">{path.segment_id || "root"}</Badge>
+                          {path.sensitivity_label ? (
+                            <Badge variant="secondary">{path.sensitivity_label}</Badge>
+                          ) : null}
+                        </div>
                       </div>
-                    ) : (
-                      <SurfaceCard tone="warning">
-                        <SurfaceCardContent className="text-sm text-muted-foreground">
-                          No scope registry entries are available for this domain yet.
-                        </SurfaceCardContent>
-                      </SurfaceCard>
-                    )}
-                  </SurfaceInset>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No manifest paths available.</p>
+                  )}
+                </div>
+              </SurfaceInset>
 
-                  <SurfaceInset className="space-y-4 px-4 py-4">
-                    <SectionHeader
-                      eyebrow="Manifest"
-                      title="Manifest paths"
-                      description="The internal PKM path map that connects structure, sensitivity, and segment placement."
-                      icon={FileJson}
-                      accent="rose"
-                    />
-                    <div className="max-h-[360px] space-y-2 overflow-auto rounded-2xl border p-3">
-                      {selectedPaths.length ? (
-                        selectedPaths.map((path) => (
-                          <div key={path.json_path} className="rounded-xl border bg-muted/20 px-3 py-2 text-sm">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="font-medium">{path.json_path}</span>
-                              <Badge variant="outline">{path.path_type}</Badge>
-                              <Badge variant="secondary">{path.segment_id || "root"}</Badge>
-                              {path.sensitivity_label ? (
-                                <Badge variant="secondary">{path.sensitivity_label}</Badge>
-                              ) : null}
-                            </div>
-                          </div>
-                        ))
-                      ) : (
-                        <p className="text-sm text-muted-foreground">No manifest paths available.</p>
-                      )}
-                    </div>
-                  </SurfaceInset>
-
-                  <SurfaceInset className="space-y-4 px-4 py-4">
-                    <SectionHeader
-                      eyebrow="Decrypted preview"
-                      title="First-party payload preview"
-                      description="This is your decrypted domain payload after vault unlock. It is not exposed publicly."
-                      icon={FileJson}
-                      accent="sky"
-                    />
-                    {domainState.loading ? (
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Loading domain payload...
-                      </div>
-                    ) : null}
-                    <pre className="overflow-x-auto rounded-2xl border bg-muted/30 p-4 text-xs leading-6">
-                      {prettyJson(domainState.decrypted)}
-                    </pre>
-                  </SurfaceInset>
-                </>
-              ) : null}
-            </SurfaceStack>
-          </div>
-        </SurfaceStack>
-      </AppPageContentRegion>
-    </AppPageShell>
+              <SurfaceInset className="space-y-4 px-4 py-4">
+                <SectionHeader
+                  eyebrow="Decrypted preview"
+                  title="First-party payload preview"
+                  description="This is your decrypted domain payload after vault unlock. It is not exposed publicly."
+                  icon={FileJson}
+                  accent="sky"
+                />
+                {domainState.loading ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading domain payload...
+                  </div>
+                ) : null}
+                <pre className="overflow-x-auto rounded-2xl border bg-muted/30 p-4 text-xs leading-6">
+                  {prettyJson(domainState.decrypted)}
+                </pre>
+              </SurfaceInset>
+            </>
+          ) : null}
+        </div>
+      </div>
+    </PkmSettingsShell>
   );
 }

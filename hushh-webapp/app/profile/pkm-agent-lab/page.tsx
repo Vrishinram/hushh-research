@@ -1,16 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Code2, Loader2, ShieldAlert, Vault } from "lucide-react";
+import { ChevronDown, ChevronUp, Code2, Loader2, ShieldAlert, Vault } from "lucide-react";
 import { useRouter } from "next/navigation";
 
-import {
-  AppPageContentRegion,
-  AppPageHeaderRegion,
-  AppPageShell,
-} from "@/components/app-ui/app-page-shell";
-import { PageHeader } from "@/components/app-ui/page-sections";
-import { SurfaceInset, SurfaceStack } from "@/components/app-ui/surfaces";
+import { SurfaceInset } from "@/components/app-ui/surfaces";
+import { PkmSettingsShell } from "@/components/profile/pkm-settings-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/lib/morphy-ux/morphy";
 import { Input } from "@/components/ui/input";
@@ -57,6 +52,7 @@ export default function PkmAgentLabPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [showDeveloperOverrides, setShowDeveloperOverrides] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -283,198 +279,215 @@ export default function PkmAgentLabPage() {
   }
 
   return (
-    <AppPageShell>
-      <AppPageHeaderRegion>
-        <PageHeader
-          eyebrow="Profile / Developer Tools"
-          title="PKM Agent Lab"
-          description="Use your live account, unlocked vault, and current domains to inspect deterministic PKM structure decisions, backend organization, and optional PKM writes."
-        />
-      </AppPageHeaderRegion>
+    <PkmSettingsShell
+      activePage="agent-lab"
+      title="PKM Agent Lab"
+      description="Use your live account, unlocked vault, and current domains to inspect deterministic PKM structure decisions, backend organization, and optional PKM writes."
+    >
+      <SurfaceInset className="space-y-3 px-4 py-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="secondary">{user ? "Signed in" : "Signed out"}</Badge>
+          <Badge variant="secondary">{isVaultUnlocked ? "Vault unlocked" : "Vault locked"}</Badge>
+          <Badge variant="secondary">
+            {access?.access_enabled ? "Developer access enabled" : "Developer access required"}
+          </Badge>
+          {currentDomains.length > 0 ? (
+            <Badge variant="secondary">{currentDomains.length} current domains</Badge>
+          ) : null}
+        </div>
+        {accessLoading ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading developer access and PKM metadata...
+          </div>
+        ) : null}
+        {!user ? (
+          <div className="flex items-center gap-2 text-sm text-amber-700">
+            <ShieldAlert className="h-4 w-4" />
+            Sign in first to use Agent Lab.
+          </div>
+        ) : null}
+        {user && !isVaultUnlocked ? (
+          <div className="flex items-center gap-2 text-sm text-amber-700">
+            <Vault className="h-4 w-4" />
+            Unlock your vault from Profile before previewing PKM structure.
+          </div>
+        ) : null}
+        {user && isVaultUnlocked && !access?.access_enabled ? (
+          <div className="flex items-center gap-2 text-sm text-amber-700">
+            <Code2 className="h-4 w-4" />
+            Developer access is required for this tool.
+          </div>
+        ) : null}
+      </SurfaceInset>
 
-      <AppPageContentRegion>
-        <SurfaceStack compact>
-          <SurfaceInset className="space-y-3 px-4 py-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="secondary">{user ? "Signed in" : "Signed out"}</Badge>
-              <Badge variant="secondary">{isVaultUnlocked ? "Vault unlocked" : "Vault locked"}</Badge>
-              <Badge variant="secondary">
-                {access?.access_enabled ? "Developer access enabled" : "Developer access required"}
-              </Badge>
-              {currentDomains.length > 0 ? (
-                <Badge variant="secondary">{currentDomains.length} current domains</Badge>
-              ) : null}
-            </div>
-            {accessLoading ? (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Loading developer access and PKM metadata...
-              </div>
-            ) : null}
-            {!user ? (
-              <div className="flex items-center gap-2 text-sm text-amber-700">
-                <ShieldAlert className="h-4 w-4" />
-                Sign in first to use Agent Lab.
-              </div>
-            ) : null}
-            {user && !isVaultUnlocked ? (
-              <div className="flex items-center gap-2 text-sm text-amber-700">
-                <Vault className="h-4 w-4" />
-                Unlock your vault from Profile before previewing PKM structure.
-              </div>
-            ) : null}
-            {user && isVaultUnlocked && !access?.access_enabled ? (
-              <div className="flex items-center gap-2 text-sm text-amber-700">
-                <Code2 className="h-4 w-4" />
-                Developer access is required for this tool.
-              </div>
-            ) : null}
-          </SurfaceInset>
+      <SurfaceInset className="space-y-4 px-4 py-4">
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Natural language prompt</label>
+          <Textarea
+            value={message}
+            onChange={(event) => setMessage(event.target.value)}
+            placeholder="Describe the memory or user preference you want Kai to structure."
+            className="min-h-28"
+          />
+          <p className="text-xs text-muted-foreground">
+            This is the real intent-capture input. The rest of this page is here to help us inspect
+            how the prompt maps into PKM storage.
+          </p>
+        </div>
 
-          <SurfaceInset className="space-y-4 px-4 py-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Natural language prompt</label>
-              <Textarea
-                value={message}
-                onChange={(event) => setMessage(event.target.value)}
-                placeholder="Describe the memory or user preference you want Kai to structure."
-                className="min-h-28"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Optional domain hint</label>
-              <Input
-                value={candidateDomain}
-                onChange={(event) => setCandidateDomain(event.target.value)}
-                placeholder="Optional developer override, for example travel or food"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Optional developer payload override</label>
-              <Textarea
-                value={candidateJson}
-                onChange={(event) => setCandidateJson(event.target.value)}
-                className="min-h-64 font-mono text-xs"
-                spellCheck={false}
-              />
-            </div>
-
-            <div className="flex flex-wrap gap-3">
-              <Button onClick={() => void handlePreview()} disabled={!canUseLab || submitting || saving}>
-                {submitting ? "Generating preview..." : "Preview PKM structure"}
-              </Button>
-              <Button
-                variant="none"
-                effect="fade"
-                onClick={() => void handleSaveToPkm()}
-                disabled={!canUseLab || !response || submitting || saving}
-              >
-                {saving ? "Saving to PKM..." : "Save to PKM"}
-              </Button>
-              <Button variant="none" effect="fade" onClick={() => router.push("/profile/pkm")}>
-                Open PKM Viewer
-              </Button>
-            </div>
-
-            {error ? (
-              <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-3 text-sm text-red-700">
-                {error}
-              </div>
-            ) : null}
-            {saveMessage ? (
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm text-emerald-700">
-                {saveMessage}
-              </div>
-            ) : null}
-          </SurfaceInset>
-
-          <SurfaceInset className="space-y-3 px-4 py-4">
+        <div className="rounded-2xl border bg-muted/20">
+          <button
+            type="button"
+            className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+            onClick={() => setShowDeveloperOverrides((current) => !current)}
+          >
             <div>
-              <h2 className="text-sm font-semibold">Backend organization</h2>
-              <p className="text-sm text-muted-foreground">
-                This shows how the preview would map into PKM storage on the backend.
+              <p className="text-sm font-semibold">Developer overrides</p>
+              <p className="text-xs text-muted-foreground">
+                Optional domain and payload hints for deterministic PKM debugging.
               </p>
             </div>
-            {backendOrganization ? (
-              <div className="space-y-3 rounded-2xl border bg-muted/30 p-4 text-sm">
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant="secondary">Domain: {backendOrganization.targetDomain}</Badge>
-                  <Badge variant="secondary">Action: {backendOrganization.action}</Badge>
-                  <Badge variant="secondary">
-                    Manifest v{backendOrganization.manifestVersion}
-                  </Badge>
-                </div>
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div>
-                    <p className="font-medium">Segments</p>
-                    <p className="text-muted-foreground">
-                      {backendOrganization.segmentIds.length > 0
-                        ? backendOrganization.segmentIds.join(", ")
-                        : "No explicit segments yet"}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="font-medium">Top-level scopes</p>
-                    <p className="text-muted-foreground">
-                      {backendOrganization.topLevelScopes.length > 0
-                        ? backendOrganization.topLevelScopes.join(", ")
-                        : "No scopes derived yet"}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="font-medium">Manifest paths</p>
-                    <p className="text-muted-foreground">{backendOrganization.pathCount}</p>
-                  </div>
-                  <div>
-                    <p className="font-medium">Scope registry entries</p>
-                    <p className="text-muted-foreground">{backendOrganization.scopeRegistryCount}</p>
-                  </div>
-                </div>
-                <div>
-                  <p className="font-medium">Backend tables touched on save</p>
-                  <p className="text-muted-foreground">
-                    pkm_blobs, pkm_manifests, pkm_manifest_paths, pkm_scope_registry, pkm_index,
-                    and pkm_events
-                  </p>
-                </div>
-                <div>
-                  <p className="font-medium">Externalizable paths</p>
-                  <p className="text-muted-foreground">
-                    {backendOrganization.externalizablePaths.length > 0
-                      ? backendOrganization.externalizablePaths.join(", ")
-                      : "No externalizable paths derived yet"}
-                  </p>
-                </div>
-              </div>
+            {showDeveloperOverrides ? (
+              <ChevronUp className="h-4 w-4 text-muted-foreground" />
             ) : (
-              <div className="rounded-2xl border bg-muted/30 p-4 text-sm text-muted-foreground">
-                Generate a preview to see the backend storage plan.
-              </div>
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
             )}
-          </SurfaceInset>
+          </button>
+          {showDeveloperOverrides ? (
+            <div className="space-y-4 border-t px-4 py-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Optional domain hint</label>
+                <Input
+                  value={candidateDomain}
+                  onChange={(event) => setCandidateDomain(event.target.value)}
+                  placeholder="Optional developer override, for example travel or food"
+                />
+              </div>
 
-          <SurfaceInset className="space-y-3 px-4 py-4">
-            <div className="flex items-center justify-between gap-3">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Optional developer payload override</label>
+                <Textarea
+                  value={candidateJson}
+                  onChange={(event) => setCandidateJson(event.target.value)}
+                  className="min-h-64 font-mono text-xs"
+                  spellCheck={false}
+                />
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="flex flex-wrap gap-3">
+          <Button onClick={() => void handlePreview()} disabled={!canUseLab || submitting || saving}>
+            {submitting ? "Generating preview..." : "Preview PKM structure"}
+          </Button>
+          <Button
+            variant="none"
+            effect="fade"
+            onClick={() => void handleSaveToPkm()}
+            disabled={!canUseLab || !response || submitting || saving}
+          >
+            {saving ? "Saving to PKM..." : "Save to PKM"}
+          </Button>
+          <Button variant="none" effect="fade" onClick={() => router.push("/profile/pkm")}>
+            Open PKM Viewer
+          </Button>
+        </div>
+
+        {error ? (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-3 text-sm text-red-700">
+            {error}
+          </div>
+        ) : null}
+        {saveMessage ? (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm text-emerald-700">
+            {saveMessage}
+          </div>
+        ) : null}
+      </SurfaceInset>
+
+      <SurfaceInset className="space-y-3 px-4 py-4">
+        <div>
+          <h2 className="text-sm font-semibold">Backend organization</h2>
+          <p className="text-sm text-muted-foreground">
+            This shows how the preview would map into PKM storage on the backend.
+          </p>
+        </div>
+        {backendOrganization ? (
+          <div className="space-y-3 rounded-2xl border bg-muted/30 p-4 text-sm">
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="secondary">Domain: {backendOrganization.targetDomain}</Badge>
+              <Badge variant="secondary">Action: {backendOrganization.action}</Badge>
+              <Badge variant="secondary">Manifest v{backendOrganization.manifestVersion}</Badge>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
               <div>
-                <h2 className="text-sm font-semibold">Structured output</h2>
-                <p className="text-sm text-muted-foreground">
-                  This is the exact payload returned by the PKM structure path.
+                <p className="font-medium">Segments</p>
+                <p className="text-muted-foreground">
+                  {backendOrganization.segmentIds.length > 0
+                    ? backendOrganization.segmentIds.join(", ")
+                    : "No explicit segments yet"}
                 </p>
               </div>
-              {response ? (
-                <Badge variant="secondary">
-                  {response.used_fallback ? "Deterministic fallback" : response.model}
-                </Badge>
-              ) : null}
+              <div>
+                <p className="font-medium">Top-level scopes</p>
+                <p className="text-muted-foreground">
+                  {backendOrganization.topLevelScopes.length > 0
+                    ? backendOrganization.topLevelScopes.join(", ")
+                    : "No scopes derived yet"}
+                </p>
+              </div>
+              <div>
+                <p className="font-medium">Manifest paths</p>
+                <p className="text-muted-foreground">{backendOrganization.pathCount}</p>
+              </div>
+              <div>
+                <p className="font-medium">Scope registry entries</p>
+                <p className="text-muted-foreground">{backendOrganization.scopeRegistryCount}</p>
+              </div>
             </div>
-            <pre className="overflow-x-auto rounded-2xl border bg-muted/40 p-4 text-xs leading-6">
-              {prettyResponse || "No preview generated yet."}
-            </pre>
-          </SurfaceInset>
-        </SurfaceStack>
-      </AppPageContentRegion>
-    </AppPageShell>
+            <div>
+              <p className="font-medium">Backend tables touched on save</p>
+              <p className="text-muted-foreground">
+                pkm_blobs, pkm_manifests, pkm_manifest_paths, pkm_scope_registry, pkm_index, and
+                pkm_events
+              </p>
+            </div>
+            <div>
+              <p className="font-medium">Externalizable paths</p>
+              <p className="text-muted-foreground">
+                {backendOrganization.externalizablePaths.length > 0
+                  ? backendOrganization.externalizablePaths.join(", ")
+                  : "No externalizable paths derived yet"}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-2xl border bg-muted/30 p-4 text-sm text-muted-foreground">
+            Generate a preview to see the backend storage plan.
+          </div>
+        )}
+      </SurfaceInset>
+
+      <SurfaceInset className="space-y-3 px-4 py-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold">Structured output</h2>
+            <p className="text-sm text-muted-foreground">
+              This is the exact payload returned by the PKM structure path.
+            </p>
+          </div>
+          {response ? (
+            <Badge variant="secondary">
+              {response.used_fallback ? "Deterministic fallback" : response.model}
+            </Badge>
+          ) : null}
+        </div>
+        <pre className="overflow-x-auto rounded-2xl border bg-muted/40 p-4 text-xs leading-6">
+          {prettyResponse || "No preview generated yet."}
+        </pre>
+      </SurfaceInset>
+    </PkmSettingsShell>
   );
 }
