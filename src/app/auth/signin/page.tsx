@@ -1,14 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { createClient } from "@/utils/supabase/client";
-import { useRouter } from "next/navigation";
 import { Shield } from "lucide-react";
 
 export default function SignIn() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const router = useRouter();
   const supabase = createClient();
 
   const handleSignIn = async (provider: "google" | "github") => {

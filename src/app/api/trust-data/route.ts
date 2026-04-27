@@ -1,6 +1,4 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/utils/supabase/server";
-import { PrismaClient } from "@prisma/client";
 
 // ─── Type Definitions ────────────────────────────────────────────────────────
 
@@ -149,7 +147,7 @@ const mockData: TrustDataResponse = {
       id: "perm-4",
       category: "Notifications",
       label: "Email Digest",
-      description: "Weekly digestof account activity and recommendations",
+      description: "Weekly digest of account activity and recommendations",
       state: "On",
       lastModified: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
     },
@@ -285,74 +283,19 @@ const mockData: TrustDataResponse = {
 };
 
 // ─── GET Handler ─────────────────────────────────────────────────────────────
-// Attempts to fetch data from database, falls back to mock data if unavailable
+// Returns mock trust data for the privacy dashboard.
+// In production, replace with actual database queries.
 
-async function fetchFromDatabase(userId: string): Promise<TrustDataResponse | null> {
+export async function GET(): Promise<NextResponse<TrustDataResponse | { error: string }>> {
   try {
-    const prisma = new PrismaClient();
-    
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      include: {
-        services: true,
-        permissions: true,
-        accessLogs: {
-          orderBy: { timestamp: "desc" },
-          take: 50,
-        },
-      },
-    });
+    // Simulate realistic latency
+    await new Promise((resolve) => setTimeout(resolve, 120));
 
-    if (!user) {
-      console.warn(`[trust-data] User not found in database: ${userId}`);
-      return null;
-    }
-
-    // Transform database data to API response format
-    return {
-      user: {
-        id: user.id,
-        email: user.email,
-        trustScore: user.trustScore,
-      },
-      connected_services: user.services.map((svc) => ({
-        id: svc.publicId,
-        name: svc.name,
-        icon: svc.icon,
-        status: svc.status as ServiceStatus,
-        connectedAt: svc.connectedAt.toISOString(),
-        scopes: svc.scopes,
-        lastSync: svc.lastSync?.toISOString() || svc.connectedAt.toISOString(),
-      })),
-      permissions: user.permissions.map((perm) => ({
-        id: perm.publicId,
-        category: perm.category,
-        label: perm.label,
-        description: perm.description,
-        state: perm.state as PermissionState,
-        lastModified: perm.lastModified.toISOString(),
-      })),
-      access_logs: user.accessLogs.map((log) => ({
-        id: log.publicId,
-        timestamp: log.timestamp.toISOString(),
-        service: log.service,
-        action: log.action,
-        resource: log.resource,
-        result: log.result as AccessResult,
-        ip: log.ip,
-      })),
-      metadata: {
-        generatedAt: new Date().toISOString(),
-        version: "1.0.0",
-      },
-    };
+    return NextResponse.json(mockData, { status: 200 });
   } catch (error) {
-    console.error("[trust-data] Database query failed:", error);
-    return null;
+    const message =
+      error instanceof Error ? error.message : "An unexpected error occurred";
+    console.error("[trust-data] GET failed:", message);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
-}
-
-export async function GET(): Promise<NextResponse<TrustDataResponse>> {
-  // Simply return mock data - always safe
-  return NextResponse.json(mockData, { status: 200 });
 }

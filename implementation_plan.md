@@ -22,10 +22,10 @@ graph LR
 
 ### API Route
 
-#### [NEW] [route.ts](file:///d:/hussh%20project/src/app/api/trust-data/route.ts)
+#### [NEW] [route.ts](./src/app/api/trust-data/route.ts)
 
-- **TypeScript Interfaces** — [ConnectedService](file:///d:/hussh%20project/src/app/api/trust-data/route.ts#13-22), [Permission](file:///d:/hussh%20project/src/app/api/trust-data/route.ts#23-31), [AccessLog](file:///d:/hussh%20project/src/app/api/trust-data/route.ts#32-41), [TrustDataResponse](file:///d:/hussh%20project/src/app/api/trust-data/route.ts#42-56)
-- **Union Types** — [ServiceStatus](file:///d:/hussh%20project/src/app/api/trust-data/route.ts#5-6), [PermissionState](file:///d:/hussh%20project/src/app/api/trust-data/route.ts#6-7), [AccessResult](file:///d:/hussh%20project/src/app/api/trust-data/route.ts#7-12) for strict typing
+- **TypeScript Interfaces** — `ConnectedService`, `Permission`, `AccessLog`, `TrustDataResponse`
+- **Union Types** — `ServiceStatus`, `PermissionState`, `AccessResult` for strict typing
 - **Mock Data** — Realistic dataset with 6 services, 8 permissions, 10 access logs
 - **GET Handler** — Returns `NextResponse.json()` with 120ms simulated latency
 - **Error Handling** — `try/catch` block returning `{ error: string }` with HTTP 500
@@ -34,13 +34,13 @@ graph LR
 
 ### Project Scaffolding
 
-#### [NEW] [package.json](file:///d:/hussh%20project/package.json)
+#### [NEW] [package.json](./package.json)
 - Next.js 15 + React 19 + TypeScript 5
 
-#### [NEW] [tsconfig.json](file:///d:/hussh%20project/tsconfig.json)
+#### [NEW] [tsconfig.json](./tsconfig.json)
 - Strict mode, bundler module resolution, `@/*` path alias
 
-#### [NEW] [next.config.ts](file:///d:/hussh%20project/next.config.ts)
+#### [NEW] [next.config.ts](./next.config.ts)
 - Minimal configuration placeholder
 
 ## Data Model

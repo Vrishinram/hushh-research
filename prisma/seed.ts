@@ -33,7 +33,7 @@ async function main() {
         userId: user.id,
         name: "Google Workspace",
         icon: "google",
-        status: "Active" as ServiceStatus,
+        status: ServiceStatus.Active,
         connectedAt: new Date("2025-11-02T09:15:00Z"),
         scopes: ["email.read", "calendar.readonly", "drive.readonly"],
         lastSync: new Date("2026-03-25T04:30:00Z"),
@@ -43,7 +43,7 @@ async function main() {
         userId: user.id,
         name: "Slack",
         icon: "slack",
-        status: "Active" as ServiceStatus,
+        status: ServiceStatus.Active,
         connectedAt: new Date("2025-12-18T14:22:00Z"),
         scopes: ["channels:read", "users:read", "chat:write"],
         lastSync: new Date("2026-03-25T05:00:00Z"),
@@ -53,7 +53,7 @@ async function main() {
         userId: user.id,
         name: "GitHub",
         icon: "github",
-        status: "Pending" as ServiceStatus,
+        status: ServiceStatus.Pending,
         connectedAt: new Date("2026-03-20T11:45:00Z"),
         scopes: ["repo", "read:org"],
         lastSync: null,
@@ -63,7 +63,7 @@ async function main() {
         userId: user.id,
         name: "Notion",
         icon: "notion",
-        status: "Revoked" as ServiceStatus,
+        status: ServiceStatus.Revoked,
         connectedAt: new Date("2025-08-10T08:00:00Z"),
         scopes: ["read_content", "update_content"],
         lastSync: new Date("2026-01-15T23:59:00Z"),
@@ -73,7 +73,7 @@ async function main() {
         userId: user.id,
         name: "Figma",
         icon: "figma",
-        status: "Active" as ServiceStatus,
+        status: ServiceStatus.Active,
         connectedAt: new Date("2026-01-05T16:30:00Z"),
         scopes: ["file:read", "file:write"],
         lastSync: new Date("2026-03-24T18:12:00Z"),
@@ -83,7 +83,7 @@ async function main() {
         userId: user.id,
         name: "Dropbox",
         icon: "dropbox",
-        status: "Pending" as ServiceStatus,
+        status: ServiceStatus.Pending,
         connectedAt: new Date("2026-03-22T10:00:00Z"),
         scopes: ["files.metadata.read", "files.content.read"],
         lastSync: null,
@@ -103,7 +103,7 @@ async function main() {
         label: "Share usage analytics",
         description:
           "Allow aggregated usage data to be shared with connected services for improved recommendations.",
-        state: "On" as PermissionState,
+        state: PermissionState.On,
         lastModified: new Date("2026-02-14T10:00:00Z"),
       },
       {
@@ -113,7 +113,7 @@ async function main() {
         label: "Third-party data enrichment",
         description:
           "Permit third-party providers to enrich your profile data for personalization.",
-        state: "Off" as PermissionState,
+        state: PermissionState.Off,
         lastModified: new Date("2026-01-20T08:30:00Z"),
       },
       {
@@ -123,7 +123,7 @@ async function main() {
         label: "Email notifications",
         description:
           "Receive email alerts for account activity, permission changes, and security events.",
-        state: "On" as PermissionState,
+        state: PermissionState.On,
         lastModified: new Date("2025-12-01T12:00:00Z"),
       },
       {
@@ -133,7 +133,7 @@ async function main() {
         label: "Push notifications",
         description:
           "Receive real-time push alerts on your devices for critical security events.",
-        state: "On" as PermissionState,
+        state: PermissionState.On,
         lastModified: new Date("2026-03-01T09:15:00Z"),
       },
       {
@@ -143,7 +143,7 @@ async function main() {
         label: "Biometric authentication",
         description:
           "Use fingerprint or face recognition as a second factor for sensitive actions.",
-        state: "Off" as PermissionState,
+        state: PermissionState.Off,
         lastModified: new Date("2026-02-28T17:45:00Z"),
       },
       {
@@ -153,7 +153,7 @@ async function main() {
         label: "Login from new devices",
         description:
           "Require additional verification when signing in from an unrecognised device.",
-        state: "On" as PermissionState,
+        state: PermissionState.On,
         lastModified: new Date("2026-03-10T14:00:00Z"),
       },
       {
@@ -163,7 +163,7 @@ async function main() {
         label: "Location tracking",
         description:
           "Allow services to access your approximate location for region-specific features.",
-        state: "Off" as PermissionState,
+        state: PermissionState.Off,
         lastModified: new Date("2026-03-18T11:30:00Z"),
       },
       {
@@ -173,7 +173,7 @@ async function main() {
         label: "Cookie consent — marketing",
         description:
           "Allow marketing-related cookies for personalised ads across connected services.",
-        state: "Off" as PermissionState,
+        state: PermissionState.Off,
         lastModified: new Date("2026-01-05T16:00:00Z"),
       },
     ],
@@ -191,7 +191,7 @@ async function main() {
         service: "Google Workspace",
         action: "READ",
         resource: "/api/emails/inbox",
-        result: "Authorized" as AccessResult,
+        result: AccessResult.Authorized,
         ip: "192.168.1.42",
       },
       {
@@ -201,7 +201,7 @@ async function main() {
         service: "Slack",
         action: "WRITE",
         resource: "/api/messages/send",
-        result: "Authorized" as AccessResult,
+        result: AccessResult.Authorized,
         ip: "192.168.1.42",
       },
       {
@@ -211,7 +211,7 @@ async function main() {
         service: "GitHub",
         action: "READ",
         resource: "/api/repos/private",
-        result: "BLOCKED_BY_CONSENT" as AccessResult,
+        result: AccessResult.BLOCKED_BY_CONSENT,
         ip: "10.0.0.15",
       },
       {
@@ -221,7 +221,7 @@ async function main() {
         service: "Notion",
         action: "READ",
         resource: "/api/pages/workspace",
-        result: "BLOCKED_BY_CONSENT" as AccessResult,
+        result: AccessResult.BLOCKED_BY_CONSENT,
         ip: "203.0.113.7",
       },
       {
@@ -231,7 +231,7 @@ async function main() {
         service: "Figma",
         action: "READ",
         resource: "/api/files/recent",
-        result: "Authorized" as AccessResult,
+        result: AccessResult.Authorized,
         ip: "192.168.1.42",
       },
       {
@@ -241,7 +241,7 @@ async function main() {
         service: "Google Workspace",
         action: "READ",
         resource: "/api/calendar/events",
-        result: "Authorized" as AccessResult,
+        result: AccessResult.Authorized,
         ip: "192.168.1.42",
       },
       {
@@ -251,7 +251,7 @@ async function main() {
         service: "Dropbox",
         action: "READ",
         resource: "/api/files/metadata",
-        result: "BLOCKED_BY_CONSENT" as AccessResult,
+        result: AccessResult.BLOCKED_BY_CONSENT,
         ip: "10.0.0.15",
       },
       {
@@ -261,7 +261,7 @@ async function main() {
         service: "Slack",
         action: "READ",
         resource: "/api/channels/list",
-        result: "Authorized" as AccessResult,
+        result: AccessResult.Authorized,
         ip: "192.168.1.42",
       },
       {
@@ -271,7 +271,7 @@ async function main() {
         service: "Unknown Client",
         action: "WRITE",
         resource: "/api/user/profile",
-        result: "Denied" as AccessResult,
+        result: AccessResult.Denied,
         ip: "45.33.32.156",
       },
       {
@@ -281,7 +281,7 @@ async function main() {
         service: "Google Workspace",
         action: "READ",
         resource: "/api/drive/files",
-        result: "Rate_Limited" as AccessResult,
+        result: AccessResult.Rate_Limited,
         ip: "192.168.1.42",
       },
     ],
