@@ -183,11 +183,19 @@ class KaiOrchestrator(HushhAgent):
             fundamental_task, sentiment_task, valuation_task, return_exceptions=True
         )
 
-        # Handle exceptions in tasks
+        # Handle exceptions in tasks - collect all failures and provide visibility
+        agent_names = ["fundamental", "sentiment", "valuation"]
+        exceptions = []
         for i, result in enumerate(results):
             if isinstance(result, Exception):
-                logger.error(f"[Kai] Agent {i} failed: {result}")
-                raise result
+                agent_name = agent_names[i] if i < len(agent_names) else f"agent_{i}"
+                logger.error(f"[Kai] {agent_name} agent failed: {result}")
+                exceptions.append((agent_name, result))
+
+        # If any agents failed, raise an aggregated exception with all failure details
+        if exceptions:
+            failure_summary = "; ".join([f"{name}: {str(exc)}" for name, exc in exceptions])
+            raise RuntimeError(f"Kai analysis failed: {failure_summary}")
 
         return results
 
