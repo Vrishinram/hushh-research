@@ -183,19 +183,26 @@ class KaiOrchestrator(HushhAgent):
             fundamental_task, sentiment_task, valuation_task, return_exceptions=True
         )
 
-        # Handle exceptions in tasks - collect all failures and provide visibility
+        # Fix #425, #430: Collect ALL agent failures with named identification
+        # so no exception is silently swallowed. The old code raised on the first
+        # exception, making subsequent agent failures invisible in logs.
         agent_names = ["fundamental", "sentiment", "valuation"]
         exceptions = []
         for i, result in enumerate(results):
             if isinstance(result, Exception):
                 agent_name = agent_names[i] if i < len(agent_names) else f"agent_{i}"
-                logger.error(f"[Kai] {agent_name} agent failed: {result}")
+                logger.error(
+                    "[Kai] %s agent failed: %s", agent_name, result, exc_info=result
+                )
                 exceptions.append((agent_name, result))
 
-        # If any agents failed, raise an aggregated exception with all failure details
+        # If any agents failed, preserve the original exception types and tracebacks
         if exceptions:
             failure_summary = "; ".join([f"{name}: {str(exc)}" for name, exc in exceptions])
-            raise RuntimeError(f"Kai analysis failed: {failure_summary}")
+            raise ExceptionGroup(
+                f"Kai analysis failed: {failure_summary}",
+                [exc for _, exc in exceptions],
+            )
 
         return results
 
