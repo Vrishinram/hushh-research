@@ -378,7 +378,7 @@ class ConsentDBService:
     # Pending Requests
     # =========================================================================
 
-    async def get_pending_requests(self, user_id: str) -> List[Dict]:
+    async def get_pending_requests(self, user_id: str) -> List[Dict[str, Any]]:
         """
         Get pending consent requests for a user.
         A request is pending if it has REQUESTED action with no resolution.
@@ -454,7 +454,7 @@ class ConsentDBService:
 
         return results
 
-    async def get_pending_by_request_id(self, user_id: str, request_id: str) -> Optional[Dict]:
+    async def get_pending_by_request_id(self, user_id: str, request_id: str) -> Optional[Dict[str, Any]]:
         """Get a specific pending request by request_id."""
         supabase = self._get_supabase()
 
@@ -636,7 +636,7 @@ class ConsentDBService:
         user_id: str,
         agent_id: Optional[str] = None,
         scope: Optional[str] = None,
-    ) -> List[Dict]:
+    ) -> List[Dict[str, Any]]:
         """
         Get active consent tokens for a user.
         Active = CONSENT_GRANTED with no subsequent REVOKED and not expired.
@@ -767,7 +767,7 @@ class ConsentDBService:
         user_id: str,
         agent_id: Optional[str] = None,
         scope: Optional[str] = None,
-    ) -> List[Dict]:
+    ) -> List[Dict[str, Any]]:
         """Get active internal/self tokens without exposing them to the external consent ledger."""
         now_ms = int(datetime.now().timestamp() * 1000)
         try:
@@ -938,7 +938,7 @@ class ConsentDBService:
     # Audit Log
     # =========================================================================
 
-    async def get_audit_log(self, user_id: str, page: int = 1, limit: int = 50) -> Dict:
+    async def get_audit_log(self, user_id: str, page: int = 1, limit: int = 50) -> Dict[str, Any]:
         """Get paginated audit log for a user."""
         supabase = self._get_supabase()
         offset = (page - 1) * limit
@@ -1069,7 +1069,7 @@ class ConsentDBService:
         agent_id: Optional[str] = None,
         request_id: Optional[str] = None,
         clear_all: bool = False,
-    ) -> Dict:
+    ) -> Dict[str, Any]:
         """
         Delete audit log rows for a user.
 
@@ -1263,7 +1263,7 @@ class ConsentDBService:
         )
         return issued_at
 
-    async def get_timed_out_requests(self) -> List[Dict]:
+    async def get_timed_out_requests(self) -> List[Dict[str, Any]]:
         """
         Return REQUESTED rows that have passed poll_timeout_at and do not yet have a TIMEOUT event.
         Used by the optional timeout job to emit TIMEOUT events over SSE.
@@ -1489,7 +1489,7 @@ class ConsentDBService:
 
     async def get_recent_consent_events(
         self, user_id: str, after_timestamp_ms: int, limit: int = 10
-    ) -> List[Dict]:
+    ) -> List[Dict[str, Any]]:
         """
         Get recent consent events after a timestamp for SSE streaming.
 
@@ -1695,7 +1695,7 @@ class ConsentDBService:
             logger.error(f"Failed to store consent export: {e}")
             return False
 
-    async def get_consent_export(self, consent_token: str) -> Optional[Dict]:
+    async def get_consent_export(self, consent_token: str) -> Optional[Dict[str, Any]]:
         """
         Retrieve encrypted export data for a consent token.
 
