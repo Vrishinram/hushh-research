@@ -47,8 +47,8 @@ PY
 echo "pip-audit: vulnerabilities = ${VULN_COUNT}"
 
 if [ "$VULN_COUNT" -gt 0 ]; then
-  echo "pip-audit report written to $REPORT"
   if [ "$REQUIRE_PIP_AUDIT_CLEAN" = "1" ]; then
+    echo "pip-audit report written to $REPORT"
     echo "Failing CI: REQUIRE_PIP_AUDIT_CLEAN=1 and ${VULN_COUNT} vulnerabilities found."
     exit 1
   else
