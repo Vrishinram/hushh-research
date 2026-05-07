@@ -40,8 +40,8 @@ PY
 echo "npm audit: high/critical vulnerabilities = ${HIGH_CRITICAL}"
 
 if [ "$HIGH_CRITICAL" -gt 0 ]; then
-  echo "npm audit report written to $REPORT"
   if [ "$REQUIRE_NPM_AUDIT_CLEAN" = "1" ]; then
+    echo "npm audit report written to $REPORT"
     echo "Failing CI: REQUIRE_NPM_AUDIT_CLEAN=1 and ${HIGH_CRITICAL} high/critical vulnerabilities found."
     exit 1
   else
