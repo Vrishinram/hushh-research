@@ -1,0 +1,211 @@
+name: "Security Scanning"
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly Monday morning scan to catch newly published CVEs between PRs
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+concurrency:
+  group: security-scanning-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "24"
+  PYTHON_VERSION: "3.13"
+
+jobs:
+  # ============================================================================
+  # CodeQL: JavaScript / TypeScript (frontend — hushh-webapp)
+  # ============================================================================
+  codeql-js:
+    name: "CodeQL (JS/TS)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+          source-root: hushh-webapp
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: hushh-webapp/package-lock.json
+
+      - name: Install dependencies (autobuild fallback)
+        working-directory: hushh-webapp
+        run: npm ci
+        env:
+          NEXT_PUBLIC_BACKEND_URL: https://api.example.com
+          NEXT_PUBLIC_FIREBASE_API_KEY: "test-api-key"
+          NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: "dummy-project.firebaseapp.com"
+          NEXT_PUBLIC_FIREBASE_PROJECT_ID: "dummy-project"
+          NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: "dummy-project.appspot.com"
+          NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: "123456789"
+          NEXT_PUBLIC_FIREBASE_APP_ID: "1:123456789:web:abcdef123456"
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:javascript-typescript"
+
+  # ============================================================================
+  # CodeQL: Python (backend — consent-protocol)
+  # ============================================================================
+  codeql-python:
+    name: "CodeQL (Python)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: python
+          queries: security-extended
+          source-root: consent-protocol
+
+      - uses: ./consent-protocol/.github/actions/setup-python-uv
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          protocol-dir: ./consent-protocol
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:python"
+
+  # ============================================================================
+  # Dependency Review: block high/critical CVEs introduced by a PR
+  # ============================================================================
+  dependency-review:
+    name: "Dependency Review"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Dependency review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          deny-licenses: "GPL-2.0, AGPL-3.0"
+
+  # ============================================================================
+  # npm audit: advisory scan for the webapp (non-blocking; uploads SARIF report)
+  # ============================================================================
+  npm-audit:
+    name: "npm Audit"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: hushh-webapp/package-lock.json
+
+      - name: Install dependencies
+        working-directory: hushh-webapp
+        run: npm ci
+
+      - name: Run npm audit
+        working-directory: hushh-webapp
+        run: bash ${{ github.workspace }}/scripts/ci/npm-audit.sh
+        continue-on-error: true
+
+      - name: Upload npm audit report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: npm-audit-report
+          path: hushh-webapp/npm-audit-report.json
+          if-no-files-found: ignore
+
+  # ============================================================================
+  # pip-audit: advisory scan for consent-protocol Python dependencies
+  # ============================================================================
+  pip-audit:
+    name: "pip Audit"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ./consent-protocol/.github/actions/setup-python-uv
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          protocol-dir: ./consent-protocol
+
+      - name: Run pip-audit
+        working-directory: consent-protocol
+        run: bash ${{ github.workspace }}/scripts/ci/pip-audit.sh
+        continue-on-error: true
+
+      - name: Upload pip audit report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: pip-audit-report
+          path: consent-protocol/pip-audit-report.json
+          if-no-files-found: ignore
+
+  # ============================================================================
+  # Gate: CodeQL jobs must pass. npm-audit and pip-audit are advisory only
+  # (run with continue-on-error) and do not block the gate.
+  # ============================================================================
+  security-scan-status:
+    name: "Security Scan Status Gate"
+    needs:
+      - codeql-js
+      - codeql-python
+      - npm-audit
+      - pip-audit
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate outcomes
+        shell: bash
+        run: |
+          CODEQL_JS="${{ needs['codeql-js'].result }}"
+          CODEQL_PY="${{ needs['codeql-python'].result }}"
+          NPM_AUDIT="${{ needs['npm-audit'].result }}"
+          PIP_AUDIT="${{ needs['pip-audit'].result }}"
+
+          printf 'codeql-js=%s\n'     "$CODEQL_JS"
+          printf 'codeql-python=%s\n' "$CODEQL_PY"
+          printf 'npm-audit=%s\n'     "$NPM_AUDIT"
+          printf 'pip-audit=%s\n'     "$PIP_AUDIT"
+
+          fail=0
+          for result in "$CODEQL_JS" "$CODEQL_PY"; do
+            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ] || [ "$result" = "timed_out" ]; then
+              fail=1
+            fi
+          done
+
+          if [ "$fail" -ne 0 ]; then
+            echo "One or more CodeQL security scanning jobs failed."
+            exit 1
+          fi
+          echo "All required security scanning jobs passed or were intentionally skipped."

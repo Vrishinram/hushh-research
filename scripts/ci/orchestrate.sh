@@ -4,7 +4,7 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/ci/orchestrate.sh <secret|governance|web|protocol|integration|smoke|all|advisory>
+  scripts/ci/orchestrate.sh <secret|governance|web|protocol|integration|smoke|security|all|advisory>
 
 Environment flags:
   INCLUDE_ADVISORY_CHECKS=1   Also run advisory checks when stage=all
@@ -45,6 +45,11 @@ run_stage() {
     smoke)
       scripts/ci/main-post-merge-smoke.sh
       ;;
+    security)
+      scripts/ci/npm-audit.sh
+      scripts/ci/pip-audit.sh
+      scripts/ci/github-security-alerts.sh
+      ;;
     advisory)
       scripts/ci/docs-parity-check.sh
       scripts/ci/subtree-sync-check.sh
@@ -61,7 +66,7 @@ run_stage() {
 }
 
 case "$STAGE" in
-  secret|governance|web|protocol|integration|smoke|advisory)
+  secret|governance|web|protocol|integration|smoke|security|advisory)
     run_stage "$STAGE"
     ;;
   all)
