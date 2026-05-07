@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Moon, Monitor, Sun } from "lucide-react";
+import { Check, Moon, Monitor, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 
 import {
@@ -153,7 +153,7 @@ export function ThemeToggleCompact({ className }: { className?: string }) {
             >
               <Icon icon={option.icon} size="sm" />
               <span className="flex-1">{option.label}</span>
-              {isActive ? <span aria-hidden className="text-xs">✓</span> : null}
+              {isActive ? <Check aria-hidden size={12} /> : null}
             </DropdownMenuItem>
           );
         })}
