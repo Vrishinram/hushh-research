@@ -12,11 +12,10 @@ Caches:
 - Market data snapshots
 """
 
-import hashlib
 import json
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, TypeVar, Generic, Callable
+from typing import Any, Dict, Generic, Optional, TypeVar
 
 try:
     import redis
@@ -111,7 +110,7 @@ class RedisCache:
             if value is None:
                 return None
             return json.loads(value)
-        except Exception as e:
+        except Exception:
             # Log error but don't fail
             return None
     
@@ -124,7 +123,7 @@ class RedisCache:
                 ttl,
                 json.dumps(value, default=str)
             )
-        except Exception as e:
+        except Exception:
             # Log error but don't fail
             pass
     
@@ -263,13 +262,11 @@ class CachedPKMService:
     
     def invalidate_user_scopes(self, user_id: str) -> None:
         """Invalidate cached scopes when user updates consent"""
-        cache_key = PKMCacheKey.user_scopes(user_id)
         self.cache.invalidate(pattern=f"pkm:scopes:{user_id}")
     
     def invalidate_ticker_data(self, symbol: Optional[str] = None) -> None:
         """Invalidate ticker cache (all or specific)"""
         if symbol:
-            cache_key = PKMCacheKey.ticker_metadata(symbol)
             self.cache.invalidate(pattern=symbol.upper())
         else:
             self.cache.invalidate(pattern="pkm:ticker:")
