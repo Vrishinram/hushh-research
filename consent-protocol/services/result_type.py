@@ -22,9 +22,12 @@ Usage:
         logger.error(f"Failed: {error}")
 """
 
-from typing import TypeVar, Generic, Union, Callable, Optional
 from dataclasses import dataclass
-from abc import ABC, abstractmethod
+from typing import Callable, Generic, TypeVar, Union
+
+from fastapi import APIRouter, Depends, Request
+from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
 T = TypeVar('T')
 E = TypeVar('E')
@@ -142,7 +145,7 @@ class Result(Generic[T, E]):
             return func(self._value)
         return Result(self._value, False)
     
-    def or_else(self, func: Callable[[E], 'Result[T, 'ResultError']']) -> 'Result[T, ResultError]':
+    def or_else(self, func: Callable[[E], "Result[T, ResultError]"]) -> "Result[T, ResultError]":
         """Handle error and potentially recover"""
         if self.is_err():
             return func(self._value)
@@ -248,9 +251,6 @@ class PKMServiceWithResult:
 
 
 # Error handler middleware for FastAPI
-from fastapi import Request
-from fastapi.responses import JSONResponse
-from starlette.middleware.base import BaseHTTPMiddleware
 
 
 class ResultErrorMiddleware(BaseHTTPMiddleware):
@@ -280,7 +280,6 @@ class ResultErrorMiddleware(BaseHTTPMiddleware):
 
 
 # Route handler pattern
-from fastapi import APIRouter, Depends
 
 router = APIRouter()
 
@@ -323,14 +322,14 @@ class ResultAssert:
     @staticmethod
     def assert_ok(result: Result, expected_value=None) -> None:
         """Assert result is Ok"""
-        assert result.is_ok(), f"Expected Ok but got {result}"
+        assert result.is_ok(), f"Expected Ok but got {result}"  # noqa: S101
         if expected_value is not None:
-            assert result.unwrap() == expected_value
+            assert result.unwrap() == expected_value  # noqa: S101
     
     @staticmethod
     def assert_err(result: Result, error_code=None) -> None:
         """Assert result is Err"""
-        assert result.is_err(), f"Expected Err but got {result}"
+        assert result.is_err(), f"Expected Err but got {result}"  # noqa: S101
         if error_code is not None:
             error = result.unwrap_err()
-            assert error.code == error_code, f"Expected {error_code} but got {error.code}"
+            assert error.code == error_code, f"Expected {error_code} but got {error.code}"  # noqa: S101
