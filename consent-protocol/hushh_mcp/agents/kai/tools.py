@@ -103,3 +103,33 @@ async def perform_valuation_analysis(ticker: str) -> Dict[str, Any]:
         }
     except Exception as e:
         return {"error": f"Valuation analysis failed: {str(e)}"}
+
+
+@hushh_tool(scope=ConsentScope.EMAIL_READ, name="process_incoming_email")
+async def process_incoming_email(
+    sender: str, subject: str, body: str, metadata: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """
+    Process an incoming email for financial analysis.
+    Typically used for kai@hushh.ai endpoint.
+    """
+    ctx = HushhContext.current()
+    if not ctx:
+        raise PermissionError("No active context")
+
+    print(f"🔧 Tool invoked: process_incoming_email from {sender} - {subject}")
+
+    # For now, we simulate the processing. In a real implementation, 
+    # this would trigger a Kai workflow to extract ticker and analyze.
+    
+    # Simple extraction logic for demo
+    import re
+    tickers = re.findall(r"\$([A-Z]+)", subject + " " + body)
+    
+    return {
+        "status": "Email processed and queued for analysis",
+        "sender": sender,
+        "subject": subject,
+        "extracted_tickers": tickers,
+        "message": f"Kai is now looking into {', '.join(tickers) if tickers else 'the market trends'} for you."
+    }

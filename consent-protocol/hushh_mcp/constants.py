@@ -46,6 +46,10 @@ class ConsentScope(str, Enum):
     PKM_WRITE = "pkm.write"
     PKM_METADATA = "pkm.metadata"
 
+    # ==================== EMAIL OPERATIONS ====================
+    EMAIL_READ = "email.read"
+    EMAIL_WRITE = "email.write"
+
     # ==================== AGENT OPERATIONS ====================
     AGENT_ONE_ORCHESTRATE = "agent.one.orchestrate"
 
