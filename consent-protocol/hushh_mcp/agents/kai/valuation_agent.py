@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from hushh_mcp.agents.base_agent import HushhAgent
+from hushh_mcp.types import UserID
 from hushh_mcp.constants import GEMINI_MODEL
 
 logger = logging.getLogger(__name__)
@@ -91,8 +92,8 @@ class ValuationAgent(HushhAgent):
         )
 
         try:
-            market_data = await fetch_market_data(ticker, user_id, consent_token)
-            peer_data = await fetch_peer_data(ticker, user_id, consent_token)
+            market_data = await fetch_market_data(ticker, UserID(user_id), consent_token)
+            peer_data = await fetch_peer_data(ticker, UserID(user_id), consent_token)
         except PermissionError as e:
             logger.error(f"[Valuation] Market data access denied: {e}")
             raise
@@ -125,7 +126,7 @@ class ValuationAgent(HushhAgent):
                 try:
                     gemini_analysis = await analyze_valuation_with_gemini(
                         ticker=ticker,
-                        user_id=user_id,
+                        user_id=UserID(user_id),
                         consent_token=consent_token,
                         market_data=market_data,
                         peer_data=peer_data,
@@ -162,7 +163,7 @@ class ValuationAgent(HushhAgent):
             # Call the operon directly without tools (deterministic)
             analysis = analyze_valuation(
                 ticker=ticker,
-                user_id=user_id,
+                user_id=UserID(user_id),
                 market_data=market_data,
                 peer_data=peer_data,
                 consent_token=consent_token,

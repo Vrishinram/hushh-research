@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from hushh_mcp.agents.base_agent import HushhAgent
+from hushh_mcp.types import UserID
 from hushh_mcp.constants import GEMINI_MODEL
 
 logger = logging.getLogger(__name__)
@@ -100,11 +101,11 @@ class FundamentalAgent(HushhAgent):
         sec_unavailable_reason: str | None = None
         try:
             sec_filings = await fetch_sec_filings(
-                ticker=ticker, user_id=user_id, consent_token=consent_token
+                ticker=ticker, user_id=UserID(user_id), consent_token=consent_token
             )
             # We also need market data for context
             market_data = await fetch_market_data(
-                ticker=ticker, user_id=user_id, consent_token=consent_token
+                ticker=ticker, user_id=UserID(user_id), consent_token=consent_token
             )
         except PermissionError as e:
             logger.error(f"[Fundamental] External data access denied: {e}")
@@ -126,7 +127,7 @@ class FundamentalAgent(HushhAgent):
             )
             try:
                 market_data = await fetch_market_data(
-                    ticker=ticker, user_id=user_id, consent_token=consent_token
+                    ticker=ticker, user_id=UserID(user_id), consent_token=consent_token
                 )
             except RealtimeDataUnavailable as market_error:
                 logger.warning(
@@ -161,7 +162,7 @@ class FundamentalAgent(HushhAgent):
                 try:
                     gemini_analysis = await analyze_stock_with_gemini(
                         ticker=ticker,
-                        user_id=user_id,
+                        user_id=UserID(user_id),
                         consent_token=consent_token,
                         sec_data=sec_filings,
                         market_data=market_data,
@@ -184,7 +185,7 @@ class FundamentalAgent(HushhAgent):
         if sec_filings:
             analysis = analyze_fundamentals(
                 ticker=ticker,
-                user_id=user_id,
+                user_id=UserID(user_id),
                 sec_filings=sec_filings,
                 consent_token=consent_token,
             )

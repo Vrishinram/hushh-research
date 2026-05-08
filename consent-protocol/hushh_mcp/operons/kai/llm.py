@@ -256,6 +256,8 @@ async def _generate_content_text(
     if not _require_gemini_ready() or types is None:
         raise RuntimeError(_gemini_unavailable_reason or "Gemini client unavailable")
 
+    assert _gemini_client is not None
+
     config_kwargs: Dict[str, Any] = {
         "temperature": KAI_LLM_TEMPERATURE,
         "max_output_tokens": max_output_tokens,
@@ -433,14 +435,14 @@ async def analyze_stock_with_gemini(
     R&D Trend: {quant_metrics.get("rnd_trend_data") if quant_metrics else "N/A"}
     
     [Efficiency Ratios]
-    Revenue CAGR (3Y): {quant_metrics.get("revenue_cagr_3y", 0) * 100:.2f}%
-    Revenue Growth (YoY): {quant_metrics.get("revenue_growth_yoy", 0) * 100:.2f}%
-    Net Income Growth (YoY): {quant_metrics.get("net_income_growth_yoy", 0) * 100:.2f}%
+    Revenue CAGR (3Y): {(quant_metrics.get("revenue_cagr_3y", 0) if quant_metrics else 0) * 100:.2f}%
+    Revenue Growth (YoY): {(quant_metrics.get("revenue_growth_yoy", 0) if quant_metrics else 0) * 100:.2f}%
+    Net Income Growth (YoY): {(quant_metrics.get("net_income_growth_yoy", 0) if quant_metrics else 0) * 100:.2f}%
     
     --- MARKET DATA ---
-    Current Price: {market_data.get("price", "N/A") if market_data else "N/A"}
-    Market Cap: {market_data.get("market_cap", "N/A") if market_data else "N/A"}
-    Sector: {market_data.get("sector", "Unknown") if market_data else "Unknown"}
+    Current Price: {(market_data or {}).get("price", "N/A")}
+    Market Cap: {(market_data or {}).get("market_cap", "N/A")}
+    Sector: {(market_data or {}).get("sector", "Unknown")}
     """
 
     system_instruction = """
@@ -814,6 +816,8 @@ async def stream_gemini_response(
             "message": _gemini_unavailable_reason or "Gemini client not configured",
         }
         return
+
+    assert _gemini_client is not None
 
     logger.info(f"[Gemini Streaming] Starting stream for {agent_name}")
 

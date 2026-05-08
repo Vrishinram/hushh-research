@@ -20,7 +20,7 @@ import time
 import urllib.parse
 from collections import Counter
 from datetime import datetime, timedelta
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import httpx
 from defusedxml import ElementTree as DefusedET
@@ -353,7 +353,7 @@ async def _fetch_finnhub_quote(ticker: str) -> Dict[str, Any]:
         if price <= 0:
             raise ValueError(f"invalid Finnhub quote payload for {symbol}")
 
-        profile = {}
+        profile: Dict[str, Any] = {}
         profile_res = await client.get(
             "https://finnhub.io/api/v1/stock/profile2",
             params={"symbol": symbol, "token": api_key},
@@ -686,6 +686,7 @@ async def fetch_market_data_batch(
             logger.error(f"[Market Data Batch Fetcher] TrustLink validation failed: {reason}")
             raise PermissionError(f"Market data access denied: {reason}")
 
+        assert token is not None
         if token.user_id != user_id:
             raise PermissionError("Token user mismatch")
 
@@ -814,6 +815,7 @@ async def fetch_sec_filings(
         logger.error(f"[SEC Fetcher] TrustLink validation failed: {reason}")
         raise PermissionError(f"SEC data access denied: {reason}")
 
+    assert token is not None
     if token.user_id != user_id:
         raise PermissionError("Token user mismatch")
 
@@ -1111,6 +1113,7 @@ async def fetch_market_news(
             logger.error(f"[News Fetcher] TrustLink validation failed: {reason}")
             raise PermissionError(f"News data access denied: {reason}")
 
+        assert token is not None
         if token.user_id != user_id:
             raise PermissionError("Token user mismatch")
 
@@ -1249,6 +1252,7 @@ async def fetch_market_data(
             logger.error(f"[Market Data Fetcher] TrustLink validation failed: {reason}")
             raise PermissionError(f"Market data access denied: {reason}")
 
+        assert token is not None
         if token.user_id != user_id:
             raise PermissionError("Token user mismatch")
 
@@ -1405,7 +1409,7 @@ async def fetch_peer_data(
     ticker: str,
     user_id: UserID,
     consent_token: str,
-    sector: str = None,
+    sector: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
     Operon: Fetch peer company data for comparison.
@@ -1433,6 +1437,7 @@ async def fetch_peer_data(
     if not valid:
         raise PermissionError(f"Market data access denied: {reason}")
 
+    assert token is not None
     if token.user_id != user_id:
         raise PermissionError("Token user mismatch")
 

@@ -5,7 +5,7 @@ Handles incoming emails for agents, specifically kai@hushh.ai.
 """
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from hushh_mcp.agents.kai.agent import get_kai_agent
 from hushh_mcp.types import UserID

@@ -9,7 +9,7 @@ import json
 import logging
 import os
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 from hushh_mcp.hushh_adk.core import HushhAgent
 from hushh_mcp.hushh_adk.manifest import ManifestLoader

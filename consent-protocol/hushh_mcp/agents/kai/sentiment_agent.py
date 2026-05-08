@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from hushh_mcp.agents.base_agent import HushhAgent
+from hushh_mcp.types import UserID
 from hushh_mcp.constants import GEMINI_MODEL
 
 logger = logging.getLogger(__name__)
@@ -93,7 +94,7 @@ class SentimentAgent(HushhAgent):
         news_articles = []
         realtime_news_detail: str | None = None
         try:
-            news_articles = await fetch_market_news(ticker, user_id, consent_token)
+            news_articles = await fetch_market_news(ticker, UserID(user_id), consent_token)
         except PermissionError as e:
             logger.error(f"[Sentiment] News access denied: {e}")
             raise
@@ -107,7 +108,7 @@ class SentimentAgent(HushhAgent):
         market_data: Optional[Dict[str, Any]] = None
         try:
             # Reuse quote cache pipeline so sentiment reasoning is anchored to latest price context.
-            market_data = await fetch_market_data(ticker, user_id, consent_token)
+            market_data = await fetch_market_data(ticker, UserID(user_id), consent_token)
         except Exception as e:
             logger.warning(f"[Sentiment] Market snapshot unavailable for {ticker}: {e}")
 
@@ -149,7 +150,7 @@ class SentimentAgent(HushhAgent):
                 try:
                     gemini_analysis = await analyze_sentiment_with_gemini(
                         ticker=ticker,
-                        user_id=user_id,
+                        user_id=UserID(user_id),
                         consent_token=consent_token,
                         news_articles=news_articles,
                         market_data=market_data,
@@ -186,7 +187,7 @@ class SentimentAgent(HushhAgent):
             # Call the operon directly without tools (deterministic)
             analysis = analyze_sentiment(
                 ticker=ticker,
-                user_id=user_id,
+                user_id=UserID(user_id),
                 news_articles=news_articles,
                 consent_token=consent_token,
             )

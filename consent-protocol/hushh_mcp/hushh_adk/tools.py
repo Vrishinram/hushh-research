@@ -10,7 +10,7 @@ while enforcing:
 import asyncio
 import functools
 import logging
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from hushh_mcp.consent.scope_helpers import resolve_scope_to_enum
 from hushh_mcp.consent.token import validate_token, validate_token_with_db
@@ -60,6 +60,9 @@ def hushh_tool(scope: str, name: Optional[str] = None):
                 error_msg = f"Consent Denied for '{tool_name}': {reason}"
                 logger.warning(f"{error_msg} (User: {ctx.user_id})")
                 raise PermissionError(error_msg)
+            
+            # Mypy: token_obj is Optional[HushhConsentToken]
+            assert token_obj is not None
             if token_obj.user_id != ctx.user_id:
                 error_msg = "Identity Spoofing Detected: Token user does not match context user."
                 logger.critical(error_msg)
@@ -78,6 +81,9 @@ def hushh_tool(scope: str, name: Optional[str] = None):
                 error_msg = f"Consent Denied for '{tool_name}': {reason}"
                 logger.warning(f"{error_msg} (User: {ctx.user_id})")
                 raise PermissionError(error_msg)
+            
+            # Mypy: token_obj is Optional[HushhConsentToken]
+            assert token_obj is not None
             if token_obj.user_id != ctx.user_id:
                 error_msg = "Identity Spoofing Detected: Token user does not match context user."
                 logger.critical(error_msg)
@@ -101,10 +107,12 @@ def hushh_tool(scope: str, name: Optional[str] = None):
                     logger.error(f"Tool '{tool_name}' failed: {str(e)}")
                     raise e
 
-            async_wrapper._hushh_tool = True
-            async_wrapper._scope = scope
-            async_wrapper._name = tool_name
-            async_wrapper._is_async = True
+            # Cast to Any to satisfy Mypy for dynamic attributes
+            any_wrapper = async_wrapper # type: Any
+            any_wrapper._hushh_tool = True
+            any_wrapper._scope = scope
+            any_wrapper._name = tool_name
+            any_wrapper._is_async = True
 
             return async_wrapper
         else:
@@ -120,10 +128,12 @@ def hushh_tool(scope: str, name: Optional[str] = None):
                     logger.error(f"Tool '{tool_name}' failed: {str(e)}")
                     raise e
 
-            sync_wrapper._hushh_tool = True
-            sync_wrapper._scope = scope
-            sync_wrapper._name = tool_name
-            sync_wrapper._is_async = False
+            # Cast to Any to satisfy Mypy for dynamic attributes
+            any_wrapper_sync = sync_wrapper # type: Any
+            any_wrapper_sync._hushh_tool = True
+            any_wrapper_sync._scope = scope
+            any_wrapper_sync._name = tool_name
+            any_wrapper_sync._is_async = False
 
             return sync_wrapper
 

@@ -5,12 +5,12 @@ ADK Tools for the Kai Financial Agent.
 Wraps the specialized analysis engines (Fundamental, Sentiment, Valuation) into tools.
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from hushh_mcp.constants import ConsentScope
 from hushh_mcp.hushh_adk.context import HushhContext
 from hushh_mcp.hushh_adk.tools import hushh_tool
-
+from hushh_mcp.types import UserID
 # Import the existing "Agents" which we are now treating as "Analysis Engines"
 # We backed them up, but we'll use the ones in the current directory as library code.
 from .fundamental_agent import fundamental_agent as fundamental_engine
@@ -33,7 +33,7 @@ async def perform_fundamental_analysis(ticker: str) -> Dict[str, Any]:
     # Note: The engine's analyze method is async
     try:
         insight = await fundamental_engine.analyze(
-            ticker=ticker, user_id=ctx.user_id, consent_token=ctx.consent_token
+            ticker=ticker, user_id=UserID(ctx.user_id), consent_token=ctx.consent_token
         )
 
         # Convert dataclass/result to dict
@@ -62,16 +62,16 @@ async def perform_sentiment_analysis(ticker: str) -> Dict[str, Any]:
 
     try:
         insight = await sentiment_engine.analyze(
-            ticker=ticker, user_id=ctx.user_id, consent_token=ctx.consent_token
+            ticker=ticker, user_id=UserID(ctx.user_id), consent_token=ctx.consent_token
         )
 
         return {
             "summary": insight.summary,
             "sentiment_score": insight.sentiment_score,
-            "market_consensus": insight.market_consensus,
+            "market_consensus": getattr(insight, "market_consensus", None),
             "recommendation": insight.recommendation,
             "confidence": insight.confidence,
-            "news_highlights": insight.key_news[:3] if hasattr(insight, "key_news") else [],
+            "news_highlights": getattr(insight, "key_news", [])[:3],
         }
     except Exception as e:
         return {"error": f"Sentiment analysis failed: {str(e)}"}
@@ -90,14 +90,14 @@ async def perform_valuation_analysis(ticker: str) -> Dict[str, Any]:
 
     try:
         insight = await valuation_engine.analyze(
-            ticker=ticker, user_id=ctx.user_id, consent_token=ctx.consent_token
+            ticker=ticker, user_id=UserID(ctx.user_id), consent_token=ctx.consent_token
         )
 
         return {
             "summary": insight.summary,
-            "fair_value": insight.fair_value,
-            "upside_potential": insight.upside_potential,
-            "risk_assessment": insight.risk_assessment,
+            "fair_value": getattr(insight, "fair_value", None),
+            "upside_potential": getattr(insight, "upside_potential", None),
+            "risk_assessment": getattr(insight, "risk_assessment", None),
             "recommendation": insight.recommendation,
             "confidence": insight.confidence,
         }

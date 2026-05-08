@@ -15,14 +15,14 @@ try:
 except ImportError:
     # Fallback/stub for development context where ADK might not be installed yet
     # or for defining the interface before linking
-    class LlmAgent:
-        def __init__(self, **kwargs):
+    class LlmAgent: # type: ignore
+        def __init__(self, **kwargs: Any):
             pass
 
-        def run(self, **kwargs):
+        def run(self, **kwargs: Any):
             pass
 
-    class ModelClient:
+    class ModelClient: # type: ignore
         pass
 
 
@@ -88,7 +88,7 @@ class HushhAgent(LlmAgent):
         # 1. Base Validation
         # Check if token allows accessing THIS agent
         is_valid = False
-        last_reason = "No scopes defined"
+        last_reason: Optional[str] = "No scopes defined"
 
         if not self.required_scopes:
             is_valid = True  # No specific agent-level scope needed, relying on tools
