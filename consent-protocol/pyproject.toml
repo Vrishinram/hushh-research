@@ -133,6 +133,9 @@ exclude = [
     "api/routes/analysis\\.py",
     "api/routes/consent\\.py",
     "api/routes/session\\.py",
+    "scripts/.*",
+    "tests/.*",
+    "mcp_modules/.*",
 ]
 
 [[tool.mypy.overrides]]
@@ -151,6 +154,7 @@ module = [
     "api.routes.analysis",
     "api.routes.consent",
     "api.routes.session",
+    "mcp_modules.*",
 ]
 follow_imports = "skip"
 

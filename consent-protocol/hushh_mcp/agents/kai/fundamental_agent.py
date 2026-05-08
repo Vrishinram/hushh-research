@@ -18,8 +18,8 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from hushh_mcp.agents.base_agent import HushhAgent
-from hushh_mcp.types import UserID
 from hushh_mcp.constants import GEMINI_MODEL
+from hushh_mcp.types import UserID
 
 logger = logging.getLogger(__name__)
 

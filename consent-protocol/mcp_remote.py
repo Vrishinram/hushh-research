@@ -21,7 +21,8 @@ logger = logging.getLogger(__name__)
 def _header_value(scope: dict[str, Any], header_name: bytes) -> str | None:
     for key, value in scope.get("headers", []):
         if key.lower() == header_name:
-            return value.decode("utf-8").strip()
+            val = value.decode("utf-8").strip()
+            return str(val)
     return None
 
 
@@ -68,7 +69,7 @@ class AuthenticatedRemoteMCPApp:
 
         if not remote_mcp_enabled():
             exc = remote_mcp_disabled_error()
-            await _send_json(send, exc.status_code, exc.detail)
+            await _send_json(send, exc.status_code, {"detail": str(exc.detail)})
             return
 
         bearer_header = (_header_value(scope, b"authorization") or "").strip()

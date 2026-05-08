@@ -686,7 +686,8 @@ async def fetch_market_data_batch(
             logger.error(f"[Market Data Batch Fetcher] TrustLink validation failed: {reason}")
             raise PermissionError(f"Market data access denied: {reason}")
 
-        assert token is not None
+        if token is None:
+            raise PermissionError("Missing token")
         if token.user_id != user_id:
             raise PermissionError("Token user mismatch")
 
@@ -815,7 +816,8 @@ async def fetch_sec_filings(
         logger.error(f"[SEC Fetcher] TrustLink validation failed: {reason}")
         raise PermissionError(f"SEC data access denied: {reason}")
 
-    assert token is not None
+    if token is None:
+        raise PermissionError("Missing token")
     if token.user_id != user_id:
         raise PermissionError("Token user mismatch")
 
@@ -1113,7 +1115,8 @@ async def fetch_market_news(
             logger.error(f"[News Fetcher] TrustLink validation failed: {reason}")
             raise PermissionError(f"News data access denied: {reason}")
 
-        assert token is not None
+        if token is None:
+            raise PermissionError("Missing token")
         if token.user_id != user_id:
             raise PermissionError("Token user mismatch")
 
@@ -1252,7 +1255,8 @@ async def fetch_market_data(
             logger.error(f"[Market Data Fetcher] TrustLink validation failed: {reason}")
             raise PermissionError(f"Market data access denied: {reason}")
 
-        assert token is not None
+        if token is None:
+            raise PermissionError("Missing token")
         if token.user_id != user_id:
             raise PermissionError("Token user mismatch")
 
@@ -1437,7 +1441,8 @@ async def fetch_peer_data(
     if not valid:
         raise PermissionError(f"Market data access denied: {reason}")
 
-    assert token is not None
+    if token is None:
+        raise PermissionError("Missing token")
     if token.user_id != user_id:
         raise PermissionError("Token user mismatch")
 

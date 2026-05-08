@@ -1,13 +1,13 @@
 import asyncio
 import re
-from unittest.mock import MagicMock, patch
 from typing import Any, Dict, Optional
+
 
 # Mock the context
 class MockContext:
     def __init__(self):
         self.user_id = "user_123"
-        self.consent_token = "HCT_TEST"
+        self.consent_token = "HCT_TEST"  # noqa: S105
 
 async def process_incoming_email(
     sender: str, subject: str, body: str, metadata: Optional[Dict[str, Any]] = None

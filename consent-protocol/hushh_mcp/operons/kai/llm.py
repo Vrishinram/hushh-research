@@ -256,7 +256,8 @@ async def _generate_content_text(
     if not _require_gemini_ready() or types is None:
         raise RuntimeError(_gemini_unavailable_reason or "Gemini client unavailable")
 
-    assert _gemini_client is not None
+    if _gemini_client is None:
+        raise RuntimeError("Gemini client is missing")
 
     config_kwargs: Dict[str, Any] = {
         "temperature": KAI_LLM_TEMPERATURE,
@@ -817,7 +818,8 @@ async def stream_gemini_response(
         }
         return
 
-    assert _gemini_client is not None
+    if _gemini_client is None:
+        raise RuntimeError("Gemini client is missing")
 
     logger.info(f"[Gemini Streaming] Starting stream for {agent_name}")
 

@@ -1,7 +1,5 @@
-import json
 import re
-import sys
-from typing import Any, List, Dict, Optional
+from typing import Any
 
 # Fallback: Define the logic here to avoid complex dependency chain in test environment
 SAFE_KEY_PATTERNS = [

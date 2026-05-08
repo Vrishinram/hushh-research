@@ -30,6 +30,7 @@ import sys
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent
+from typing import Any, Callable, Dict, List
 
 from mcp_modules import resources as mcp_resources
 
@@ -85,7 +86,7 @@ logger = logging.getLogger("hushh-mcp-server")
 
 server = Server("hushh-consent")
 
-HANDLERS = {
+HANDLERS: Dict[str, Callable[[Dict[str, Any]], Any]] = {
     # ── Consent / Privacy tools ───────────────────────────────────────────────
     "request_consent": handle_request_consent,
     "validate_token": handle_validate_token,
@@ -173,6 +174,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     try:
         result = await handler(arguments)
         logger.info(f"✅ Tool {name} completed successfully")
+        if not isinstance(result, list):
+            raise ValueError(f"Tool {name} returned invalid type: {type(result)}")
         return result
     except Exception as e:
         logger.error(f"❌ Tool {name} failed: {str(e)}")

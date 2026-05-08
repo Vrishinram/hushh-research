@@ -6,7 +6,7 @@ It wraps the Google ADK patterns but injects our strict security loop.
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 try:
     # Try importing from google-adk if available in env

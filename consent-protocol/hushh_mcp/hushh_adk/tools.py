@@ -10,7 +10,7 @@ while enforcing:
 import asyncio
 import functools
 import logging
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
 from hushh_mcp.consent.scope_helpers import resolve_scope_to_enum
 from hushh_mcp.consent.token import validate_token, validate_token_with_db
@@ -62,7 +62,8 @@ def hushh_tool(scope: str, name: Optional[str] = None):
                 raise PermissionError(error_msg)
             
             # Mypy: token_obj is Optional[HushhConsentToken]
-            assert token_obj is not None
+            if token_obj is None:
+                raise PermissionError("Missing token")
             if token_obj.user_id != ctx.user_id:
                 error_msg = "Identity Spoofing Detected: Token user does not match context user."
                 logger.critical(error_msg)
@@ -83,7 +84,8 @@ def hushh_tool(scope: str, name: Optional[str] = None):
                 raise PermissionError(error_msg)
             
             # Mypy: token_obj is Optional[HushhConsentToken]
-            assert token_obj is not None
+            if token_obj is None:
+                raise PermissionError("Missing token")
             if token_obj.user_id != ctx.user_id:
                 error_msg = "Identity Spoofing Detected: Token user does not match context user."
                 logger.critical(error_msg)
