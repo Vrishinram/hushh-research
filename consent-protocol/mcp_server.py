@@ -26,11 +26,11 @@ import asyncio
 import json
 import logging
 import sys
+from typing import Any, Callable, Dict
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent
-from typing import Any, Callable, Dict, List
 
 from mcp_modules import resources as mcp_resources
 
