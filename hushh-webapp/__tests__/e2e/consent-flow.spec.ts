@@ -1,4 +1,4 @@
-import { test, expect, Page, Browser } from '@playwright/test';
+import { test, expect, Page } from '@playwright/test';
 
 /**
  * E2E Tests for Consent Flow
@@ -287,7 +287,7 @@ async function grantConsentToAgent(
   page: Page,
   agentName: string,
   scopes: string[],
-  options?: { expiresIn?: number }
+  _options?: { expiresIn?: number }
 ): Promise<void> {
   await page.goto('/settings/consent');
   
