@@ -4,6 +4,16 @@
 
 This document guides migration from the deprecated `VaultDBService` to `PersonalKnowledgeModelService` (PKM).
 
+## Visual Map
+
+```text
+VaultDBService call sites
+  -> adapter + deprecation warning
+  -> PKMService scoped API migration
+  -> route/service contract validation
+  -> rollout + cleanup of legacy paths
+```
+
 **Status**: In Progress  
 **Deadline**: Q3 2026  
 **Migration Path**: Gradual, with deprecation warnings
