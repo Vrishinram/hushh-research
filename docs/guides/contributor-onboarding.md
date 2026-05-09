@@ -2,6 +2,17 @@
 
 Welcome! This guide will help you get started contributing to the Hussh Research platform. We're excited to have you join our community.
 
+## Visual Map
+
+```text
+Contributor Flow
+  -> Local setup (`./bin/hushh bootstrap`)
+  -> Service-oriented changes (`consent-protocol/hushh_mcp/services/`)
+  -> Route integration (`consent-protocol/api/routes/`)
+  -> Validation (lint + tests + architecture checks)
+  -> Signed PR (`git commit -s`, conventional title)
+```
+
 ## Table of Contents
 
 1. [Prerequisites](#prerequisites)
@@ -133,24 +144,24 @@ Hussh has a **three-layer architecture**:
 ### 1. **Vault Layer** (Encrypted Storage)
 - User holds encryption keys (BYOK)
 - Backend stores only ciphertext + metadata
-- Located in `consent-protocol/services/vault_service.py`
+- Located in `consent-protocol/hushh_mcp/services/`
 
 ### 2. **Consent Layer** (Access Control)
 - Consent tokens determine what agents can access
-- Enforced per request in `consent-protocol/routes/`
+- Enforced per request in `consent-protocol/api/routes/`
 - Scopes follow pattern: `attr.{domain}.*` or `pkm.read/write`
 
 ### 3. **PKM Layer** (Personal Knowledge Model)
 - Centralized knowledge store for user insights
 - Replaces deprecated VaultDBService
-- Located in `consent-protocol/services/pkm_service.py`
+- Located in `consent-protocol/hushh_mcp/services/personal_knowledge_model_service.py`
 
 ### Key Files to Know
 
 ```
 consent-protocol/
-├── routes/              # API endpoints (must use service layer)
-├── services/            # Business logic (vault, consent, PKM)
+├── api/routes/          # API endpoints (must use service layer)
+├── hushh_mcp/services/  # Business logic (vault, consent, PKM)
 ├── models/              # Data schemas
 ├── tests/
 │   ├── quality/         # Architecture compliance tests
