@@ -27,6 +27,7 @@ import json
 import logging
 import sys
 import time
+from typing import Any, Callable, Dict
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
