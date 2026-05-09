@@ -316,6 +316,6 @@ Set `USE_PKM_SERVICE=false` to rollback.
 
 ## References
 
-- [VaultDBService (deprecated)](./vault_db_service.py)
-- [PersonalKnowledgeModelService](./pkm_service.py)
-- [Architecture: Consent & Authorization](../../docs/reference/architecture/consent-authorization.md)
+- [PersonalKnowledgeModelService implementation](../../consent-protocol/hushh_mcp/services/personal_knowledge_model_service.py)
+- [Consent route contract](../../consent-protocol/api/routes/consent.py)
+- [Architecture API contracts](../reference/architecture/api-contracts.md)
