@@ -11,11 +11,14 @@ Features:
 - Audit trail for all flag changes
 """
 
+import hashlib
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Dict, Any, List, Optional
-from sqlalchemy import Column, String, Boolean, JSON, DateTime, ForeignKey
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter, Depends
+from sqlalchemy import JSON, Column, DateTime, String
 from sqlalchemy.ext.declarative import declarative_base
 
 Base = declarative_base()
@@ -229,20 +232,16 @@ class FeatureFlagService:
     
     def _is_user_in_percentage(self, flag_name: str, user_id: str, percentage: int) -> bool:
         """Deterministically check if user is in percentage"""
-        import hashlib
-        
+
         # Create a stable hash for user + flag combination
         hash_input = f"{flag_name}:{user_id}".encode()
-        hash_value = int(hashlib.md5(hash_input).hexdigest(), 16)
+        hash_value = int(hashlib.sha256(hash_input).hexdigest(), 16)
         
         # Map to 0-100
         user_percentage = (hash_value % 100) + 1
         
         return user_percentage <= percentage
 
-
-# FastAPI integration
-from fastapi import APIRouter, Depends, HTTPException
 
 router = APIRouter(prefix="/flags", tags=["flags"])
 
