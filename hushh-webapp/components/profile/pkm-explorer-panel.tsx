@@ -241,11 +241,16 @@ export function PkmExplorerPanel() {
             className="w-full sm:w-auto"
           >
             {bootstrapLoading ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              <span aria-live="polite" className="flex items-center">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Refreshing...
+              </span>
             ) : (
-              <RefreshCw className="mr-2 h-4 w-4" />
+              <>
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Refresh saved PKM
+              </>
             )}
-            Refresh saved PKM
           </Button>
         </div>
 
@@ -272,7 +277,10 @@ export function PkmExplorerPanel() {
           </div>
         ) : null}
         {bootstrapError ? (
-          <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-3 text-sm text-red-700">
+          <div
+            aria-live="assertive"
+            className="rounded-xl border border-red-200 bg-red-50 px-3 py-3 text-sm text-red-700"
+          >
             {bootstrapError}
           </div>
         ) : null}

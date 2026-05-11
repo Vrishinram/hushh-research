@@ -488,54 +488,58 @@ export function TopAppBar({ className }: TopAppBarProps) {
                     <OnboardingRouteActions />
                   ) : (
                     <>
-                      <ConsentInboxDropdown
-                        renderTrigger={({ pendingCount }) => (
-                          <ShellActionSurface
-                            variant="icon"
-                            aria-label={
-                              pendingCount > 0
-                                ? `Open consent inbox (${pendingCount} pending)`
-                                : "Open consent inbox"
-                            }
-                            badge={
-                              pendingCount > 0 ? (
-                                <span className="inline-flex min-h-5 min-w-5 items-center justify-center rounded-full bg-sky-500 px-1 text-[10px] font-semibold leading-none text-white shadow-[0_8px_18px_rgba(14,165,233,0.32)] ring-2 ring-white/90 dark:ring-[#111113]">
-                                  {pendingCount}
-                                </span>
-                              ) : null
-                            }
-                          >
-                            <Shield className="h-5 w-5" />
-                          </ShellActionSurface>
-                        )}
-                      />
-
-                      {isVaultUnlocked ? (
-                        <DebateTaskCenter
-                          renderTrigger={({ activeCount, badgeCount }) => (
+                      <span aria-live="polite">
+                        <ConsentInboxDropdown
+                          renderTrigger={({ pendingCount }) => (
                             <ShellActionSurface
                               variant="icon"
                               aria-label={
-                                badgeCount > 0
-                                  ? `Notifications (${badgeCount} new)`
-                                  : "Notifications"
+                                pendingCount > 0
+                                  ? `Open consent inbox (${pendingCount} pending)`
+                                  : "Open consent inbox"
                               }
                               badge={
-                                badgeCount > 0 ? (
+                                pendingCount > 0 ? (
                                   <span className="inline-flex min-h-5 min-w-5 items-center justify-center rounded-full bg-sky-500 px-1 text-[10px] font-semibold leading-none text-white shadow-[0_8px_18px_rgba(14,165,233,0.32)] ring-2 ring-white/90 dark:ring-[#111113]">
-                                    {badgeCount}
+                                    {pendingCount}
                                   </span>
                                 ) : null
                               }
                             >
-                              {activeCount > 0 ? (
-                                <Loader2 className="h-5 w-5 animate-spin text-sky-500" />
-                              ) : (
-                                <Bell className="h-5 w-5" />
-                              )}
+                              <Shield className="h-5 w-5" />
                             </ShellActionSurface>
                           )}
                         />
+                      </span>
+
+                      {isVaultUnlocked ? (
+                        <span aria-live="polite">
+                          <DebateTaskCenter
+                            renderTrigger={({ activeCount, badgeCount }) => (
+                              <ShellActionSurface
+                                variant="icon"
+                                aria-label={
+                                  badgeCount > 0
+                                    ? `Notifications (${badgeCount} new)`
+                                    : "Notifications"
+                                }
+                                badge={
+                                  badgeCount > 0 ? (
+                                    <span className="inline-flex min-h-5 min-w-5 items-center justify-center rounded-full bg-sky-500 px-1 text-[10px] font-semibold leading-none text-white shadow-[0_8px_18px_rgba(14,165,233,0.32)] ring-2 ring-white/90 dark:ring-[#111113]">
+                                      {badgeCount}
+                                    </span>
+                                  ) : null
+                                }
+                              >
+                                {activeCount > 0 ? (
+                                  <Loader2 className="h-5 w-5 animate-spin text-sky-500" />
+                                ) : (
+                                  <Bell className="h-5 w-5" />
+                                )}
+                              </ShellActionSurface>
+                            )}
+                          />
+                        </span>
                       ) : topShellBreadcrumb ? (
                         <ShellActionSurface
                           variant="icon"

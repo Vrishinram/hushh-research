@@ -429,7 +429,10 @@ export function DebateTaskCenter({ triggerClassName, renderTrigger }: DebateTask
               <Bell className="h-5 w-5" />
             )}
             {badgeCount > 0 ? (
-              <span className="absolute -right-1 -top-1 inline-flex min-h-5 min-w-5 items-center justify-center rounded-full bg-sky-500 px-1 text-[10px] font-semibold text-white">
+              <span
+                aria-live="polite"
+                className="absolute -right-1 -top-1 inline-flex min-h-5 min-w-5 items-center justify-center rounded-full bg-sky-500 px-1 text-[10px] font-semibold text-white"
+              >
                 {badgeCount}
               </span>
             ) : null}
