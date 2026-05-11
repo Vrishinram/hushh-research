@@ -293,13 +293,15 @@ export function PkmExplorerPanel() {
             accent="sky"
           />
           {metadata?.domains.length ? (
-            <div className="space-y-3">
+            <div role="tablist" aria-label="PKM Domains" className="space-y-3">
               {metadata.domains.map((domain) => {
                 const isActive = selectedDomain === domain.key;
                 return (
                   <button
                     key={domain.key}
                     type="button"
+                    role="tab"
+                    aria-selected={isActive}
                     className={`w-full rounded-[var(--radius-md)] border-0 px-4 py-3 text-left transition ${
                       isActive
                         ? "bg-primary/8 text-foreground dark:bg-primary/12"

@@ -419,7 +419,9 @@ export function DebateTaskCenter({ triggerClassName, renderTrigger }: DebateTask
         ) : (
           <button
             className={cn(DEFAULT_TRIGGER_CLASSNAME, triggerClassName)}
-            aria-label="Notifications"
+            aria-label={
+              badgeCount > 0 ? `Notifications (${badgeCount} new)` : "Notifications"
+            }
           >
             {activeCount > 0 ? (
               <Loader2 className="h-5 w-5 animate-spin text-sky-500" />
