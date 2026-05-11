@@ -140,7 +140,7 @@ export function ConsentStatusBar({ className = "" }: ConsentStatusBarProps) {
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Token:</span>
-              <span className="font-mono truncate max-w-[100px]">
+              <span className="font-mono truncate max-w-[140px]">
                 {session.token?.slice(0, 12)}...
               </span>
             </div>
