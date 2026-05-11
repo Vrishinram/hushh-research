@@ -391,6 +391,7 @@ export function DataTable<TData, TValue>({
                   <Button
                     variant="outline"
                     size="sm"
+                    aria-label="Rows per page"
                     className="h-8 min-w-[64px] justify-between px-2 text-xs sm:min-w-[80px] sm:px-3 sm:text-sm"
                     data-no-route-swipe
                   >

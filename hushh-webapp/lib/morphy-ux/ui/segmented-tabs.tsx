@@ -22,6 +22,7 @@ export function SegmentedTabs({
   options: SegmentedTabOption[];
   mobileColumns?: number;
   className?: string;
+  ariaLabel?: string;
 }) {
   const resolvedDesktopColumns = Math.max(options.length, 1);
   const resolvedMobileColumns = Math.max(mobileColumns ?? resolvedDesktopColumns, 1);
@@ -33,6 +34,8 @@ export function SegmentedTabs({
         "border border-[color:var(--app-card-border-standard)] bg-[color:var(--app-card-surface-compact)] shadow-[var(--app-card-shadow-standard)]",
         className
       )}
+      role="tablist"
+      aria-label={ariaLabel}
       style={
         {
           "--segmented-mobile-cols": String(resolvedMobileColumns),
@@ -47,7 +50,8 @@ export function SegmentedTabs({
           <button
             key={option.value}
             type="button"
-            aria-pressed={isActive}
+            role="tab"
+            aria-selected={isActive}
             data-state={isActive ? "active" : "inactive"}
             onClick={() => {
               if (!isActive) onValueChange(option.value);

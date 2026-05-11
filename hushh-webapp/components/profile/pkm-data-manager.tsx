@@ -112,6 +112,7 @@ function DomainCard({
     <button
       type="button"
       onClick={onOpen}
+      aria-label={`View details for ${domain.title}`}
       className={cn(
         "group w-full rounded-none bg-transparent text-left shadow-none transition-colors duration-150",
         "hover:bg-[color:var(--app-card-surface-compact)]/72",
@@ -357,6 +358,7 @@ function ConnectionCard({
     <button
       type="button"
       onClick={onOpen}
+      aria-label={`View details for ${connection.requesterLabel}`}
       className={cn(
         "group w-full rounded-none bg-transparent text-left shadow-none transition-colors duration-150",
         "hover:bg-[color:var(--app-card-surface-compact)]/72",
