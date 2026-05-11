@@ -297,7 +297,16 @@ export function DataTable<TData, TValue>({
         className={cn(surfaceDataTableShellClassName, resolvedTableShellClassName)}
         data-slot="surface-data-table-shell"
       >
-        <Table className={tableClassName}>
+        <Table
+          className={tableClassName}
+          aria-label={
+            typeof title === "string"
+              ? title
+              : typeof eyebrow === "string"
+                ? eyebrow
+                : undefined
+          }
+        >
           <TableHeader
             className={
               stickyHeader
@@ -310,6 +319,15 @@ export function DataTable<TData, TValue>({
                 {headerGroup.headers.map((header) => (
                   <TableHead
                     key={header.id}
+                    aria-sort={
+                      header.column.getIsSorted() === "asc"
+                        ? "ascending"
+                        : header.column.getIsSorted() === "desc"
+                          ? "descending"
+                          : header.column.getCanSort()
+                            ? "none"
+                            : undefined
+                    }
                     className={cn(
                       compact
                         ? "px-[max(10px,calc(var(--data-table-cell-px)-2px))] py-2 text-[11px] uppercase tracking-[0.16em] text-muted-foreground"
