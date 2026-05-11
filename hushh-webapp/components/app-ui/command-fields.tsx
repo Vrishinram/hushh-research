@@ -195,6 +195,7 @@ export function CommandPickerField<T = unknown>({
             effect="fade"
             size="sm"
             onClick={() => onSelect(null)}
+            aria-label="Clear selection"
             className="h-10 rounded-[14px] px-3"
           >
             <X className="h-4 w-4" />

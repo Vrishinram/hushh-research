@@ -31,6 +31,8 @@ export function RiaRouteTabs({ embedded = false }: { embedded?: boolean }) {
         variant="none"
         effect="glass"
         className="grid w-full grid-cols-4 gap-2 p-1.5"
+        role="tablist"
+        aria-label="RIA navigation"
       >
         {RIA_ROUTE_TABS.map((tab) => {
           const isActive = tab.id === activeTab;
@@ -38,6 +40,8 @@ export function RiaRouteTabs({ embedded = false }: { embedded?: boolean }) {
             <button
               key={tab.id}
               type="button"
+              role="tab"
+              aria-selected={isActive}
               data-voice-control-id={`ria_route_tab_${tab.id}`}
               onClick={() => router.push(tab.href)}
               className={cn(
