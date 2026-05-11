@@ -1,6 +1,8 @@
 "use client";
 
+import * as React from "react";
 import { useDeferredValue, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import {
   AlertTriangle,
   ChevronRight,
@@ -19,7 +21,17 @@ import {
   SurfaceCardTitle,
   SurfaceInset,
 } from "@/components/app-ui/surfaces";
-import { PkmSectionPreview } from "@/components/profile/pkm-section-preview";
+const PkmSectionPreview = dynamic(
+  () => import("@/components/profile/pkm-section-preview").then((m) => m.PkmSectionPreview),
+  {
+    loading: () => (
+      <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
+        <RefreshCw className="h-4 w-4 animate-spin" />
+        Loading preview...
+      </div>
+    ),
+  }
+);
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -91,7 +103,7 @@ function getDomainRowStatus(domain: PkmDomainPresentation): {
   return null;
 }
 
-function DomainCard({
+const DomainCard = React.memo(function DomainCard({
   domain,
   onOpen,
 }: {
@@ -142,7 +154,7 @@ function DomainCard({
       </div>
     </button>
   );
-}
+});
 
 export function PkmDataManagerPanel({
   signedIn,
@@ -347,7 +359,7 @@ export function PkmDataManagerPanel({
   );
 }
 
-function ConnectionCard({
+const ConnectionCard = React.memo(function ConnectionCard({
   connection,
   onOpen,
 }: {
@@ -396,7 +408,7 @@ function ConnectionCard({
       </div>
     </button>
   );
-}
+});
 
 export function PkmDomainDetailPanel({
   domain,

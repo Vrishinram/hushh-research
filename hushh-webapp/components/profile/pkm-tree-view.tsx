@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
@@ -63,7 +64,7 @@ function buildManifestTree(paths: PathDescriptor[]): ManifestTreeNode[] {
   return Array.from(root.values()).sort((left, right) => left.key.localeCompare(right.key));
 }
 
-function JsonNode({
+const JsonNode = React.memo(function JsonNode({
   label,
   value,
   depth,
@@ -126,9 +127,9 @@ function JsonNode({
       </div>
     </Collapsible>
   );
-}
+});
 
-function ManifestNode({
+const ManifestNode = React.memo(function ManifestNode({
   node,
   depth,
 }: {
@@ -193,7 +194,7 @@ function ManifestNode({
       </div>
     </Collapsible>
   );
-}
+});
 
 export function PkmJsonTree({
   value,

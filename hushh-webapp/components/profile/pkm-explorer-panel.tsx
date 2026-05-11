@@ -10,6 +10,7 @@ import {
   ShieldAlert,
   Vault,
 } from "lucide-react";
+import { useRevealAnimation } from "@/hooks/use-reveal-animation";
 
 import { SectionHeader } from "@/components/app-ui/page-sections";
 import {
@@ -50,6 +51,7 @@ function formatTimestamp(value: string | null | undefined): string {
 export function PkmExplorerPanel() {
   const { user, loading } = useAuth();
   const { isVaultUnlocked, vaultKey, vaultOwnerToken } = useVault();
+  const revealRef = useRevealAnimation<HTMLDivElement>();
 
   const [metadata, setMetadata] = useState<PersonalKnowledgeModelMetadata | null>(null);
   const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
@@ -67,7 +69,7 @@ export function PkmExplorerPanel() {
     let cancelled = false;
 
     async function loadBootstrap(forceRefresh = false) {
-      if (loading) return;
+      if (authLoading) return;
       if (!user) {
         if (!cancelled) {
           setMetadata(null);
@@ -118,7 +120,7 @@ export function PkmExplorerPanel() {
     return () => {
       cancelled = true;
     };
-  }, [isVaultUnlocked, loading, user, vaultOwnerToken]);
+  }, [isVaultUnlocked, authLoading, user, vaultOwnerToken]);
 
   useEffect(() => {
     let cancelled = false;
@@ -221,7 +223,7 @@ export function PkmExplorerPanel() {
   }
 
   return (
-    <div className="space-y-4">
+    <div ref={revealRef} className="space-y-6">
       <SurfaceInset className="space-y-4 px-4 py-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
@@ -342,7 +344,7 @@ export function PkmExplorerPanel() {
               })}
             </div>
           ) : (
-            <SurfaceCard tone="warning">
+            <SurfaceCard ref={revealRef} tone="warning">
               <SurfaceCardContent className="text-sm text-muted-foreground">
                 No PKM domains are available yet for this account.
               </SurfaceCardContent>
