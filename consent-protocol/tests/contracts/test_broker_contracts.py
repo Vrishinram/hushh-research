@@ -7,8 +7,6 @@ Ensures broker APIs (Alpaca, Plaid, etc.) maintain compatibility.
 Run: pytest tests/contracts/ -v
 """
 
-import json
-from typing import Any, Dict
 
 import pytest
 import requests
@@ -49,6 +47,7 @@ class TestAlpacaBrokerContract:
             response = requests.get(
                 "http://localhost:8081/v2/account",
                 headers={"Authorization": "Bearer token"},
+                timeout=10,
             )
 
             assert response.status_code == 200
@@ -86,6 +85,7 @@ class TestAlpacaBrokerContract:
             response = requests.get(
                 "http://localhost:8081/v2/positions",
                 headers={"Authorization": "Bearer token"},
+                timeout=10,
             )
 
             assert response.status_code == 200
@@ -134,6 +134,7 @@ class TestAlpacaBrokerContract:
                     "time_in_force": "day",
                 },
                 headers={"Authorization": "Bearer token"},
+                timeout=10,
             )
 
             assert response.status_code == 201
@@ -155,7 +156,7 @@ class TestAlpacaBrokerContract:
         )
 
         with pact:
-            response = requests.get("http://localhost:8081/v2/positions?symbol=INVALID")
+            response = requests.get("http://localhost:8081/v2/positions?symbol=INVALID", timeout=10)
 
             assert response.status_code == 400
             assert "Invalid symbol" in response.json()["message"]
@@ -203,6 +204,7 @@ class TestPlaidBrokerContract:
                     "products": ["auth", "transactions"],
                     "country_codes": ["US"],
                 },
+                timeout=10,
             )
 
             assert response.status_code == 200
@@ -239,6 +241,7 @@ class TestPlaidBrokerContract:
                     "secret": "secret_123",
                     "public_token": "public_token_xyz",
                 },
+                timeout=10,
             )
 
             assert response.status_code == 200
@@ -268,6 +271,7 @@ class TestBrokerIntegrationErrors:
             response = requests.get(
                 "http://localhost:8081/v2/account",
                 headers={"Authorization": "Bearer invalid"},
+                timeout=10,
             )
             assert response.status_code == 401
 
@@ -284,7 +288,7 @@ class TestBrokerIntegrationErrors:
         )
 
         with pact:
-            response = requests.get("http://localhost:8081/v2/orders")
+            response = requests.get("http://localhost:8081/v2/orders", timeout=10)
             assert response.status_code == 429
             assert "Retry-After" in response.headers
 
@@ -300,7 +304,7 @@ class TestBrokerIntegrationErrors:
         )
 
         with pact:
-            response = requests.get("http://localhost:8081/v2/account")
+            response = requests.get("http://localhost:8081/v2/account", timeout=10)
             assert response.status_code == 503
 
 
@@ -311,7 +315,7 @@ class TestHushhAPIConsumer:
         """Integration test: Sync account holdings from Alpaca"""
         from consent_protocol.integrations.alpaca import AlpacaBroker  # type: ignore[import]
 
-        broker = AlpacaBroker(api_key="test_key", api_secret="test_secret")
+        broker = AlpacaBroker(api_key="test_key", api_secret="test_secret")  # noqa: S106
 
         with pact:
             holdings = broker.get_holdings()
@@ -324,7 +328,7 @@ class TestHushhAPIConsumer:
         """Test trade execution with retry logic"""
         from consent_protocol.integrations.alpaca import AlpacaBroker  # type: ignore[import]
 
-        broker = AlpacaBroker(api_key="test_key", api_secret="test_secret")
+        broker = AlpacaBroker(api_key="test_key", api_secret="test_secret")  # noqa: S106
 
         with pact:
             order = broker.create_order(
