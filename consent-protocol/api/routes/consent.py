@@ -10,6 +10,9 @@ The consent page is vault-gated, so users must unlock their vault first.
 This ensures consistent consent-first architecture throughout the system.
 """
 
+# Touch for consent-iam-runtime capability check.
+
+
 import logging
 import re
 import time
