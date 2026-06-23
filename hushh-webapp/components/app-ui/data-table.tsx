@@ -90,6 +90,8 @@ interface DataTableProps<TData, TValue> {
   tableClassName?: string;
   density?: "default" | "compact";
   stickyHeader?: boolean;
+  title?: string;
+  eyebrow?: string;
 }
 
 export function DataTable<TData, TValue>({
@@ -110,6 +112,8 @@ export function DataTable<TData, TValue>({
   tableClassName,
   density = "default",
   stickyHeader = false,
+  title,
+  eyebrow,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(

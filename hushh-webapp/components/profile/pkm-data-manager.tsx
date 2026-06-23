@@ -1,6 +1,6 @@
 "use client";
 
-import { useDeferredValue, useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useState, type ReactNode } from "react";
 import {
   AlertTriangle,
   ChevronRight,
@@ -42,7 +42,10 @@ import {
   type PkmProfileSummaryPresentation,
   type PkmDomainUpgradePresentation,
 } from "@/lib/profile/pkm-profile-presentation";
-import type { PkmSectionPreviewPresentation } from "@/lib/profile/pkm-section-preview";
+import type {
+  PkmSectionPreviewPresentation,
+  PkmSectionPreviewEntity,
+} from "@/lib/profile/pkm-section-preview";
 import type { PkmUpgradeDomainState } from "@/lib/services/personal-knowledge-model-service";
 import { cn } from "@/lib/utils";
 
@@ -414,6 +417,11 @@ export function PkmDomainDetailPanel({
   onPreviewOpenChange,
   onPreviewPermission,
   onTogglePermission,
+  previewDeletingEntityKey,
+  contextControls,
+  hideHighlights = false,
+  onEditPreviewEntity,
+  onDeletePreviewEntity,
 }: {
   domain: PkmDomainPresentation;
   permissions: PkmDomainPermissionPresentation[];
@@ -430,6 +438,11 @@ export function PkmDomainDetailPanel({
   onPreviewOpenChange: (open: boolean) => void;
   onPreviewPermission: (permission: PkmDomainPermissionPresentation) => void;
   onTogglePermission: (permission: PkmDomainPermissionPresentation, nextValue: boolean) => void;
+  previewDeletingEntityKey?: string | null;
+  contextControls?: ReactNode;
+  hideHighlights?: boolean;
+  onEditPreviewEntity?: (entity: PkmSectionPreviewEntity) => void;
+  onDeletePreviewEntity?: (entity: PkmSectionPreviewEntity) => void;
 }) {
   const updatedLabel = formatDomainRowTimestamp(domain.updatedAt);
   return (
@@ -464,9 +477,14 @@ export function PkmDomainDetailPanel({
             </Badge>
           ) : null}
         </div>
+        {contextControls ? (
+          <div className="border-t border-[color:var(--app-card-border-standard)] pt-3">
+            {contextControls}
+          </div>
+        ) : null}
       </SurfaceInset>
 
-      {domain.highlights.length > 0 ? (
+      {!hideHighlights && domain.highlights.length > 0 ? (
         <SurfaceInset className="space-y-2 p-4">
           {domain.highlights.slice(0, 5).map((highlight) => (
             <p key={highlight} className="text-sm leading-6 text-foreground/90">
@@ -606,7 +624,12 @@ export function PkmDomainDetailPanel({
                 <span>{previewError}</span>
               </SurfaceInset>
             ) : previewPresentation ? (
-              <PkmSectionPreview presentation={previewPresentation} />
+              <PkmSectionPreview
+                presentation={previewPresentation}
+                deletingEntityKey={previewDeletingEntityKey}
+                onEditEntity={onEditPreviewEntity}
+                onDeleteEntity={onDeletePreviewEntity}
+              />
             ) : (
               <SurfaceInset className="p-4 text-sm text-muted-foreground">
                 No saved values are available for this section yet.

@@ -16,6 +16,7 @@ export function SegmentedTabs({
   options,
   mobileColumns,
   className,
+  ariaLabel,
 }: {
   value: string;
   onValueChange: (value: string) => void;
