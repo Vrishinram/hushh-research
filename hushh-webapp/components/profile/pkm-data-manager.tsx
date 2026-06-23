@@ -1,6 +1,6 @@
 "use client";
 
-import { useDeferredValue, useMemo, useState, type ReactNode } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import {
   AlertTriangle,
   ChevronRight,
@@ -31,6 +31,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Button } from "@/lib/morphy-ux/morphy";
 import type { DomainManifest } from "@/lib/personal-knowledge-model/manifest";
 import {
@@ -41,12 +42,8 @@ import {
   type PkmProfileSummaryPresentation,
   type PkmDomainUpgradePresentation,
 } from "@/lib/profile/pkm-profile-presentation";
-import type {
-  PkmSectionPreviewEntity,
-  PkmSectionPreviewPresentation,
-} from "@/lib/profile/pkm-section-preview";
+import type { PkmSectionPreviewPresentation } from "@/lib/profile/pkm-section-preview";
 import type { PkmUpgradeDomainState } from "@/lib/services/personal-knowledge-model-service";
-import type { PkmVisibilityPosture } from "@/lib/services/personal-knowledge-model-service";
 import { cn } from "@/lib/utils";
 
 const listShellClassName = cn(
@@ -104,9 +101,7 @@ function DomainCard({
   const itemLabel =
     domain.detailCount > 0
       ? `${domain.detailCount} item${domain.detailCount === 1 ? "" : "s"}`
-      : domain.sections.length > 0
-        ? "Ready"
-        : "No saved data";
+      : "0 items";
   const sourceSummary =
     domain.sourceLabels.length > 2
       ? `${domain.sourceLabels.slice(0, 2).join(" · ")} +${domain.sourceLabels.length - 2}`
@@ -117,6 +112,7 @@ function DomainCard({
     <button
       type="button"
       onClick={onOpen}
+      aria-label={`View details for ${domain.title}`}
       className={cn(
         "group w-full rounded-none bg-transparent text-left shadow-none transition-colors duration-150",
         "hover:bg-[color:var(--app-card-surface-compact)]/72",
@@ -224,14 +220,14 @@ export function PkmDataManagerPanel({
         <SurfaceCardHeader>
           <SurfaceCardTitle className="flex items-center gap-2">
             <Database className="h-4 w-4" />
-            Set up personal data
+            Set up Personal Knowledge Model
           </SurfaceCardTitle>
           <SurfaceCardDescription>
-            Create your vault first so One can save your details and sharing controls here.
+            Create your vault first so Kai can save your domains and sharing controls here.
           </SurfaceCardDescription>
         </SurfaceCardHeader>
         <SurfaceCardContent>
-          <Button type="button" onClick={onOpenImport}>Create vault</Button>
+          <Button onClick={onOpenImport}>Create vault</Button>
         </SurfaceCardContent>
       </SurfaceCard>
     );
@@ -241,7 +237,7 @@ export function PkmDataManagerPanel({
     return (
       <SurfaceInset className="flex items-center gap-2 px-4 py-4 text-sm text-muted-foreground">
         <RefreshCw className="h-4 w-4 animate-spin" />
-        Loading your personal data...
+        Loading your Personal Knowledge Model...
       </SurfaceInset>
     );
   }
@@ -254,7 +250,7 @@ export function PkmDataManagerPanel({
             <>
               {metadataReady ? (
                 <>
-                  <Badge variant="secondary">{summary.totalDomains} categories</Badge>
+                  <Badge variant="secondary">{summary.totalDomains} domains</Badge>
                   <Badge variant="secondary">{summary.totalAttributes} items</Badge>
                 </>
               ) : loading ? (
@@ -274,8 +270,8 @@ export function PkmDataManagerPanel({
           ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
-          {!needsUnlock ? <Button type="button" onClick={onOpenSharing}>Manage sharing</Button> : null}
-          <Button type="button" variant="none" effect="fade" onClick={onRefresh}>
+          {!needsUnlock ? <Button onClick={onOpenSharing}>Manage sharing</Button> : null}
+          <Button variant="none" effect="fade" onClick={onRefresh}>
             <RefreshCw className="mr-2 h-4 w-4" />
             Refresh
           </Button>
@@ -284,14 +280,10 @@ export function PkmDataManagerPanel({
 
       {shouldShowSearch ? (
         <Input
-          type="search"
           value={searchQuery}
           onChange={(event) => setSearchQuery(event.target.value)}
-          placeholder="Search saved details"
-          aria-label="Search saved details"
-          autoComplete="off"
-          autoCorrect="off"
-          spellCheck={false}
+          placeholder="Search domains"
+          aria-label="Search domains"
           className="h-10"
         />
       ) : null}
@@ -300,12 +292,12 @@ export function PkmDataManagerPanel({
         <SurfaceInset className="p-4 text-sm text-muted-foreground">
           <div className="space-y-1">
             <p className="font-medium text-foreground">
-              {metadataError ? "Personal data unavailable" : "Checking your saved details"}
+              {metadataError ? "Personal Knowledge Model unavailable" : "Checking your saved domains"}
             </p>
             <p>
               {metadataError
                 ? metadataError
-                : "Saved details and sharing controls are still loading."}
+                : "Domain summaries, source health, and sharing controls are still loading."}
             </p>
           </div>
         </SurfaceInset>
@@ -313,12 +305,12 @@ export function PkmDataManagerPanel({
         <SurfaceInset className="p-4 text-sm text-muted-foreground">
           <div className="space-y-1">
             <p className="font-medium text-foreground">
-              {domains.length === 0 ? "No saved details yet" : "No matching details"}
+              {domains.length === 0 ? "No saved domains yet" : "No matching domains"}
             </p>
             <p>
               {domains.length === 0
-                ? "Once One saves your first memory or import, it will appear here for review and sharing."
-                : "Try a different search term to find saved details."}
+                ? "Once Kai saves your first memory or import, it will appear here as a domain you can review and share."
+                : "Try a different search term to find a saved domain."}
             </p>
           </div>
         </SurfaceInset>
@@ -341,12 +333,12 @@ export function PkmDataManagerPanel({
           {loadingDomainCount > 0 ? (
             <>
               <RefreshCw className="h-4 w-4 animate-spin" />
-              <span>Preparing sharing controls for {loadingDomainCount} categor{loadingDomainCount === 1 ? "y" : "ies"}.</span>
+              <span>Preparing sharing controls for {loadingDomainCount} domain{loadingDomainCount === 1 ? "" : "s"}.</span>
             </>
           ) : null}
           {domainErrorCount > 0 ? (
             <span>
-              Refresh needed for {domainErrorCount} categor{domainErrorCount === 1 ? "y" : "ies"}.
+              Refresh needed for {domainErrorCount} domain{domainErrorCount === 1 ? "" : "s"}.
             </span>
           ) : null}
         </SurfaceInset>
@@ -366,6 +358,7 @@ function ConnectionCard({
     <button
       type="button"
       onClick={onOpen}
+      aria-label={`View details for ${connection.requesterLabel}`}
       className={cn(
         "group w-full rounded-none bg-transparent text-left shadow-none transition-colors duration-150",
         "hover:bg-[color:var(--app-card-surface-compact)]/72",
@@ -394,7 +387,7 @@ function ConnectionCard({
               {connection.accessCount} access point{connection.accessCount === 1 ? "" : "s"}
             </Badge>
             <Badge variant="secondary">
-              {connection.domains.length} categor{connection.domains.length === 1 ? "y" : "ies"}
+              {connection.domains.length} domain{connection.domains.length === 1 ? "" : "s"}
             </Badge>
             <span className="min-w-0 truncate">{connection.domains.slice(0, 2).join(" · ")}</span>
           </div>
@@ -418,13 +411,8 @@ export function PkmDomainDetailPanel({
   previewPresentation,
   previewLoading,
   previewError,
-  previewDeletingEntityKey,
-  contextControls,
-  hideHighlights,
   onPreviewOpenChange,
   onPreviewPermission,
-  onEditPreviewEntity,
-  onDeletePreviewEntity,
   onTogglePermission,
 }: {
   domain: PkmDomainPresentation;
@@ -439,17 +427,9 @@ export function PkmDomainDetailPanel({
   previewPresentation: PkmSectionPreviewPresentation | null;
   previewLoading: boolean;
   previewError?: string | null;
-  previewDeletingEntityKey?: string | null;
-  contextControls?: ReactNode;
-  hideHighlights?: boolean;
   onPreviewOpenChange: (open: boolean) => void;
   onPreviewPermission: (permission: PkmDomainPermissionPresentation) => void;
-  onEditPreviewEntity?: (entity: PkmSectionPreviewEntity) => void;
-  onDeletePreviewEntity?: (entity: PkmSectionPreviewEntity) => void;
-  onTogglePermission: (
-    permission: PkmDomainPermissionPresentation,
-    nextPosture: PkmVisibilityPosture
-  ) => void;
+  onTogglePermission: (permission: PkmDomainPermissionPresentation, nextValue: boolean) => void;
 }) {
   const updatedLabel = formatDomainRowTimestamp(domain.updatedAt);
   return (
@@ -471,11 +451,7 @@ export function PkmDomainDetailPanel({
         </div>
         <div className="flex flex-wrap gap-2">
           <Badge variant="secondary">
-            {domain.detailCount > 0
-              ? `${domain.detailCount} item${domain.detailCount === 1 ? "" : "s"}`
-              : domain.sections.length > 0
-                ? "Ready"
-                : "No saved data"}
+            {domain.detailCount} item{domain.detailCount === 1 ? "" : "s"}
           </Badge>
           {domain.sourceLabels.map((label) => (
             <Badge key={label} variant="secondary">
@@ -488,14 +464,9 @@ export function PkmDomainDetailPanel({
             </Badge>
           ) : null}
         </div>
-        {contextControls ? (
-          <div className="border-t border-[color:var(--app-card-border-standard)] pt-3">
-            {contextControls}
-          </div>
-        ) : null}
       </SurfaceInset>
 
-      {!hideHighlights && domain.highlights.length > 0 ? (
+      {domain.highlights.length > 0 ? (
         <SurfaceInset className="space-y-2 p-4">
           {domain.highlights.slice(0, 5).map((highlight) => (
             <p key={highlight} className="text-sm leading-6 text-foreground/90">
@@ -511,7 +482,7 @@ export function PkmDomainDetailPanel({
             <div className="space-y-1">
               <SurfaceCardTitle>Sharing controls</SurfaceCardTitle>
               <SurfaceCardDescription>
-                Choose which sections are available when you approve access.
+                Choose which sections of this domain are available when you approve access.
               </SurfaceCardDescription>
             </div>
             <Badge
@@ -543,11 +514,6 @@ export function PkmDomainDetailPanel({
             permissions.map((permission) => {
               const pending = pendingPermissionKeys?.includes(permission.key) ?? false;
               const disabled = pending || Boolean(permission.disabledReason);
-              const postureOptions: Array<{ value: PkmVisibilityPosture; label: string }> = [
-                { value: "private", label: "Private" },
-                { value: "consent_required", label: "Ask first" },
-                { value: "default_available", label: "Available by default" },
-              ];
               return (
                 <div
                   key={permission.key}
@@ -557,10 +523,9 @@ export function PkmDomainDetailPanel({
                     <div className="min-w-0 space-y-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-sm font-semibold text-foreground">{permission.label}</p>
-                        <Badge variant="outline">{permission.stateLabel}</Badge>
+                        <Badge variant="outline">{permission.sensitivityTier}</Badge>
                       </div>
                       <p className="text-sm leading-6 text-muted-foreground">{permission.description}</p>
-                      <p className="text-xs text-muted-foreground">{permission.stateDescription}</p>
                       <p className="text-xs text-muted-foreground">{permission.counterpartSummary}</p>
                       {permission.requesterLabels.length > 0 ? (
                         <div className="flex flex-wrap gap-2 pt-1">
@@ -577,7 +542,6 @@ export function PkmDomainDetailPanel({
                     </div>
                     <div className="flex shrink-0 items-center gap-2 pt-0.5">
                       <Button
-                        type="button"
                         variant="none"
                         effect="fade"
                         size="sm"
@@ -589,33 +553,20 @@ export function PkmDomainDetailPanel({
                       {pending ? (
                         <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
                       ) : null}
+                      <Switch
+                        checked={permission.exposureEnabled}
+                        onCheckedChange={(nextValue) => onTogglePermission(permission, nextValue)}
+                        disabled={disabled}
+                        aria-label={`Toggle ${permission.label} sharing`}
+                      />
                     </div>
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {postureOptions.map((option) => {
-                      const active = permission.visibilityPosture === option.value;
-                      return (
-                        <Button
-                          key={option.value}
-                          type="button"
-                          variant={active ? "blue-gradient" : "none"}
-                          effect={active ? "fill" : "fade"}
-                          size="sm"
-                          disabled={disabled || active}
-                          onClick={() => onTogglePermission(permission, option.value)}
-                          aria-pressed={active}
-                        >
-                          {option.label}
-                        </Button>
-                      );
-                    })}
                   </div>
                 </div>
               );
             })
           ) : (
             <SurfaceInset className="p-4 text-sm text-muted-foreground">
-              Section-level sharing controls will appear here once these details are ready.
+              Section-level sharing controls will appear here once this domain manifest is ready.
             </SurfaceInset>
           )}
         </SurfaceCardContent>
@@ -624,7 +575,7 @@ export function PkmDomainDetailPanel({
       <Dialog open={previewOpen} onOpenChange={onPreviewOpenChange}>
         <DialogContent
           showCloseButton={false}
-          className="w-[calc(100%-2.5rem)] max-h-[calc(100svh-2rem)] gap-0 overflow-hidden p-0 sm:max-w-[min(42rem,calc(100vw-4rem))] lg:max-w-[min(48rem,calc(100vw-6rem))]"
+          className="w-[calc(100%-2.5rem)] max-h-[calc(100svh-2rem)] gap-0 overflow-hidden p-0 sm:max-w-[min(26rem,calc(100vw-8rem))] lg:max-w-[min(27rem,calc(100vw-12rem))]"
         >
           <div className="sticky top-0 z-20 grid grid-cols-[minmax(0,1fr)_2.5rem] items-start gap-4 border-b border-[color:var(--app-card-border-standard)] bg-[color:var(--app-card-surface-default-solid)] px-8 pb-4 pt-5 sm:px-9">
             <DialogHeader className="min-w-0 flex-1 text-left">
@@ -655,12 +606,7 @@ export function PkmDomainDetailPanel({
                 <span>{previewError}</span>
               </SurfaceInset>
             ) : previewPresentation ? (
-              <PkmSectionPreview
-                presentation={previewPresentation}
-                deletingEntityKey={previewDeletingEntityKey}
-                onEditEntity={onEditPreviewEntity}
-                onDeleteEntity={onDeletePreviewEntity}
-              />
+              <PkmSectionPreview presentation={previewPresentation} />
             ) : (
               <SurfaceInset className="p-4 text-sm text-muted-foreground">
                 No saved values are available for this section yet.
@@ -716,7 +662,7 @@ export function PkmAccessManagerPanel({
       {summary && sharingReady ? (
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="secondary">{summary.activeGrantCount} active grants</Badge>
-          <Badge variant="secondary">{summary.sharedDomainCount} shared categories</Badge>
+          <Badge variant="secondary">{summary.sharedDomainCount} shared domains</Badge>
           {connections.length > 0 ? (
             <Badge variant="secondary">{connections.length} connections</Badge>
           ) : null}
@@ -782,7 +728,7 @@ export function PkmAccessConnectionDetailPanel({
               <SurfaceCardTitle>{connection.requesterLabel}</SurfaceCardTitle>
               <SurfaceCardDescription>
                 {connection.accessCount} active access point{connection.accessCount === 1 ? "" : "s"} across{" "}
-                {connection.domains.length} categor{connection.domains.length === 1 ? "y" : "ies"}
+                {connection.domains.length} domain{connection.domains.length === 1 ? "" : "s"}
               </SurfaceCardDescription>
             </div>
           </div>
@@ -811,7 +757,7 @@ export function PkmAccessConnectionDetailPanel({
               <p className="text-xs leading-5 text-muted-foreground">{grant.readableAccessLabel}</p>
               <p className="text-[11px] text-muted-foreground">Expires {formatTimestamp(grant.expiresAt)}</p>
             </div>
-            <Button type="button" variant="none" effect="fade" size="sm" onClick={() => void onRevokeAccess(grant.scope)}>
+            <Button variant="none" effect="fade" size="sm" onClick={() => void onRevokeAccess(grant.scope)}>
               Revoke
             </Button>
           </div>

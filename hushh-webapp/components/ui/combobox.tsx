@@ -32,7 +32,6 @@ function ComboboxTrigger({
     >
       {children}
       <ChevronDownIcon
-        aria-hidden="true"
         data-slot="combobox-trigger-icon"
         className="text-muted-foreground pointer-events-none size-4"
       />
@@ -44,12 +43,11 @@ function ComboboxClear({ className, ...props }: ComboboxPrimitive.Clear.Props) {
   return (
     <ComboboxPrimitive.Clear
       data-slot="combobox-clear"
-      aria-label="Clear"
-      render={<InputGroupButton variant="ghost" size="icon-xs" />}
+      render={<InputGroupButton variant="ghost" size="icon-xs" aria-label="Clear" />}
       className={cn(className)}
       {...props}
     >
-      <XIcon aria-hidden="true" className="pointer-events-none" />
+      <XIcon className="pointer-events-none" />
     </ComboboxPrimitive.Clear>
   )
 }
@@ -162,7 +160,7 @@ function ComboboxItem({
           <span className="pointer-events-none absolute right-2 flex size-4 items-center justify-center" />
         }
       >
-        <CheckIcon aria-hidden="true" className="pointer-events-none size-4 pointer-coarse:size-5" />
+        <CheckIcon className="pointer-events-none size-4 pointer-coarse:size-5" />
       </ComboboxPrimitive.ItemIndicator>
     </ComboboxPrimitive.Item>
   )
@@ -263,11 +261,11 @@ function ComboboxChip({
       {children}
       {showRemove && (
         <ComboboxPrimitive.ChipRemove
-          render={<Button type="button" variant="ghost" size="icon-xs" />}
+          render={<Button variant="ghost" size="icon-xs" aria-label="Remove" />}
           className="-ml-1 opacity-50 hover:opacity-100"
           data-slot="combobox-chip-remove"
         >
-          <XIcon className="pointer-events-none" aria-hidden="true" />
+          <XIcon className="pointer-events-none" />
         </ComboboxPrimitive.ChipRemove>
       )}
     </ComboboxPrimitive.Chip>
