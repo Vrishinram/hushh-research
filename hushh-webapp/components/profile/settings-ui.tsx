@@ -178,7 +178,7 @@ export function SettingsRow({
 }) {
   const resolvedAsChild = asChild && isValidElement(children);
   const isInteractive = !disabled && (typeof onClick === "function" || resolvedAsChild);
-  const shouldStackTrailing = stackTrailingOnMobile && Boolean(trailing) && !chevron;
+  const shouldStackTrailing = stackTrailingOnMobile && Boolean(trailing);
   const hasInteractiveTrailing = containsInteractiveNode(trailing);
   const splitPrimaryAction = Boolean(!asChild && onClick && hasInteractiveTrailing);
   const Comp = resolvedAsChild ? Slot.Root : onClick && !splitPrimaryAction ? "button" : "div";

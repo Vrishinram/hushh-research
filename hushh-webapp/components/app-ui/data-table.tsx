@@ -167,11 +167,22 @@ export function DataTable<TData, TValue>({
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onGlobalFilterChange: setGlobalFilter,
-    ...(normalizedSearchKeys.length > 0
-      ? {
-          globalFilterFn: globalSearchFilterFn,
-        }
-      : {}),
+    globalFilterFn: (row, columnId, filterValue) => {
+      if (typeof filterValue === "string" && !filterValue.trim()) {
+        return true;
+      }
+      if (normalizedSearchKeys.length > 0) {
+        return globalSearchFilterFn(row, columnId, filterValue);
+      }
+      const query = typeof filterValue === "string" ? filterValue.trim().toLowerCase() : "";
+      if (!query) return true;
+      const original = row.original as Record<string, unknown>;
+      return Object.keys(original).some((key) => {
+        const value = original[key];
+        if (value === null || value === undefined) return false;
+        return String(value).toLowerCase().includes(query);
+      });
+    },
     state: {
       sorting,
       columnFilters,
