@@ -213,10 +213,16 @@ export function DataTable<TData, TValue>({
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
+                type="search"
+                spellCheck={false}
+                autoComplete="off"
+                autoCapitalize="none"
+                autoCorrect="off"
                 placeholder={searchPlaceholder}
                 value={globalFilter ?? ""}
                 onChange={(e) => setGlobalFilter(e.target.value)}
                 className="pl-9 cursor-text"
+                aria-label="Search table"
               />
             </div>
           ) : null}
