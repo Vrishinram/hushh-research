@@ -188,9 +188,9 @@ export function PkmExplorerPanel() {
   }, [isVaultUnlocked, selectedDomain, user, vaultKey, vaultOwnerToken]);
 
   const selectedSummary = useMemo<DomainSummary | null>(() => {
-    if (!metadata || !selectedDomain) return null;
-    return metadata.domains.find((domain) => domain.key === selectedDomain) || null;
-  }, [metadata, selectedDomain]);
+    if (!selectedDomain) return null;
+    return visibleDomains.find((domain) => domain.key === selectedDomain) || null;
+  }, [visibleDomains, selectedDomain]);
 
   const selectedScopeEntries = useMemo(
     () => domainState.manifest?.scope_registry || [],

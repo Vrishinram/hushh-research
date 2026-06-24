@@ -30,6 +30,8 @@ export function SegmentedTabs({
 
   return (
     <div
+      role="radiogroup"
+      aria-label={ariaLabel}
       className={cn(
         "relative grid w-full rounded-full p-1 backdrop-blur-xl [grid-template-columns:repeat(var(--segmented-mobile-cols),minmax(0,1fr))] sm:[grid-template-columns:repeat(var(--segmented-desktop-cols),minmax(0,1fr))]",
         "border border-[color:var(--app-card-border-standard)] bg-[color:var(--app-card-surface-compact)] shadow-[var(--app-card-shadow-standard)]",
@@ -49,7 +51,8 @@ export function SegmentedTabs({
           <button
             key={option.value}
             type="button"
-            aria-pressed={isActive}
+            role="radio"
+            aria-checked={isActive}
             data-state={isActive ? "active" : "inactive"}
             onClick={() => {
               if (!isActive) onValueChange(option.value);
