@@ -378,6 +378,7 @@ export function PopupTextEditorField({
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           placeholder={placeholder}
+          aria-label={placeholder}
           className={cn(
             "min-h-[220px] resize-none rounded-[22px] border-border/80 bg-background/90 px-4 py-3 text-sm leading-6 sm:min-h-[260px]",
             invalid ? "border-rose-300 dark:border-rose-500/50" : "",

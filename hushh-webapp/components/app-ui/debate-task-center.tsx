@@ -170,7 +170,7 @@ type NotificationItem =
 export function DebateTaskCenter({ triggerClassName, renderTrigger }: DebateTaskCenterProps = {}) {
   const router = useRouter();
   const { userId } = useAuth();
-  const { vaultOwnerToken } = useVault();
+  const { vaultKey, vaultOwnerToken } = useVault();
   const [debateState, setDebateState] = useState(DebateRunManagerService.getState());
   const [appTaskState, setAppTaskState] = useState(AppBackgroundTaskService.getState());
   const [isBusy, setIsBusy] = useState<Record<string, boolean>>({});
@@ -513,10 +513,21 @@ export function DebateTaskCenter({ triggerClassName, renderTrigger }: DebateTask
                             effect="fade"
                             size="icon"
                             className="h-8 w-8"
-                            disabled={Boolean(isBusy[item.task.runId])}
+                            disabled={
+                              !vaultKey ||
+                              !vaultOwnerToken ||
+                              Boolean(isBusy[item.task.runId])
+                            }
                             onClick={() =>
                               runAction(item.task.runId, async () => {
-                                await DebateRunManagerService.retryTaskPersistence(item.task.runId);
+                                if (!vaultKey || !vaultOwnerToken) return;
+                                await DebateRunManagerService.retryTaskPersistence(
+                                  item.task.runId,
+                                  {
+                                    vaultKey,
+                                    vaultOwnerToken,
+                                  }
+                                );
                               })
                             }
                             aria-label="Retry save"

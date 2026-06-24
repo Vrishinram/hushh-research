@@ -35,8 +35,6 @@ export function SegmentedTabs({
         "border border-[color:var(--app-card-border-standard)] bg-[color:var(--app-card-surface-compact)] shadow-[var(--app-card-shadow-standard)]",
         className
       )}
-      role="tablist"
-      aria-label={ariaLabel}
       style={
         {
           "--segmented-mobile-cols": String(resolvedMobileColumns),
@@ -51,8 +49,7 @@ export function SegmentedTabs({
           <button
             key={option.value}
             type="button"
-            role="tab"
-            aria-selected={isActive}
+            aria-pressed={isActive}
             data-state={isActive ? "active" : "inactive"}
             onClick={() => {
               if (!isActive) onValueChange(option.value);

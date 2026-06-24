@@ -6,10 +6,12 @@
  */
 
 import * as React from "react";
-import {
+import type {
   ColumnDef,
   ColumnFiltersState,
   SortingState,
+} from "@tanstack/react-table";
+import {
   flexRender,
   getCoreRowModel,
   getFilteredRowModel,
@@ -250,7 +252,7 @@ export function DataTable<TData, TValue>({
                   ?.setFilterValue(value === "all" ? undefined : value)
               }
             >
-              <SelectTrigger className="w-full sm:w-[200px] cursor-pointer">
+              <SelectTrigger className="w-full sm:w-[200px] cursor-pointer" aria-label={filterPlaceholder}>
                 <SelectValue placeholder={filterPlaceholder} />
               </SelectTrigger>
               <SelectContent>
@@ -312,9 +314,22 @@ export function DataTable<TData, TValue>({
                       compact
                         ? "px-[max(10px,calc(var(--data-table-cell-px)-2px))] py-2 text-[11px] uppercase tracking-[0.16em] text-muted-foreground"
                         : "px-[var(--data-table-cell-px)] py-[calc(var(--data-table-cell-py)-1px)]",
-                      header.column.getCanSort() ? "cursor-pointer" : ""
+                      header.column.getCanSort() ? "cursor-pointer select-none" : ""
                     )}
                     onClick={header.column.getToggleSortingHandler()}
+                    tabIndex={header.column.getCanSort() ? 0 : undefined}
+                    role={header.column.getCanSort() ? "button" : undefined}
+                    onKeyDown={(e) => {
+                      if (
+                        header.column.getCanSort() &&
+                        (e.key === "Enter" || e.key === " ")
+                      ) {
+                        e.preventDefault();
+                        header.column.toggleSorting(
+                          header.column.getIsSorted() === "asc"
+                        );
+                      }
+                    }}
                   >
                     {header.isPlaceholder
                       ? null
@@ -337,6 +352,19 @@ export function DataTable<TData, TValue>({
                 <TableRow
                   key={row.id}
                   data-state={row.getIsSelected() && "selected"}
+                  aria-selected={row.getIsSelected() || undefined}
+                  tabIndex={onRowClick ? 0 : undefined}
+                  role={onRowClick ? "button" : undefined}
+                  onKeyDown={
+                    onRowClick
+                      ? (e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            onRowClick(row.original);
+                          }
+                        }
+                      : undefined
+                  }
                   className={cn(
                     onRowClick
                       ? "cursor-pointer transition-[background-color,transform] duration-200 ease-out hover:-translate-y-px hover:bg-foreground/[0.045] active:translate-y-0 active:bg-foreground/[0.065]"

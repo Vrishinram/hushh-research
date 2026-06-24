@@ -30,6 +30,7 @@ import {
 } from "@/lib/services/personal-knowledge-model-service";
 import { Button } from "@/lib/morphy-ux/morphy";
 import { type DomainManifest } from "@/lib/personal-knowledge-model/manifest";
+import { isConsumerVisiblePkmDomain } from "@/lib/profile/pkm-profile-presentation";
 import { KYC_WORKFLOW_PKM_DOMAIN } from "@/lib/services/kyc-pkm-write-service";
 
 type DomainInspectorState = {
@@ -62,6 +63,10 @@ export function PkmExplorerPanel() {
     error: null,
     loading: false,
   });
+  const visibleDomains = useMemo(
+    () => (metadata?.domains || []).filter(isConsumerVisiblePkmDomain),
+    [metadata]
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -96,10 +101,11 @@ export function PkmExplorerPanel() {
         if (cancelled) return;
         setMetadata(nextMetadata);
         setSelectedDomain((current) => {
-          if (current && nextMetadata.domains.some((domain) => domain.key === current)) {
+          const nextVisibleDomains = nextMetadata.domains.filter(isConsumerVisiblePkmDomain);
+          if (current && nextVisibleDomains.some((domain) => domain.key === current)) {
             return current;
           }
-          return nextMetadata.domains[0]?.key || null;
+          return nextVisibleDomains[0]?.key || null;
         });
       } catch (nextError) {
         if (!cancelled) {
@@ -206,10 +212,11 @@ export function PkmExplorerPanel() {
       );
       setMetadata(nextMetadata);
       setSelectedDomain((current) => {
-        if (current && nextMetadata.domains.some((domain) => domain.key === current)) {
+        const nextVisibleDomains = nextMetadata.domains.filter(isConsumerVisiblePkmDomain);
+        if (current && nextVisibleDomains.some((domain) => domain.key === current)) {
           return current;
         }
-        return nextMetadata.domains[0]?.key || null;
+        return nextVisibleDomains[0]?.key || null;
       });
     } catch (nextError) {
       setBootstrapError(
@@ -255,7 +262,7 @@ export function PkmExplorerPanel() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {metadata ? <Badge variant="secondary">{metadata.domains.length} domains</Badge> : null}
+          {metadata ? <Badge variant="secondary">{visibleDomains.length} domains</Badge> : null}
           {metadata ? (
             <Badge variant="secondary">{metadata.totalAttributes} attributes</Badge>
           ) : null}
@@ -300,9 +307,9 @@ export function PkmExplorerPanel() {
             icon={FolderTree}
             accent="sky"
           />
-          {metadata?.domains.length ? (
+          {visibleDomains.length ? (
             <div role="tablist" aria-label="PKM Domains" className="space-y-3">
-              {metadata.domains.map((domain) => {
+              {visibleDomains.map((domain) => {
                 const isActive = selectedDomain === domain.key;
                 return (
                   <button
