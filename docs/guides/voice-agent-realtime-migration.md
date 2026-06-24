@@ -517,5 +517,5 @@ If real-time migration causes issues:
 ## References
 
 - [OpenAI Real-time API Docs](https://platform.openai.com/docs/guides/realtime)
-- [Current Voice Runtime Architecture](./kai-voice-runtime-architecture.md)
+- [Current Voice Runtime Architecture](../reference/kai/kai-voice-runtime-architecture.md)
 - [Issue #597: Voice Agent Latency](https://github.com/hushh-labs/hushh-research/issues/597)
