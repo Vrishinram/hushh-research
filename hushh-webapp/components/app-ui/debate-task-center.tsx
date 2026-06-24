@@ -19,8 +19,8 @@ import { Icon } from "@/lib/morphy-ux/ui";
 import { Button } from "@/lib/morphy-ux/button";
 import {
   TOP_SHELL_DROPDOWN_BODY_CLASSNAME,
-  TOP_SHELL_DROPDOWN_CONTENT_CLASSNAME,
   TOP_SHELL_DROPDOWN_HEADER_CLASSNAME,
+  TopShellDropdownContent,
 } from "@/components/app-ui/top-shell-dropdown";
 import {
   DropdownMenu,
@@ -439,7 +439,7 @@ export function DebateTaskCenter({ triggerClassName, renderTrigger }: DebateTask
           </button>
         )}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className={TOP_SHELL_DROPDOWN_CONTENT_CLASSNAME}>
+      <TopShellDropdownContent align="end">
         <div className={TOP_SHELL_DROPDOWN_HEADER_CLASSNAME}>
           <p className="text-sm font-semibold text-foreground">Notifications</p>
         </div>
@@ -589,7 +589,7 @@ export function DebateTaskCenter({ triggerClassName, renderTrigger }: DebateTask
             </div>
           )}
         </div>
-      </DropdownMenuContent>
+      </TopShellDropdownContent>
     </DropdownMenu>
   );
 }
