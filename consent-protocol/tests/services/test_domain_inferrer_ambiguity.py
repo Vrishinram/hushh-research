@@ -75,11 +75,10 @@ def domain_inferrer_mod():
     finally:
         # Restore original path and modules
         sys.path = orig_sys_path
-        for key in inserted_keys:
-            if key in sys.modules:
+        for key in list(sys.modules.keys()):
+            if key not in orig_sys_modules:
                 del sys.modules[key]
-        for key, val in orig_sys_modules.items():
-            sys.modules[key] = val
+        sys.modules.update(orig_sys_modules)
 
 
 @pytest.fixture()

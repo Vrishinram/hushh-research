@@ -28,7 +28,7 @@ def authed_client():
 
     app.dependency_overrides[require_firebase_auth] = lambda: _FIREBASE_UID
     yield TestClient(app, raise_server_exceptions=False)
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(require_firebase_auth, None)
 
 
 @pytest.fixture()
@@ -37,7 +37,7 @@ def unauthed_client():
     from server import app
 
     yield TestClient(app, raise_server_exceptions=False)
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(require_firebase_auth, None)
 
 
 # ---------------------------------------------------------------------------
