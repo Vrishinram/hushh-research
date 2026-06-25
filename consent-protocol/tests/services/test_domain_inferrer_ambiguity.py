@@ -48,6 +48,23 @@ def mock_mod(name, **attrs):
     return m
 
 
+# Save original modules to avoid contaminating the global test environment
+MOCKED_MODULE_NAMES = [
+    "hushh_mcp.constants",
+    "hushh_mcp.types",
+    "hushh_mcp.consent.token",
+    "hushh_mcp.consent.scope_helpers",
+    "hushh_mcp.consent.scope_generator",
+    "hushh_mcp.consent.scope_bundles",
+    "hushh_mcp.services.consent_db",
+    "hushh_mcp.services",
+    "hushh_mcp.config",
+    "hushh_mcp.runtime_settings",
+    "hushh_mcp.db.connection",
+    "hushh_mcp.db",
+]
+_original_modules = {name: sys.modules.get(name) for name in MOCKED_MODULE_NAMES}
+
 mock_mod("hushh_mcp.constants", ConsentScope=ConsentScope, GEMINI_MODEL="mock")
 mock_mod("hushh_mcp.types", UserID=str)
 mock_mod("hushh_mcp.consent.token")
@@ -81,6 +98,13 @@ _mod = load_module(
     "hushh_mcp.services.domain_inferrer",
 )
 DomainInferrer = _mod.DomainInferrer
+
+# Restore the original modules to clean up global sys.modules
+for name, original in _original_modules.items():
+    if original is None:
+        sys.modules.pop(name, None)
+    else:
+        sys.modules[name] = original
 
 
 # ─────────────────────────────────────────────
