@@ -71,11 +71,8 @@ from mcp_modules.tools import (
 # IMPORTANT: Only use stderr - stdout is reserved for JSON-RPC messages
 # ============================================================================
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="[HUSHH-MCP] %(levelname)s: %(message)s",
-    stream=sys.stderr,  # CRITICAL: Don't pollute stdout
-)
+from services.logging_config import configure_logging
+configure_logging(level="INFO", stream="ext://sys.stderr")
 logger = logging.getLogger("hushh-mcp-server")
 
 
