@@ -14,6 +14,7 @@
  */
 
 import { useEffect, useRef } from 'react';
+import { ApiService } from "@/lib/services/api-service";
 
 interface PreloadConfig {
   tickerSymbols: string[];
@@ -107,7 +108,7 @@ class MarketDataPreloader {
       
       try {
         // Fetch ticker data
-        const response = await fetch('/api/market/tickers', {
+        const response = await ApiService.apiFetch('/api/market/tickers', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ symbols: toPreload }),
@@ -143,7 +144,7 @@ class MarketDataPreloader {
    */
   async preloadMarketSummary(): Promise<void> {
     try {
-      const response = await fetch('/api/market/summary', {
+      const response = await ApiService.apiFetch('/api/market/summary', {
         priority: 'low' as RequestPriority,
       });
       
@@ -235,7 +236,7 @@ class MarketDataPreloader {
         };
         request.onerror = () => resolve(null);
       });
-    } catch (error) {
+    } catch {
       return null;
     }
   }
