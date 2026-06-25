@@ -14,6 +14,7 @@ Tests cover:
 """
 
 import importlib.util
+from pathlib import Path
 import sys
 import types
 from enum import Enum
@@ -22,7 +23,8 @@ from enum import Enum
 # Step 1: Add consent-protocol to path
 # ─────────────────────────────────────────────
 
-CONSENT_PATH = "D:/Learn Ai/Hush_clone/hushh-research/consent-protocol"
+TESTS_DIR = Path(__file__).resolve().parent
+CONSENT_PATH = str(TESTS_DIR.parents[1])
 if CONSENT_PATH not in sys.path:
     sys.path.insert(0, CONSENT_PATH)
 
@@ -75,7 +77,7 @@ def load_module(file_path, module_name):
 
 
 _mod = load_module(
-    "D:/Learn Ai/Hush_clone/hushh-research/consent-protocol/hushh_mcp/services/domain_inferrer.py",
+    str(TESTS_DIR.parents[1] / "hushh_mcp" / "services" / "domain_inferrer.py"),
     "hushh_mcp.services.domain_inferrer",
 )
 DomainInferrer = _mod.DomainInferrer
