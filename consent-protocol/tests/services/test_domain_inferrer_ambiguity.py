@@ -14,10 +14,10 @@ Tests cover:
 """
 
 import importlib.util
-from pathlib import Path
 import sys
 import types
 from enum import Enum
+from pathlib import Path
 
 # ─────────────────────────────────────────────
 # Step 1: Add consent-protocol to path
