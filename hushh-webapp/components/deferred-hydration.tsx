@@ -46,6 +46,7 @@ export function DeferredHydration({
     
     // Fallback to immediate state update
     setIsHydrated(true);
+    return;
   }, [delay]);
 
   if (!isHydrated) {
