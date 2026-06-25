@@ -445,10 +445,53 @@ class RIAIntelligenceStage1LookupAdapter:
                 out.append(candidate)
         return out[:5]
 
+    @classmethod
+    def _not_verified_result_from_http_error(
+        cls,
+        *,
+        status_code: int,
+        payload: dict[str, Any] | None,
+    ) -> NameVerificationResult | None:
+        reason = ""
+        if isinstance(payload, dict):
+            profile_reason = cls._not_found_reason(payload)
+            detail = payload.get("detail") or payload.get("message") or payload.get("error")
+            reason = str(detail or profile_reason or "").strip()
+        if not reason:
+            reason = "No confident FINRA or SEC match was found for the query."
+
+        normalized_reason = reason.lower()
+        is_no_match = status_code == 404 or any(
+            marker in normalized_reason
+            for marker in (
+                "no match",
+                "not found",
+                "not exist",
+                "no confident",
+                "not_verified",
+                "not verified",
+            )
+        )
+        if not is_no_match:
+            return None
+
+        return NameVerificationResult(
+            status="not_verified",
+            reason=reason,
+            reason_code=_reason_code_from_provider_reason(reason),
+            provider=cls._provider_label,
+            metadata={
+                "provider": cls._provider_label,
+                "status_code": status_code,
+                "reason": "provider_no_match",
+            },
+        )
+
     async def _request_payload(
         self,
         *,
         query: str,
+        crd_number: str | None = None,
     ) -> tuple[dict[str, Any] | None, NameVerificationResult | None]:
         request_url = self._verify_url or (
             f"{self._base_url}{self._endpoint_path}" if self._base_url else ""
@@ -466,6 +509,11 @@ class RIAIntelligenceStage1LookupAdapter:
             headers["Authorization"] = f"Bearer {self._api_key}"
 
         request_body: dict[str, Any] = {"query": query}
+        if crd_number:
+            request_body["context"] = {
+                "targetName": query,
+                "crdNumber": crd_number,
+            }
 
         try:
             async with httpx.AsyncClient(
@@ -486,7 +534,25 @@ class RIAIntelligenceStage1LookupAdapter:
                 metadata={"provider": self._provider_label, "error": type(exc).__name__},
             )
 
+        if response.status_code >= 500:
+            return None, NameVerificationResult(
+                status="provider_unavailable",
+                reason="RIA intelligence verification provider unavailable",
+                provider=self._provider_label,
+                metadata={"provider": self._provider_label, "status_code": response.status_code},
+            )
+
         if response.status_code >= 400:
+            try:
+                error_payload = response.json() if response.content else {}
+            except Exception:
+                error_payload = {}
+            not_verified = self._not_verified_result_from_http_error(
+                status_code=response.status_code,
+                payload=error_payload if isinstance(error_payload, dict) else {},
+            )
+            if not_verified is not None:
+                return None, not_verified
             return None, NameVerificationResult(
                 status="provider_unavailable",
                 reason="RIA intelligence verification provider unavailable",
@@ -576,6 +642,7 @@ class RIAIntelligenceStage1LookupAdapter:
 
         payload, error = await self._request_payload(
             query=normalized_query,
+            crd_number=normalized_input_crd,
         )
         if error is not None:
             return error

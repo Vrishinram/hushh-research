@@ -31,6 +31,7 @@ Hussh uses a code-owned route contract plus docs/runtime checks to keep the decl
 
 - Canonical app route source: `hushh-webapp/lib/navigation/routes.ts`
 - Route governance reference: `docs/reference/architecture/route-contracts.md`
+- Frontend/native surface mapper: `docs/reference/architecture/frontend-native-surface-map.md`
 - Mobile parity reference: `docs/reference/mobile/capacitor-parity-audit.md`
 - Docs/runtime verification:
   - `bash scripts/ci/docs-parity-check.sh`
@@ -46,8 +47,13 @@ Keep navigation documentation aligned with `hushh-webapp/lib/navigation/routes.t
 - `/register-phone`
 - `/logout`
 - `/labs/profile-appearance`
+- `/agent`
 - `/profile`
+- `/profile/receipts`
+- `/profile/gmail/oauth/return`
 - `/consents`
+- `/one/onboarding`
+- `/one/kyc`
 - `/marketplace`
 - `/marketplace/ria`
 - `/ria`
@@ -56,21 +62,22 @@ Keep navigation documentation aligned with `hushh-webapp/lib/navigation/routes.t
 - `/ria/picks`
 - `/ria/requests`
 - `/ria/settings`
-- `/kai`
-- `/kai/onboarding`
-- `/kai/import`
-- `/kai/plaid/oauth/return`
-- `/kai/investments`
-- `/kai/portfolio`
-- `/kai/analysis`
-- `/kai/optimize`
+- `/one/kai`
+- `/one/kai/import`
+- `/one/kai/plaid/oauth/return`
+- `/one/kai/alpaca/oauth/return`
+- `/one/kai/investments`
+- `/one/kai/funding-trade`
+- `/one/kai/portfolio`
+- `/one/kai/analysis`
+- `/one/kai/optimize`
 
 Detail entrypoints that require an identifier use query-backed static routes so Capacitor export stays compatible:
 
 - `/marketplace/ria?riaId=<ria_id>`
 - `/ria/workspace?clientId=<investor_user_id>`
 
-Legacy navigation surfaces and aliases must not be reintroduced without updating both `routes.ts` and this reference.
+Legacy `/kai/*` aliases and `/one/kai/onboarding` remain compatibility redirect surfaces only. They must not be documented as canonical navigation surfaces or reintroduced as primary routes without updating both `routes.ts` and this reference.
 
 ## Visible Route Coverage
 
@@ -103,6 +110,8 @@ The practical contract is split across:
 - `hushh-webapp/lib/navigation/routes.ts` for app-visible routes
 - backend route modules and Next.js proxy handlers for API surfaces
 - mobile parity docs for platform-specific expectations and exceptions
+- `hushh-webapp/frontend-native-surface-map.generated.json` for the
+  route-to-API/native/plugin/voice scaffold used by Codex agents and parity audits
 
 ## Relationship To Other Docs
 

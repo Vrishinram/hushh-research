@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="https://img.shields.io/badge/Hussh-Research-5B4BFF?style=for-the-badge" alt="Hussh Research"/>
-</p>
-
 <h1 align="center">Hussh Research</h1>
 
 <p align="center">
@@ -83,9 +79,20 @@ Command default note:
 Fastest frontend-only hosted shortcut:
 
 ```bash
-./bin/hushh bootstrap --mode uat
-./bin/hushh web --mode uat
+./bin/hushh terminal backend --mode local --reload
+./bin/hushh web
 ```
+
+Production-like local frontend:
+
+```bash
+./bin/hushh env use --mode local
+cd hushh-webapp
+npm run build
+npm run start
+```
+
+Use `./bin/hushh env use --mode uat` or `./bin/hushh env use --mode prod` before `npm run build` only when you intentionally want the optimized local frontend to call the deployed UAT or production backend.
 
 ## Choose Your Lane
 
@@ -138,6 +145,16 @@ Prefer the devcontainer if you want a reproducible setup with Node 20, Python 3.
 ```bash
 Dev Containers: Reopen in Container
 ```
+
+If you specifically need a Docker-backed local backend helper, keep it inside the
+root CLI:
+
+```bash
+./bin/hushh compose up dev
+```
+
+This starts the backend support stack only. The frontend still uses the
+canonical `./bin/hushh web` path.
 
 ## Documentation
 

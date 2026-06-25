@@ -618,7 +618,10 @@ export function evaluateKaiActionAvailability(input: {
   }
 
   for (const guardId of action.guard_ids) {
-    if (guardId === "auth_signed_in" && appRuntimeState?.auth.signed_in !== true) {
+    if (
+      (guardId === "auth_signed_in" || guardId === "auth_required") &&
+      appRuntimeState?.auth.signed_in !== true
+    ) {
       return {
         status: "blocked",
         reason: "Sign in to use this action.",
@@ -718,6 +721,16 @@ function scoreSearchMatch(action: KaiActionDefinition, query: string, screen: st
   return score;
 }
 
+function availabilitySearchRank(availability: KaiActionAvailability): number {
+  if (
+    availability.status === "available" ||
+    availability.status === "requires_persona_switch"
+  ) {
+    return 0;
+  }
+  return 1;
+}
+
 export function searchKaiActions(input: {
   query: string;
   appRuntimeState?: AppRuntimeState;
@@ -741,6 +754,10 @@ export function searchKaiActions(input: {
   }))
     .filter((entry) => entry.score > 0)
     .sort((a, b) => {
+      const availabilityRank =
+        availabilitySearchRank(a.availability) -
+        availabilitySearchRank(b.availability);
+      if (availabilityRank !== 0) return availabilityRank;
       if (b.score !== a.score) return b.score - a.score;
       return a.action.label.localeCompare(b.action.label);
     })

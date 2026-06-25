@@ -26,12 +26,30 @@ import asyncio
 import json
 import logging
 import sys
+import time
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent
 
 from mcp_modules import resources as mcp_resources
+from mcp_modules.tools.schemas import (
+    PrepareCampaignContextSchema,
+    RequestConsentSchema,
+    ValidateTokenSchema,
+    GetEncryptedScopedExportSchema,
+    DelegateToAgentSchema,
+    DiscoverUserDomainsSchema,
+    CheckConsentStatusSchema,
+    ListRiaProfilesSchema,
+    GetRiaProfileSchema,
+    ListMarketplaceInvestorsSchema,
+    GetRiaVerificationStatusSchema,
+    GetRiaClientAccessSummarySchema,
+    KaiAnalyzeStockSchema,
+    KaiOpenHistorySchema,
+    EmptyArgsSchema,
+)
 
 # Import modular components
 from mcp_modules.config import SERVER_INFO
@@ -39,6 +57,7 @@ from mcp_modules.developer_context import (
     get_current_visible_tool_names,
     is_tool_allowed,
 )
+from mcp_modules.log_redaction import install_sensitive_log_filter, redact_mcp_arguments
 from mcp_modules.tools import (
     get_tool_definitions,
     handle_check_consent_status,
@@ -62,6 +81,7 @@ from mcp_modules.tools import (
     handle_list_marketplace_investors,
     handle_list_ria_profiles,
     handle_list_scopes,
+    handle_prepare_campaign_context,
     handle_request_consent,
     handle_validate_token,
 )
@@ -73,6 +93,7 @@ from mcp_modules.tools import (
 
 from services.logging_config import configure_logging
 configure_logging(level="INFO", stream="ext://sys.stderr")
+install_sensitive_log_filter()
 logger = logging.getLogger("hushh-mcp-server")
 
 
@@ -84,6 +105,7 @@ server = Server("hushh-consent")
 
 HANDLERS = {
     # ── Consent / Privacy tools ───────────────────────────────────────────────
+    "prepare_campaign_context": handle_prepare_campaign_context,
     "request_consent": handle_request_consent,
     "validate_token": handle_validate_token,
     "get_encrypted_scoped_export": handle_get_encrypted_scoped_export,
@@ -109,6 +131,33 @@ HANDLERS = {
     "kai_navigate_back": handle_kai_navigate_back,
     "kai_resume_active_analysis": handle_kai_resume_active_analysis,
     "kai_cancel_active_analysis": handle_kai_cancel_active_analysis,
+}
+
+SCHEMA_MAP = {
+    "prepare_campaign_context": PrepareCampaignContextSchema,
+    "request_consent": RequestConsentSchema,
+    "validate_token": ValidateTokenSchema,
+    "get_encrypted_scoped_export": GetEncryptedScopedExportSchema,
+    "delegate_to_agent": DelegateToAgentSchema,
+    "list_scopes": EmptyArgsSchema,
+    "discover_user_domains": DiscoverUserDomainsSchema,
+    "check_consent_status": CheckConsentStatusSchema,
+    "list_ria_profiles": ListRiaProfilesSchema,
+    "get_ria_profile": GetRiaProfileSchema,
+    "list_marketplace_investors": ListMarketplaceInvestorsSchema,
+    "get_ria_verification_status": GetRiaVerificationStatusSchema,
+    "get_ria_client_access_summary": GetRiaClientAccessSummarySchema,
+    "kai_analyze_stock": KaiAnalyzeStockSchema,
+    "kai_open_dashboard": EmptyArgsSchema,
+    "kai_open_import": EmptyArgsSchema,
+    "kai_open_history": KaiOpenHistorySchema,
+    "kai_open_consent": EmptyArgsSchema,
+    "kai_open_profile": EmptyArgsSchema,
+    "kai_open_optimize": EmptyArgsSchema,
+    "kai_open_home": EmptyArgsSchema,
+    "kai_navigate_back": EmptyArgsSchema,
+    "kai_resume_active_analysis": EmptyArgsSchema,
+    "kai_cancel_active_analysis": EmptyArgsSchema,
 }
 
 
@@ -137,8 +186,29 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     Compliance: MCP tools/call specification
     Logging: All calls logged for audit trail
     """
+    start_time = time.perf_counter()
     logger.info(f"🔧 Tool called: {name}")
-    logger.info(f"   Arguments: {json.dumps(arguments, default=str)}")
+    logger.info("   Arguments: %s", json.dumps(redact_mcp_arguments(arguments), default=str))
+
+    schema_cls = SCHEMA_MAP.get(name)
+    if schema_cls:
+        try:
+            validated_args = schema_cls.model_validate(arguments or {})
+            arguments = {k: v for k, v in validated_args.model_dump().items() if v is not None}
+        except Exception as ve:
+            logger.warning(f"❌ Argument validation failed for tool {name}: {ve}")
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps(
+                        {
+                            "status": "error",
+                            "error": f"Invalid arguments: {str(ve)}",
+                            "tool": name,
+                        }
+                    ),
+                )
+            ]
 
     handler = HANDLERS.get(name)
     if not handler:
@@ -169,10 +239,16 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
     try:
         result = await handler(arguments)
+        end_time = time.perf_counter()
+        elapsed_ms = (end_time - start_time) * 1000
         logger.info(f"✅ Tool {name} completed successfully")
+        logger.info(f"⏱️ Performance: Tool {name} execution took {elapsed_ms:.2f}ms")
         return result
     except Exception as e:
+        end_time = time.perf_counter()
+        elapsed_ms = (end_time - start_time) * 1000
         logger.error(f"❌ Tool {name} failed: {str(e)}")
+        logger.info(f"⏱️ Performance: Tool {name} failed after {elapsed_ms:.2f}ms")
         return [
             TextContent(
                 type="text", text=json.dumps({"error": str(e), "tool": name, "status": "failed"})

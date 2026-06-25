@@ -1,17 +1,19 @@
+"use client"
+
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
-import { Slot } from "radix-ui"
-
+import { Slot } from "@radix-ui/react-slot"
+import { Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
+  "relative inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all disabled:cursor-not-allowed disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive touch-manipulation",
   {
     variants: {
       variant: {
         default: "bg-primary text-primary-foreground hover:bg-primary/90",
         destructive:
-          "bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60",
+          "bg-destructive text-destructive-foreground hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60",
         outline:
           "border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50",
         secondary:
@@ -38,27 +40,80 @@ const buttonVariants = cva(
   }
 )
 
-function Button({
-  className,
-  variant = "default",
-  size = "default",
-  asChild = false,
-  ...props
-}: React.ComponentProps<"button"> &
-  VariantProps<typeof buttonVariants> & {
-    asChild?: boolean
-  }) {
-  const Comp = asChild ? Slot.Root : "button"
-
-  return (
-    <Comp
-      data-slot="button"
-      data-variant={variant}
-      data-size={size}
-      className={cn(buttonVariants({ variant, size, className }))}
-      {...props}
-    />
-  )
+export interface ButtonProps
+  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
+    VariantProps<typeof buttonVariants> {
+  asChild?: boolean
+  isLoading?: boolean
 }
+
+const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
+  (
+    {
+      className,
+      variant,
+      size,
+      asChild = false,
+      isLoading = false,
+      children,
+      disabled,
+      ...props
+    },
+    ref,
+  ) => {
+    const Comp = asChild ? Slot : "button"
+    const buttonRef = React.useRef<HTMLButtonElement | null>(null)
+    const [settledWidth, setSettledWidth] = React.useState<number | null>(null)
+    const setRefs = React.useCallback(
+      (node: HTMLButtonElement | null) => {
+        buttonRef.current = node
+        if (typeof ref === "function") {
+          ref(node)
+        } else if (ref) {
+          ref.current = node
+        }
+      },
+      [ref],
+    )
+
+    React.useLayoutEffect(() => {
+      if (isLoading || !buttonRef.current) return
+      const nextWidth = buttonRef.current.getBoundingClientRect().width
+      if (nextWidth > 0) {
+        setSettledWidth(nextWidth)
+      }
+    }, [children, isLoading, size, variant])
+
+    // When using asChild, we must ensure only one child is passed to Slot.
+    // If loading, we handle the content inside a single span.
+    const content = (
+      <>
+        {isLoading && (
+          <Loader2 className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 animate-spin" aria-hidden="true" />
+        )}
+        {isLoading ? <span className="opacity-0">{children}</span> : children}
+      </>
+    )
+
+    return (
+      <Comp
+        {...props}
+        type={asChild ? undefined : "button"}
+        className={cn(buttonVariants({ variant, size, className }))}
+        ref={setRefs}
+        disabled={disabled || isLoading}
+        aria-busy={isLoading ? "true" : undefined}
+        style={{
+          minWidth: isLoading && settledWidth ? `${settledWidth}px` : undefined,
+          ...props.style,
+        }}
+      >
+        {asChild ? React.Children.only(children) : content}
+      </Comp>
+    )
+  },
+)
+
+Button.displayName = "Button"
 
 export { Button, buttonVariants }

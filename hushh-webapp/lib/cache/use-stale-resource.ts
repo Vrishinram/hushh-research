@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 
+import { logRequestAudit } from "@/lib/cache/request-audit-log";
 import { CacheService, type CacheSnapshot } from "@/lib/services/cache-service";
 
 const inflightRequests = new Map<string, Promise<unknown>>();
@@ -61,6 +62,12 @@ export function useStaleResource<T>({
         });
         setLoading(false);
         setRefreshing(false);
+        // A fresh value landed in the cache (e.g. a background refresh that
+        // resolved through another hook instance). Clear any stale error so the
+        // UI doesn't keep showing "Failed to refresh" on top of good data.
+        if (nextSnapshot?.data != null) {
+          setError(null);
+        }
         return;
       }
 
@@ -94,7 +101,7 @@ export function useStaleResource<T>({
 
       const cachedSnapshot = cache.peek<T>(cacheKey);
       if (cachedSnapshot) {
-        console.info(`[RequestAudit:${label}] ${cachedSnapshot.isFresh ? "cache_hit" : "stale_hit"}`, {
+        logRequestAudit(label, cachedSnapshot.isFresh ? "cache_hit" : "stale_hit", {
           cacheKey,
         });
         setSnapshot(cachedSnapshot);
@@ -102,7 +109,7 @@ export function useStaleResource<T>({
           setData(cachedSnapshot.data);
         });
       } else {
-        console.info(`[RequestAudit:${label}] cache_miss`, {
+        logRequestAudit(label, "cache_miss", {
           cacheKey,
         });
       }
@@ -116,7 +123,7 @@ export function useStaleResource<T>({
 
       const existingRequest = inflightRequests.get(cacheKey) as Promise<T> | undefined;
       if (existingRequest) {
-        console.info(`[RequestAudit:${label}] inflight_dedupe_hit`, {
+        logRequestAudit(label, "inflight_dedupe_hit", {
           cacheKey,
           force: Boolean(options?.force),
         });
@@ -150,7 +157,7 @@ export function useStaleResource<T>({
       }
 
       try {
-        console.info(`[RequestAudit:${label}] network_fetch`, {
+        logRequestAudit(label, "network_fetch", {
           cacheKey,
           force: Boolean(options?.force),
         });

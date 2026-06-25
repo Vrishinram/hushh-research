@@ -2,11 +2,13 @@
 
 import {
   ApiService,
+  isMarketInsightsEmptyError,
   type KaiHomeInsightsV2,
   type KaiHomeMover,
   type KaiHomeSpotlightItem,
   type KaiHomeWatchlistItem,
 } from "@/lib/services/api-service";
+import { logRequestAudit } from "@/lib/cache/request-audit-log";
 import { CacheService, CACHE_KEYS, CACHE_TTL } from "@/lib/services/cache-service";
 import {
   DeviceResourceCacheService,
@@ -343,7 +345,7 @@ function withStablePayloadFromCache(
 }
 
 function logRequest(stage: string, detail: Record<string, unknown>): void {
-  console.info(`[RequestAudit:kai_market_home] ${stage}`, detail);
+  logRequestAudit("kai_market_home", stage, detail);
 }
 
 export class KaiMarketHomeResourceService {
@@ -432,7 +434,7 @@ export class KaiMarketHomeResourceService {
   static async refreshBaseline(params: {
     userId: string;
     daysBack?: number;
-  }): Promise<KaiHomeInsightsV2> {
+  }): Promise<KaiHomeInsightsV2 | null> {
     const daysBack = params.daysBack ?? 7;
     const cacheKey = CACHE_KEYS.KAI_MARKET_HOME_BASELINE(params.userId, daysBack);
     const inflightKey = `baseline:${params.userId}:${daysBack}`;
@@ -445,9 +447,6 @@ export class KaiMarketHomeResourceService {
         cacheKey,
       });
       const resolved = await existing;
-      if (!resolved) {
-        throw new Error("Missing baseline market payload");
-      }
       return resolved;
     }
 
@@ -478,6 +477,17 @@ export class KaiMarketHomeResourceService {
         });
         return stabilized;
       } catch (error) {
+        if (isMarketInsightsEmptyError(error)) {
+          logRequest("empty_hit", {
+            mode: "baseline",
+            userId: params.userId,
+            cacheKey,
+          });
+          if (baseline) {
+            return baseline;
+          }
+          return null;
+        }
         if (baseline) {
           logRequest("stale_hit", {
             mode: "baseline",
@@ -703,6 +713,20 @@ export class KaiMarketHomeResourceService {
         });
         return stabilized;
       } catch (error) {
+        if (isMarketInsightsEmptyError(error)) {
+          logRequest("empty_hit", {
+            mode: "personalized",
+            userId: params.userId,
+            cacheKey,
+          });
+          if (personalizedBaseline) {
+            return personalizedBaseline;
+          }
+          if (sharedBaseline) {
+            return sharedBaseline;
+          }
+          return null;
+        }
         if (personalizedBaseline) {
           logRequest("stale_hit", {
             tier: "refresh_failure_fallback",

@@ -1,16 +1,21 @@
-"""Kai Gmail receipts connector routes."""
+"""Kai Gmail receipts connector routes.
+
+Canonical attach points
+-----------------------
+api.routes.kai.gmail.gmail_status   -> GET /gmail/status/{user_id}
+api.routes.kai.gmail.gmail_receipts -> GET /gmail/receipts/{user_id}
+"""
 
 from __future__ import annotations
 
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import OperationalError as SqlalchemyOperationalError
 
 from api.middleware import require_firebase_auth, require_vault_owner_token, verify_user_id_match
-from db.db_client import DatabaseExecutionError
 from hushh_mcp.services.gmail_receipts_service import GmailApiError, get_gmail_receipts_service
 from hushh_mcp.services.receipt_memory_service import get_receipt_memory_preview_service
 
@@ -20,33 +25,33 @@ router = APIRouter(tags=["Kai Gmail"])
 
 
 class GmailConnectStartRequest(BaseModel):
-    user_id: str = Field(min_length=1)
-    redirect_uri: str | None = Field(default=None, max_length=1000)
-    login_hint: str | None = Field(default=None, max_length=320)
+    user_id: str = Field(min_length=1, max_length=256)
+    redirect_uri: str | None = Field(default=None, max_length=2048)
+    login_hint: str | None = Field(default=None, max_length=512)
     include_granted_scopes: bool = False
 
 
 class GmailConnectCompleteRequest(BaseModel):
-    user_id: str = Field(min_length=1)
-    code: str = Field(min_length=1)
-    state: str = Field(min_length=1)
-    redirect_uri: str | None = Field(default=None, max_length=1000)
+    user_id: str = Field(min_length=1, max_length=256)
+    code: str = Field(min_length=1, max_length=512)
+    state: str = Field(min_length=1, max_length=512)
+    redirect_uri: str | None = Field(default=None, max_length=2048)
 
 
 class GmailDisconnectRequest(BaseModel):
-    user_id: str = Field(min_length=1)
+    user_id: str = Field(min_length=1, max_length=256)
 
 
 class GmailSyncRequest(BaseModel):
-    user_id: str = Field(min_length=1)
+    user_id: str = Field(min_length=1, max_length=256)
 
 
 class GmailReconcileRequest(BaseModel):
-    user_id: str = Field(min_length=1)
+    user_id: str = Field(min_length=1, max_length=256)
 
 
 class GmailReceiptMemoryPreviewRequest(BaseModel):
-    user_id: str = Field(min_length=1)
+    user_id: str = Field(min_length=1, max_length=256)
     force_refresh: bool = False
 
 
@@ -82,7 +87,9 @@ def _iter_exception_chain(exc: BaseException):
 
 def _is_dependency_unavailable_error(exc: Exception) -> bool:
     for current in _iter_exception_chain(exc):
-        if isinstance(current, (DatabaseExecutionError, SqlalchemyOperationalError)):
+        if current.__class__.__name__ == "DatabaseExecutionError":
+            return True
+        if isinstance(current, SqlalchemyOperationalError):
             return True
         if isinstance(current, (ConnectionError, OSError, TimeoutError)):
             return True
@@ -184,7 +191,7 @@ async def gmail_connect_complete(
 
 @router.get("/gmail/status/{user_id}")
 async def gmail_status(
-    user_id: str,
+    user_id: str = Path(..., min_length=1, max_length=128),
     firebase_uid: str = Depends(require_firebase_auth),
 ):
     verify_user_id_match(firebase_uid, user_id)
@@ -244,7 +251,7 @@ async def gmail_reconcile(
 @router.get("/gmail/sync/{run_id}")
 async def gmail_sync_run(
     run_id: str,
-    user_id: str = Query(..., min_length=1),
+    user_id: str = Query(..., min_length=1, max_length=128),
     firebase_uid: str = Depends(require_firebase_auth),
 ):
     verify_user_id_match(firebase_uid, user_id)
@@ -269,8 +276,8 @@ async def gmail_sync_run(
 
 @router.get("/gmail/receipts/{user_id}")
 async def gmail_receipts(
-    user_id: str,
-    page: int = Query(1, ge=1),
+    user_id: str = Path(..., min_length=1, max_length=128),
+    page: int = Query(1, ge=1, le=1_000),
     per_page: int = Query(25, ge=1, le=100),
     firebase_uid: str = Depends(require_firebase_auth),
     token_data: dict = Depends(require_vault_owner_token),
@@ -319,7 +326,7 @@ async def gmail_receipts_memory_preview(
 @router.get("/gmail/receipts-memory/artifacts/{artifact_id}")
 async def gmail_receipts_memory_artifact(
     artifact_id: str,
-    user_id: str = Query(..., min_length=1),
+    user_id: str = Query(..., min_length=1, max_length=128),
     firebase_uid: str = Depends(require_firebase_auth),
     token_data: dict = Depends(require_vault_owner_token),
 ):
@@ -362,9 +369,13 @@ async def gmail_webhook(request: Request):
     try:
         payload = await request.json()
     except Exception as exc:
+        logger.warning("kai.gmail.webhook.invalid_json: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "GMAIL_WEBHOOK_INVALID_JSON", "message": str(exc)},
+            detail={
+                "code": "GMAIL_WEBHOOK_INVALID_JSON",
+                "message": "Webhook payload is not valid JSON.",
+            },
         ) from exc
 
     if not isinstance(payload, dict):

@@ -10,8 +10,8 @@ import {
 } from "@/app/api/_utils/request-id";
 import { resolveSlowRequestTimeoutMs } from "@/lib/utils/request-timeouts";
 
-const ONE_API_TIMEOUT_MS = resolveSlowRequestTimeoutMs(20_000, {
-  developmentFloorMs: 20_000,
+const ONE_API_TIMEOUT_MS = resolveSlowRequestTimeoutMs(45_000, {
+  developmentFloorMs: 45_000,
   overrideEnvKey: "HUSHH_ONE_API_TIMEOUT_MS",
 });
 
@@ -35,12 +35,14 @@ async function proxyRequest(request: NextRequest, params: { path: string[] }) {
   const path = params.path.join("/");
   const url = `${getPythonApiUrl()}/api/one/${path}${request.nextUrl.search}`;
   const authHeader = request.headers.get("authorization");
+  const hushhConsentHeader = request.headers.get("x-hushh-consent");
   const acceptHeader = request.headers.get("accept");
   const contentType = request.headers.get("content-type") || "";
 
   try {
     const headers = createUpstreamHeaders(requestId);
     if (authHeader) headers.set("Authorization", authHeader);
+    if (hushhConsentHeader) headers.set("X-Hushh-Consent", hushhConsentHeader);
     if (acceptHeader) headers.set("Accept", acceptHeader);
 
     let body: BodyInit | undefined;
@@ -78,6 +80,20 @@ export async function GET(
 }
 
 export async function POST(
+  request: NextRequest,
+  props: { params: Promise<{ path: string[] }> }
+) {
+  return proxyRequest(request, await props.params);
+}
+
+export async function PATCH(
+  request: NextRequest,
+  props: { params: Promise<{ path: string[] }> }
+) {
+  return proxyRequest(request, await props.params);
+}
+
+export async function DELETE(
   request: NextRequest,
   props: { params: Promise<{ path: string[] }> }
 ) {
