@@ -1,4 +1,14 @@
-# CI and Deploy Proposals
+﻿# CI and Deploy Proposals
+
+## Visual Map
+
+```mermaid
+flowchart LR
+  proposal["Contributor proposal"]
+  review["Maintainer review"]
+  promote["Promote to protected path"]
+  proposal --> review --> promote
+```
 
 Contributor pull requests cannot modify protected pipeline surfaces
 (`.github/workflows/`, `deploy/`, `scripts/ci/`, and related paths). Proposals
