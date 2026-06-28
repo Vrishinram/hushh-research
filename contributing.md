@@ -137,3 +137,29 @@ Legacy `Hussh` identifiers may still exist in:
 Treat those as compatibility details, not public branding.
 
 See [docs/reference/operations/naming-policy.md](./docs/reference/operations/naming-policy.md) for the current rename boundary.
+
+
+## Security Scanning
+
+All contributions that touch trust-boundary files must pass the local security scan before opening a PR.
+
+### Running the scan
+
+`ash
+bash scripts/ops/run-security-scan.sh
+`
+
+This runs:
+- **[bandit](https://bandit.readthedocs.io/)** — Python static vulnerability analysis on consent-protocol/
+- **
+pm audit** — Node.js dependency vulnerability scan on hushh-webapp/
+
+The script uses set -euo pipefail and exits non-zero if any check fails. A passing run (exit code 0) is required before the CI gate will go green.
+
+### What counts as a security finding
+
+- Any bandit finding at severity MEDIUM or above (-ll flag)
+- Any 
+pm audit finding at severity high or critical
+
+If your change introduces a finding, either fix it or document the exception in a # nosec comment with justification.
