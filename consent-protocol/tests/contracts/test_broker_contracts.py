@@ -7,7 +7,6 @@ Ensures broker APIs (Alpaca, Plaid, etc.) maintain compatibility.
 Run: pytest tests/contracts/ -v
 """
 
-
 import pytest
 import requests
 from pact import Consumer, Provider
@@ -255,9 +254,7 @@ class TestBrokerIntegrationErrors:
         """Test handling of authentication errors"""
         (
             pact.upon_receiving("a request with invalid credentials")
-            .with_request(
-                "GET", "/v2/account", headers={"Authorization": "Bearer invalid"}
-            )
+            .with_request("GET", "/v2/account", headers={"Authorization": "Bearer invalid"})
             .will_respond_with(
                 401,
                 body={
