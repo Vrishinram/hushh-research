@@ -85,6 +85,12 @@ class HushhAgent(LlmAgent):
         """
         logger.info(f"🤖 Agent '{self.hushh_name}' invoked by {user_id}")
 
+        # 0. Reject blank credentials immediately — never validate empty tokens
+        if not consent_token or not consent_token.strip():
+            raise PermissionError("⛔ Agent Access Denied: consent_token is missing or blank")
+        if not user_id or not user_id.strip():
+            raise PermissionError("⛔ Agent Access Denied: user_id is missing or blank")
+
         # 1. Base Validation
         # Check if token allows accessing THIS agent
         is_valid = False
