@@ -99,7 +99,10 @@ class TestAnalyzeRequiresVaultOwnerToken:
             risk_profile="balanced",
         )
 
-        with patch("hushh_mcp.agents.kai.orchestrator.KaiOrchestrator.analyze", new=AsyncMock(return_value=mock_card)):
+        with patch(
+            "hushh_mcp.agents.kai.orchestrator.KaiOrchestrator.analyze",
+            new=AsyncMock(return_value=mock_card),
+        ):
             response = client.post(
                 "/analyze",
                 json={"user_id": "test_user", "ticker": "AAPL", "risk_profile": "balanced"},

@@ -74,7 +74,9 @@ class TestUtcAwareDatetimes:
         call_args = mock_sb.table.return_value.insert.call_args
         if call_args:
             inserted = call_args[0][0]
-            now_iso = inserted.get("created_at") or inserted.get("now_iso") or inserted.get("updated_at")
+            now_iso = (
+                inserted.get("created_at") or inserted.get("now_iso") or inserted.get("updated_at")
+            )
             if now_iso:
                 # Must parse as UTC-aware datetime
                 dt = datetime.fromisoformat(now_iso)

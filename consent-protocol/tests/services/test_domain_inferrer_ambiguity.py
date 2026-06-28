@@ -64,7 +64,9 @@ def domain_inferrer_mod():
 
         # Load domain_inferrer directly
         file_path = str(Path(CONSENT_PATH) / "hushh_mcp" / "services" / "domain_inferrer.py")
-        spec = importlib.util.spec_from_file_location("hushh_mcp.services.domain_inferrer", file_path)
+        spec = importlib.util.spec_from_file_location(
+            "hushh_mcp.services.domain_inferrer", file_path
+        )
         _mod = importlib.util.module_from_spec(spec)
         sys.modules["hushh_mcp.services.domain_inferrer"] = _mod
         inserted_keys.append("hushh_mcp.services.domain_inferrer")
@@ -90,20 +92,20 @@ def inferrer(domain_inferrer_mod):
 # TEST 1: Ambiguous key returns 'ambiguous'
 # ═════════════════════════════════════════════
 
+
 def test_ambiguous_key_returns_ambiguous(inferrer):
     """
     'portfolio' exists in both financial and professional domains.
     Expected: returns 'ambiguous' instead of silently picking one.
     """
     result = inferrer.infer("portfolio_tracker")
-    assert result == "ambiguous", (
-        f"Expected 'ambiguous' for cross-domain key, got '{result}'"
-    )
+    assert result == "ambiguous", f"Expected 'ambiguous' for cross-domain key, got '{result}'"
 
 
 # ═════════════════════════════════════════════
 # TEST 2: Clear key returns correct domain
 # ═════════════════════════════════════════════
+
 
 def test_clear_financial_key(inferrer):
     """
@@ -111,9 +113,7 @@ def test_clear_financial_key(inferrer):
     Expected: returns 'financial' with no ambiguity.
     """
     result = inferrer.infer("stock_ticker")
-    assert result == "financial", (
-        f"Expected 'financial', got '{result}'"
-    )
+    assert result == "financial", f"Expected 'financial', got '{result}'"
 
 
 def test_clear_health_key(inferrer):
@@ -122,9 +122,7 @@ def test_clear_health_key(inferrer):
     Expected: returns 'health'.
     """
     result = inferrer.infer("blood_pressure")
-    assert result == "health", (
-        f"Expected 'health', got '{result}'"
-    )
+    assert result == "health", f"Expected 'health', got '{result}'"
 
 
 def test_clear_travel_key(inferrer):
@@ -133,28 +131,26 @@ def test_clear_travel_key(inferrer):
     Expected: returns 'travel'.
     """
     result = inferrer.infer("flight_miles")
-    assert result == "travel", (
-        f"Expected 'travel', got '{result}'"
-    )
+    assert result == "travel", f"Expected 'travel', got '{result}'"
 
 
 # ═════════════════════════════════════════════
 # TEST 3: Unknown key returns 'general'
 # ═════════════════════════════════════════════
 
+
 def test_unknown_key_returns_general(inferrer):
     """
     A completely unknown key should return 'general'.
     """
     result = inferrer.infer("xyzzy_quantum_flux")
-    assert result == "general", (
-        f"Expected 'general' for unknown key, got '{result}'"
-    )
+    assert result == "general", f"Expected 'general' for unknown key, got '{result}'"
 
 
 # ═════════════════════════════════════════════
 # TEST 4: Confidence uses winning domain's max
 # ═════════════════════════════════════════════
+
 
 def test_confidence_is_meaningful(inferrer):
     """
@@ -183,6 +179,7 @@ def test_ambiguous_key_returns_zero_confidence(inferrer):
 # TEST 5: infer() delegates correctly
 # ═════════════════════════════════════════════
 
+
 def test_infer_delegates_to_infer_with_confidence(inferrer):
     """
     infer() should return same domain as infer_with_confidence()[0].
@@ -200,6 +197,7 @@ def test_infer_delegates_to_infer_with_confidence(inferrer):
 # ═════════════════════════════════════════════
 # TEST 6: infer_with_candidates() works correctly
 # ═════════════════════════════════════════════
+
 
 def test_infer_with_candidates_ambiguous(inferrer):
     """
@@ -222,14 +220,13 @@ def test_infer_with_candidates_clear(inferrer):
     assert result["is_ambiguous"] is False, (
         f"Expected is_ambiguous=False, got {result['is_ambiguous']}"
     )
-    assert result["domain"] == "health", (
-        f"Expected domain='health', got '{result['domain']}'"
-    )
+    assert result["domain"] == "health", f"Expected domain='health', got '{result['domain']}'"
 
 
 # ═════════════════════════════════════════════
 # TEST 7: Value hint breaks ambiguity tie
 # ═════════════════════════════════════════════
+
 
 def test_value_hint_breaks_tie(inferrer):
     """
@@ -239,9 +236,7 @@ def test_value_hint_breaks_tie(inferrer):
     """
     # Without hint — ambiguous
     without_hint = inferrer.infer("portfolio")
-    assert without_hint == "ambiguous", (
-        f"Expected 'ambiguous' without hint, got '{without_hint}'"
-    )
+    assert without_hint == "ambiguous", f"Expected 'ambiguous' without hint, got '{without_hint}'"
 
     # With financial hint — should resolve
     with_hint = inferrer.infer("portfolio", value_hint="stocks and bonds investment")
