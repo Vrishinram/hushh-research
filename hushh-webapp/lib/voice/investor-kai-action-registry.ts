@@ -7,6 +7,7 @@ import {
   listKaiActions,
   listKaiActionsForSurface,
   type KaiActionDefinition,
+  type KaiActionDelegateAgentId,
   type KaiActionExecutionPolicy,
   type KaiActionExecutionTarget,
   type KaiActionRiskLevel,
@@ -41,10 +42,12 @@ export type InvestorKaiActionWiring =
         | {
             kind: "voice_tool";
             toolName: VoiceToolCall["tool_name"];
+            params?: Record<string, unknown>;
           }
         | {
             kind: "route";
             href: string;
+            params?: Record<string, unknown>;
           };
     }
   | {
@@ -66,6 +69,7 @@ export type InvestorKaiActionDefinition = {
   searchKeywords: readonly string[];
   meaning: string;
   speakerPersona: KaiActionSpeakerPersona;
+  delegateAgentId: KaiActionDelegateAgentId | null;
   scope: {
     routes: readonly string[];
     screens: readonly InvestorKaiScreenScope[];
@@ -120,6 +124,7 @@ const KNOWN_VOICE_TOOLS: readonly VoiceToolCall["tool_name"][] = [
   "cancel_active_analysis",
   "clarify",
   "switch_persona",
+  "capture_pkm_memory",
 ];
 
 function describeGuard(guardId: string): string {
@@ -203,6 +208,7 @@ function toWiring(executionTarget: KaiActionExecutionTarget): InvestorKaiActionW
       binding: {
         kind: "voice_tool",
         toolName: executionTarget.target as VoiceToolCall["tool_name"],
+        params: executionTarget.params ? { ...executionTarget.params } : undefined,
       },
     };
   }
@@ -213,6 +219,7 @@ function toWiring(executionTarget: KaiActionExecutionTarget): InvestorKaiActionW
     binding: {
       kind: "route",
       href: executionTarget.target,
+      params: executionTarget.params ? { ...executionTarget.params } : undefined,
     },
   };
 }
@@ -226,6 +233,7 @@ function toRegistryAction(action: KaiActionDefinition): InvestorKaiActionDefinit
     searchKeywords: action.search_keywords,
     meaning: action.meaning,
     speakerPersona: action.speaker_persona,
+    delegateAgentId: action.delegate_agent_id,
     scope: {
       routes: action.reachability.routes,
       screens: action.reachability.screens,

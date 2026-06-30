@@ -445,10 +445,53 @@ class RIAIntelligenceStage1LookupAdapter:
                 out.append(candidate)
         return out[:5]
 
+    @classmethod
+    def _not_verified_result_from_http_error(
+        cls,
+        *,
+        status_code: int,
+        payload: dict[str, Any] | None,
+    ) -> NameVerificationResult | None:
+        reason = ""
+        if isinstance(payload, dict):
+            profile_reason = cls._not_found_reason(payload)
+            detail = payload.get("detail") or payload.get("message") or payload.get("error")
+            reason = str(detail or profile_reason or "").strip()
+        if not reason:
+            reason = "No confident FINRA or SEC match was found for the query."
+
+        normalized_reason = reason.lower()
+        is_no_match = status_code == 404 or any(
+            marker in normalized_reason
+            for marker in (
+                "no match",
+                "not found",
+                "not exist",
+                "no confident",
+                "not_verified",
+                "not verified",
+            )
+        )
+        if not is_no_match:
+            return None
+
+        return NameVerificationResult(
+            status="not_verified",
+            reason=reason,
+            reason_code=_reason_code_from_provider_reason(reason),
+            provider=cls._provider_label,
+            metadata={
+                "provider": cls._provider_label,
+                "status_code": status_code,
+                "reason": "provider_no_match",
+            },
+        )
+
     async def _request_payload(
         self,
         *,
         query: str,
+        crd_number: str | None = None,
     ) -> tuple[dict[str, Any] | None, NameVerificationResult | None]:
         request_url = self._verify_url or (
             f"{self._base_url}{self._endpoint_path}" if self._base_url else ""
@@ -465,6 +508,13 @@ class RIAIntelligenceStage1LookupAdapter:
         if self._api_key:
             headers["Authorization"] = f"Bearer {self._api_key}"
 
+        request_body: dict[str, Any] = {"query": query}
+        if crd_number:
+            request_body["context"] = {
+                "targetName": query,
+                "crdNumber": crd_number,
+            }
+
         try:
             async with httpx.AsyncClient(
                 timeout=self._timeout_seconds,
@@ -473,7 +523,7 @@ class RIAIntelligenceStage1LookupAdapter:
             ) as client:
                 response = await client.post(
                     request_url,
-                    json={"query": query},
+                    json=request_body,
                 )
         except Exception as exc:  # noqa: BLE001
             logger.warning("ria.intelligence_stage1_request_failed: %s", exc)
@@ -492,7 +542,37 @@ class RIAIntelligenceStage1LookupAdapter:
                 metadata={"provider": self._provider_label, "status_code": response.status_code},
             )
 
-        payload = response.json() if response.content else {}
+        if response.status_code >= 400:
+            try:
+                error_payload = response.json() if response.content else {}
+            except Exception:
+                error_payload = {}
+            not_verified = self._not_verified_result_from_http_error(
+                status_code=response.status_code,
+                payload=error_payload if isinstance(error_payload, dict) else {},
+            )
+            if not_verified is not None:
+                return None, not_verified
+            return None, NameVerificationResult(
+                status="provider_unavailable",
+                reason="RIA intelligence verification provider unavailable",
+                provider=self._provider_label,
+                metadata={"provider": self._provider_label, "status_code": response.status_code},
+            )
+
+        try:
+            payload = response.json() if response.content else {}
+        except Exception as exc:  # noqa: BLE001
+            return None, NameVerificationResult(
+                status="provider_unavailable",
+                reason="RIA intelligence verification returned invalid JSON",
+                provider=self._provider_label,
+                metadata={
+                    "provider": self._provider_label,
+                    "status_code": response.status_code,
+                    "error": type(exc).__name__,
+                },
+            )
         if not isinstance(payload, dict):
             return None, NameVerificationResult(
                 status="provider_unavailable",
@@ -502,8 +582,8 @@ class RIAIntelligenceStage1LookupAdapter:
             )
         return payload, None
 
-    def _cache_key(self, query: str) -> str:
-        return _normalize_identity_text(query)
+    def _cache_key(self, query: str, crd_number: str | None = None) -> str:
+        return f"{_normalize_identity_text(query)}|crd:{_normalize_crd(crd_number)}"
 
     @classmethod
     def _prune_expired_cache(cls, now: datetime) -> None:
@@ -511,19 +591,28 @@ class RIAIntelligenceStage1LookupAdapter:
         for key in expired_keys:
             cls._cache.pop(key, None)
 
-    def _get_cached_result(self, query: str) -> NameVerificationResult | None:
+    def _get_cached_result(
+        self,
+        query: str,
+        crd_number: str | None = None,
+    ) -> NameVerificationResult | None:
         now = datetime.now(timezone.utc)
         self._prune_expired_cache(now)
-        entry = self._cache.get(self._cache_key(query))
+        entry = self._cache.get(self._cache_key(query, crd_number))
         if entry is None or entry.expires_at <= now:
             return None
         return entry.result
 
-    def _store_cached_result(self, query: str, result: NameVerificationResult) -> None:
+    def _store_cached_result(
+        self,
+        query: str,
+        result: NameVerificationResult,
+        crd_number: str | None = None,
+    ) -> None:
         if result.status not in {"verified", "not_verified"} or self._cache_ttl_seconds <= 0:
             return
         self._prune_expired_cache(datetime.now(timezone.utc))
-        self._cache[self._cache_key(query)] = _Stage1LookupCacheEntry(
+        self._cache[self._cache_key(query, crd_number)] = _Stage1LookupCacheEntry(
             expires_at=datetime.now(timezone.utc) + timedelta(seconds=self._cache_ttl_seconds),
             result=result,
         )
@@ -532,9 +621,11 @@ class RIAIntelligenceStage1LookupAdapter:
         self,
         *,
         query: str,
+        crd_number: str | None = None,
         use_cache: bool = True,
     ) -> NameVerificationResult:
         normalized_query = str(query or "").strip()
+        normalized_input_crd = _normalize_crd(crd_number)
         if not normalized_query:
             return NameVerificationResult(
                 status="not_verified",
@@ -545,11 +636,14 @@ class RIAIntelligenceStage1LookupAdapter:
             )
 
         if use_cache:
-            cached = self._get_cached_result(normalized_query)
+            cached = self._get_cached_result(normalized_query, normalized_input_crd)
             if cached is not None:
                 return cached
 
-        payload, error = await self._request_payload(query=normalized_query)
+        payload, error = await self._request_payload(
+            query=normalized_query,
+            crd_number=normalized_input_crd,
+        )
         if error is not None:
             return error
         if payload is None:
@@ -572,7 +666,44 @@ class RIAIntelligenceStage1LookupAdapter:
         source_urls = self._source_urls(payload)
         metadata = {"provider": self._provider_label, "source_urls": source_urls}
 
-        if exists_on_finra and _normalize_crd(crd_number):
+        normalized_result_crd = _normalize_crd(crd_number)
+        if exists_on_finra and not normalized_result_crd:
+            result = NameVerificationResult(
+                status="not_verified",
+                matched_name=matched_name,
+                crd_number=crd_number,
+                current_firm=current_firm,
+                sec_number=sec_number,
+                reason="Verification did not return a CRD-backed advisor record. Onboarding stays blocked.",
+                reason_code="no_confident_match",
+                suggested_names=suggested_names,
+                provider=self._provider_label,
+                metadata={**metadata, "reason_code": "missing_crd"},
+            )
+            self._store_cached_result(normalized_query, result, normalized_input_crd)
+            return result
+
+        if (
+            exists_on_finra
+            and normalized_input_crd
+            and normalized_result_crd != normalized_input_crd
+        ):
+            result = NameVerificationResult(
+                status="not_verified",
+                matched_name=matched_name,
+                crd_number=crd_number,
+                current_firm=current_firm,
+                sec_number=sec_number,
+                reason="The verified CRD did not match the CRD you entered. Check the CRD or remove it and verify by name.",
+                reason_code="no_confident_match",
+                suggested_names=suggested_names,
+                provider=self._provider_label,
+                metadata={**metadata, "reason_code": "crd_mismatch"},
+            )
+            self._store_cached_result(normalized_query, result, normalized_input_crd)
+            return result
+
+        if exists_on_finra and normalized_result_crd:
             result = NameVerificationResult(
                 status="verified",
                 matched_name=matched_name,
@@ -582,7 +713,7 @@ class RIAIntelligenceStage1LookupAdapter:
                 provider=self._provider_label,
                 metadata=metadata,
             )
-            self._store_cached_result(normalized_query, result)
+            self._store_cached_result(normalized_query, result, normalized_input_crd)
             return result
 
         result = NameVerificationResult(
@@ -601,7 +732,7 @@ class RIAIntelligenceStage1LookupAdapter:
                 "suggested_names": suggested_names,
             },
         )
-        self._store_cached_result(normalized_query, result)
+        self._store_cached_result(normalized_query, result, normalized_input_crd)
         return result
 
 
@@ -622,23 +753,6 @@ class IapdVerificationAdapter:
         advisory_firm_iapd_number: str,
         force_live: bool = False,
     ) -> VerificationResult:
-        if (
-            not force_live
-            and not _is_production()
-            and (
-                _env_truthy("ADVISORY_VERIFICATION_BYPASS_ENABLED")
-                or _env_truthy("RIA_DEV_BYPASS_ENABLED")
-            )
-        ):
-            return VerificationResult(
-                verified=True,
-                rejected=False,
-                outcome="bypassed",
-                message="Advisory verification bypassed in this non-production environment.",
-                expires_at=datetime.now(timezone.utc) + timedelta(days=1),
-                metadata={"provider": "advisory_bypass", "reason": "bypass_enabled"},
-            )
-
         if not self._base_url or not self._api_key:
             return VerificationResult(
                 verified=False,
@@ -740,16 +854,6 @@ class BrokerVerificationAdapter:
         broker_firm_legal_name: str,
         broker_firm_crd: str,
     ) -> VerificationResult:
-        if not _is_production() and _env_truthy("BROKER_VERIFICATION_BYPASS_ENABLED"):
-            return VerificationResult(
-                verified=True,
-                rejected=False,
-                outcome="bypassed",
-                message="Broker verification bypassed in this non-production environment.",
-                expires_at=datetime.now(timezone.utc) + timedelta(days=1),
-                metadata={"provider": "broker_bypass", "reason": "bypass_enabled"},
-            )
-
         if not self._base_url or not self._api_key:
             if self._public_fallback_enabled:
                 return VerificationResult(

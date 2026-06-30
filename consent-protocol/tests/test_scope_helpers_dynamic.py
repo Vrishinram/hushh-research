@@ -2,7 +2,12 @@
 
 import pytest
 
-from hushh_mcp.consent.scope_helpers import normalize_scope, resolve_scope_to_enum, scope_matches
+from hushh_mcp.consent.scope_helpers import (
+    is_write_scope,
+    normalize_scope,
+    resolve_scope_to_enum,
+    scope_matches,
+)
 from hushh_mcp.constants import ConsentScope
 
 
@@ -34,6 +39,22 @@ def test_resolve_scope_to_enum_agent_kai_execute_scope():
     assert resolve_scope_to_enum("agent.kai.execute") == ConsentScope.AGENT_KAI_EXECUTE
 
 
+def test_resolve_scope_to_enum_one_nav_kyc_agent_scopes():
+    assert resolve_scope_to_enum("agent.one.orchestrate") == ConsentScope.AGENT_ONE_ORCHESTRATE
+    assert resolve_scope_to_enum("agent.nav.review") == ConsentScope.AGENT_NAV_REVIEW
+    assert resolve_scope_to_enum("agent.kyc.process") == ConsentScope.AGENT_KYC_PROCESS
+    assert resolve_scope_to_enum("agent.kyc.writeback") == ConsentScope.AGENT_KYC_WRITEBACK
+
+
+def test_resolve_scope_to_enum_location_capability_scopes():
+    assert resolve_scope_to_enum("cap.location.live.share") == ConsentScope.CAP_LOCATION_LIVE_SHARE
+    assert resolve_scope_to_enum("cap.location.live.view") == ConsentScope.CAP_LOCATION_LIVE_VIEW
+    assert (
+        resolve_scope_to_enum("cap.location.live.refer_request")
+        == ConsentScope.CAP_LOCATION_LIVE_REFER_REQUEST
+    )
+
+
 def test_resolve_scope_to_enum_unknown_agent_scope_is_rejected():
     with pytest.raises(ValueError, match="Unknown agent scope"):
         resolve_scope_to_enum("agent.kai.unknown")
@@ -42,3 +63,8 @@ def test_resolve_scope_to_enum_unknown_agent_scope_is_rejected():
 def test_resolve_scope_to_enum_unknown_static_scope_is_rejected():
     with pytest.raises(ValueError, match="Unknown scope"):
         resolve_scope_to_enum("custom.temporary")
+
+
+def test_kyc_writeback_is_write_scope():
+    assert is_write_scope("agent.kyc.writeback") is True
+    assert is_write_scope("agent.kyc.process") is False

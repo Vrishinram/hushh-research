@@ -51,16 +51,32 @@ def resolve_scope_to_enum(scope: str) -> ConsentScope:
 
     # Agent permissions
     _AGENT_SCOPE_MAP = {
+        "agent.one.orchestrate": ConsentScope.AGENT_ONE_ORCHESTRATE,
         "agent.kai.analyze": ConsentScope.AGENT_KAI_ANALYZE,
         "agent.kai.debate": ConsentScope.AGENT_KAI_DEBATE,
         "agent.kai.infer": ConsentScope.AGENT_KAI_INFER,
         "agent.kai.chat": ConsentScope.AGENT_KAI_CHAT,
         "agent.kai.execute": ConsentScope.AGENT_KAI_EXECUTE,
+        "agent.nav.review": ConsentScope.AGENT_NAV_REVIEW,
+        "agent.nav.revoke": ConsentScope.AGENT_NAV_REVOKE,
+        "agent.kyc.process": ConsentScope.AGENT_KYC_PROCESS,
+        "agent.kyc.draft": ConsentScope.AGENT_KYC_DRAFT,
+        "agent.kyc.writeback": ConsentScope.AGENT_KYC_WRITEBACK,
+        "cap.location.live.share": ConsentScope.CAP_LOCATION_LIVE_SHARE,
+        "cap.location.live.view": ConsentScope.CAP_LOCATION_LIVE_VIEW,
+        "cap.location.live.request": ConsentScope.CAP_LOCATION_LIVE_REQUEST,
+        "cap.location.live.revoke": ConsentScope.CAP_LOCATION_LIVE_REVOKE,
+        "cap.location.live.refer_request": ConsentScope.CAP_LOCATION_LIVE_REFER_REQUEST,
     }
     if scope.startswith("agent."):
         resolved = _AGENT_SCOPE_MAP.get(scope)
         if resolved is None:
             raise ValueError(f"Unknown agent scope: {scope!r}")
+        return resolved
+    if scope.startswith("cap."):
+        resolved = _AGENT_SCOPE_MAP.get(scope)
+        if resolved is None:
+            raise ValueError(f"Unknown capability scope: {scope!r}")
         return resolved
 
     try:
@@ -172,6 +188,12 @@ def get_scope_display_metadata(scope: str) -> dict:
             "icon_name": "pencil",
             "color_hex": "#3B82F6",
         },
+        "agent.one.orchestrate": {
+            "label": "One Orchestration",
+            "description": "Allow One to route a bounded task to the right specialist",
+            "icon_name": "route",
+            "color_hex": "#3B82F6",
+        },
         "agent.kai.analyze": {
             "label": "Kai Analysis",
             "description": "Allow Kai agent to analyze your data",
@@ -183,6 +205,66 @@ def get_scope_display_metadata(scope: str) -> dict:
             "description": "Allow Kai agent to execute actions",
             "icon_name": "zap",
             "color_hex": "#D4AF37",
+        },
+        "agent.nav.review": {
+            "label": "Nav Scope Review",
+            "description": "Allow Nav to review consent, privacy, vault, and scope decisions",
+            "icon_name": "shield-check",
+            "color_hex": "#10B981",
+        },
+        "agent.nav.revoke": {
+            "label": "Nav Revocation",
+            "description": "Allow Nav to help revoke or narrow an existing permission",
+            "icon_name": "shield-x",
+            "color_hex": "#10B981",
+        },
+        "agent.kyc.process": {
+            "label": "KYC Processing",
+            "description": "Allow KYC to process identity workflow requirements inside the granted scope",
+            "icon_name": "id-card",
+            "color_hex": "#6366F1",
+        },
+        "agent.kyc.draft": {
+            "label": "KYC Drafts",
+            "description": "Allow KYC to draft approval-gated workflow replies",
+            "icon_name": "file-pen",
+            "color_hex": "#6366F1",
+        },
+        "agent.kyc.writeback": {
+            "label": "KYC PKM Writeback",
+            "description": "Allow KYC to save structured workflow facts and artifacts to PKM",
+            "icon_name": "database",
+            "color_hex": "#6366F1",
+        },
+        "cap.location.live.share": {
+            "label": "Share Live Location",
+            "description": "Allow One to create a recipient-bound live-location grant",
+            "icon_name": "map-pin",
+            "color_hex": "#0F766E",
+        },
+        "cap.location.live.view": {
+            "label": "View Live Location",
+            "description": "Allow the approved recipient to fetch encrypted location envelopes",
+            "icon_name": "map",
+            "color_hex": "#0F766E",
+        },
+        "cap.location.live.request": {
+            "label": "Request Live Location",
+            "description": "Allow a verified person to request owner-approved location access",
+            "icon_name": "message-circle-plus",
+            "color_hex": "#0F766E",
+        },
+        "cap.location.live.revoke": {
+            "label": "Revoke Live Location",
+            "description": "Allow the owner to stop an active location grant",
+            "icon_name": "shield-x",
+            "color_hex": "#0F766E",
+        },
+        "cap.location.live.refer_request": {
+            "label": "Refer Location Request",
+            "description": "Allow a recipient to refer another person into an owner approval flow",
+            "icon_name": "user-plus",
+            "color_hex": "#0F766E",
         },
     }
 
@@ -212,6 +294,9 @@ def is_write_scope(scope: str) -> bool:
         return True
 
     if scope == "pkm.write":
+        return True
+
+    if scope == "agent.kyc.writeback":
         return True
 
     # For attr.* scopes, write is determined by context, not scope

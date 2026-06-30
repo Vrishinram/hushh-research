@@ -66,6 +66,8 @@ Minimum expectation:
 7. when the run is expected to outlive the current chat turn, start the persistent watcher instead of relying on manual follow-up
 8. when Codex initiated the merge or queue action, continuing this watch is mandatory; needing a user reminder to resume monitoring is process drift
 
+UAT Cloud Run provenance is a release blocker. The deploy workflow stamps each backend/frontend revision with `HUSHH_DEPLOY_ENV`, `HUSHH_DEPLOY_SOURCE`, `HUSHH_DEPLOY_SHA`, and `HUSHH_DEPLOY_RUN_ID`, then verifies live traffic with [scripts/ci/verify-cloudrun-revision-provenance.py](../../../scripts/ci/verify-cloudrun-revision-provenance.py). A revision that is unlabelled, manually deployed, or built from a different SHA is classified as `deploy_authority_drift` and must not keep UAT traffic.
+
 Codex-first PR watcher:
 
 ```bash
@@ -290,8 +292,10 @@ Post-merge smoke remains the deployment eligibility gate for `main`.
 Practical maintainer rule:
 
 1. Use `git commit -s` for new branch commits that are headed to GitHub.
-2. If unsigned commits already exist on the branch, repair them before push with `git rebase --signoff <base>`.
-3. If the last local edit touched `.codex/`, `docs/`, `config/`, or `scripts/`, rerun `bash scripts/ci/orchestrate.sh governance` even if an earlier `./bin/hushh codex pre-pr` was green.
+2. Run `./bin/hushh codex pre-pr` before opening or updating a PR; the workflow runs the local DCO signoff gate before the broader CI mirror.
+3. If unsigned commits already exist on the branch, repair them before push with `git rebase --signoff <base>` or a clean signed squash onto `origin/main` when subtree sync or merge repair made the branch history noisy.
+4. After subtree sync, branch merge, rebase, queue repair, or any other history-changing operation, rerun `bash scripts/ci/check-dco-signoff.sh origin/main HEAD` immediately before pushing.
+5. If the last local edit touched `.codex/`, `docs/`, `config/`, or `scripts/`, rerun `bash scripts/ci/orchestrate.sh governance` even if an earlier `./bin/hushh codex pre-pr` was green.
 
 ### Script Lifecycle Policy
 
@@ -544,3 +548,10 @@ The daily scheduled workflow `.github/workflows/prod-supabase-backup-posture.yml
 The consent-protocol has its own full CI pipeline at [hushh-labs/consent-protocol](https://github.com/hushh-labs/consent-protocol/actions). It now runs on all branches plus merge queue and includes: secret scan, lint, typecheck, test, security scan, Docker build verification, and a final status gate.
 
 The monorepo `protocol-check` job is a lightweight mirror. For full coverage, PRs to the upstream repo are the authoritative gate.
+
+---
+
+## Security Scanning CI
+
+The repository implements automated security scanning workflows targeting Python lints, package dependencies, container configurations, secret patterns, and static analysis (Semgrep, Bandit, gitleaks, trivy, npm audit, pip-audit). These security scan jobs are integrated as part of the PR validation suite.
+

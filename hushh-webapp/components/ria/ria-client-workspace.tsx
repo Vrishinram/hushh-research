@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Loader2,
@@ -38,8 +38,11 @@ import {
   type RiaRequestScopeTemplate,
 } from "@/lib/services/ria-service";
 import { useRiaClientWorkspaceState } from "@/components/ria/use-ria-client-workspace-state";
+import { usePublishVoiceSurfaceMetadata } from "@/lib/voice/voice-surface-metadata";
 
 type WorkspaceTab = "overview" | "access" | "kai" | "explorer";
+
+const EMPTY_ACCOUNT_BRANCHES: RiaAccountBranch[] = [];
 
 function formatStatusLabel(status?: string | null) {
   return String(status || "pending").replaceAll("_", " ");
@@ -266,6 +269,7 @@ export function RiaClientWorkspace({
   const [selectedScopes, setSelectedScopes] = useState<string[]>([]);
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
   const [requestReason, setRequestReason] = useState("");
+  const requestAccessButtonRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     setActiveTab(initialTab);
@@ -345,16 +349,126 @@ export function RiaClientWorkspace({
       await refreshWorkspace();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to send access request");
+      window.requestAnimationFrame(() => {
+        requestAccessButtonRef.current?.focus({ preventScroll: true });
+      });
     } finally {
       setRequestingAccess(false);
     }
   }
 
   const activeBundle = detail?.kai_specialized_bundle || workspace?.kai_specialized_bundle || null;
-  const activeAccountBranches = detail?.account_branches || workspace?.account_branches || [];
+  const activeAccountBranches =
+    detail?.account_branches || workspace?.account_branches || EMPTY_ACCOUNT_BRANCHES;
   const financialSummary = asRecord(asRecord(workspace?.domain_summaries || detail?.domain_summaries).financial);
   const summaryRows = scalarSummaryRows(financialSummary);
   const approvedAccountCount = activeAccountBranches.filter((branch) => branch.status === "approved").length;
+  const voiceSurfaceMetadata = useMemo(
+    () => ({
+      screenId: "ria_client_workspace",
+      title: "RIA Client Workspace",
+      purpose: "Advisor workspace for one connected investor.",
+      primaryEntity: detail?.investor_display_name || detail?.investor_email || clientId,
+      sections: [
+        {
+          id: "ria_client_workspace_tabs",
+          title: "Workspace tabs",
+        },
+        {
+          id: "ria_client_workspace_actions",
+          title: "Client actions",
+        },
+      ],
+      controls: [
+        {
+          id: "ria_client_workspace_tab_overview",
+          label: "Overview",
+          type: "tab",
+          state: activeTab === "overview" ? "active" : "available",
+          actionId: "ria.client_workspace.open_overview_tab",
+        },
+        {
+          id: "ria_client_workspace_tab_access",
+          label: "Sharing",
+          type: "tab",
+          state: activeTab === "access" ? "active" : "available",
+          actionId: "ria.client_workspace.open_access_tab",
+        },
+        {
+          id: "ria_client_workspace_tab_kai",
+          label: "Portfolio",
+          type: "tab",
+          state: activeTab === "kai" ? "active" : "available",
+          actionId: "ria.client_workspace.open_portfolio_tab",
+        },
+        {
+          id: "ria_client_workspace_tab_explorer",
+          label: "Data",
+          type: "tab",
+          state: activeTab === "explorer" ? "active" : "available",
+          actionId: "ria.client_workspace.open_explorer_tab",
+        },
+        {
+          id: "ria_client_workspace_send_request",
+          label: "Send request",
+          type: "button",
+          state: activeTab === "access" && !isTestProfile ? "available" : "hidden",
+          actionId: "ria.client_workspace.request_access",
+        },
+        {
+          id: "ria_client_workspace_open_access_manager",
+          label: "Open access",
+          type: "link",
+          state: activeTab === "access" ? "available" : "hidden",
+          actionId: "ria.client_workspace.open_access_manager",
+        },
+        {
+          id: "ria_client_workspace_disconnect",
+          label: "Disconnect",
+          type: "button",
+          state: detail && !detail.is_self_relationship && !isTestProfile ? "available" : "hidden",
+          actionId: "ria.client_workspace.disconnect_relationship",
+        },
+        ...activeAccountBranches.slice(0, 8).map((branch, index) => ({
+          id: `ria_client_workspace_account_row_${index + 1}`,
+          label: branch.name || branch.official_name || branch.account_id || "Account",
+          type: "button",
+          actionId: "ria.client_workspace.open_account_detail",
+          description: branch.status || null,
+        })),
+      ],
+      activeTab,
+      visibleModules: ["Workspace tabs", "Client summary", "Access", "Portfolio", "Data"],
+      selectedEntity: detail?.investor_display_name || detail?.investor_email || clientId,
+      selectedObjects: activeAccountBranches
+        .slice(0, 8)
+        .map((branch) => branch.name || branch.official_name || branch.account_id)
+        .filter((value): value is string => Boolean(value)),
+      busyOperations: [
+        ...(requestingAccess ? ["ria_client_requesting_access"] : []),
+        ...(disconnecting ? ["ria_client_disconnecting"] : []),
+      ],
+      screenMetadata: {
+        client_id: clientId,
+        active_tab: activeTab,
+        account_branch_count: activeAccountBranches.length,
+        approved_account_count: approvedAccountCount,
+        is_test_profile: isTestProfile,
+        relationship_status: detail?.relationship_status || null,
+      },
+    }),
+    [
+      activeAccountBranches,
+      activeTab,
+      approvedAccountCount,
+      clientId,
+      detail,
+      disconnecting,
+      isTestProfile,
+      requestingAccess,
+    ]
+  );
+  usePublishVoiceSurfaceMetadata(voiceSurfaceMetadata);
 
   if (personaLoading) {
     return null;
@@ -396,10 +510,11 @@ export function RiaClientWorkspace({
       }}
       actions={
         detail && !detail.is_self_relationship && !isTestProfile ? (
-          <Button
+          <Button type="button"
             variant="none"
             effect="fade"
             size="sm"
+            data-voice-control-id="ria_client_workspace_disconnect"
             onClick={() => void handleDisconnect()}
             disabled={disconnecting}
           >
@@ -596,7 +711,7 @@ export function RiaClientWorkspace({
                   <>
                     <div className="flex flex-wrap gap-2">
                       {detail.requestable_scope_templates.map((template) => (
-                        <Button
+                        <Button type="button"
                           key={template.template_id}
                           variant={selectedTemplateId === template.template_id ? "blue-gradient" : "none"}
                           effect={selectedTemplateId === template.template_id ? "fill" : "fade"}
@@ -617,11 +732,11 @@ export function RiaClientWorkspace({
                         {availableScopeOptions.map((scope) => {
                           const checked = selectedScopes.includes(scope.scope);
                           return (
-                            <label
+                            <label htmlFor={`ria-scope-${scope.scope}`}
                               key={scope.scope}
                               className="flex items-start gap-3 rounded-[20px] border border-border/60 bg-background/70 px-4 py-3"
                             >
-                              <Checkbox
+                              <Checkbox id={`ria-scope-${scope.scope}`}
                                 checked={checked}
                                 onCheckedChange={(next) => {
                                   const shouldCheck = Boolean(next);
@@ -653,11 +768,11 @@ export function RiaClientWorkspace({
                           activeAccountBranches.map((branch) => {
                             const checked = selectedAccountIds.includes(branch.branch_id);
                             return (
-                              <label
+                              <label htmlFor={`ria-branch-${branch.branch_id}`}
                                 key={branch.branch_id}
                                 className="flex items-start gap-3 px-4 py-3"
                               >
-                                <Checkbox
+                                <Checkbox id={`ria-branch-${branch.branch_id}`}
                                   checked={checked}
                                   onCheckedChange={(next) => {
                                     const shouldCheck = Boolean(next);
@@ -703,17 +818,24 @@ export function RiaClientWorkspace({
                     />
 
                     <div className="flex flex-wrap gap-2">
-                      <Button
+                      <Button type="button"
+                        ref={requestAccessButtonRef}
                         variant="blue-gradient"
                         effect="fill"
+                        data-voice-control-id="ria_client_workspace_send_request"
                         onClick={() => void handleRequestAccess()}
                         disabled={requestingAccess || availableScopeOptions.length === 0 || isTestProfile}
                       >
                         {requestingAccess ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                         Send request
                       </Button>
-                      <Button asChild variant="none" effect="fade">
-                        <Link href={consentManagerHref}>Open access</Link>
+                      <Button type="button" asChild variant="none" effect="fade">
+                        <Link
+                          href={consentManagerHref}
+                          data-voice-control-id="ria_client_workspace_open_access_manager"
+                        >
+                          Open access
+                        </Link>
                       </Button>
                     </div>
                   </>

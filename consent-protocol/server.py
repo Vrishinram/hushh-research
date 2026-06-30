@@ -6,6 +6,7 @@ Modular architecture with routes organized in api/routes/ directory.
 Run with: uvicorn server:app --reload --port 8000
 """
 
+import asyncio
 import logging
 import os
 import time
@@ -15,11 +16,19 @@ from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from fastapi.responses import JSONResponse, RedirectResponse  # noqa: E402
 
 from hushh_mcp.runtime_settings import get_app_runtime_settings  # noqa: E402
+from mcp_modules.log_redaction import install_sensitive_log_filter  # noqa: E402
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
+install_sensitive_log_filter()
 logger = logging.getLogger(__name__)
 _APP_RUNTIME_SETTINGS = get_app_runtime_settings()
+_STARTUP_BACKGROUND_TASKS: set[asyncio.Task[None]] = set()
+
+
+def _track_startup_background_task(task: asyncio.Task[None]) -> None:
+    _STARTUP_BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_STARTUP_BACKGROUND_TASKS.discard)
 
 
 def _env_truthy(name: str, fallback: str = "false") -> bool:
@@ -28,7 +37,11 @@ def _env_truthy(name: str, fallback: str = "false") -> bool:
 
 
 def _environment() -> str:
-    return _APP_RUNTIME_SETTINGS.environment
+    return (
+        str(os.getenv("ENVIRONMENT") or _APP_RUNTIME_SETTINGS.environment or "development")
+        .strip()
+        .lower()
+    )
 
 
 def _is_production() -> bool:
@@ -66,17 +79,24 @@ def _parse_cors_allowed_origins() -> list[str]:
     if frontend_url and frontend_url not in origins:
         origins.append(frontend_url)
 
+    if not _is_production():
+        for dev_origin in (
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "http://localhost:3001",
+            "http://127.0.0.1:3001",
+            "http://10.0.0.177:3000",
+        ):
+            if dev_origin not in origins:
+                origins.append(dev_origin)
+
     if origins:
         return origins
 
     if _is_production():
         return []
 
-    return [
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://10.0.0.177:3000",
-    ]
+    return []
 
 
 # Import route modules
@@ -86,12 +106,14 @@ from slowapi.errors import RateLimitExceeded  # noqa: E402
 
 from api.middlewares.observability import (  # noqa: E402
     configure_opentelemetry,
+    get_request_id,
     observability_middleware,
 )
 from api.middlewares.rate_limit import limiter  # noqa: E402
 from api.routes import (  # noqa: E402
     account,
     agents,
+    connected_systems,
     consent,
     db_proxy,
     debug_firebase,
@@ -103,6 +125,7 @@ from api.routes import (  # noqa: E402
 )
 from db.connection import DatabaseUnavailableError  # noqa: E402
 from db.db_client import DatabaseExecutionError  # noqa: E402
+from hushh_mcp.consent.errors import PolicyViolationError, ZKPVerificationError  # noqa: E402
 
 # Dynamic root_path for Swagger docs in production
 # Set ROOT_PATH env var to your production URL to fix Swagger showing localhost
@@ -164,6 +187,43 @@ async def database_execution_exception_handler(_request: Request, exc: DatabaseE
     )
 
 
+def _consent_error_payload(exc: Exception, request: Request) -> dict:
+    """Build a privacy-safe 403 payload for consent-domain errors.
+
+    trace_id comes from request.state (set by observability_middleware) so
+    the caller can correlate the response with server-side logs.
+    Integrated by Abdul Gaffar — canonical error-boundary mapping.
+    """
+    trace_id = getattr(request.state, "request_id", None) or get_request_id()
+    return {
+        "status": "error",
+        "message": str(getattr(exc, "message", exc)),
+        "trace_id": trace_id,
+    }
+
+
+@app.exception_handler(PolicyViolationError)
+async def policy_violation_handler(request: Request, exc: PolicyViolationError):
+    trace_id = getattr(request.state, "request_id", None) or get_request_id()
+    logger.warning(
+        "consent.policy_violation code=%s trace=%s",
+        exc.code,
+        trace_id,
+    )
+    return JSONResponse(status_code=403, content=_consent_error_payload(exc, request))
+
+
+@app.exception_handler(ZKPVerificationError)
+async def zkp_verification_handler(request: Request, exc: ZKPVerificationError):
+    trace_id = getattr(request.state, "request_id", None) or get_request_id()
+    logger.warning(
+        "consent.zkp_verification_failed code=%s trace=%s",
+        exc.code,
+        trace_id,
+    )
+    return JSONResponse(status_code=403, content=_consent_error_payload(exc, request))
+
+
 # CORS allowlist: explicit origins only (no wildcard regex).
 cors_origins = _parse_cors_allowed_origins()
 logger.info("cors.allowed_origins_count=%s", len(cors_origins))
@@ -211,6 +271,9 @@ app.include_router(health.router)
 # Agent chat routes (/api/agents/...)
 app.include_router(agents.router)
 
+# Profile Connected Systems routes (/api/connected-systems/...)
+app.include_router(connected_systems.router)
+
 # Consent management routes (/api/consent/...)
 app.include_router(consent.router)
 
@@ -243,6 +306,7 @@ from api.routes.kai.market_insights import (  # noqa: E402
     start_market_insights_background_refresh,
     warm_market_insights_startup_once,
 )
+from api.routes.one import router as one_router  # noqa: E402
 from hushh_mcp.services.email_delivery_queue_service import (  # noqa: E402
     shutdown_email_delivery_queue_service,
 )
@@ -252,6 +316,7 @@ from hushh_mcp.services.gmail_receipts_service import (  # noqa: E402
 )
 
 app.include_router(kai_router)
+app.include_router(one_router)
 
 # Phase 2: Investor Profiles (Public Discovery Layer)
 from api.routes import investors  # noqa: E402
@@ -296,8 +361,77 @@ logger.info(
 
 
 # ============================================================================
-# CONSENT NOTIFY LISTENER (event-driven SSE + push)
+# STARTUP HOOKS
+# Order matters: pool + IAM cache must run BEFORE required_schema_guard so
+# that the guard reuses the already-warm pool instead of paying cold-start
+# connection cost a second time.
 # ============================================================================
+
+
+@app.on_event("startup")
+async def startup_pool_and_iam_cache() -> None:
+    """Eagerly create the asyncpg pool and pre-populate the IAM schema cache.
+
+    Why this exists
+    ---------------
+    Without this hook the asyncpg pool is created lazily on the very first
+    in-flight API request.  That means the first real user request after a
+    worker restart pays:
+
+      • ~2-3 s  pool creation + TLS handshake to Cloud SQL / Supabase pooler
+      • ~1 300 ms  _ensure_iam_schema_ready() cold path (13 table-existence
+                   checks, each ~50-80 ms over the Cloud SQL proxy)
+
+    By forcing pool creation and running _batch_tables_exist() here we move
+    that cost to process startup, so the first user request hits both the
+    warm pool fast path and the cached IAM schema fast path.
+
+    Failure behaviour
+    -----------------
+    Non-fatal: if the DB is unreachable at startup (e.g. local dev without
+    the Cloud SQL proxy running), we log a warning and continue.  The
+    per-request fallback in _ensure_iam_schema_ready() still works — it will
+    just pay the cold-start cost on the first request as before.
+    startup_required_schema_guard (below) will enforce hard failure in
+    production if the DB is truly missing.
+    """
+    from db.connection import get_pool
+    from hushh_mcp.services.ria_iam_service import (
+        _IAM_REQUIRED_TABLES,
+        RIAIAMService,
+    )
+
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            present = await RIAIAMService._batch_tables_exist(conn, _IAM_REQUIRED_TABLES)
+            if present >= set(_IAM_REQUIRED_TABLES):
+                # Also flip the process-level boolean so the very first
+                # _ensure_iam_schema_ready() call takes the one-line fast path.
+                import hushh_mcp.services.ria_iam_service as _iam_mod
+
+                _iam_mod._IAM_SCHEMA_READY_CACHE = True
+                logger.info(
+                    "startup.pool_and_iam_cache_seeded tables_confirmed=%d pool_min=%d pool_max=%d",
+                    len(present),
+                    pool.get_min_size(),
+                    pool.get_max_size(),
+                )
+            else:
+                missing = set(_IAM_REQUIRED_TABLES) - present
+                logger.warning(
+                    "startup.iam_schema_incomplete missing_tables=%s  "
+                    "(startup_required_schema_guard will enforce hard failure if needed)",
+                    sorted(missing),
+                )
+    except Exception as exc:
+        # Non-fatal at this stage — startup_required_schema_guard handles
+        # production enforcement below.
+        logger.warning(
+            "startup.pool_and_iam_cache_seed_failed reason=%s  "
+            "(first request will pay cold-start cost)",
+            exc,
+        )
 
 
 @app.on_event("startup")
@@ -325,6 +459,48 @@ async def startup_ticker_cache():
 
 
 @app.on_event("startup")
+async def startup_pkm_scope_validator_warmup() -> None:
+    """Prewarm PKM scope validation helpers before the first consent request."""
+    started_at = time.perf_counter()
+    try:
+        from hushh_mcp.consent.scope_generator import get_scope_generator
+
+        await get_scope_generator().prewarm_validator()
+    except Exception as exc:
+        logger.warning(
+            "startup.pkm_scope_validator_warmup_failed reason=%s",
+            exc,
+        )
+        return
+
+    logger.info(
+        "startup.pkm_scope_validator_warmed duration_ms=%.2f",
+        (time.perf_counter() - started_at) * 1000,
+    )
+
+
+@app.on_event("startup")
+async def startup_consent_token_verifier_prewarm() -> None:
+    """Prewarm consent-token verifier work before the first scoped request."""
+    started_at = time.perf_counter()
+    try:
+        from hushh_mcp.consent.token import prewarm_consent_token_verifier
+
+        prewarm_consent_token_verifier()
+    except Exception as exc:
+        logger.warning(
+            "startup.consent_token_verifier_prewarm_failed reason=%s",
+            exc,
+        )
+        return
+
+    logger.info(
+        "startup.consent_token_verifier_prewarmed duration_ms=%.2f",
+        (time.perf_counter() - started_at) * 1000,
+    )
+
+
+@app.on_event("startup")
 async def startup_regulated_runtime_guards():
     """Emit explicit startup security warnings for risky production flags."""
     from hushh_mcp.services.ria_verification import (
@@ -346,7 +522,12 @@ async def startup_regulated_runtime_guards():
 
 @app.on_event("startup")
 async def startup_required_schema_guard():
-    """Fail fast when the runtime database is missing core contract tables."""
+    """Fail fast when the runtime database is missing core contract tables.
+
+    Note: startup_pool_and_iam_cache (above) already acquired and released a
+    pool connection, so get_pool() here returns the already-warm singleton —
+    no second TLS handshake is paid.
+    """
     from db.connection import get_pool
 
     try:
@@ -401,10 +582,41 @@ async def shutdown_remote_mcp_transport():
 
 
 @app.on_event("startup")
+async def startup_market_cache_store_table():
+    """Ensure the L2 market cache table exists before any request hits it."""
+    from hushh_mcp.services.market_cache_store import get_market_cache_store_service
+
+    try:
+        await get_market_cache_store_service().ensure_table()
+    except Exception as exc:
+        if _require_database_on_startup():
+            logger.critical(
+                "startup.market_cache_store_table_failed environment=%s reason=%s",
+                _environment(),
+                exc,
+            )
+            raise
+        logger.warning(
+            "startup.market_cache_store_table_skipped environment=%s reason=%s",
+            _environment(),
+            exc,
+        )
+
+
+@app.on_event("startup")
 async def startup_market_insights_refresh():
-    """Warm shared market caches, then keep them refreshed in the background."""
-    await warm_market_insights_startup_once()
-    start_market_insights_background_refresh()
+    """Warm shared market caches without blocking health or user traffic."""
+
+    async def _warm_then_refresh() -> None:
+        await warm_market_insights_startup_once()
+        start_market_insights_background_refresh()
+
+    _track_startup_background_task(
+        asyncio.create_task(
+            _warm_then_refresh(),
+            name="market-insights-startup-warm",
+        )
+    )
 
 
 @app.on_event("startup")
@@ -466,6 +678,39 @@ async def debug_consent_listener():
     from api.consent_listener import get_consent_listener_status
 
     return get_consent_listener_status()
+
+
+@app.on_event("startup")
+async def startup_consent_revocation_worker() -> None:
+    """Start the background consent-expiry revocation sweep.
+
+    Registers ConsentRevocationWorker via start_revocation_loop so that
+    expired consent records are marked REVOKED in the database automatically.
+    The worker is decoupled from the DB through injected async callables so
+    the server starts cleanly even when the DB is temporarily unreachable.
+
+    Canonical attach point: hushh_mcp/services/revocation_worker.py
+    Integrated by Abdul Gaffar — canonical temporal-consent boundary.
+    """
+    try:
+        from hushh_mcp.services.consent_db import ConsentDBService
+        from hushh_mcp.services.revocation_worker import start_revocation_loop
+
+        _db = ConsentDBService()
+
+        start_revocation_loop(
+            fetch_expired=_db.fetch_expired_consents,
+            revoke=_db.mark_consent_revoked,
+            interval_seconds=300,
+        )
+        logger.info("startup.consent_revocation_worker_registered interval_s=300")
+    except Exception as exc:
+        # Non-fatal: log and continue — per-request token validation still
+        # enforces expiry via validate_token(); the worker is a DB consistency aid.
+        logger.warning(
+            "startup.consent_revocation_worker_failed reason=%s",
+            exc,
+        )
 
 
 if __name__ == "__main__":

@@ -16,6 +16,9 @@ PROJECT_NUMBER = 73
 PROJECT_TITLE = "Hushh Engineering Core"
 DEFAULT_REPO = "hushh-labs/hushh-research"
 DEFAULT_STATUS = "In progress"
+ASSIGNEE_HIERARCHY_DEFAULTS = {
+    "kushaltrivedi5": "Kushal",
+}
 
 
 class BoardOpsError(RuntimeError):
@@ -23,13 +26,17 @@ class BoardOpsError(RuntimeError):
 
 
 def run_gh(args: list[str], *, input_text: str | None = None) -> str:
-    proc = subprocess.run(
-        ["gh", *args],
-        input=input_text,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
+    try:
+        proc = subprocess.run(
+            ["gh", *args],
+            input=input_text,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=15,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise BoardOpsError("gh command timed out after 15 seconds") from exc
     if proc.returncode != 0:
         raise BoardOpsError(proc.stderr.strip() or proc.stdout.strip() or "gh command failed")
     return proc.stdout
@@ -125,29 +132,49 @@ def get_issue_node_id(repo: str, issue_number: int) -> str:
         f'''
         query {{
           repository(owner:"{owner}", name:"{name}") {{
-            issue(number:{issue_number}) {{ id }}
+            issueOrPullRequest(number:{issue_number}) {{
+              ... on Issue {{ id }}
+              ... on PullRequest {{ id }}
+            }}
           }}
         }}
         '''
     )
-    node_id = data["data"]["repository"]["issue"]
+    repo_data = data["data"]["repository"]
+    node_id = repo_data.get("issueOrPullRequest")
     if not node_id:
-        raise BoardOpsError(f"issue #{issue_number} not found in {repo}")
+        raise BoardOpsError(f"issue/PR #{issue_number} not found in {repo}")
     return node_id["id"]
 
 
 def get_issue_json(repo: str, issue_number: int) -> Any:
-    payload = run_gh_json(
-        [
-            "issue",
-            "view",
-            str(issue_number),
-            "--repo",
-            repo,
-            "--json",
-            "number,title,url,state,labels,assignees,projectItems,createdAt",
-        ]
-    )
+    try:
+        payload = run_gh_json(
+            [
+                "issue",
+                "view",
+                str(issue_number),
+                "--repo",
+                repo,
+                "--json",
+                "number,title,url,state,labels,assignees,projectItems,createdAt",
+            ]
+        )
+    except BoardOpsError as exc:
+        if "Could not resolve to an Issue" in str(exc):
+            payload = run_gh_json(
+                [
+                    "pr",
+                    "view",
+                    str(issue_number),
+                    "--repo",
+                    repo,
+                    "--json",
+                    "number,title,url,state,labels,assignees,projectItems,createdAt",
+                ]
+            )
+        else:
+            raise
     payload["displayTitle"] = f'#{payload["number"]} {payload["title"]}'
     payload["labelNames"] = [label["name"] for label in payload.get("labels", [])]
     return payload
@@ -159,11 +186,21 @@ def get_project_item_id_for_issue(repo: str, issue_number: int) -> str | None:
         f'''
         query {{
           repository(owner:"{owner}", name:"{name}") {{
-            issue(number:{issue_number}) {{
-              projectItems(first:20) {{
-                nodes {{
-                  id
-                  project {{ title }}
+            issueOrPullRequest(number:{issue_number}) {{
+              ... on Issue {{
+                projectItems(first:20) {{
+                  nodes {{
+                    id
+                    project {{ title }}
+                  }}
+                }}
+              }}
+              ... on PullRequest {{
+                projectItems(first:20) {{
+                  nodes {{
+                    id
+                    project {{ title }}
+                  }}
                 }}
               }}
             }}
@@ -171,9 +208,10 @@ def get_project_item_id_for_issue(repo: str, issue_number: int) -> str | None:
         }}
         '''
     )
-    issue = data["data"]["repository"]["issue"]
+    repo_data = data["data"]["repository"]
+    issue = repo_data.get("issueOrPullRequest")
     if not issue:
-        raise BoardOpsError(f"issue #{issue_number} not found in {repo}")
+        raise BoardOpsError(f"issue/PR #{issue_number} not found in {repo}")
     for item in issue["projectItems"]["nodes"]:
         if item["project"]["title"] == PROJECT_TITLE:
             return item["id"]
@@ -224,6 +262,10 @@ def set_project_field(
     run_gh(cmd)
 
 
+def delete_project_item(item_id: str) -> None:
+    run_gh(["project", "item-delete", str(PROJECT_NUMBER), "--owner", OWNER, "--id", item_id])
+
+
 def sync_issue_labels(*, repo: str, issue_number: int, labels: list[str]) -> None:
     issue = get_issue_json(repo, issue_number)
     current = {label["name"] for label in issue.get("labels", [])}
@@ -258,6 +300,32 @@ def sync_issue_labels(*, repo: str, issue_number: int, labels: list[str]) -> Non
         )
 
 
+def hierarchy_for_assignee(assignee: str | None) -> str | None:
+    if not assignee:
+        return None
+    return ASSIGNEE_HIERARCHY_DEFAULTS.get(assignee)
+
+
+def set_single_select_by_name(
+    *,
+    fields: dict[str, Any],
+    item_id: str,
+    project_id: str,
+    field_name: str,
+    option_name: str,
+) -> None:
+    field = fields[field_name]
+    options = {opt["name"]: opt["id"] for opt in field["options"]}
+    if option_name not in options:
+        raise BoardOpsError(f"unknown {field_name} option: {option_name}")
+    set_project_field(
+        item_id=item_id,
+        project_id=project_id,
+        field_id=field["id"],
+        single_select_option_id=options[option_name],
+    )
+
+
 def issue_create(args: argparse.Namespace) -> None:
     parsed_labels = parse_labels(args.labels)
     cmd = [
@@ -278,6 +346,7 @@ def issue_create(args: argparse.Namespace) -> None:
         cmd += ["--label", label]
     url = run_gh(cmd).strip()
     issue_number = int(url.rstrip("/").split("/")[-1])
+    hierarchy = args.hierarchy or hierarchy_for_assignee(args.assignee)
     update_task(
         repo=args.repo,
         issue_number=issue_number,
@@ -286,6 +355,7 @@ def issue_create(args: argparse.Namespace) -> None:
         target_date=args.target_date,
         labels=parsed_labels,
         sync_current_sprint=True,
+        hierarchy=hierarchy,
     )
     print(json.dumps(get_issue_json(args.repo, issue_number), indent=2))
 
@@ -299,21 +369,19 @@ def update_task(
     target_date: str | None,
     labels: list[str] | None,
     sync_current_sprint: bool,
+    hierarchy: str | None = None,
 ) -> None:
     project_id = get_project_id()
     fields = get_field_catalog()
     item_id = ensure_issue_on_project(repo, issue_number)
 
     if status:
-        status_field = fields["Status"]
-        options = {opt["name"]: opt["id"] for opt in status_field["options"]}
-        if status not in options:
-            raise BoardOpsError(f"unknown status: {status}")
-        set_project_field(
+        set_single_select_by_name(
+            fields=fields,
             item_id=item_id,
             project_id=project_id,
-            field_id=status_field["id"],
-            single_select_option_id=options[status],
+            field_name="Status",
+            option_name=status,
         )
 
     if start_date is not None:
@@ -338,6 +406,14 @@ def update_task(
             field_id=fields["Sprint"]["id"],
             iteration_id=sprint_id,
         )
+    if hierarchy is not None:
+        set_single_select_by_name(
+            fields=fields,
+            item_id=item_id,
+            project_id=project_id,
+            field_name="Hierarchy",
+            option_name=hierarchy,
+        )
 
     if labels is not None:
         sync_issue_labels(repo=repo, issue_number=issue_number, labels=labels)
@@ -352,8 +428,28 @@ def cmd_update_task(args: argparse.Namespace) -> None:
         target_date=args.target_date,
         labels=parse_labels(args.labels),
         sync_current_sprint=args.sync_current_sprint,
+        hierarchy=args.hierarchy,
     )
     print(json.dumps(get_issue_json(args.repo, args.issue), indent=2))
+
+
+def cmd_remove_task(args: argparse.Namespace) -> None:
+    item_id = get_project_item_id_for_issue(args.repo, args.issue)
+    if item_id:
+        delete_project_item(item_id)
+    issue = get_issue_json(args.repo, args.issue)
+    print(
+        json.dumps(
+            {
+                "removed": bool(item_id),
+                "project": PROJECT_TITLE,
+                "issue": issue["displayTitle"],
+                "state": issue["state"],
+                "url": issue["url"],
+            },
+            indent=2,
+        )
+    )
 
 
 def fetch_project_items() -> list[dict[str, Any]]:
@@ -492,6 +588,30 @@ def cmd_summary(args: argparse.Namespace) -> None:
     print(json.dumps(payload, indent=2))
 
 
+def cmd_audit_state(args: argparse.Namespace) -> None:
+    items = normalize_items(fetch_project_items())
+    if args.repo:
+        items = [item for item in items if item.get("repo") == args.repo]
+    issue_items = [item for item in items if item.get("type") == "Issue"]
+    closed_not_done = [
+        item
+        for item in issue_items
+        if item.get("state") == "CLOSED" and item.get("status") != "Done"
+    ]
+    open_done = [
+        item
+        for item in issue_items
+        if item.get("state") == "OPEN" and item.get("status") == "Done"
+    ]
+    payload = {
+        "project": PROJECT_TITLE,
+        "repo": args.repo or "all",
+        "closed_not_done": sorted(closed_not_done, key=lambda item: item.get("displayTitle") or ""),
+        "open_done": sorted(open_done, key=lambda item: item.get("displayTitle") or ""),
+    }
+    print(json.dumps(payload, indent=2))
+
+
 def cmd_show_open_work(args: argparse.Namespace) -> None:
     issue_args = [
         "issue",
@@ -550,6 +670,7 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("--start-date", default=today_iso())
     create.add_argument("--target-date", default=next_day_iso())
     create.add_argument("--labels")
+    create.add_argument("--hierarchy")
     create.set_defaults(func=issue_create)
 
     update = sub.add_parser("update-task")
@@ -559,8 +680,18 @@ def build_parser() -> argparse.ArgumentParser:
     update.add_argument("--start-date")
     update.add_argument("--target-date")
     update.add_argument("--labels")
+    update.add_argument("--hierarchy")
     update.add_argument("--sync-current-sprint", action="store_true")
     update.set_defaults(func=cmd_update_task)
+
+    remove = sub.add_parser("remove-task")
+    remove.add_argument("--repo", default=DEFAULT_REPO)
+    remove.add_argument("--issue", type=int, required=True)
+    remove.set_defaults(func=cmd_remove_task)
+
+    audit = sub.add_parser("audit-state")
+    audit.add_argument("--repo")
+    audit.set_defaults(func=cmd_audit_state)
 
     open_work = sub.add_parser("show-open-work")
     open_work.add_argument("--repo", default=DEFAULT_REPO)

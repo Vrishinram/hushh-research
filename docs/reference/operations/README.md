@@ -34,6 +34,10 @@ flowchart TD
   root --> n13
   n14["Migration Governance"]
   root --> n14
+  n15["Hussh Code Persona"]
+  root --> n15
+  n16["MuleSoft Managed Omni Gateway Private Space"]
+  root --> n16
 ```
 
 Use this as the entrypoint for CI, docs governance, delivery, and environment operations.
@@ -51,6 +55,7 @@ Use the root CLI for agent-first onboarding and deterministic workflow routing:
 - `./bin/hushh codex impact <workflow-id> [--path <repo-path>]`
 - `./bin/hushh codex pre-pr`
 - `./bin/hushh codex ci-status [--watch]`
+- `./bin/hushh codex data-model-audit`
 - `./bin/hushh codex audit`
 
 Repo governance baseline:
@@ -84,8 +89,14 @@ Top-level owner skills:
 - `.codex/skills/agent-orchestration-governance/`: repo-scoped custom-agent authoring, bounded subagent limits, delegation authority, and handoff verification.
 
 Specialist spoke skills live under the same tree and should be used after the correct owner skill or `repo-context` has narrowed the request.
+Use `.codex/skills/github-contribution-governance/` as the repo-operations spoke for GitHub contribution attribution, author-email checks, PR targeting, and green-dot eligibility.
+Use `.codex/skills/uat-scoped-deploy/` as the repo-operations spoke for frontend-only/backend-only UAT deploys, Cloud Build timing proof, and Cloud Run region/provenance evidence.
+Use `.codex/skills/frontend-native-surface-mapper/` before route/API/native/plugin/voice mapping work so the generated frontend/native surface map stays authoritative.
+Use `.codex/skills/frontend-cache-coherence/` when a screen needs warm-cache UX, TTL, stale background refresh, or reviewer-backed cache behavior proof.
 Workflow packs under `.codex/workflows/` are the canonical recurring task surface for routing and onboarding.
 Use `ci-watch-and-heal` plus `./bin/hushh codex ci-status` when the task depends on live PR checks or GitHub Actions state.
+Use `data-model-audit` plus `./bin/hushh codex data-model-audit` when migrations, table ownership, data classes, retention, or legacy memory write drift are in scope.
+Use `github-contribution-governance` when contribution graph visibility, verified author email, PR target branch, or merge eligibility affects the task outcome.
 
 ## References
 
@@ -104,6 +115,7 @@ Use `ci-watch-and-heal` plus `./bin/hushh codex ci-status` when the task depends
 - [observability-google-first.md](./observability-google-first.md): observability operating model.
 - [observability-event-matrix.md](./observability-event-matrix.md): event taxonomy, emitter map, and dashboard contract.
 - [production-db-backup-and-recovery.md](./production-db-backup-and-recovery.md): production DB recovery guide.
+- [hussh-code-persona.md](./hussh-code-persona.md): durable Hussh engineering and Codex product non-deviation contract.
 - [coding-agent-mcp.md](./coding-agent-mcp.md): MCP host operations for local engineering environments.
 - [subtree-maintainers.md](./subtree-maintainers.md): maintainer-only subtree sync and upstream coordination.
 - [`../../../consent-protocol/scripts/README.md`](../../../consent-protocol/scripts/README.md): maintainer-only backend script map and when to use it.

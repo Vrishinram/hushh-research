@@ -96,13 +96,23 @@ export type VoiceSwitchPersonaCall = {
   };
 };
 
+export type VoiceCapturePkmMemoryCall = {
+  tool_name: "capture_pkm_memory";
+  args: {
+    message?: string;
+    mode?: "preview" | "direct_save";
+    direct_save?: boolean;
+  };
+};
+
 export type VoiceToolCall =
   | VoiceExecuteKaiCommandCall
   | VoiceNavigateBackCall
   | VoiceResumeActiveAnalysisCall
   | VoiceCancelActiveAnalysisCall
   | VoiceClarifyCall
-  | VoiceSwitchPersonaCall;
+  | VoiceSwitchPersonaCall
+  | VoiceCapturePkmMemoryCall;
 
 export type AppRuntimeState = {
   auth: {
@@ -341,7 +351,6 @@ export type VoiceCapabilityResponse = {
   bucket?: number | null;
   canary_percent?: number | null;
   realtime_enabled?: boolean;
-  stt_enabled?: boolean;
   tts_enabled?: boolean;
   tts_timeout_ms?: number;
   tts_model?: string;

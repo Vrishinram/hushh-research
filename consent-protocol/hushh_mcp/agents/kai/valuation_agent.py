@@ -63,7 +63,7 @@ class ValuationAgent(HushhAgent):
         self,
         ticker: str,
         user_id: str,
-        consent_token: Optional[str] = None,
+        consent_token: str,
         context: Optional[Dict[str, Any]] = None,
     ) -> ValuationInsight:
         """
@@ -78,7 +78,10 @@ class ValuationAgent(HushhAgent):
         Returns:
             ValuationInsight with analysis results
         """
-        logger.info(f"[Valuation] Orchestrating analysis for {ticker} - user {user_id}")
+        if not consent_token:
+            raise PermissionError("Valuation analysis requires a consent token")
+
+        logger.info("[Valuation] Orchestrating analysis for %s (user=[redacted])", ticker)
 
         # Operon 1: Fetch market data (with consent check)
         from hushh_mcp.operons.kai.fetchers import (

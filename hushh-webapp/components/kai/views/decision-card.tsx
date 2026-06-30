@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { useTheme } from "next-themes";
+import { useTheme } from "@/components/theme-provider";
 import {
   Card as MorphyCard,
   CardContent as MorphyCardContent,
@@ -493,7 +493,7 @@ function ConsensusDonut({ result }: { result: DecisionResult }) {
       <div className="space-y-3">
         <div className="flex items-end justify-between gap-3">
           <div>
-            <p className="text-2xl font-black tracking-tight text-foreground">{agreePct}%</p>
+            <p className="text-2xl font-semibold tracking-tight text-foreground">{agreePct}%</p>
             <p className="text-xs text-muted-foreground">Agents align with the final call</p>
           </div>
           <div className="rounded-xl border border-amber-500/15 bg-amber-500/[0.08] px-3 py-2 text-right">
@@ -550,27 +550,34 @@ const barChartConfig = {
   },
 } satisfies ChartConfig;
 
-function QuantMetricsBarChart({ metrics }: { metrics: Record<string, unknown> }) {
+type QuantMetricChartEntry = {
+  name: string;
+  value: number;
+  isNegative: boolean;
+  fill: string;
+};
+
+function buildQuantMetricChartData(metrics: Record<string, unknown>): QuantMetricChartEntry[] {
+  return Object.entries(metrics)
+    .filter((entry): entry is [string, number] => {
+      const value = entry[1];
+      return typeof value === "number" && value !== 0 && Number.isFinite(value);
+    })
+    .slice(0, 6)
+    .map(([key, value]) => ({
+      name: key.replace(/_/g, " ").replace(/\b\w/g, (l: string) => l.toUpperCase()),
+      value: Math.abs(value) >= 1e9 ? value / 1e9 : Math.abs(value) >= 1e6 ? value / 1e6 : value,
+      isNegative: value < 0,
+      fill: value < 0 ? "var(--color-negative)" : "var(--color-value)",
+    }));
+}
+
+function QuantMetricsBarChart({ data }: { data: QuantMetricChartEntry[] }) {
   const compactMetricLabel = (value: string) => {
     const text = String(value || "");
     if (text.length <= 20) return text;
     return `${text.slice(0, 19)}…`;
   };
-
-  const data = useMemo(() => {
-    return Object.entries(metrics)
-      .filter((entry): entry is [string, number] => {
-        const value = entry[1];
-        return typeof value === "number" && value !== 0 && !Number.isNaN(value);
-      })
-      .slice(0, 6)
-      .map(([key, value]) => ({
-        name: key.replace(/_/g, " ").replace(/\b\w/g, (l: string) => l.toUpperCase()),
-        value: Math.abs(value) >= 1e9 ? value / 1e9 : Math.abs(value) >= 1e6 ? value / 1e6 : value,
-        isNegative: value < 0,
-        fill: value < 0 ? "var(--color-negative)" : "var(--color-value)",
-      }));
-  }, [metrics]);
 
   if (data.length === 0) return null;
 
@@ -752,7 +759,7 @@ function ConfidenceGauge({ confidence }: { confidence: number }) {
                       <tspan
                         x={viewBox.cx}
                         y={viewBox.cy}
-                        className="fill-foreground text-3xl font-black tracking-tighter"
+                        className="fill-foreground text-3xl font-semibold tracking-tighter"
                       >
                         {score}%
                       </tspan>
@@ -781,22 +788,22 @@ function RenaissanceBadge({ tier, score }: { tier: "ACE" | "KING" | "QUEEN" | "J
   const badgeConfig = {
     ACE: {
       color: "bg-fuchsia-100 text-fuchsia-700 border-fuchsia-200 dark:bg-fuchsia-950/30 dark:text-fuchsia-400 dark:border-fuchsia-800",
-      icon: <Icon icon={Crown} size="xs" className="fill-current" />,
+      icon: <Icon icon={Crown} size="xs" className="fill-current" aria-hidden="true" />,
       label: "Renaissance Ace",
     },
     KING: {
       color: "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-800",
-      icon: <Icon icon={Trophy} size="xs" className="fill-current" />,
+      icon: <Icon icon={Trophy} size="xs" className="fill-current" aria-hidden="true" />,
       label: "Renaissance King",
     },
     QUEEN: {
       color: "bg-violet-100 text-violet-700 border-violet-200 dark:bg-violet-950/30 dark:text-violet-400 dark:border-violet-800",
-      icon: <Icon icon={Star} size="xs" className="fill-current" />,
+      icon: <Icon icon={Star} size="xs" className="fill-current" aria-hidden="true" />,
       label: "Renaissance Queen",
     },
     JACK: {
       color: "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-950/30 dark:text-blue-400 dark:border-blue-800",
-      icon: <Icon icon={Medal} size="xs" className="fill-current" />,
+      icon: <Icon icon={Medal} size="xs" className="fill-current" aria-hidden="true" />,
       label: "Renaissance Jack",
     },
   };
@@ -865,9 +872,11 @@ export function DecisionCard({ result }: { result: DecisionResult }) {
     }
     return deduped;
   }, [rawCard]);
-  const hasQuantMetrics = rawCard?.quant_metrics && Object.keys(rawCard.quant_metrics).filter(
-    (k) => rawCard.quant_metrics![k] !== null && rawCard.quant_metrics![k] !== undefined && typeof rawCard.quant_metrics![k] !== "object"
-  ).length > 0;
+  const quantMetricChartData = useMemo(
+    () => (rawCard?.quant_metrics ? buildQuantMetricChartData(rawCard.quant_metrics) : []),
+    [rawCard]
+  );
+  const hasRenderableQuantMetrics = quantMetricChartData.length > 0;
 
   // Fallback for empty/missing decision to prevent layout shift
   const safeDecision = decisionPresentation.label || "REVIEW";
@@ -914,7 +923,7 @@ export function DecisionCard({ result }: { result: DecisionResult }) {
             {/* Main Decision Pill */}
             <div
                 className={cn(
-                "px-10 py-5 rounded-2xl border-2 text-4xl font-black uppercase tracking-tighter shadow-xl backdrop-blur-md transform transition-all duration-300 hover:scale-[1.02]",
+                "px-10 py-5 rounded-2xl border-2 text-2xl font-semibold uppercase tracking-normal shadow-xl backdrop-blur-md transform transition-all duration-300 hover:scale-[1.02]",
                 isBuy
                     ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-500 shadow-emerald-500/10"
                     : isReduce
@@ -945,8 +954,8 @@ export function DecisionCard({ result }: { result: DecisionResult }) {
           <AgentVoteBar result={result} />
           {rawCard?.price_targets && Object.keys(rawCard.price_targets).length > 1 ? (
                <PriceTargetsChart targets={rawCard.price_targets} />
-          ) : hasQuantMetrics && rawCard?.quant_metrics ? (
-               <QuantMetricsBarChart metrics={rawCard.quant_metrics} />
+          ) : hasRenderableQuantMetrics ? (
+               <QuantMetricsBarChart data={quantMetricChartData} />
           ) : (
                <ConsensusDonut result={result} />
           )}
@@ -1224,7 +1233,7 @@ export function DecisionCard({ result }: { result: DecisionResult }) {
         {/* Deep Analysis section intentionally removed: debate rounds already surface the agent detail. */}
         
         {/* Consensus Donut - Only show here if QuantMetrics took the main spot */}
-        {hasQuantMetrics && rawCard?.quant_metrics && (
+        {hasRenderableQuantMetrics && (
              <div className="pt-2">
                 <Separator className="bg-primary/5 mb-4" />
                 <ConsensusDonut result={result} />

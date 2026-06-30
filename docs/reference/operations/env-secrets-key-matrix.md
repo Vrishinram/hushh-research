@@ -37,8 +37,37 @@ Profile bootstrap rule:
 |---|---|---|---|---|---|---|---|---|---|
 | `APP_SIGNING_KEY` | `consent-protocol/hushh_mcp/config.py` | Y | N | Y | secret | N | secret | N | required |
 | `VAULT_DATA_KEY` | `consent-protocol/hushh_mcp/config.py` | Y | N | Y | secret | N | secret | N | required |
-| `GOOGLE_API_KEY` | `consent-protocol/hushh_mcp/config.py` | Y | N | Y | secret | N | secret | N | required |
-| `FIREBASE_ADMIN_CREDENTIALS_JSON` | `consent-protocol/api/utils/firebase_admin.py`, `hushh-webapp/lib/firebase/admin.ts` | Y | Y | Y | secret | secret | secret | secret | required |
+| `GOOGLE_API_KEY` | `consent-protocol/hushh_mcp/config.py`, `consent-protocol/hushh_mcp/services/agent_chat_service.py` | Y | N | Y | secret | N | secret | N | required |
+| `AGENT_GEMINI_MODEL` | `consent-protocol/hushh_mcp/services/agent_chat_service.py` | Y | N | N | env | N | env | N | optional |
+| `AGENT_GEMINI_VOICE_ENABLED` | `consent-protocol/api/routes/kai/agent_voice.py` | Y | N | N | env | N | env | N | optional kill switch |
+| `AGENT_GEMINI_STT_MODEL` | `consent-protocol/hushh_mcp/services/agent_voice_service.py` | Y | N | N | env | N | env | N | optional |
+| `AGENT_GEMINI_STT_TIMEOUT_SECONDS` | `consent-protocol/hushh_mcp/services/agent_voice_service.py` | Y | N | N | env | N | env | N | optional |
+| `AGENT_GEMINI_TTS_MODEL` | `consent-protocol/hushh_mcp/services/agent_voice_service.py` | Y | N | N | env | N | env | N | optional |
+| `AGENT_GEMINI_TTS_VOICE` | `consent-protocol/hushh_mcp/services/agent_voice_service.py` | Y | N | N | env | N | env | N | optional |
+| `AGENT_GEMINI_TTS_TIMEOUT_SECONDS` | `consent-protocol/hushh_mcp/services/agent_voice_service.py` | Y | N | N | env | N | env | N | optional |
+| `AGENT_GEMINI_TTS_MAX_ATTEMPTS` | `consent-protocol/hushh_mcp/services/agent_voice_service.py` | Y | N | N | env | N | env | N | optional |
+| `HUSHH_KAI_AGENT_VOICE_STT_TIMEOUT_MS` | `hushh-webapp/app/api/kai/[...path]/route.ts` | N | Y | N | N | env | N | env | optional |
+| `HUSHH_KAI_AGENT_VOICE_TTS_TIMEOUT_MS` | `hushh-webapp/app/api/kai/[...path]/route.ts` | N | Y | N | N | env | N | env | optional |
+| `HUSHH_KAI_AGENT_CHAT_STREAM_TIMEOUT_MS` | `hushh-webapp/app/api/kai/[...path]/route.ts` | N | Y | N | N | env | N | env | optional |
+| `NEXT_PUBLIC_AGENT_GEMINI_VOICE_ENABLED` | `hushh-webapp/lib/agent/agent-voice-settings.ts` | N | Y | N | N | env | N | env | optional frontend mirror |
+| `FIREBASE_ADMIN_CREDENTIALS_JSON` | `consent-protocol/api/utils/firebase_admin.py`, `consent-protocol/hushh_mcp/runtime_settings.py`, `hushh-webapp/lib/firebase/admin.ts` | Y | Y | Y | secret | secret | secret | secret | required |
+| `FIREBASE_SERVICE_ACCOUNT_JSON` | `consent-protocol/hushh_mcp/runtime_settings.py` | Y | N | Y | N | N | alias | N | optional alias |
+| `ONE_EMAIL_ADDRESS` | `consent-protocol/hushh_mcp/services/support_email_service.py`, `consent-protocol/hushh_mcp/services/one_email_kyc_service.py` | Y | N | N | env | N | env | N | optional |
+| `ONE_EMAIL_PUBSUB_TOPIC` | `consent-protocol/hushh_mcp/services/one_email_kyc_service.py` | Y | N | N | env | N | env | N | required for One email intake |
+| `ONE_EMAIL_WEBHOOK_AUDIENCE` | `consent-protocol/hushh_mcp/services/one_email_kyc_service.py` | Y | N | N | env | N | env | N | required for hosted One email intake |
+| `ONE_EMAIL_WEBHOOK_SERVICE_ACCOUNT_EMAIL` | `consent-protocol/hushh_mcp/services/one_email_kyc_service.py` | Y | N | N | env | N | env | N | recommended |
+| `ONE_EMAIL_WEBHOOK_AUTH_ENABLED` | `consent-protocol/hushh_mcp/services/one_email_kyc_service.py` | Y | N | N | env | N | env | N | required true for hosted One email intake |
+| `ONE_EMAIL_WATCH_RENEW_TOKEN` | `consent-protocol/api/routes/one/email.py` | Y | N | Y | secret | N | secret | N | required for hosted One watch renewal |
+| `ONE_EMAIL_WATCH_RENEW_AUTH_ENABLED` | `consent-protocol/api/routes/one/email.py` | Y | N | N | env | N | env | N | required true for hosted One watch renewal |
+| `ONE_LOCATION_RETENTION_TOKEN` | `consent-protocol/api/routes/one/location.py` | Y | N | Y | secret | N | secret | N | required dedicated token for hosted One Location retention purge |
+| `ONE_LOCATION_RETENTION_AUTH_ENABLED` | `consent-protocol/api/routes/one/location.py` | Y | N | N | env | N | env | N | optional local/test override; hosted auth remains enabled |
+| `ONE_EMAIL_KYC_STRICT_CLIENT_ZK_ENABLED` | `consent-protocol/hushh_mcp/services/one_email_kyc_service.py` | Y | N | N | env | N | env | N | strict client-side ZK guard; defaults true |
+| `ONE_EMAIL_KYC_DEFAULT_SCOPE` | `consent-protocol/hushh_mcp/services/one_email_kyc_service.py` | Y | N | N | env | N | env | N | optional allowlisted |
+| `SUPPORT_EMAIL_DELEGATED_USER` | `consent-protocol/hushh_mcp/services/support_email_service.py` | Y | N | N | env | N | env | N | optional |
+| `SUPPORT_EMAIL_FROM` | `consent-protocol/hushh_mcp/services/support_email_service.py` | Y | N | N | env | N | env | N | optional |
+| `SUPPORT_EMAIL_TO` | `consent-protocol/hushh_mcp/services/support_email_service.py` | Y | N | N | env | N | env | N | optional |
+| `SUPPORT_EMAIL_TEST_TO` | `consent-protocol/hushh_mcp/services/support_email_service.py` | Y | N | N | env | N | env | N | optional |
+| `SUPPORT_EMAIL_MODE` | `consent-protocol/hushh_mcp/services/support_email_service.py` | Y | N | N | env | N | env | N | optional |
 | `APP_FRONTEND_ORIGIN` | `consent-protocol/server.py` | Y | N | Y | secret | N | secret | N | required |
 | `BACKEND_RUNTIME_CONFIG_JSON` | `consent-protocol/hushh_mcp/runtime_settings.py`, `consent-protocol/server.py` | Y | N | Y | secret | N | secret | N | required |
 | `DB_USER` | `consent-protocol/db/connection.py` | Y | N | Y | secret | N | secret | N | required |
@@ -47,7 +76,7 @@ Profile bootstrap rule:
 | `GMAIL_OAUTH_CLIENT_SECRET` | `consent-protocol/hushh_mcp/services/gmail_receipts_service.py` | Y | N | Y | secret | N | secret | N | required |
 | `GMAIL_OAUTH_REDIRECT_URI` | `consent-protocol/hushh_mcp/services/gmail_receipts_service.py` | Y | N | Y | secret | N | secret | N | required |
 | `GMAIL_OAUTH_TOKEN_KEY` | `consent-protocol/hushh_mcp/services/gmail_receipts_service.py` | Y | N | Y | secret | N | secret | N | required |
-| `OPENAI_API_KEY` | `consent-protocol/hushh_mcp/services/voice_intent_service.py` | Y | N | Y | secret | N | secret | N | required |
+| `OPENAI_API_KEY` | `consent-protocol/api/routes/kai/agent_realtime.py`, `consent-protocol/hushh_mcp/services/voice_intent_service.py` | Y | N | Y | secret | N | secret | N | required |
 | `VOICE_RUNTIME_CONFIG_JSON` | `consent-protocol/hushh_mcp/runtime_settings.py`, `consent-protocol/api/routes/kai/voice.py`, `consent-protocol/hushh_mcp/services/voice_intent_service.py` | Y | N | Y | secret | N | secret | N | required |
 | `HUSHH_DEVELOPER_TOKEN` | `consent-protocol/api/routes/session.py` | Y | N | N | N | N | N | N | optional |
 | `ENVIRONMENT` | `consent-protocol/hushh_mcp/config.py` | Y | N | N | env | N | env | N | required |
@@ -97,5 +126,7 @@ Profile bootstrap rule:
 - `cloud_run_live_*` columns are evaluated from current active service revision at runtime by the audit script.
 - `legacy` keys must not appear in Secret Manager, deploy manifests, or live Cloud Run env refs.
 - Gmail and voice use the same backend key names across local, UAT, and production. Local bootstrap hydrates them into `consent-protocol/.env`; tracked files keep only placeholders/templates.
+- One mailbox keys are backend-only. UAT and production must not both own Gmail watch renewal for `one@hushh.ai` unless an explicit label/topic/fanout strategy is documented and tested.
+- One Email KYC connector private keys are client/vault-owned. Backend runtime must not receive connector public, key-id, or private-key env vars in strict client-side ZK mode.
 - Native release/signing secrets are deploy-only inputs. They are not part of the canonical frontend runtime profile files under `hushh-webapp/.env*.local*`.
 - Maintainer-only overlays such as reviewer passphrases, rehearsal toggles, and native signing inputs are intentionally excluded from contributor env files. UAT still mounts `REVIEWER_UID` / `REVIEWER_VAULT_PASSPHRASE` from Secret Manager on the backend because app-review smoke cannot mint a reviewer Firebase token without those runtime bindings.

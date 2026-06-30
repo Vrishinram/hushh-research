@@ -1,5 +1,7 @@
 import {
+  CURRENT_PKM_CONTRACT_VERSION,
   CURRENT_READABLE_SUMMARY_VERSION,
+  CURRENT_READABLE_PROJECTION_VERSION,
   currentDomainContractVersion,
 } from "@/lib/personal-knowledge-model/upgrade-contracts";
 
@@ -33,7 +35,9 @@ export type DomainManifest = {
   domain: string;
   manifest_version: number;
   domain_contract_version?: number;
+  pkm_contract_version?: string;
   readable_summary_version?: number;
+  readable_projection_version?: string;
   upgraded_at?: string | null;
   structure_decision?: Record<string, unknown>;
   summary_projection: Record<string, unknown>;
@@ -52,6 +56,9 @@ export type DomainManifest = {
     sensitivity_tier?: string;
     scope_kind?: string;
     exposure_enabled?: boolean;
+    visibility_posture?: "private" | "consent_required" | "default_available";
+    default_projection_ready?: boolean;
+    default_projection_updated_at?: string | null;
     summary_projection?: Record<string, unknown> & {
       top_level_scope_path?: string;
       consumer_visible?: boolean;
@@ -95,11 +102,18 @@ function cloneValue<T>(value: T): T {
 
 function inferSensitivityLabel(path: string): string | null {
   const normalized = path.toLowerCase();
+  // Restricted: highest-sensitivity identifiers. `ssn`/`social_security` are
+  // classified defensively (no SSN is ever stored, but if such a token ever
+  // appears it must be treated as restricted). Mirrors backend
+  // PKMAgentLabService._infer_sensitivity — keep token sets in lockstep.
   if (
     normalized.includes("ssn") ||
+    normalized.includes("social_security") ||
     normalized.includes("tax") ||
     normalized.includes("account_number") ||
-    normalized.includes("routing")
+    normalized.includes("routing") ||
+    normalized.includes("passport") ||
+    normalized.includes("national_id")
   ) {
     return "restricted";
   }
@@ -107,11 +121,37 @@ function inferSensitivityLabel(path: string): string | null {
     normalized.includes("risk") ||
     normalized.includes("holdings") ||
     normalized.includes("portfolio") ||
-    normalized.includes("income")
+    normalized.includes("income") ||
+    // Identity PII: name, address, dob, phone, nationality.
+    normalized.includes("full_name") ||
+    normalized.includes("first_name") ||
+    normalized.includes("last_name") ||
+    normalized.includes("date_of_birth") ||
+    normalized.includes("dob") ||
+    normalized.includes("address") ||
+    normalized.includes("phone_number") ||
+    normalized.includes("nationality")
   ) {
     return "confidential";
   }
   return null;
+}
+
+function countEntityMaps(value: unknown): number {
+  if (!value || typeof value !== "object") return 0;
+  if (Array.isArray(value)) {
+    return value.reduce((sum, item) => sum + countEntityMaps(item), 0);
+  }
+  const record = value as Record<string, unknown>;
+  let count = 0;
+  for (const [key, child] of Object.entries(record)) {
+    if (key === "entities" && child && typeof child === "object" && !Array.isArray(child)) {
+      count += Object.keys(child as Record<string, unknown>).length;
+      continue;
+    }
+    count += countEntityMaps(child);
+  }
+  return count;
 }
 
 function walkValue(
@@ -209,6 +249,11 @@ export function buildPersonalKnowledgeModelStructureArtifacts(params: {
     manifest_version: nextManifestVersion,
     domain_contract_version: currentDomainContractVersion(normalizedDomain),
     readable_summary_version: CURRENT_READABLE_SUMMARY_VERSION,
+    pkm_contract_version: CURRENT_PKM_CONTRACT_VERSION,
+    readable_projection_version: CURRENT_READABLE_PROJECTION_VERSION,
+    consumer_visible: true,
+    internal_only: false,
+    consumer_item_count: countEntityMaps(params.domainData) || undefined,
     path_count: jsonPaths.length,
     externalizable_path_count: externalizablePaths.length,
     top_level_scope_count: topLevelScopePaths.length,
@@ -233,6 +278,8 @@ export function buildPersonalKnowledgeModelStructureArtifacts(params: {
     manifest_version: nextManifestVersion,
     domain_contract_version: currentDomainContractVersion(normalizedDomain),
     readable_summary_version: CURRENT_READABLE_SUMMARY_VERSION,
+    pkm_contract_version: CURRENT_PKM_CONTRACT_VERSION,
+    readable_projection_version: CURRENT_READABLE_PROJECTION_VERSION,
     upgraded_at: null,
     structure_decision: structureDecision,
     summary_projection: summaryProjection,

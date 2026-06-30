@@ -46,12 +46,31 @@ class ConsentScope(str, Enum):
     PKM_WRITE = "pkm.write"
     PKM_METADATA = "pkm.metadata"
 
-    # ==================== KAI AGENT OPERATIONS ====================
+    # ==================== AGENT OPERATIONS ====================
+    AGENT_ONE_ORCHESTRATE = "agent.one.orchestrate"
+
     AGENT_KAI_ANALYZE = "agent.kai.analyze"
     AGENT_KAI_DEBATE = "agent.kai.debate"
     AGENT_KAI_INFER = "agent.kai.infer"
     AGENT_KAI_CHAT = "agent.kai.chat"
     AGENT_KAI_EXECUTE = "agent.kai.execute"
+
+    AGENT_NAV_REVIEW = "agent.nav.review"
+    AGENT_NAV_REVOKE = "agent.nav.revoke"
+
+    AGENT_KYC_PROCESS = "agent.kyc.process"
+    AGENT_KYC_DRAFT = "agent.kyc.draft"
+    AGENT_KYC_WRITEBACK = "agent.kyc.writeback"
+    AGENT_KYC_REDRAFT_LLM = "agent.kyc.redraft.llm"
+
+    # ==================== LIVE LOCATION CAPABILITIES ====================
+    # Capability scopes for One Location Agent. These are workflow/action
+    # scopes, not durable attr.location.* PKM scopes.
+    CAP_LOCATION_LIVE_SHARE = "cap.location.live.share"
+    CAP_LOCATION_LIVE_VIEW = "cap.location.live.view"
+    CAP_LOCATION_LIVE_REQUEST = "cap.location.live.request"
+    CAP_LOCATION_LIVE_REVOKE = "cap.location.live.revoke"
+    CAP_LOCATION_LIVE_REFER_REQUEST = "cap.location.live.refer_request"
 
     # ==================== EXTERNAL DATA SOURCES ====================
     # Hybrid mode - per-request consent
@@ -187,11 +206,28 @@ class ConsentScope(str, Enum):
     def agent_scopes(cls):
         """Return all agent operation scopes."""
         return [
+            cls.AGENT_ONE_ORCHESTRATE,
             cls.AGENT_KAI_ANALYZE,
             cls.AGENT_KAI_DEBATE,
             cls.AGENT_KAI_INFER,
             cls.AGENT_KAI_CHAT,
             cls.AGENT_KAI_EXECUTE,
+            cls.AGENT_NAV_REVIEW,
+            cls.AGENT_NAV_REVOKE,
+            cls.AGENT_KYC_PROCESS,
+            cls.AGENT_KYC_DRAFT,
+            cls.AGENT_KYC_WRITEBACK,
+        ]
+
+    @classmethod
+    def capability_scopes(cls):
+        """Return workflow capability scopes that are not durable attr.* PKM scopes."""
+        return [
+            cls.CAP_LOCATION_LIVE_SHARE,
+            cls.CAP_LOCATION_LIVE_VIEW,
+            cls.CAP_LOCATION_LIVE_REQUEST,
+            cls.CAP_LOCATION_LIVE_REVOKE,
+            cls.CAP_LOCATION_LIVE_REFER_REQUEST,
         ]
 
     @classmethod
@@ -210,7 +246,10 @@ class ConsentScope(str, Enum):
 # Port assignments for agent-to-agent communication
 AGENT_PORTS = {
     "agent_orchestrator": 10000,
+    "agent_one": 10000,  # One top personal agent / orchestration layer
     "agent_kai": 10005,  # Kai investment analysis agent
+    "agent_nav": 10006,  # Nav privacy and consent guardian
+    "agent_kyc": 10007,  # KYC identity workflow specialist
 }
 
 # ==================== Token & Link Prefixes ====================
@@ -240,7 +279,7 @@ GEMINI_MODEL_VERTEX = "gemini-3.1-pro-preview"
 # ==================== Kai Portfolio Import Defaults ====================
 
 # Portfolio import extraction is prompt-first and optimized for lower latency.
-KAI_PORTFOLIO_IMPORT_PRIMARY_MODEL = "gemini-3-flash-preview"
+KAI_PORTFOLIO_IMPORT_PRIMARY_MODEL = "gemini-3.5-flash"
 KAI_PORTFOLIO_IMPORT_ENABLE_THINKING = True
 KAI_PORTFOLIO_IMPORT_THINKING_LEVEL = "LOW"
 KAI_PORTFOLIO_IMPORT_MAX_OUTPUT_TOKENS = 32768

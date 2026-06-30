@@ -10,13 +10,20 @@ This service handles:
 5. Persistent chat history
 6. Proactive onboarding (portfolio import prompts)
 7. Intent classification for workflow triggers
+
+Canonical attach points
+-----------------------
+hushh_mcp.services.kai_chat_service.KaiChatService.process_message       -> POST /kai/chat
+hushh_mcp.services.kai_chat_service.KaiChatService.get_initial_chat_state -> GET /kai/chat/initial-state/{user_id}
+hushh_mcp.services.kai_chat_service.KaiChatService.analyze_portfolio_loser -> POST /kai/chat/analyze-loser
 """
 
+import asyncio
 import logging
 import os
 import re
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Optional
 
@@ -180,40 +187,67 @@ class KaiChatResponse:
     tokens_used: Optional[int] = None
 
 
+@dataclass
+class ResponseValidationResult:
+    """Validation outcome for model-generated assistant text."""
+
+    is_valid: bool
+    text: str
+    reason: Optional[str] = None
+
+
 # System prompt for Kai
 SYSTEM_PROMPT = """You are Kai, a friendly and knowledgeable personal AI assistant from Hussh. You help users manage their personal data, analyze investments, and provide personalized insights.
 
-Your personality:
+Personality:
 - Warm, approachable, and professional
-- Concise but thorough - don't be overly verbose
-- Proactive in offering relevant suggestions
-- Privacy-conscious - remind users their data is encrypted and under their control
+- Concise but thorough
+- Proactive when it is clearly helpful
+- Privacy-conscious; remind users their data is encrypted and under their control when relevant
 
-Your capabilities:
+Capabilities:
 - Analyze investment portfolios and identify underperformers
 - Learn user preferences and remember them for personalized advice
 - Help users understand their financial risk profile
-- Provide insights based on user's PKM data
+- Provide insights based only on the supplied PKM and chat context
 
-PROACTIVE BEHAVIORS:
-1. If the user is new (no portfolio data), proactively offer to import their brokerage statement
-2. When discussing investments without portfolio context, remind them importing helps personalization
-3. After learning about user preferences, acknowledge what you learned
-4. If the user seems unsure, guide them through available features
+Grounding rules:
+- Only use information explicitly provided in the supplied context.
+- Do not assume missing data.
+- If the available context is not enough to support a claim, say "insufficient data".
+- Do not fabricate market details, portfolio details, holdings, prices, performance, or user-specific facts.
+- Do not imply you know more about the user than what is shown in the provided context.
+- Separate confirmed facts from suggestions or general guidance.
 
+Proactive behaviors:
+1. If the user is new and no portfolio data is present, offer portfolio import.
+2. When discussing investments without portfolio context, explain that personalization is limited by insufficient data.
+3. After learning user preferences from the current exchange, acknowledge them clearly.
+4. If the user seems unsure, guide them through available features without inventing missing facts.
+
+Provided user context:
 {user_context}
 
-Guidelines:
-1. If the user mentions preferences (food, travel, financial, etc.), acknowledge you'll remember them
-2. If asked about portfolio analysis, offer to import their brokerage statement
-3. Keep responses conversational but informative
-4. When discussing investments, be balanced and mention risks
-5. Never give specific financial advice - provide analysis and let users decide
-6. For new users, warmly welcome them and suggest starting with portfolio import
+Response guidelines:
+1. Keep responses conversational, clear, and informative.
+2. If the user mentions preferences, acknowledge what was explicitly stated.
+3. If asked about portfolio analysis, offer portfolio import when relevant.
+4. When discussing investments, be balanced and mention risks.
+5. Never give specific financial advice; provide analysis and let the user decide.
+6. For new users, warmly welcome them and suggest starting with portfolio import.
+7. If context is incomplete, explicitly say "insufficient data" instead of guessing.
 
 Current conversation context:
 {chat_history}
 """
+
+SAFE_FALLBACK_RESPONSE = "I'm unable to generate a reliable response right now."
+MIN_RESPONSE_CHARS = 24
+GENERIC_FALLBACK_TEXTS = {
+    "i'm having trouble generating a response right now. please try again.",
+    "i apologize, but i encountered an issue processing your message. please try again.",
+    SAFE_FALLBACK_RESPONSE.lower(),
+}
 
 
 class KaiChatService:
@@ -371,11 +405,40 @@ class KaiChatService:
             # 7. Build system prompt with context
             system_prompt = self._build_system_prompt(user_context, history)
 
-            # 8. Generate response via LLM
-            response_text, tokens = await self._generate_response(system_prompt, message)
+            # 8. Generate and validate response before using it anywhere else.
+            response_text, tokens, response_valid = await self._generate_validated_response(
+                system_prompt,
+                message,
+            )
 
-            # 9. Extract and store any learned attributes (async, don't block)
-            learned = await self.attribute_learner.extract_and_store(
+            if not response_valid:
+                logger.warning(
+                    "Kai chat returned safe fallback after validation failure user_id=%s",
+                    user_id,
+                )
+                await self.chat_db.add_message(
+                    conversation_id=conversation.id,
+                    role=MessageRole.USER,
+                    content=message,
+                )
+                await self.chat_db.add_message(
+                    conversation_id=conversation.id,
+                    role=MessageRole.ASSISTANT,
+                    content=response_text,
+                    content_type=ContentType.TEXT,
+                    tokens_used=tokens,
+                    model_used=GEMINI_MODEL,
+                )
+                return KaiChatResponse(
+                    conversation_id=str(conversation.id),
+                    response=response_text,
+                    learned_attributes=[],
+                    tokens_used=tokens,
+                )
+
+            # 9. Fire attribute extraction in the background; the response does
+            # not need to wait for learned attributes to be persisted.
+            self._schedule_attribute_learning(
                 user_id=user_id,
                 user_message=message,
                 assistant_response=response_text,
@@ -402,7 +465,7 @@ class KaiChatService:
                 else None,
                 component_data=component.data if component else None,
                 tokens_used=tokens,
-                model_used="gemini-1.5-flash",
+                model_used=GEMINI_MODEL,
             )
 
             return KaiChatResponse(
@@ -410,18 +473,47 @@ class KaiChatService:
                 response=response_text,
                 component_type=component.type if component else None,
                 component_data=component.data if component else None,
-                learned_attributes=learned,
+                learned_attributes=[],  # populated async in background; not available synchronously
                 tokens_used=tokens,
             )
 
         except Exception as e:
-            logger.error(f"Error processing message: {e}")
+            logger.error("kai_chat_service.process_message.error: %s", e)
             # Return a graceful error response
             return KaiChatResponse(
                 conversation_id=conversation_id or "error",
                 response="I apologize, but I encountered an issue processing your message. Please try again.",
                 learned_attributes=[],
             )
+
+    def _schedule_attribute_learning(
+        self,
+        *,
+        user_id: str,
+        user_message: str,
+        assistant_response: str,
+    ) -> None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            logger.debug("kai_chat.attribute_learning_skipped user_id=%s; no active loop", user_id)
+            return
+
+        async def _run_attribute_learning() -> None:
+            try:
+                await self.attribute_learner.extract_and_store(
+                    user_id=user_id,
+                    user_message=user_message,
+                    assistant_response=assistant_response,
+                )
+            except Exception:
+                logger.exception("kai_chat.attribute_learning_failed user_id=%s", user_id)
+
+        # Retain a strong reference until completion so the loop does not garbage
+        # collect this background extraction mid-execution, and log any failure.
+        task = loop.create_task(_run_attribute_learning(), name=f"attr_learn:{user_id}")
+        _attribute_learning_tasks.add(task)
+        task.add_done_callback(_attribute_learning_tasks.discard)
 
     async def _should_prompt_portfolio(
         self,
@@ -532,7 +624,7 @@ class KaiChatService:
             }
 
         except Exception as e:
-            logger.error(f"Error checking data completeness: {e}")
+            logger.error("kai_chat_service.check_data_completeness.error: %s", e)
             return {
                 "has_portfolio": False,
                 "missing_attributes": [],
@@ -674,10 +766,16 @@ class KaiChatService:
         user_id: str,
         conversation_id: Optional[str],
     ) -> Conversation:
-        """Get existing conversation or create a new one."""
+        """Get existing conversation or create a new one.
+
+        The caller-supplied conversation_id is verified against the requesting
+        user_id before use. An ID that belongs to a different user is silently
+        ignored and a new conversation is created, so that neither the existence
+        of the ID nor its ownership is revealed to the caller.
+        """
         if conversation_id:
             conversation = await self.chat_db.get_conversation(conversation_id)
-            if conversation:
+            if conversation and conversation.user_id == user_id:
                 return conversation
 
         # Create new conversation
@@ -739,14 +837,21 @@ class KaiChatService:
         self,
         system_prompt: str,
         user_message: str,
+        *,
+        stricter: bool = False,
+        previous_response: Optional[str] = None,
     ) -> tuple[str, Optional[int]]:
         """Generate a response using the LLM."""
         try:
-            # Combine system prompt and user message
-            full_prompt = f"{system_prompt}\n\nUser: {user_message}\n\nKai:"
+            full_prompt = self._build_generation_prompt(
+                system_prompt=system_prompt,
+                user_message=user_message,
+                stricter=stricter,
+                previous_response=previous_response,
+            )
 
             config = genai_types.GenerateContentConfig(
-                temperature=0.7,
+                temperature=0.3 if stricter else 0.7,
                 max_output_tokens=1024,
             )
 
@@ -764,8 +869,115 @@ class KaiChatService:
             return response.text.strip(), tokens
 
         except Exception as e:
-            logger.error(f"Error generating response: {e}")
+            logger.error("kai_chat_service.generate_response.error: %s", e)
             return "I'm having trouble generating a response right now. Please try again.", None
+
+    def _build_generation_prompt(
+        self,
+        *,
+        system_prompt: str,
+        user_message: str,
+        stricter: bool,
+        previous_response: Optional[str],
+    ) -> str:
+        """Build the final generation prompt for the chat model."""
+        base_prompt = f"{system_prompt}\n\nUser: {user_message}\n\nKai:"
+        if not stricter:
+            return base_prompt
+
+        retry_note = (
+            "\n\nIMPORTANT RETRY INSTRUCTIONS:\n"
+            "- Return one direct assistant reply only.\n"
+            "- Do not include role labels like 'User:' or 'Kai:'.\n"
+            "- Do not return placeholders, templates, or meta commentary.\n"
+            f"- The reply must be specific, complete, and longer than {MIN_RESPONSE_CHARS} characters.\n"
+            "- If the available context is insufficient, say that clearly and keep the reply useful.\n"
+            "- Do not repeat generic fallback text.\n"
+        )
+        if previous_response:
+            retry_note += f"\nPrevious invalid response:\n{previous_response}\n"
+        return f"{base_prompt}{retry_note}"
+
+    def validate_response(self, response_text: str) -> ResponseValidationResult:
+        """Validate that generated assistant text is safe to use and store."""
+        normalized = re.sub(r"\s+", " ", str(response_text or "")).strip()
+        if not normalized:
+            return ResponseValidationResult(is_valid=False, text="", reason="empty")
+
+        if len(normalized) < MIN_RESPONSE_CHARS:
+            return ResponseValidationResult(
+                is_valid=False,
+                text=normalized,
+                reason="too_short",
+            )
+
+        if normalized.lower() in GENERIC_FALLBACK_TEXTS:
+            return ResponseValidationResult(
+                is_valid=False,
+                text=normalized,
+                reason="generic_fallback",
+            )
+
+        malformed_markers = (
+            normalized.startswith("User:"),
+            normalized.startswith("Kai:"),
+            "{user_context}" in normalized,
+            "{chat_history}" in normalized,
+            "Current conversation context:" in normalized,
+            "\nUser:" in response_text,
+            "\nKai:" in response_text,
+        )
+        if any(malformed_markers):
+            return ResponseValidationResult(
+                is_valid=False,
+                text=normalized,
+                reason="malformed_structure",
+            )
+
+        return ResponseValidationResult(is_valid=True, text=normalized)
+
+    async def _generate_validated_response(
+        self,
+        system_prompt: str,
+        user_message: str,
+    ) -> tuple[str, Optional[int], bool]:
+        """
+        Generate a chat response, validate it, retry once with stricter instructions,
+        and finally return a safe fallback if no valid answer is produced.
+        """
+        response_text, tokens = await self._generate_response(system_prompt, user_message)
+        validation = self.validate_response(response_text)
+        if validation.is_valid:
+            return validation.text, tokens, True
+
+        logger.warning(
+            "kai_chat.response_validation_failed reason=%s attempt=1",
+            validation.reason,
+        )
+        logger.info(
+            "kai_chat.response_retry_triggered reason=%s",
+            validation.reason,
+        )
+
+        retry_text, retry_tokens = await self._generate_response(
+            system_prompt,
+            user_message,
+            stricter=True,
+            previous_response=validation.text,
+        )
+        retry_validation = self.validate_response(retry_text)
+        if retry_validation.is_valid:
+            return retry_validation.text, retry_tokens, True
+
+        logger.warning(
+            "kai_chat.response_validation_failed reason=%s attempt=2",
+            retry_validation.reason,
+        )
+        logger.warning(
+            "kai_chat.safe_fallback_triggered final_reason=%s",
+            retry_validation.reason,
+        )
+        return SAFE_FALLBACK_RESPONSE, None, False
 
     def _detect_component(
         self,
@@ -852,25 +1064,22 @@ class KaiChatService:
             - available_domains: List of domains user has data in
         """
         try:
-            # Get PKM metadata
+            # Get PKM metadata -- single DB call, contains everything we need.
             metadata = await self.pkm_service.get_user_metadata(user_id)
 
-            # Check portfolio
-            has_portfolio = False
-            try:
-                portfolio = await self.pkm_service.get_portfolio(user_id)
-                has_portfolio = portfolio is not None
-            except Exception:
-                pass
-
-            # Check for financial domain
+            # Derive portfolio presence from metadata domains instead of a
+            # separate get_portfolio() query. A "financial" domain entry with
+            # attribute_count > 0 is the source of truth; get_portfolio() was
+            # a redundant round-trip that returned the same signal.
             has_financial_data = False
+            has_portfolio = False
             available_domains = []
             if metadata and metadata.domains:
                 available_domains = [d.domain_key for d in metadata.domains]
                 for domain in metadata.domains:
                     if domain.domain_key == "financial" and domain.attribute_count > 0:
                         has_financial_data = True
+                        has_portfolio = True
                         break
 
             # Determine total attributes
@@ -895,7 +1104,7 @@ class KaiChatService:
             }
 
         except Exception as e:
-            logger.error(f"Error getting initial chat state: {e}")
+            logger.error("kai_chat_service.get_initial_chat_state.error: %s", e)
             # Return safe defaults for new user
             return {
                 "is_new_user": True,
@@ -1020,7 +1229,7 @@ REASONING: [2-3 sentences]
             # Store decision as a non-sensitive summary in the PKM index
             saved = False
             try:
-                analyzed_at = datetime.now().isoformat()
+                analyzed_at = datetime.now(UTC).isoformat()
                 ticker_upper = str(ticker or "").upper()
                 await self.pkm_service.update_domain_summary(
                     user_id=user_id,
@@ -1038,7 +1247,7 @@ REASONING: [2-3 sentences]
                 saved = True
 
             except Exception as e:
-                logger.warning(f"Failed to save analysis to PKM: {e}")
+                logger.warning("kai_chat_service.save_analysis_to_pkm.error: %s", e)
 
             # Store in chat history
             await self.chat_db.add_message(
@@ -1076,12 +1285,19 @@ REASONING: [2-3 sentences]
             }
 
         except Exception as e:
-            logger.error(f"Error analyzing loser {ticker}: {e}")
+            logger.error("kai_chat_service.analyze_portfolio_loser.error ticker=%s: %s", ticker, e)
             raise
 
 
 # Singleton instance
 _kai_chat_service: Optional[KaiChatService] = None
+
+# Strong references to in-flight background attribute learning tasks.
+# asyncio only keeps weak references to tasks created with create_task, so a
+# task that is not referenced elsewhere can be garbage collected before it
+# finishes. Holding the task here until its done callback fires keeps the
+# background attribute extraction alive for its full duration.
+_attribute_learning_tasks: set[asyncio.Task] = set()
 
 
 def get_kai_chat_service() -> KaiChatService:

@@ -6,11 +6,14 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { HushhLoader } from "@/components/app-ui/hushh-loader";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { buildPhoneMandateRoute, ROUTES } from "@/lib/navigation/routes";
+import { AccountIdentityService } from "@/lib/services/account-identity-service";
 import {
+  hasVerifiedPhoneNumber,
   shouldBypassPhoneMandateForLocalhost,
   shouldRequirePhoneMandate,
 } from "@/lib/services/phone-mandate-service";
 import { VaultService } from "@/lib/services/vault-service";
+import { useHostname } from "@/lib/hooks/use-hostname";
 
 const vaultPresenceCache = new Map<string, boolean>();
 
@@ -26,8 +29,10 @@ export function PhoneMandateGuard({
   const searchParams = useSearchParams();
   const { user, loading, phoneNumber } = useAuth();
   const [hasVault, setHasVault] = useState<boolean | null>(null);
-  const hostname = typeof window === "undefined" ? null : window.location.hostname;
+  const [backendPhoneVerified, setBackendPhoneVerified] = useState<boolean | null>(null);
+  const hostname = useHostname();
   const localPhoneMandateBypassed = shouldBypassPhoneMandateForLocalhost(hostname);
+  const firebasePhoneVerified = hasVerifiedPhoneNumber(phoneNumber);
 
   useEffect(() => {
     if (!user?.uid) {
@@ -70,6 +75,41 @@ export function PhoneMandateGuard({
     };
   }, [localPhoneMandateBypassed, user?.uid]);
 
+  useEffect(() => {
+    if (!user?.uid) {
+      setBackendPhoneVerified(null);
+      return;
+    }
+
+    if (localPhoneMandateBypassed) {
+      setBackendPhoneVerified(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadIdentityState = async () => {
+      try {
+        const identity = await AccountIdentityService.refreshCurrentUserIdentity(user);
+        if (!cancelled) {
+          setBackendPhoneVerified(AccountIdentityService.hasVerifiedPhone(identity));
+        }
+      } catch (error) {
+        console.warn("[PhoneMandateGuard] Failed to check account phone claim:", error);
+        if (!cancelled) {
+          setBackendPhoneVerified(firebasePhoneVerified);
+        }
+      }
+    };
+
+    setBackendPhoneVerified(null);
+    void loadIdentityState();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [firebasePhoneVerified, localPhoneMandateBypassed, user]);
+
   const currentRoute = useMemo(() => {
     const query = searchParams.toString();
     return query ? `${pathname}?${query}` : pathname;
@@ -78,11 +118,14 @@ export function PhoneMandateGuard({
   const shouldRedirect =
     !!user &&
     hasVault !== null &&
+    backendPhoneVerified !== null &&
     shouldRequirePhoneMandate({
       phoneNumber,
+      phoneVerified: backendPhoneVerified,
       hasVault,
       exemptVaultUsers,
       hostname,
+      pathname,
     });
 
   useEffect(() => {
@@ -101,7 +144,7 @@ export function PhoneMandateGuard({
     return <>{children}</>;
   }
 
-  if (hasVault === null) {
+  if (hasVault === null || backendPhoneVerified === null) {
     return <HushhLoader label="Checking phone requirement..." />;
   }
 

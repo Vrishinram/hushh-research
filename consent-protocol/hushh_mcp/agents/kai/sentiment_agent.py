@@ -63,7 +63,7 @@ class SentimentAgent(HushhAgent):
         self,
         ticker: str,
         user_id: str,
-        consent_token: Optional[str] = None,
+        consent_token: str,
         context: Optional[Dict[str, Any]] = None,
     ) -> SentimentInsight:
         """
@@ -78,7 +78,10 @@ class SentimentAgent(HushhAgent):
         Returns:
             SentimentInsight with analysis results
         """
-        logger.info(f"[Sentiment] Orchestrating analysis for {ticker} - user {user_id}")
+        if not consent_token:
+            raise PermissionError("Sentiment analysis requires a consent token")
+
+        logger.info("[Sentiment] Orchestrating analysis for %s (user=[redacted])", ticker)
 
         # Operon 1: Fetch news articles (with consent check)
         from hushh_mcp.operons.kai.fetchers import (

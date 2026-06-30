@@ -21,6 +21,7 @@ import { PkmJsonTree, PkmManifestTree } from "@/components/profile/pkm-tree-view
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/use-auth";
+import { useVault } from "@/lib/vault/vault-context";
 import {
   PersonalKnowledgeModelService,
   type DomainSummary,
@@ -29,7 +30,7 @@ import {
 } from "@/lib/services/personal-knowledge-model-service";
 import { Button } from "@/lib/morphy-ux/morphy";
 import { type DomainManifest } from "@/lib/personal-knowledge-model/manifest";
-import { useVault } from "@/lib/vault/vault-context";
+import { isConsumerVisiblePkmDomain } from "@/lib/profile/pkm-profile-presentation";
 
 type DomainInspectorState = {
   manifest: DomainManifest | null;
@@ -95,10 +96,11 @@ export function PkmExplorerPanel() {
         if (cancelled) return;
         setMetadata(nextMetadata);
         setSelectedDomain((current) => {
-          if (current && nextMetadata.domains.some((domain) => domain.key === current)) {
+          const nextVisibleDomains = nextMetadata.domains.filter(isConsumerVisiblePkmDomain);
+          if (current && nextVisibleDomains.some((domain) => domain.key === current)) {
             return current;
           }
-          return nextMetadata.domains[0]?.key || null;
+          return nextVisibleDomains[0]?.key || null;
         });
       } catch (nextError) {
         if (!cancelled) {
@@ -185,6 +187,11 @@ export function PkmExplorerPanel() {
     return metadata.domains.find((domain) => domain.key === selectedDomain) || null;
   }, [metadata, selectedDomain]);
 
+  const visibleDomains = useMemo(
+    () => (metadata?.domains || []).filter(isConsumerVisiblePkmDomain),
+    [metadata?.domains]
+  );
+
   const selectedScopeEntries = useMemo(
     () => domainState.manifest?.scope_registry || [],
     [domainState.manifest]
@@ -205,10 +212,11 @@ export function PkmExplorerPanel() {
       );
       setMetadata(nextMetadata);
       setSelectedDomain((current) => {
-        if (current && nextMetadata.domains.some((domain) => domain.key === current)) {
+        const nextVisibleDomains = nextMetadata.domains.filter(isConsumerVisiblePkmDomain);
+        if (current && nextVisibleDomains.some((domain) => domain.key === current)) {
           return current;
         }
-        return nextMetadata.domains[0]?.key || null;
+        return nextVisibleDomains[0]?.key || null;
       });
     } catch (nextError) {
       setBootstrapError(
@@ -249,7 +257,7 @@ export function PkmExplorerPanel() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {metadata ? <Badge variant="secondary">{metadata.domains.length} domains</Badge> : null}
+          {metadata ? <Badge variant="secondary">{visibleDomains.length} domains</Badge> : null}
           {metadata ? (
             <Badge variant="secondary">{metadata.totalAttributes} attributes</Badge>
           ) : null}
@@ -293,12 +301,13 @@ export function PkmExplorerPanel() {
           />
           {metadata?.domains.length ? (
             <div className="space-y-3">
-              {metadata.domains.map((domain) => {
+              {visibleDomains.map((domain) => {
                 const isActive = selectedDomain === domain.key;
                 return (
                   <button
                     key={domain.key}
                     type="button"
+                    aria-pressed={isActive}
                     className={`w-full rounded-[var(--radius-md)] border-0 px-4 py-3 text-left transition ${
                       isActive
                         ? "bg-primary/8 text-foreground dark:bg-primary/12"
@@ -311,7 +320,9 @@ export function PkmExplorerPanel() {
                         <p className="text-sm font-semibold">{domain.displayName}</p>
                         <p className="text-xs text-muted-foreground">{domain.key}</p>
                       </div>
-                      <Badge variant="secondary">{domain.attributeCount}</Badge>
+                      <div className="flex flex-col items-end gap-1">
+                        <Badge variant="secondary">{domain.attributeCount}</Badge>
+                      </div>
                     </div>
                     <p className="mt-2 text-xs text-muted-foreground">
                       Updated {formatTimestamp(domain.lastUpdated)}

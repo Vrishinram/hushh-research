@@ -1,52 +1,119 @@
-# Dependencies
-node_modules/
-.pnp
-.pnp.js
-package-lock.json
-yarn.lock
+# External Repositories
+iwebtechno-code/
+hushh-adk-agents/
+consent-protocol-old/
+hushh_starter_idea.md
+graphify-out/
 
-# Testing
-coverage/
-
-# Production
-build/
-dist/
-.next/
-out/
-
-# Misc
-.DS_Store
-*.pem
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Debug
-.vscode/
-.vscode-test/
-
-# Environment variables
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-# IDE
+# Editor/IDE
 .idea/
+.cursor/
+.mcp.json
 *.swp
 *.swo
-*~
+*.swx
 
-# OS
+# Cloud SQL
+cloud-sql-proxy.exe
+cloud-sql-proxy
+cloud_sql_proxy
+**/cloud-sql-proxy.exe
+**/cloud-sql-proxy
+**/cloud_sql_proxy
+CLOUDSQL_CONFIG.md
+
+# Credentials
+service-account.json
+firebase-service-account.json
+**/firebase-service-account.json
+google-services.json
+**/google-services.json
+GoogleService-Info.plist
+**/GoogleService-Info.plist
+firebase-debug.log
+**/firebase-debug.log
+
+# Local env files (never commit real envs)
+.env
+.env.*
+!.env.example
+!.env.*.example
+.env.local.d/
+**/.env.local.d/
+*environment.zip
+*env keys.zip
+.local-secrets/
+**/.local-secrets/
+node_modules/
+
+consent-protocol/.DS_Store
+.DS_Store
+docs/vision/kai/index.html
+.vscode/chrome-debug
+# Large data files (moved to data/)
+sec_payload_aapl.json
+sec_payload_nvda.json
+data/*.json
+# Blog drafts (personal content)
+blogs/
+
+# Local planning artifacts
+docs/project-plans/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*$py.class
+.Python
+env/
+ENV/
+venv/
+.venv/
+virtualenv/
+.virtualenv/
+.tox/
+.nox/
+!scripts/env/
+!scripts/env/*.sh
+Pipfile.lock
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# System
 Thumbs.db
+CURSOR_TOOLS.md
+continue-dev-tools-usage.md
 
-# Prisma
-prisma/migrations/
+# Local temp artifacts
+temp/
+tmp/
+.playwright-artifacts/
+.playwright-mcp/
+/test-results/
+hushh-webapp/test-results/
+hushh-webapp/npm-audit-report.json
+hushh-webapp/native-ios-screenshots/
+**/build.log
 
-# TypeScript build artifacts
+# Local debug/runtime artifacts
 *.tsbuildinfo
+*.stackdump
+*.pid
+*.seed
+*.pid.lock
+
+# Runtime-generated PKM debug logs
+**/pkm-debug.log*
+**/pkm-debug-*.log*
+**/pkm-debug-*.jsonl
+**/pkm-debug-*.ndjson
+**/.pkm-debug/
 
 # Generated native/build artifacts
 hushh-webapp/.next/
@@ -70,6 +137,13 @@ Personal_Tasks/
 *.key
 *credentials*.json
 *secret*.json
+
+# Private partner gateway handoff material
+deploy/mulesoft/
+docs/reference/operations/mulesoft-managed-omni-private-space.md
+**/vpn-guides/
+**/*vpn*guide*
+**/*private-space*handoff*
 
 # Local validation scripts
 test_kai_endpoints.py

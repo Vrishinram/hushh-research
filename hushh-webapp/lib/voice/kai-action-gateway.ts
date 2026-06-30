@@ -7,7 +7,8 @@ import type { VoiceSurfaceMetadata } from "@/lib/voice/voice-surface-metadata";
 
 export type KaiActionRiskLevel = "low" | "medium" | "high";
 export type KaiActionExecutionPolicy = "allow_direct" | "confirm_required" | "manual_only";
-export type KaiActionSpeakerPersona = "one" | "kai" | "nav";
+export type KaiActionSpeakerPersona = "one" | "kai" | "nav" | "kyc";
+export type KaiActionDelegateAgentId = "one" | "kai" | "nav" | "kyc";
 export type KaiActionExecutionTarget =
   | {
       status: "wired";
@@ -96,6 +97,7 @@ export type KaiActionDefinition = {
   search_keywords: string[];
   meaning: string;
   speaker_persona: KaiActionSpeakerPersona;
+  delegate_agent_id: KaiActionDelegateAgentId | null;
   reachability: {
     routes: string[];
     screens: string[];
@@ -179,8 +181,21 @@ function isStringArray(value: unknown): value is string[] {
 
 function validateSpeakerPersona(value: unknown): KaiActionSpeakerPersona {
   const normalized = cleanString(value);
-  if (normalized === "kai" || normalized === "nav") return normalized;
+  if (normalized === "kai" || normalized === "nav" || normalized === "kyc") return normalized;
   return "one";
+}
+
+function validateDelegateAgentId(value: unknown): KaiActionDelegateAgentId | null {
+  const normalized = cleanString(value);
+  if (
+    normalized === "one" ||
+    normalized === "kai" ||
+    normalized === "nav" ||
+    normalized === "kyc"
+  ) {
+    return normalized;
+  }
+  return null;
 }
 
 function validateExecutionTarget(value: unknown): KaiActionExecutionTarget | null {
@@ -339,6 +354,7 @@ function validateAction(value: unknown): KaiActionDefinition | null {
     search_keywords: isStringArray(value.search_keywords) ? value.search_keywords : [],
     meaning,
     speaker_persona: validateSpeakerPersona(value.speaker_persona),
+    delegate_agent_id: validateDelegateAgentId(value.delegate_agent_id),
     reachability: {
       routes: value.reachability.routes,
       screens: value.reachability.screens,
@@ -602,7 +618,10 @@ export function evaluateKaiActionAvailability(input: {
   }
 
   for (const guardId of action.guard_ids) {
-    if (guardId === "auth_signed_in" && appRuntimeState?.auth.signed_in !== true) {
+    if (
+      (guardId === "auth_signed_in" || guardId === "auth_required") &&
+      appRuntimeState?.auth.signed_in !== true
+    ) {
       return {
         status: "blocked",
         reason: "Sign in to use this action.",
@@ -702,6 +721,16 @@ function scoreSearchMatch(action: KaiActionDefinition, query: string, screen: st
   return score;
 }
 
+function availabilitySearchRank(availability: KaiActionAvailability): number {
+  if (
+    availability.status === "available" ||
+    availability.status === "requires_persona_switch"
+  ) {
+    return 0;
+  }
+  return 1;
+}
+
 export function searchKaiActions(input: {
   query: string;
   appRuntimeState?: AppRuntimeState;
@@ -725,6 +754,10 @@ export function searchKaiActions(input: {
   }))
     .filter((entry) => entry.score > 0)
     .sort((a, b) => {
+      const availabilityRank =
+        availabilitySearchRank(a.availability) -
+        availabilitySearchRank(b.availability);
+      if (availabilityRank !== 0) return availabilityRank;
       if (b.score !== a.score) return b.score - a.score;
       return a.action.label.localeCompare(b.action.label);
     })

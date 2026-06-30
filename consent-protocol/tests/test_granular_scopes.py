@@ -39,12 +39,26 @@ class TestStaticScopes:
         assert ConsentScope.PKM_WRITE.value == "pkm.write"
         assert ConsentScope.PKM_METADATA.value == "pkm.metadata"
 
-    def test_kai_agent_scopes(self):
-        """Test Kai agent operation scopes."""
+    def test_agent_scope_values(self):
+        """Test One/Kai/Nav/KYC agent operation scopes."""
+        assert ConsentScope.AGENT_ONE_ORCHESTRATE.value == "agent.one.orchestrate"
         assert ConsentScope.AGENT_KAI_ANALYZE.value == "agent.kai.analyze"
         assert ConsentScope.AGENT_KAI_DEBATE.value == "agent.kai.debate"
         assert ConsentScope.AGENT_KAI_INFER.value == "agent.kai.infer"
         assert ConsentScope.AGENT_KAI_CHAT.value == "agent.kai.chat"
+        assert ConsentScope.AGENT_NAV_REVIEW.value == "agent.nav.review"
+        assert ConsentScope.AGENT_KYC_PROCESS.value == "agent.kyc.process"
+        assert ConsentScope.AGENT_KYC_WRITEBACK.value == "agent.kyc.writeback"
+
+    def test_live_location_capability_scope_values(self):
+        """Test One Location Agent workflow capability scopes."""
+        assert ConsentScope.CAP_LOCATION_LIVE_SHARE.value == "cap.location.live.share"
+        assert ConsentScope.CAP_LOCATION_LIVE_VIEW.value == "cap.location.live.view"
+        assert ConsentScope.CAP_LOCATION_LIVE_REQUEST.value == "cap.location.live.request"
+        assert ConsentScope.CAP_LOCATION_LIVE_REVOKE.value == "cap.location.live.revoke"
+        assert (
+            ConsentScope.CAP_LOCATION_LIVE_REFER_REQUEST.value == "cap.location.live.refer_request"
+        )
 
     def test_external_data_scopes(self):
         """Test external data source scopes."""
@@ -80,9 +94,12 @@ class TestStaticScopes:
         """Test agent_scopes() returns correct scopes."""
         agent_scopes = ConsentScope.agent_scopes()
 
+        assert ConsentScope.AGENT_ONE_ORCHESTRATE in agent_scopes
         assert ConsentScope.AGENT_KAI_ANALYZE in agent_scopes
         assert ConsentScope.AGENT_KAI_CHAT in agent_scopes
         assert ConsentScope.AGENT_KAI_EXECUTE in agent_scopes
+        assert ConsentScope.AGENT_NAV_REVIEW in agent_scopes
+        assert ConsentScope.AGENT_KYC_PROCESS in agent_scopes
 
     def test_external_scopes(self):
         """Test external_scopes() returns correct scopes."""
@@ -90,6 +107,17 @@ class TestStaticScopes:
 
         assert ConsentScope.EXTERNAL_SEC_FILINGS in ext_scopes
         assert ConsentScope.EXTERNAL_RENAISSANCE in ext_scopes
+
+    def test_capability_scopes(self):
+        """Test capability_scopes() returns workflow capabilities."""
+        cap_scopes = ConsentScope.capability_scopes()
+
+        assert ConsentScope.CAP_LOCATION_LIVE_SHARE in cap_scopes
+        assert ConsentScope.CAP_LOCATION_LIVE_VIEW in cap_scopes
+        assert ConsentScope.CAP_LOCATION_LIVE_REQUEST in cap_scopes
+        assert ConsentScope.CAP_LOCATION_LIVE_REVOKE in cap_scopes
+        assert ConsentScope.CAP_LOCATION_LIVE_REFER_REQUEST in cap_scopes
+        assert ConsentScope.CAP_LOCATION_LIVE_VIEW not in ConsentScope.agent_scopes()
 
 
 class TestDynamicScopes:
