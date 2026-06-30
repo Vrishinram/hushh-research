@@ -36,15 +36,18 @@ Examples of unacceptable behavior include:
 * Other conduct which could reasonably be considered inappropriate in a
   professional setting
 
-## Hushh-Specific Guidelines
+## Hussh-Specific Guidelines
 
-As a project focused on **consent-first personal data management**, we hold
+As a project focused on **consent-first personal AI infrastructure**, we hold
 ourselves to additional standards:
 
 * **Respect user privacy** - Never share or expose user data, even in examples
 * **Consent is paramount** - All features must honor the consent-first principle
-* **Security-conscious** - Report security issues privately via security.md
+* **Security-conscious** - Report security issues privately via [SECURITY.md](./SECURITY.md)
 * **BYOK compliance** - Never suggest storing encryption keys on servers
+* **Signed contributions** - Pull request commits should follow the
+  [contribution guide](./contributing.md) and include a Developer Certificate
+  of Origin signoff with `git commit -s`
 
 ## Enforcement Responsibilities
 
