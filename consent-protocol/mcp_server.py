@@ -25,7 +25,6 @@ Modular architecture:
 import asyncio
 import json
 import logging
-import sys
 import time
 
 from mcp.server import Server
@@ -33,23 +32,6 @@ from mcp.server.stdio import stdio_server
 from mcp.types import TextContent
 
 from mcp_modules import resources as mcp_resources
-from mcp_modules.tools.schemas import (
-    PrepareCampaignContextSchema,
-    RequestConsentSchema,
-    ValidateTokenSchema,
-    GetEncryptedScopedExportSchema,
-    DelegateToAgentSchema,
-    DiscoverUserDomainsSchema,
-    CheckConsentStatusSchema,
-    ListRiaProfilesSchema,
-    GetRiaProfileSchema,
-    ListMarketplaceInvestorsSchema,
-    GetRiaVerificationStatusSchema,
-    GetRiaClientAccessSummarySchema,
-    KaiAnalyzeStockSchema,
-    KaiOpenHistorySchema,
-    EmptyArgsSchema,
-)
 
 # Import modular components
 from mcp_modules.config import SERVER_INFO
@@ -85,13 +67,30 @@ from mcp_modules.tools import (
     handle_request_consent,
     handle_validate_token,
 )
+from mcp_modules.tools.schemas import (
+    CheckConsentStatusSchema,
+    DelegateToAgentSchema,
+    DiscoverUserDomainsSchema,
+    EmptyArgsSchema,
+    GetEncryptedScopedExportSchema,
+    GetRiaClientAccessSummarySchema,
+    GetRiaProfileSchema,
+    GetRiaVerificationStatusSchema,
+    KaiAnalyzeStockSchema,
+    KaiOpenHistorySchema,
+    ListMarketplaceInvestorsSchema,
+    ListRiaProfilesSchema,
+    PrepareCampaignContextSchema,
+    RequestConsentSchema,
+    ValidateTokenSchema,
+)
 
 # ============================================================================
 # LOGGING CONFIGURATION
 # IMPORTANT: Only use stderr - stdout is reserved for JSON-RPC messages
 # ============================================================================
-
 from services.logging_config import configure_logging
+
 configure_logging(level="INFO", stream="ext://sys.stderr")
 install_sensitive_log_filter()
 logger = logging.getLogger("hushh-mcp-server")
