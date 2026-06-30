@@ -2,6 +2,8 @@
 
 Use this reference when changing repo-scoped custom agents or the orchestration rules that govern them.
 
+The shared truth-first reasoning contract lives at `.codex/skills/codex-skill-authoring/references/truth-first-operating-kernel.md`. Delegation uses that kernel for claim labels, evidence order, domain probes, and child handoff shape.
+
 ## Baseline policy
 
 1. Skills remain the primary knowledge and process system.
@@ -9,6 +11,37 @@ Use this reference when changing repo-scoped custom agents or the orchestration 
 3. Repo-scoped custom agents are a thin execution layer for bounded role specialization and explicit parallelism.
 4. Subagent use is explicit at the repo-policy level. Do not add unbounded fan-out, but repo workflows inherit a global read-only evidence-lane policy so the parent does not need to ask again for obvious specialist review.
 5. The sweet spot is a small fleet of broad evidence lanes. Do not create one agent per skill; add an agent only when a recurring high-risk family crosses multiple skills and cannot be reliably covered by the current baseline.
+6. Premise verification happens before delegation and before synthesis. Agents exist to gather evidence against concrete claims, not to reinforce the prompt's assumption.
+
+## Premise Verification Before Delegation
+
+Before routing to an agent lane, the parent must extract the important claims in the prompt and classify them against repo evidence when feasible:
+
+1. `already_exists`
+2. `partially_exists`
+3. `missing`
+4. `future_state_only`
+5. `wrong_direction`
+6. `needs_verification`
+
+Use specialist agents to inspect claims when the surface is high-risk or cross-domain, but keep the final classification with the parent or `governor`.
+
+Delegated prompts should ask for evidence in this shape:
+
+1. `claim_inspected`
+2. `classification`
+3. `evidence_checked`
+4. `current_repo_truth`
+5. `real_gap`
+6. `suggested_boundary`
+7. `risk_if_prompt_is_accepted_blindly`
+8. `scope_covered`
+9. `inspected_surfaces`
+10. `assumptions`
+11. `validations_run`
+12. `unresolved_risks`
+
+Do not ask a child agent only "is this okay?" or "summarize this." That creates agreeable but weak evidence.
 
 ## Subagent suitability checkpoint
 
@@ -73,13 +106,29 @@ Common high-signal lanes:
 4. `security-consent-audit`: security consent auditor first, with backend/frontend lanes when caller or route contracts are implicated.
 5. `kai-voice-governance`: voice systems architect plus reviewer when generated contracts, planner/executor flow, or UI action parity changes.
 6. `pr-governance-review`: data model architect when migrations, schema contracts, UAT parity, cache coherence, or local-first/cloud projection authority is implicated.
-7. Product/docs/founder-language tasks: product docs architect when founder language, roadmap claims, One/Kai/Nav role clarity, durable docs placement, or community copy is implicated.
+7. Product/docs/founder-language tasks: product docs architect when founder language, founder wiki north-star review, roadmap claims, One/Kai/Nav role clarity, durable docs placement, or community copy is implicated.
 8. Analytics/observability tasks: analytics observability architect when GA4, Firebase Analytics, BigQuery, event taxonomy, route ids, or dashboard contracts are implicated.
 9. Mobile/native tasks: mobile native architect when iOS, Android, Capacitor, native bridge, plugin registration, or device parity is implicated.
 
 Automatic here means the parent may spawn the lane without asking the user again. It does not mean child agents can approve, merge, deploy, push, or mutate branches.
 
+PR governance has one narrow workflow-local writer-lane exception for pre-approved train execution. It is separate from repo-scoped custom agents: evidence lanes stay read-only, while the exception may only edit/post standardized maintainer records, request changes, close superseded PRs, acknowledge harvest, or enqueue exact-head queue candidates under the PR train SOP gates. Branch switching, code patches, commits, pushes, deploys, secrets, product-policy changes, and final merge policy stay with the parent/governor.
+
 The router is advisory, not authority. If it recommends a lane that the runtime does not expose in the current session, record that runtime availability gap and continue locally or with the closest available read-only agent.
+
+Founder wiki evidence lanes use the Founder Wiki North-Star Probe and are read-only by default. They may use product/architecture/non-negotiable pages for north-star alignment, but private wiki evidence must stay local-only and public GitHub comments must not cite private wiki pages. When repo truth and wiki canon disagree, classify the gap as `current_state_vs_north_star_drift`.
+
+## Skill Activation Detection
+
+Use these sources to detect how a skill can activate agents or subagents:
+
+1. `skill.json`: role, owner family, task types, reads, checks, and handoff targets.
+2. `.codex/workflows/*/workflow.json`: `owner_skill`, `default_spoke`, `task_type`, and explicit `delegation_policy` lanes.
+3. `.codex/agents/*.toml`: the skill block that says which skills each read-only agent can support.
+4. `delegation_router.py`: repo-global prompt/path lane matches for workflows without explicit delegation policy.
+5. `skill_fleet_audit.py`: compact fleet table that reports each skill as `master <skill-id>` or `spoke <skill-id>` with agents, workflows, and detection mechanisms.
+
+Report owner skills as master lanes in operator-facing output, but do not rename the manifest role from `owner`.
 
 ## Authority rules
 
@@ -105,12 +154,18 @@ python3 .codex/skills/agent-orchestration-governance/scripts/agent_fleet_audit.p
 
 Every delegated result should include:
 
-1. `scope covered`
-2. `files or surfaces inspected`
-3. `findings or conclusion`
-4. `assumptions`
-5. `validations run`
-6. `unresolved risks`
+1. `claim_inspected`
+2. `classification`
+3. `evidence_checked`
+4. `current_repo_truth`
+5. `real_gap`
+6. `suggested_boundary`
+7. `risk_if_prompt_is_accepted_blindly`
+8. `scope_covered`
+9. `inspected_surfaces`
+10. `assumptions`
+11. `validations_run`
+12. `unresolved_risks`
 
 ## Current repo-scoped custom-agent baseline
 

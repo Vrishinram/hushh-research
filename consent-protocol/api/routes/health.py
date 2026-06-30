@@ -19,6 +19,10 @@ router = APIRouter(tags=["Health"])
 NO_STORE_HEADERS = {"Cache-Control": "no-store"}
 REVIEWER_UID_KEY = "REVIEWER_UID"
 REVIEWER_VAULT_PASSPHRASE_KEY = "REVIEWER_VAULT_PASSPHRASE"  # noqa: S105
+AGENT_MODEL = {
+    "primary": "one",
+    "specialists": ["kai", "nav", "kyc"],
+}
 DEPRECATED_REVIEWER_UID_KEYS = ("UAT_SMOKE_USER_ID", "KAI_TEST_USER_ID")
 DEPRECATED_REVIEWER_PASSPHRASE_KEYS = (  # noqa: S105
     "UAT_SMOKE_PASSPHRASE",
@@ -82,7 +86,11 @@ def health_check():
 @router.get("/health")
 def health():
     """Detailed health check with agent list."""
-    return {"status": "healthy", "agents": ["kai"]}
+    return {
+        "status": "healthy",
+        "agents": ["one", "kai", "nav", "kyc"],
+        "agent_model": AGENT_MODEL,
+    }
 
 
 @router.get("/api/app-config/review-mode")
@@ -132,6 +140,19 @@ async def issue_app_review_mode_session(request: Request):
         raise HTTPException(
             status_code=503,
             detail="Review session identity not configured",
+            headers=NO_STORE_HEADERS,
+        )
+
+    # ── Offline mode: skip Firebase Admin SDK, return local token ──
+    query_params = dict(request.query_params)
+    is_offline = str(query_params.get("local", "0")).strip() == "1"
+    if is_offline:
+        return JSONResponse(
+            {
+                "token": "offline-local-token",
+                "offline": True,
+                "reviewer_uid": reviewer_uid,
+            },
             headers=NO_STORE_HEADERS,
         )
 
