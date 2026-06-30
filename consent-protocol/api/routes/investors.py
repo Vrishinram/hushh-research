@@ -5,12 +5,19 @@ Investor Profiles API Routes (PUBLIC DISCOVERY LAYER)
 These endpoints serve publicly available investor data for identity resolution.
 Data source: SEC 13F filings, Form 4, public sources
 
+Canonical attach points:
+  api.routes.investors.create_investor -> POST /api/investors/
+  api.routes.investors.bulk_create_investors -> POST /api/investors/bulk
+
 IMPORTANT: This is the PUBLIC layer - no authentication required for search.
 The data here is NOT encrypted (it's all from public SEC filings).
 
 Privacy architecture:
 - investor_profiles = PUBLIC (SEC filings, read-only)
 - user_investor_profiles = PRIVATE (E2E encrypted, consent required)
+
+Write endpoints (POST) require Firebase authentication to prevent
+unauthenticated data ingestion.
 """
 
 import json
@@ -19,14 +26,20 @@ import re
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request
+from pydantic import BaseModel, Field
 
+from api.middleware import require_firebase_auth
+from api.middlewares.rate_limit import limiter
 from hushh_mcp.services.investor_db import InvestorDBService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/investors", tags=["Investor Profiles (Public)"])
+
+# Maximum number of investor records accepted in a single bulk request.
+# Guards the database connection pool against runaway ingestion jobs.
+_BULK_INVESTOR_MAX: int = 500
 
 
 # ============================================================================
@@ -72,27 +85,27 @@ class InvestorProfile(BaseModel):
 
 
 class InvestorCreateRequest(BaseModel):
-    name: str
-    cik: Optional[str] = None
-    firm: Optional[str] = None
-    title: Optional[str] = None
-    investor_type: Optional[str] = None
+    name: str = Field(..., max_length=200)
+    cik: Optional[str] = Field(None, max_length=20)
+    firm: Optional[str] = Field(None, max_length=200)
+    title: Optional[str] = Field(None, max_length=100)
+    investor_type: Optional[str] = Field(None, max_length=50)
     aum_billions: Optional[float] = None
     top_holdings: Optional[list] = None
     sector_exposure: Optional[dict] = None
     investment_style: Optional[List[str]] = None
-    risk_tolerance: Optional[str] = None
-    time_horizon: Optional[str] = None
-    portfolio_turnover: Optional[str] = None
+    risk_tolerance: Optional[str] = Field(None, max_length=50)
+    time_horizon: Optional[str] = Field(None, max_length=50)
+    portfolio_turnover: Optional[str] = Field(None, max_length=50)
     recent_buys: Optional[List[str]] = None
     recent_sells: Optional[List[str]] = None
     public_quotes: Optional[list] = None
-    biography: Optional[str] = None
+    biography: Optional[str] = Field(None, max_length=10_000)
     education: Optional[List[str]] = None
     board_memberships: Optional[List[str]] = None
     peer_investors: Optional[List[str]] = None
     is_insider: bool = False
-    insider_company_ticker: Optional[str] = None
+    insider_company_ticker: Optional[str] = Field(None, max_length=10)
 
 
 # ============================================================================
@@ -102,7 +115,7 @@ class InvestorCreateRequest(BaseModel):
 
 @router.get("/search", response_model=List[InvestorSearchResult])
 async def search_investors(
-    name: str = Query(..., min_length=2, description="Name to search for"),
+    name: str = Query(..., min_length=2, max_length=200, description="Name to search for"),
     limit: int = Query(10, ge=1, le=50),
 ):
     """
@@ -117,7 +130,7 @@ async def search_investors(
     service = InvestorDBService()
     results = await service.search_investors(name=name, limit=limit)
 
-    logger.info(f"🔍 Search '{name}' returned {len(results)} results")
+    logger.info("investor.search.results name=%s count=%s", name, len(results))
     return results
 
 
@@ -138,18 +151,20 @@ async def get_investor(investor_id: int):
         if not profile:
             raise HTTPException(status_code=404, detail="Investor not found")
 
-        logger.info(f"📥 Retrieved investor {investor_id}: {profile['name']}")
+        logger.info("investor.fetch.success investor_id=%s name=%s", investor_id, profile["name"])
         return profile
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"❌ Error fetching investor {investor_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.error("investor.fetch.error investor_id=%s", investor_id, exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/cik/{cik}", response_model=InvestorProfile)
-async def get_investor_by_cik(cik: str):
+async def get_investor_by_cik(
+    cik: str = Path(..., max_length=20, description="SEC CIK number"),
+):
     """Get investor profile by SEC CIK number."""
     # Use service layer (no consent required for public investor data)
     service = InvestorDBService()
@@ -166,23 +181,11 @@ async def get_investor_by_cik(cik: str):
 # ============================================================================
 
 
-@router.post("/", status_code=201)
-async def create_investor(investor: InvestorCreateRequest):
-    """
-    Create or update an investor profile.
-
-    Admin endpoint for data ingestion from SEC EDGAR, etc.
-    """
-
-    # Use service layer
-    service = InvestorDBService()
-
-    # Normalize name for search
+def _build_investor_data(investor: InvestorCreateRequest) -> dict:
+    """Build the cleaned (None-stripped) DB record for an investor profile."""
     name_normalized = re.sub(r"\s+", "", investor.name.lower())
-
     now_iso = datetime.now().isoformat()
 
-    # Prepare data
     data = {
         "name": investor.name,
         "name_normalized": name_normalized,
@@ -212,33 +215,78 @@ async def create_investor(investor: InvestorCreateRequest):
     }
 
     # Remove None values
-    data = {k: v for k, v in data.items() if v is not None}
+    return {k: v for k, v in data.items() if v is not None}
+
+
+@router.post("/", status_code=201)
+async def create_investor(
+    investor: InvestorCreateRequest,
+    firebase_uid: str = Depends(require_firebase_auth),
+):
+    """
+    Create or update an investor profile.
+
+    Admin endpoint for data ingestion from SEC EDGAR, etc.
+    Requires Firebase authentication.
+    """
+
+    # Use service layer
+    service = InvestorDBService()
+    data = _build_investor_data(investor)
 
     try:
         # Use service method
         result = await service.upsert_investor(data, upsert_key="cik" if investor.cik else None)
 
-        logger.info(f"📈 Created/updated investor profile: {investor.name} (id={result.get('id')})")
+        logger.info("investor.create.success name=%s id=%s", investor.name, result.get("id"))
         return {"id": result.get("id"), "name": investor.name, "status": "created"}
 
-    except Exception as e:
-        logger.error(f"Error creating investor: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.error("investor.create.error", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/bulk", status_code=201)
-async def bulk_create_investors(investors: List[InvestorCreateRequest]):
+@limiter.limit("3/minute")
+async def bulk_create_investors(
+    request: Request,
+    investors: List[InvestorCreateRequest] = Body(...),
+    firebase_uid: str = Depends(require_firebase_auth),
+):
     """
     Bulk create investor profiles from list.
 
     Used for initial data seeding from JSON file.
-    """
-    results = []
-    for investor in investors:
-        result = await create_investor(investor)
-        results.append(result)
+    Capped at _BULK_INVESTOR_MAX records per request to protect the
+    database connection pool.
+    Requires Firebase authentication (trust boundary: no unauthenticated
+    bulk ingestion into the investor profiles table).
 
-    logger.info(f"📈 Bulk created {len(results)} investor profiles")
+    Upserts the whole batch via InvestorDBService.bulk_upsert_investors,
+    which issues one round-trip per distinct record shape instead of one
+    round-trip per investor.
+    """
+    if len(investors) > _BULK_INVESTOR_MAX:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Bulk insert is limited to {_BULK_INVESTOR_MAX} investors per request; "
+            f"got {len(investors)}.",
+        )
+
+    service = InvestorDBService()
+    records = [_build_investor_data(investor) for investor in investors]
+
+    try:
+        upserted = await service.bulk_upsert_investors(records)
+    except Exception:
+        logger.error("investor.bulk_create.error", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    results = [
+        {"id": row.get("id"), "name": row.get("name"), "status": "created"} for row in upserted
+    ]
+
+    logger.info("investor.bulk_create.success count=%s", len(results))
 
     return {"created": len(results), "profiles": results}
 

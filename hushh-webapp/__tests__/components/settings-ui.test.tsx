@@ -1,9 +1,27 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { SettingsRow, SettingsSegmentedTabs } from "@/components/profile/settings-ui";
+import {
+  SettingsDetailPanel,
+  SettingsRow,
+  SettingsSegmentedTabs,
+} from "@/components/profile/settings-ui";
 
 describe("SettingsRow", () => {
+  it("sets clickable row button type", () => {
+    render(
+      <SettingsRow
+        title="Open settings"
+        description="Manage account preferences"
+        onClick={() => {}}
+      />
+    );
+
+    expect(
+      screen.getByRole("button", { name: /open settings/i }).getAttribute("type")
+    ).toBe("button");
+  });
+
   it("wraps both primary action and trailing in a single interactive row", () => {
     const handleOpen = vi.fn();
     const handleTrailing = vi.fn();
@@ -78,6 +96,22 @@ describe("SettingsRow", () => {
     expect(link.textContent).toContain("Open profile");
     expect(link.textContent).toContain("Go to privacy workspace");
   });
+
+  it("stacks trailing content on mobile even when a chevron is present", () => {
+    const { container } = render(
+      <SettingsRow
+        title="Open CRM"
+        description="Inspect a connected customer system"
+        trailing={<span>Status badge</span>}
+        chevron
+        stackTrailingOnMobile
+      />
+    );
+
+    expect(container.innerHTML).toContain("grid-cols-1");
+    expect(container.innerHTML).toContain("w-full justify-start");
+    expect(container.innerHTML).toContain("Status badge");
+  });
 });
 
 describe("SettingsSegmentedTabs", () => {
@@ -107,5 +141,88 @@ describe("SettingsSegmentedTabs", () => {
 
     fireEvent.click(inactive);
     expect(handleValueChange).toHaveBeenCalledWith("kai");
+  });
+    it("preserves inactive segmented tab accessibility state", () => {
+    render(
+      <SettingsSegmentedTabs
+        value="kai"
+        onValueChange={() => {}}
+        options={[
+          { value: "kai", label: "Kai list" },
+          { value: "my", label: "My list" },
+        ]}
+      />
+    );
+
+    const inactive = screen.getByRole("button", { name: "My list" });
+
+    expect(inactive.getAttribute("data-state")).toBe("inactive");
+    expect(inactive.getAttribute("aria-pressed")).toBe("false");
+  });
+});
+
+describe("SettingsDetailPanel", () => {
+  it("preserves dialog accessibility semantics", () => {
+    Object.defineProperty(window, "matchMedia", {
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
+
+    render(
+      <SettingsDetailPanel
+        open
+        onOpenChange={() => {}}
+        title="Settings"
+        description="Settings dialog"
+      >
+        <div>Content</div>
+      </SettingsDetailPanel>
+    );
+
+    expect(screen.getByRole("dialog", { name: "Settings" })).toBeTruthy();
+    expect(screen.getByText("Settings dialog")).toBeTruthy();
+  });
+
+  it("closes from the explicit close button", () => {
+    Object.defineProperty(window, "matchMedia", {
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
+
+    const handleOpenChange = vi.fn();
+    render(
+      <SettingsDetailPanel
+        open
+        onOpenChange={handleOpenChange}
+        title="Settings"
+        description="Settings dialog"
+      >
+        <div>Content</div>
+      </SettingsDetailPanel>
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /close detail panel/i })
+    );
+
+    expect(handleOpenChange).toHaveBeenCalledWith(false);
   });
 });
