@@ -1,0 +1,2061 @@
+import asyncio
+from unittest.mock import AsyncMock
+
+import pytest
+
+from hushh_mcp.services.pkm_agent_lab_service import PKMAgentLabService
+
+
+def _registry_choices():
+    return [
+        {
+            "domain_key": "food",
+            "display_name": "Food & Dining",
+            "description": "Dietary preferences, favorite cuisines, and restaurant history",
+        },
+        {
+            "domain_key": "travel",
+            "display_name": "Travel",
+            "description": "Travel preferences, loyalty programs, and trip history",
+            "scope_paths": [
+                "seat_preferences",
+                "hotel_preferences",
+                "flight_preferences",
+                "preferences",
+            ],
+        },
+        {
+            "domain_key": "shopping",
+            "display_name": "Shopping",
+            "description": "Receipts, merchant affinity, and shopping preferences",
+            "scope_paths": ["receipts_memory", "product_preferences", "merchant_preferences"],
+        },
+        {
+            "domain_key": "location",
+            "display_name": "Location",
+            "description": "Home base, places, and location preferences",
+            "scope_paths": ["profile", "preferences"],
+        },
+        {
+            "domain_key": "social",
+            "display_name": "Social",
+            "description": "Relationships, family context, and social preferences",
+            "scope_paths": ["relationships", "preferences"],
+        },
+        {
+            "domain_key": "health",
+            "display_name": "Health",
+            "description": "Durable health routines, constraints, and wellness preferences",
+            "scope_paths": ["activities", "dietary_constraints", "sleep_preferences", "routines"],
+        },
+        {
+            "domain_key": "financial",
+            "display_name": "Financial",
+            "description": "Investment portfolio, risk profile, and financial preferences",
+            "scope_paths": ["goals", "profile", "events"],
+        },
+        {
+            "domain_key": "professional",
+            "display_name": "Professional",
+            "description": "Work preferences, professional context, and goals",
+            "scope_paths": ["work_preferences", "goals", "profile"],
+        },
+        {
+            "domain_key": "identity",
+            "display_name": "Identity",
+            "description": (
+                "Legal name, contact, and verified identity attributes for KYC/compliance"
+            ),
+            "scope_paths": ["profile"],
+        },
+    ]
+
+
+def _single_segment(message: str):
+    return {
+        "segments": [
+            {
+                "source_text": message,
+                "confidence": 0.99,
+                "reason": "Single coherent PKM memory candidate.",
+            }
+        ],
+        "source_agent": "memory_segmentation_agent",
+        "contract_version": 1,
+    }
+
+
+@pytest.mark.asyncio
+async def test_generate_structure_preview_replaces_non_financial_financial_payload(monkeypatch):
+    service = PKMAgentLabService()
+
+    monkeypatch.setattr(
+        service,
+        "_load_domain_registry_choices",
+        AsyncMock(return_value=_registry_choices()),
+    )
+    run_agent_contract = AsyncMock(
+        side_effect=[
+            _single_segment("I like Chinese"),
+            {
+                "routing_decision": "non_financial_or_ephemeral",
+                "confidence": 0.95,
+                "reason": "Food preference, not finance.",
+                "source_agent": "financial_guard_agent",
+                "contract_version": 1,
+            },
+            {
+                "save_class": "durable",
+                "intent_class": "preference",
+                "mutation_intent": "create",
+                "requires_confirmation": False,
+                "confirmation_reason": "",
+                "candidate_domain_choices": [
+                    {"domain_key": "food", "recommended": True},
+                    {"domain_key": "travel", "recommended": False},
+                ],
+                "confidence": 0.93,
+                "source_agent": "memory_intent_agent",
+                "contract_version": 1,
+            },
+            {
+                "merge_mode": "create_entity",
+                "target_domain": "food",
+                "target_entity_id": "mem_food_pref",
+                "target_entity_path": "preferences.entities.mem_food_pref",
+                "match_confidence": 0.88,
+                "match_reason": "New durable food preference.",
+                "source_agent": "memory_merge_agent",
+                "contract_version": 1,
+            },
+            {
+                "candidate_payload": {
+                    "profile": {
+                        "user_stated_financial_memory": "I like Chinese",
+                    }
+                },
+                "structure_decision": {
+                    "action": "create_domain",
+                    "target_domain": "preferences",
+                    "json_paths": ["profile", "profile.user_stated_financial_memory"],
+                    "top_level_scope_paths": ["profile"],
+                    "externalizable_paths": ["profile.user_stated_financial_memory"],
+                    "summary_projection": {},
+                    "sensitivity_labels": {},
+                    "confidence": 0.87,
+                    "source_agent": "pkm_structure_agent",
+                    "contract_version": 1,
+                },
+                "write_mode": "can_save",
+                "target_entity_scope": "profile",
+                "validation_hints": [],
+            },
+        ]
+    )
+    monkeypatch.setattr(service, "_run_agent_contract", run_agent_contract)
+
+    result = await service.generate_structure_preview(
+        user_id="user-1",
+        message="I like Chinese",
+        current_domains=["financial"],
+    )
+
+    assert result["routing_decision"] == "non_financial_or_ephemeral"
+    assert result["intent_frame"]["intent_class"] == "preference"
+    assert result["structure_decision"]["target_domain"] == "food"
+    assert result["write_mode"] == "confirm_first"
+    assert result["primary_json_path"] is None
+    assert "non_financial_payload_replaced" in result["validation_hints"]
+    assert "user_stated_financial_memory" not in str(result["candidate_payload"])
+    assert result["merge_decision"]["target_domain"] == "food"
+    assert run_agent_contract.await_count == 5
+    assert len(result["preview_cards"]) == 1
+    assert all(
+        entry["domain_key"] != "general"
+        for entry in result["intent_frame"]["candidate_domain_choices"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_generate_structure_preview_marks_ephemeral_reminder_do_not_save(monkeypatch):
+    service = PKMAgentLabService()
+
+    monkeypatch.setattr(
+        service,
+        "_load_domain_registry_choices",
+        AsyncMock(return_value=_registry_choices()),
+    )
+    run_agent_contract = AsyncMock(
+        side_effect=[
+            _single_segment("Remind me to call mom on Sunday"),
+            {
+                "routing_decision": "non_financial_or_ephemeral",
+                "confidence": 0.89,
+                "reason": "Reminder-like request.",
+                "source_agent": "financial_guard_agent",
+                "contract_version": 1,
+            },
+            {
+                "save_class": "ephemeral",
+                "intent_class": "task_or_reminder",
+                "mutation_intent": "no_op",
+                "requires_confirmation": False,
+                "confirmation_reason": "",
+                "candidate_domain_choices": [
+                    {"domain_key": "general", "recommended": True},
+                ],
+                "confidence": 0.98,
+                "source_agent": "memory_intent_agent",
+                "contract_version": 1,
+            },
+            {
+                "candidate_payload": {
+                    "tasks": {
+                        "statements": [{"value": "Remind me to call mom on Sunday"}],
+                    }
+                },
+                "structure_decision": {
+                    "action": "create_domain",
+                    "target_domain": "general",
+                    "json_paths": [
+                        "tasks",
+                        "tasks.statements",
+                        "tasks.statements._items",
+                        "tasks.statements._items.value",
+                    ],
+                    "top_level_scope_paths": ["tasks"],
+                    "externalizable_paths": [
+                        "tasks",
+                        "tasks.statements",
+                        "tasks.statements._items",
+                        "tasks.statements._items.value",
+                    ],
+                    "summary_projection": {},
+                    "sensitivity_labels": {},
+                    "confidence": 0.95,
+                    "source_agent": "pkm_structure_agent",
+                    "contract_version": 1,
+                },
+                "write_mode": "can_save",
+                "target_entity_scope": "tasks.statements",
+                "validation_hints": [],
+            },
+        ]
+    )
+    monkeypatch.setattr(service, "_run_agent_contract", run_agent_contract)
+
+    result = await service.generate_structure_preview(
+        user_id="user-2",
+        message="Remind me to call mom on Sunday",
+        current_domains=[],
+    )
+
+    assert result["routing_decision"] == "non_financial_or_ephemeral"
+    assert result["intent_frame"]["save_class"] == "ephemeral"
+    assert result["intent_frame"]["mutation_intent"] == "no_op"
+    assert result["write_mode"] == "do_not_save"
+    assert result["primary_json_path"] is None
+    assert "ephemeral_request_not_saved" in result["validation_hints"]
+    assert result["structure_decision"]["target_domain"] != "general"
+    assert run_agent_contract.await_count == 3
+    assert result["preview_summary"]["do_not_save_count"] == 1
+    assert all(
+        entry["domain_key"] != "general"
+        for entry in result["intent_frame"]["candidate_domain_choices"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_generate_structure_preview_routes_financial_core_out_of_pkm(monkeypatch):
+    service = PKMAgentLabService()
+
+    monkeypatch.setattr(
+        service,
+        "_load_domain_registry_choices",
+        AsyncMock(return_value=_registry_choices()),
+    )
+    run_agent_contract = AsyncMock(
+        side_effect=[
+            _single_segment("I want a lower-volatility portfolio."),
+            {
+                "routing_decision": "financial_core",
+                "confidence": 0.94,
+                "reason": "Portfolio action request.",
+                "source_agent": "financial_guard_agent",
+                "contract_version": 1,
+            },
+        ]
+    )
+    monkeypatch.setattr(service, "_run_agent_contract", run_agent_contract)
+
+    result = await service.generate_structure_preview(
+        user_id="user-3",
+        message="I want a lower-volatility portfolio.",
+        current_domains=["financial"],
+    )
+
+    assert result["routing_decision"] == "financial_core"
+    assert result["intent_frame"]["intent_class"] == "financial_event"
+    assert result["structure_decision"]["target_domain"] == "financial"
+    assert result["write_mode"] == "do_not_save"
+    assert result["primary_json_path"] is None
+    assert "routed_to_financial_core" in result["validation_hints"]
+    assert "events" in result["candidate_payload"]
+    assert run_agent_contract.await_count == 2
+    assert result["preview_cards"][0]["write_mode"] == "do_not_save"
+    assert all(
+        entry["domain_key"] != "general"
+        for entry in result["intent_frame"]["candidate_domain_choices"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_generate_structure_preview_normalizes_sanctioned_financial_memory(monkeypatch):
+    service = PKMAgentLabService()
+
+    monkeypatch.setattr(
+        service,
+        "_load_domain_registry_choices",
+        AsyncMock(return_value=_registry_choices()),
+    )
+    run_agent_contract = AsyncMock(
+        side_effect=[
+            _single_segment("Remember that I prefer index funds"),
+            {
+                "routing_decision": "sanctioned_financial_memory",
+                "confidence": 0.9,
+                "reason": "Stable financial preference.",
+                "source_agent": "financial_guard_agent",
+                "contract_version": 1,
+            },
+            {
+                "merge_mode": "extend_entity",
+                "target_domain": "financial",
+                "target_entity_id": "mem_fin_pref",
+                "target_entity_path": "events.entities.mem_fin_pref",
+                "match_confidence": 0.91,
+                "match_reason": "Extend existing financial preference memory.",
+                "source_agent": "memory_merge_agent",
+                "contract_version": 1,
+            },
+            {
+                "candidate_payload": {
+                    "preferences": {
+                        "statements": [{"value": "Remember that I prefer index funds"}],
+                    }
+                },
+                "structure_decision": {
+                    "action": "create_domain",
+                    "target_domain": "food",
+                    "json_paths": [
+                        "preferences",
+                        "preferences.statements",
+                        "preferences.statements._items",
+                        "preferences.statements._items.value",
+                    ],
+                    "top_level_scope_paths": ["preferences"],
+                    "externalizable_paths": [
+                        "preferences",
+                        "preferences.statements",
+                        "preferences.statements._items",
+                        "preferences.statements._items.value",
+                    ],
+                    "summary_projection": {},
+                    "sensitivity_labels": {},
+                    "confidence": 0.66,
+                    "source_agent": "pkm_structure_agent",
+                    "contract_version": 1,
+                },
+                "write_mode": "can_save",
+                "target_entity_scope": "preferences.statements",
+                "validation_hints": [],
+            },
+        ]
+    )
+    monkeypatch.setattr(service, "_run_agent_contract", run_agent_contract)
+
+    result = await service.generate_structure_preview(
+        user_id="user-4",
+        message="Remember that I prefer index funds",
+        current_domains=["financial"],
+    )
+
+    assert result["routing_decision"] == "sanctioned_financial_memory"
+    assert result["intent_frame"]["intent_class"] == "financial_event"
+    assert result["structure_decision"]["target_domain"] == "financial"
+    assert result["write_mode"] == "can_save"
+    assert result["primary_json_path"] == "events"
+    assert "financial_target_normalized" in result["validation_hints"]
+    assert "financial_payload_normalized" in result["validation_hints"]
+    assert "events" in result["candidate_payload"]
+    assert result["merge_decision"]["merge_mode"] == "extend_entity"
+    assert run_agent_contract.await_count == 4
+    assert result["preview_cards"][0]["target_domain"] == "financial"
+
+
+@pytest.mark.asyncio
+async def test_generate_structure_preview_defaults_primary_path_to_root_scope(monkeypatch):
+    service = PKMAgentLabService()
+
+    monkeypatch.setattr(
+        service,
+        "_load_domain_registry_choices",
+        AsyncMock(return_value=_registry_choices()),
+    )
+    run_agent_contract = AsyncMock(
+        side_effect=[
+            _single_segment("Cantonese menus are usually where I start"),
+            {
+                "routing_decision": "non_financial_or_ephemeral",
+                "confidence": 0.9,
+                "reason": "Broad durable preference.",
+                "source_agent": "financial_guard_agent",
+                "contract_version": 1,
+            },
+            {
+                "save_class": "durable",
+                "intent_class": "preference",
+                "mutation_intent": "create",
+                "requires_confirmation": False,
+                "confirmation_reason": "",
+                "candidate_domain_choices": [
+                    {"domain_key": "food", "recommended": True},
+                ],
+                "confidence": 0.89,
+                "source_agent": "memory_intent_agent",
+                "contract_version": 1,
+            },
+            {
+                "merge_mode": "create_entity",
+                "target_domain": "food",
+                "target_entity_id": "mem_food_pref",
+                "target_entity_path": "preferences.entities.mem_food_pref",
+                "match_confidence": 0.9,
+                "match_reason": "New durable food preference.",
+                "source_agent": "memory_merge_agent",
+                "contract_version": 1,
+            },
+            {
+                "candidate_payload": {
+                    "preferences": {
+                        "statements": [{"value": "Cantonese menus are usually where I start"}],
+                    }
+                },
+                "structure_decision": {
+                    "action": "create_domain",
+                    "target_domain": "food",
+                    "json_paths": [
+                        "preferences",
+                        "preferences.statements",
+                        "preferences.statements._items",
+                        "preferences.statements._items.value",
+                    ],
+                    "top_level_scope_paths": ["preferences"],
+                    "externalizable_paths": [
+                        "preferences",
+                        "preferences.statements",
+                        "preferences.statements._items",
+                        "preferences.statements._items.value",
+                    ],
+                    "summary_projection": {},
+                    "sensitivity_labels": {},
+                    "confidence": 0.91,
+                    "source_agent": "pkm_structure_agent",
+                    "contract_version": 1,
+                },
+                "write_mode": "can_save",
+                "primary_json_path": "preferences.invalid_child",
+                "target_entity_scope": "preferences.invalid_child",
+                "validation_hints": [],
+            },
+        ]
+    )
+    monkeypatch.setattr(service, "_run_agent_contract", run_agent_contract)
+
+    result = await service.generate_structure_preview(
+        user_id="user-5",
+        message="Cantonese menus are usually where I start",
+        current_domains=[],
+    )
+
+    assert result["primary_json_path"] == "preferences"
+    assert "primary_path_defaulted_to_root_scope" in result["validation_hints"]
+    assert run_agent_contract.await_count == 5
+    assert result["preview_cards"][0]["primary_json_path"] == "preferences"
+
+
+@pytest.mark.asyncio
+async def test_generate_structure_preview_corrects_canonical_seat_preference_not_changes(
+    monkeypatch,
+):
+    service = PKMAgentLabService()
+
+    monkeypatch.setattr(
+        service,
+        "_load_domain_registry_choices",
+        AsyncMock(return_value=_registry_choices()),
+    )
+    run_agent_contract = AsyncMock(
+        side_effect=[
+            _single_segment("Actually window seats work better now."),
+            {
+                "routing_decision": "non_financial_or_ephemeral",
+                "confidence": 0.94,
+                "reason": "Travel preference correction.",
+                "source_agent": "financial_guard_agent",
+                "contract_version": 1,
+            },
+            {
+                "save_class": "durable",
+                "intent_class": "correction",
+                "mutation_intent": "correct",
+                "requires_confirmation": False,
+                "confirmation_reason": "",
+                "candidate_domain_choices": [
+                    {"domain_key": "travel", "recommended": True},
+                ],
+                "confidence": 0.92,
+                "source_agent": "memory_intent_agent",
+                "contract_version": 1,
+            },
+            {
+                "merge_mode": "correct_entity",
+                "target_domain": "travel",
+                "target_entity_id": "travel_preference_seat_001",
+                "target_entity_path": "changes.entities.travel_preference_seat_001",
+                "match_confidence": 0.86,
+                "match_reason": "Incorrectly routed to changes by the model.",
+                "source_agent": "memory_merge_agent",
+                "contract_version": 1,
+            },
+            {
+                "candidate_payload": {
+                    "changes": {
+                        "entities": {
+                            "travel_preference_seat_001": {
+                                "entity_id": "travel_preference_seat_001",
+                                "summary": "Actually window seats work better now.",
+                                "status": "active",
+                            }
+                        }
+                    }
+                },
+                "structure_decision": {
+                    "action": "match_existing_domain",
+                    "target_domain": "travel",
+                    "json_paths": ["changes"],
+                    "top_level_scope_paths": ["changes"],
+                    "externalizable_paths": ["changes"],
+                    "summary_projection": {},
+                    "sensitivity_labels": {},
+                    "confidence": 0.84,
+                    "source_agent": "pkm_structure_agent",
+                    "contract_version": 1,
+                },
+                "write_mode": "can_save",
+                "primary_json_path": "changes",
+                "target_entity_scope": "changes",
+                "validation_hints": [],
+            },
+        ]
+    )
+    monkeypatch.setattr(service, "_run_agent_contract", run_agent_contract)
+
+    result = await service.generate_structure_preview(
+        user_id="user-seat",
+        message="Actually window seats work better now.",
+        current_domains=["travel"],
+        simulated_state={
+            "domains": ["travel"],
+            "memories": [
+                {
+                    "domain": "travel",
+                    "entity_id": "travel_preference_seat_001",
+                    "entity_scope": "seat_preferences",
+                    "intent_class": "preference",
+                    "message": "Prefers aisle seats near the front.",
+                    "active": True,
+                }
+            ],
+        },
+    )
+
+    assert result["merge_decision"]["merge_mode"] == "correct_entity"
+    assert (
+        result["merge_decision"]["target_entity_path"]
+        == "seat_preferences.entities.travel_preference_seat_001"
+    )
+    assert result["target_entity_scope"] == "seat_preferences"
+    assert "changes" not in result["candidate_payload"]
+    assert "seat_preferences" in result["candidate_payload"]
+    assert "crud_payload_aligned_to_merge_target" in result["validation_hints"]
+    assert result["drift_flags"]["changes_branch_blocked"] is True
+    assert result["preview_cards"][0]["drift_flags"]["changes_branch_blocked"] is True
+    assert run_agent_contract.await_count == 5
+
+
+@pytest.mark.asyncio
+async def test_structure_preview_strips_internal_metadata_and_reports_drift(monkeypatch):
+    service = PKMAgentLabService()
+
+    monkeypatch.setattr(
+        service,
+        "_load_domain_registry_choices",
+        AsyncMock(return_value=_registry_choices()),
+    )
+    run_agent_contract = AsyncMock(
+        side_effect=[
+            _single_segment("I prefer quiet hotel rooms."),
+            {
+                "routing_decision": "non_financial_or_ephemeral",
+                "confidence": 0.94,
+                "reason": "Travel preference.",
+                "source_agent": "financial_guard_agent",
+                "contract_version": 1,
+            },
+            {
+                "save_class": "durable",
+                "intent_class": "preference",
+                "mutation_intent": "create",
+                "requires_confirmation": False,
+                "confirmation_reason": "",
+                "candidate_domain_choices": [
+                    {"domain_key": "travel", "recommended": True},
+                ],
+                "confidence": 0.92,
+                "source_agent": "memory_intent_agent",
+                "contract_version": 1,
+            },
+            {
+                "merge_mode": "create_entity",
+                "target_domain": "travel",
+                "target_entity_id": "hotel_pref_001",
+                "target_entity_path": "hotel_preferences.entities.hotel_pref_001",
+                "match_confidence": 0.86,
+                "match_reason": "New hotel preference.",
+                "source_agent": "memory_merge_agent",
+                "contract_version": 1,
+            },
+            {
+                "candidate_payload": {
+                    "hotel_preferences": {
+                        "entities": {
+                            "hotel_pref_001": {
+                                "entity_id": "hotel_pref_001",
+                                "summary": "I prefer quiet hotel rooms.",
+                                "status": "active",
+                                "provenance": {"source_kind": "agent_debug"},
+                                "parser_metadata": {"trace_id": "abc"},
+                            }
+                        },
+                        "workflow_id": "wf_123",
+                    }
+                },
+                "structure_decision": {
+                    "action": "create_domain",
+                    "target_domain": "travel",
+                    "json_paths": ["hotel_preferences"],
+                    "top_level_scope_paths": ["hotel_preferences"],
+                    "externalizable_paths": ["hotel_preferences"],
+                    "summary_projection": {},
+                    "sensitivity_labels": {},
+                    "confidence": 0.84,
+                    "source_agent": "pkm_structure_agent",
+                    "contract_version": 1,
+                },
+                "write_mode": "can_save",
+                "primary_json_path": "hotel_preferences",
+                "target_entity_scope": "hotel_preferences",
+                "validation_hints": [],
+            },
+        ]
+    )
+    monkeypatch.setattr(service, "_run_agent_contract", run_agent_contract)
+
+    result = await service.generate_structure_preview(
+        user_id="user-hotel",
+        message="I prefer quiet hotel rooms.",
+        current_domains=["travel"],
+    )
+
+    serialized_payload = str(result["candidate_payload"])
+    assert "provenance" not in serialized_payload
+    assert "parser_metadata" not in serialized_payload
+    assert "workflow_id" not in serialized_payload
+    assert "internal_metadata_blocked" in result["validation_hints"]
+    assert result["drift_flags"]["internal_metadata_blocked"] is True
+    assert result["preview_summary"]["drift_flag_counts"]["internal_metadata_blocked"] == 1
+
+
+def test_fallback_delete_requires_stable_target():
+    result = PKMAgentLabService._fallback_merge_decision(
+        message="Remove my seat preference.",
+        current_domains=["travel"],
+        intent_frame={
+            "intent_class": "deletion",
+            "mutation_intent": "delete",
+            "candidate_domain_choices": [{"domain_key": "travel", "recommended": True}],
+            "confidence": 0.9,
+        },
+        simulated_state={"domains": ["travel"], "memories": []},
+    )
+
+    assert result["merge_mode"] == "no_op"
+    assert result["target_entity_path"] == ""
+    assert "No stable prior target" in result["match_reason"]
+
+
+CRUD_MATRIX_STATE = {
+    "domains": [
+        "food",
+        "travel",
+        "shopping",
+        "location",
+        "social",
+        "health",
+        "financial",
+        "professional",
+    ],
+    "memories": [
+        {
+            "domain": "food",
+            "entity_id": "food_pref_001",
+            "entity_scope": "preferences",
+            "intent_class": "preference",
+            "message": "I prefer Cantonese restaurants for dinner.",
+            "active": True,
+        },
+        {
+            "domain": "travel",
+            "entity_id": "seat_pref_001",
+            "entity_scope": "seat_preferences",
+            "intent_class": "preference",
+            "message": "I prefer aisle seats near the front.",
+            "active": True,
+        },
+        {
+            "domain": "shopping",
+            "entity_id": "shopping_pref_001",
+            "entity_scope": "product_preferences",
+            "intent_class": "preference",
+            "message": "I prefer Patagonia for outdoor jackets.",
+            "active": True,
+        },
+        {
+            "domain": "location",
+            "entity_id": "location_profile_001",
+            "entity_scope": "profile",
+            "intent_class": "profile_fact",
+            "message": "I live in Seattle.",
+            "active": True,
+        },
+        {
+            "domain": "social",
+            "entity_id": "social_relationship_001",
+            "entity_scope": "relationships",
+            "intent_class": "relationship",
+            "message": "My sister Maya is my emergency contact.",
+            "active": True,
+        },
+        {
+            "domain": "health",
+            "entity_id": "health_routine_001",
+            "entity_scope": "activities",
+            "intent_class": "routine",
+            "message": "I usually swim before breakfast.",
+            "active": True,
+        },
+        {
+            "domain": "financial",
+            "entity_id": "financial_goal_001",
+            "entity_scope": "goals",
+            "intent_class": "plan_or_goal",
+            "message": "I want to pay off my student loans in three years.",
+            "active": True,
+        },
+        {
+            "domain": "professional",
+            "entity_id": "work_pref_001",
+            "entity_scope": "work_preferences",
+            "intent_class": "preference",
+            "message": "I prefer async written updates for work.",
+            "active": True,
+        },
+    ],
+}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "message, expected_domain, expected_intent, expected_merge, expected_write, expected_scope",
+    [
+        (
+            "I prefer Cantonese restaurants for team dinners.",
+            "food",
+            "preference",
+            "extend_entity",
+            "can_save",
+            "preferences",
+        ),
+        (
+            "I prefer window seats on long flights.",
+            "travel",
+            "preference",
+            "extend_entity",
+            "can_save",
+            "seat_preferences",
+        ),
+        (
+            "I prefer Patagonia as a brand for outdoor jackets.",
+            "shopping",
+            "preference",
+            "extend_entity",
+            "can_save",
+            "product_preferences",
+        ),
+        (
+            "I live in Seattle most of the year.",
+            "location",
+            "profile_fact",
+            "extend_entity",
+            "can_save",
+            "profile",
+        ),
+        (
+            "My brother Arjun is my emergency contact.",
+            "social",
+            "relationship",
+            "extend_entity",
+            "can_save",
+            "relationships",
+        ),
+        (
+            "I usually swim after work.",
+            "health",
+            "health",
+            "extend_entity",
+            "can_save",
+            "activities",
+        ),
+        (
+            "Remember that I prefer index funds.",
+            "financial",
+            "financial_event",
+            "create_entity",
+            "can_save",
+            "events",
+        ),
+        (
+            "I prefer async written updates before meetings.",
+            "professional",
+            "preference",
+            "extend_entity",
+            "can_save",
+            "work_preferences",
+        ),
+        (
+            "I also like Sichuan food when ordering dinner.",
+            "food",
+            "preference",
+            "extend_entity",
+            "can_save",
+            "preferences",
+        ),
+        (
+            "I still prefer aisle seats for short flights.",
+            "travel",
+            "preference",
+            "extend_entity",
+            "can_save",
+            "seat_preferences",
+        ),
+        (
+            "I usually buy skincare from Sephora.",
+            "shopping",
+            "shopping_need",
+            "create_entity",
+            "can_save",
+            "product_preferences",
+        ),
+        (
+            "When possible I like morning workouts.",
+            "health",
+            "preference",
+            "create_entity",
+            "can_save",
+            "activities",
+        ),
+        (
+            "Actually window seats work better now.",
+            "travel",
+            "correction",
+            "correct_entity",
+            "can_save",
+            "seat_preferences",
+        ),
+        (
+            "Changed my mind, I prefer Thai food now.",
+            "food",
+            "correction",
+            "correct_entity",
+            "can_save",
+            "preferences",
+        ),
+        (
+            "No longer use Patagonia as my jacket default.",
+            "shopping",
+            "correction",
+            "correct_entity",
+            "can_save",
+            "product_preferences",
+        ),
+        (
+            "Actually I am based in New York now.",
+            "location",
+            "correction",
+            "correct_entity",
+            "can_save",
+            "profile",
+        ),
+        (
+            "Actually I live in New York City now.",
+            "location",
+            "correction",
+            "correct_entity",
+            "can_save",
+            "profile",
+        ),
+        (
+            "Forget my seat preference.",
+            "travel",
+            "deletion",
+            "delete_entity",
+            "can_save",
+            "seat_preferences",
+        ),
+        (
+            "Remove my shopping brand preference.",
+            "shopping",
+            "deletion",
+            "delete_entity",
+            "can_save",
+            "product_preferences",
+        ),
+        (
+            "Delete the async work updates preference.",
+            "professional",
+            "deletion",
+            "delete_entity",
+            "can_save",
+            "work_preferences",
+        ),
+        (
+            "Don't remember my morning workout preference anymore.",
+            "health",
+            "deletion",
+            "delete_entity",
+            "can_save",
+            "activities",
+        ),
+        (
+            "Remind me to call my sister tomorrow.",
+            "social",
+            "task_or_reminder",
+            "no_op",
+            "do_not_save",
+            None,
+        ),
+        (
+            "Please order toothpaste tonight.",
+            "shopping",
+            "task_or_reminder",
+            "no_op",
+            "do_not_save",
+            None,
+        ),
+        (
+            "Q2FmZSB3YWtlIHVwIGhhc2ggcGF5bG9hZA==",
+            "professional",
+            "ambiguous",
+            "no_op",
+            "do_not_save",
+            None,
+        ),
+        (
+            "7b9a662f0c63a4d8f65f5b9d4cb4e2aa",
+            "professional",
+            "ambiguous",
+            "no_op",
+            "do_not_save",
+            None,
+        ),
+        ("remember this", "professional", "ambiguous", "no_op", "do_not_save", None),
+        (
+            "I prefer window seats and I usually buy Patagonia jackets.",
+            "travel",
+            "preference",
+            "extend_entity",
+            "can_save",
+            "seat_preferences",
+        ),
+        ("Actually update that preference.", "travel", "correction", "no_op", "do_not_save", None),
+        ("Remove that old note.", "travel", "deletion", "no_op", "do_not_save", None),
+        (
+            "My favorite hotel rooms are quiet and away from elevators.",
+            "travel",
+            "preference",
+            "create_entity",
+            "can_save",
+            "hotel_preferences",
+        ),
+        (
+            "I want to save for a home by 2028.",
+            "financial",
+            "plan_or_goal",
+            "create_entity",
+            "can_save",
+            "goals",
+        ),
+    ],
+)
+async def test_dynamic_scope_crud_matrix_uses_canonical_targets(
+    monkeypatch,
+    message,
+    expected_domain,
+    expected_intent,
+    expected_merge,
+    expected_write,
+    expected_scope,
+):
+    service = PKMAgentLabService()
+    monkeypatch.setattr(
+        service,
+        "_load_domain_registry_choices",
+        AsyncMock(return_value=_registry_choices()),
+    )
+    monkeypatch.setattr(service, "_run_agent_contract", AsyncMock(return_value=None))
+
+    simulated_state = CRUD_MATRIX_STATE
+    if message in {"Actually update that preference.", "Remove that old note."}:
+        simulated_state = {"domains": CRUD_MATRIX_STATE["domains"], "memories": []}
+
+    result = await service.generate_structure_preview(
+        user_id=f"user-{abs(hash(message))}",
+        message=message,
+        current_domains=CRUD_MATRIX_STATE["domains"],
+        simulated_state=simulated_state,
+    )
+    card = result["preview_cards"][0]
+
+    assert card["target_domain"] == expected_domain
+    assert card["intent_class"] == expected_intent
+    assert card["merge_mode"] == expected_merge
+    assert card["write_mode"] == expected_write
+    if expected_scope:
+        assert card["target_entity_scope"] == expected_scope
+        assert card["primary_json_path"] == expected_scope
+    assert "changes" not in card.get("candidate_payload", {})
+    if expected_merge in {"correct_entity", "delete_entity"}:
+        assert ".changes." not in str(card.get("merge_decision", {}))
+
+
+@pytest.mark.asyncio
+async def test_obvious_location_correction_recovers_from_model_no_op(monkeypatch):
+    service = PKMAgentLabService()
+    monkeypatch.setattr(
+        service,
+        "_load_domain_registry_choices",
+        AsyncMock(return_value=_registry_choices()),
+    )
+    monkeypatch.setattr(
+        service,
+        "_run_agent_contract",
+        AsyncMock(
+            side_effect=[
+                _single_segment("Actually I live in New York City now."),
+                {
+                    "routing_decision": "non_financial_or_ephemeral",
+                    "confidence": 0.95,
+                    "reason": "Location update, not finance.",
+                    "source_agent": "financial_guard_agent",
+                    "contract_version": 1,
+                },
+                {
+                    "save_class": "ephemeral",
+                    "intent_class": "ambiguous",
+                    "mutation_intent": "no_op",
+                    "requires_confirmation": False,
+                    "confirmation_reason": "",
+                    "candidate_domain_choices": [{"domain_key": "location", "recommended": True}],
+                    "confidence": 0.9,
+                    "source_agent": "memory_intent_agent",
+                    "contract_version": 1,
+                },
+                {
+                    "merge_mode": "no_op",
+                    "target_domain": "location",
+                    "target_entity_id": "",
+                    "target_entity_path": "",
+                    "match_confidence": 0.9,
+                    "match_reason": "Model incorrectly treated the update as no-op.",
+                    "source_agent": "memory_merge_agent",
+                    "contract_version": 1,
+                },
+                {
+                    "candidate_payload": {},
+                    "structure_decision": {
+                        "action": "match_existing_domain",
+                        "target_domain": "location",
+                        "json_paths": [],
+                        "top_level_scope_paths": [],
+                        "externalizable_paths": [],
+                        "summary_projection": {},
+                        "sensitivity_labels": {},
+                        "confidence": 0.8,
+                        "source_agent": "pkm_structure_agent",
+                        "contract_version": 1,
+                    },
+                    "write_mode": "do_not_save",
+                    "primary_json_path": "",
+                    "target_entity_scope": "",
+                    "validation_hints": ["update_residence_to_new_york_city"],
+                },
+            ]
+        ),
+    )
+
+    result = await service.generate_structure_preview(
+        user_id="reviewer-like-user",
+        message="Actually I live in New York City now.",
+        current_domains=CRUD_MATRIX_STATE["domains"],
+        simulated_state=CRUD_MATRIX_STATE,
+    )
+    card = result["preview_cards"][0]
+
+    assert card["target_domain"] == "location"
+    assert card["intent_class"] == "correction"
+    assert card["merge_mode"] == "correct_entity"
+    assert card["target_entity_scope"] == "profile"
+    assert card["primary_json_path"] == "profile"
+    assert card["write_mode"] == "can_save"
+
+
+def test_fallback_merge_prefers_canonical_scope_over_changes():
+    intent_frame = {
+        "save_class": "durable",
+        "intent_class": "correction",
+        "mutation_intent": "correct",
+        "requires_confirmation": False,
+        "candidate_domain_choices": [
+            {"domain_key": "travel", "recommended": True},
+        ],
+        "confidence": 0.88,
+    }
+    simulated_state = {
+        "memories": [
+            {
+                "domain": "travel",
+                "entity_id": "travel_preference_seat_001",
+                "entity_scope": "changes",
+                "message": "Actually window seats work better now.",
+                "active": True,
+            },
+            {
+                "domain": "travel",
+                "entity_id": "travel_preference_seat_001",
+                "entity_scope": "seat_preferences",
+                "message": "I prefer aisle seats for work trips.",
+                "active": True,
+            },
+        ]
+    }
+
+    result = PKMAgentLabService._fallback_merge_decision(
+        message="Actually window seats work better now.",
+        current_domains=["travel"],
+        intent_frame=intent_frame,
+        simulated_state=simulated_state,
+    )
+
+    assert result["merge_mode"] == "correct_entity"
+    assert result["target_entity_id"] == "travel_preference_seat_001"
+    assert result["target_entity_path"] == "seat_preferences.entities.travel_preference_seat_001"
+
+
+@pytest.mark.asyncio
+async def test_segmentation_cannot_strip_correction_cue(monkeypatch):
+    service = PKMAgentLabService()
+    monkeypatch.setattr(
+        service,
+        "_load_domain_registry_choices",
+        AsyncMock(return_value=_registry_choices()),
+    )
+    monkeypatch.setattr(
+        service,
+        "_run_agent_contract",
+        AsyncMock(
+            side_effect=[
+                _single_segment("I live in New York City now."),
+                None,
+                None,
+                None,
+                None,
+            ]
+        ),
+    )
+
+    result = await service.generate_structure_preview(
+        user_id="reviewer-like-user",
+        message="Actually I live in New York City now.",
+        current_domains=CRUD_MATRIX_STATE["domains"],
+        simulated_state=CRUD_MATRIX_STATE,
+    )
+    card = result["preview_cards"][0]
+
+    assert card["source_text"] == "Actually I live in New York City now."
+    assert card["intent_class"] == "correction"
+    assert card["merge_mode"] == "correct_entity"
+    assert card["target_entity_scope"] == "profile"
+    assert card["write_mode"] == "can_save"
+
+
+@pytest.mark.asyncio
+async def test_generate_structure_preview_rejects_opaque_noise(monkeypatch):
+    service = PKMAgentLabService()
+
+    monkeypatch.setattr(
+        service,
+        "_load_domain_registry_choices",
+        AsyncMock(return_value=_registry_choices()),
+    )
+    run_agent_contract = AsyncMock(
+        side_effect=[
+            _single_segment("Q2FmZSB3YWtlIHVwIGhhc2ggcGF5bG9hZA=="),
+            {
+                "routing_decision": "non_financial_or_ephemeral",
+                "confidence": 0.99,
+                "reason": "Opaque input.",
+                "source_agent": "financial_guard_agent",
+                "contract_version": 1,
+            },
+            {
+                "save_class": "durable",
+                "intent_class": "note",
+                "mutation_intent": "create",
+                "requires_confirmation": False,
+                "confirmation_reason": "",
+                "candidate_domain_choices": [
+                    {"domain_key": "professional", "recommended": True},
+                ],
+                "confidence": 0.4,
+                "source_agent": "memory_intent_agent",
+                "contract_version": 1,
+            },
+        ]
+    )
+    monkeypatch.setattr(service, "_run_agent_contract", run_agent_contract)
+
+    result = await service.generate_structure_preview(
+        user_id="user-6",
+        message="Q2FmZSB3YWtlIHVwIGhhc2ggcGF5bG9hZA==",
+        current_domains=[],
+    )
+
+    assert result["intent_frame"]["mutation_intent"] == "no_op"
+    assert result["write_mode"] == "do_not_save"
+    assert "nonsense_or_opaque_input" in result["validation_hints"]
+    assert result["merge_decision"]["merge_mode"] == "no_op"
+    assert run_agent_contract.await_count == 3
+    assert result["preview_cards"][0]["write_mode"] == "do_not_save"
+
+
+@pytest.mark.asyncio
+async def test_generate_structure_preview_splits_multi_intent_into_cards(monkeypatch):
+    service = PKMAgentLabService()
+
+    monkeypatch.setattr(
+        service,
+        "_load_domain_registry_choices",
+        AsyncMock(return_value=_registry_choices()),
+    )
+    run_agent_contract = AsyncMock(
+        side_effect=[
+            {
+                "segments": [
+                    {
+                        "source_text": "I prefer to go to gym in the morning around 7am.",
+                        "confidence": 0.93,
+                        "reason": "Routine memory.",
+                    },
+                    {
+                        "source_text": "I like to have a good breakfast too.",
+                        "confidence": 0.81,
+                        "reason": "Second food-related preference.",
+                    },
+                ],
+                "source_agent": "memory_segmentation_agent",
+                "contract_version": 1,
+            },
+            {
+                "routing_decision": "non_financial_or_ephemeral",
+                "confidence": 0.91,
+                "reason": "Routine memory.",
+                "source_agent": "financial_guard_agent",
+                "contract_version": 1,
+            },
+            {
+                "save_class": "durable",
+                "intent_class": "routine",
+                "mutation_intent": "create",
+                "requires_confirmation": False,
+                "confirmation_reason": "",
+                "candidate_domain_choices": [
+                    {"domain_key": "health", "recommended": True},
+                    {"domain_key": "food", "recommended": False},
+                ],
+                "confidence": 0.88,
+                "source_agent": "memory_intent_agent",
+                "contract_version": 1,
+            },
+            {
+                "merge_mode": "create_entity",
+                "target_domain": "health",
+                "target_entity_id": "mem_gym_7am",
+                "target_entity_path": "routines.entities.mem_gym_7am",
+                "match_confidence": 0.83,
+                "match_reason": "New morning routine.",
+                "source_agent": "memory_merge_agent",
+                "contract_version": 1,
+            },
+            {
+                "candidate_payload": {
+                    "routines": {
+                        "entities": {
+                            "mem_gym_7am": {
+                                "entity_id": "mem_gym_7am",
+                                "kind": "routine",
+                                "summary": "I prefer to go to gym in the morning around 7am.",
+                                "observations": [
+                                    "I prefer to go to gym in the morning around 7am."
+                                ],
+                                "status": "active",
+                            }
+                        }
+                    }
+                },
+                "structure_decision": {
+                    "action": "create_domain",
+                    "target_domain": "health",
+                    "json_paths": [
+                        "routines",
+                        "routines.entities",
+                        "routines.entities.mem_gym_7am",
+                        "routines.entities.mem_gym_7am.summary",
+                    ],
+                    "top_level_scope_paths": ["routines"],
+                    "externalizable_paths": [
+                        "routines",
+                        "routines.entities",
+                        "routines.entities.mem_gym_7am",
+                        "routines.entities.mem_gym_7am.summary",
+                    ],
+                    "summary_projection": {},
+                    "sensitivity_labels": {},
+                    "confidence": 0.9,
+                    "source_agent": "pkm_structure_agent",
+                    "contract_version": 1,
+                },
+                "write_mode": "can_save",
+                "primary_json_path": "routines",
+                "target_entity_scope": "routines",
+                "validation_hints": [],
+            },
+            {
+                "routing_decision": "non_financial_or_ephemeral",
+                "confidence": 0.9,
+                "reason": "Food preference.",
+                "source_agent": "financial_guard_agent",
+                "contract_version": 1,
+            },
+            {
+                "save_class": "durable",
+                "intent_class": "preference",
+                "mutation_intent": "create",
+                "requires_confirmation": False,
+                "confirmation_reason": "",
+                "candidate_domain_choices": [
+                    {"domain_key": "food", "recommended": True},
+                    {"domain_key": "health", "recommended": False},
+                ],
+                "confidence": 0.86,
+                "source_agent": "memory_intent_agent",
+                "contract_version": 1,
+            },
+            {
+                "merge_mode": "create_entity",
+                "target_domain": "food",
+                "target_entity_id": "mem_breakfast_pref",
+                "target_entity_path": "preferences.entities.mem_breakfast_pref",
+                "match_confidence": 0.8,
+                "match_reason": "New breakfast preference.",
+                "source_agent": "memory_merge_agent",
+                "contract_version": 1,
+            },
+            {
+                "candidate_payload": {
+                    "preferences": {
+                        "entities": {
+                            "mem_breakfast_pref": {
+                                "entity_id": "mem_breakfast_pref",
+                                "kind": "preference",
+                                "summary": "I like to have a good breakfast too.",
+                                "observations": ["I like to have a good breakfast too."],
+                                "status": "active",
+                            }
+                        }
+                    }
+                },
+                "structure_decision": {
+                    "action": "create_domain",
+                    "target_domain": "food",
+                    "json_paths": [
+                        "preferences",
+                        "preferences.entities",
+                        "preferences.entities.mem_breakfast_pref",
+                        "preferences.entities.mem_breakfast_pref.summary",
+                    ],
+                    "top_level_scope_paths": ["preferences"],
+                    "externalizable_paths": [
+                        "preferences",
+                        "preferences.entities",
+                        "preferences.entities.mem_breakfast_pref",
+                        "preferences.entities.mem_breakfast_pref.summary",
+                    ],
+                    "summary_projection": {},
+                    "sensitivity_labels": {},
+                    "confidence": 0.88,
+                    "source_agent": "pkm_structure_agent",
+                    "contract_version": 1,
+                },
+                "write_mode": "can_save",
+                "primary_json_path": "preferences",
+                "target_entity_scope": "preferences",
+                "validation_hints": [],
+            },
+        ]
+    )
+    monkeypatch.setattr(service, "_run_agent_contract", run_agent_contract)
+
+    result = await service.generate_structure_preview(
+        user_id="user-7",
+        message="I prefer to go to gym in the morning around 7am and have good breakfast too",
+        current_domains=[],
+    )
+
+    assert len(result["preview_cards"]) == 2
+    assert result["preview_summary"]["card_count"] == 2
+    assert result["preview_cards"][0]["target_domain"] == "health"
+    assert result["preview_cards"][1]["target_domain"] == "food"
+    assert result["context_plan"]["candidate_domains"] == ["health", "food"]
+
+
+@pytest.mark.asyncio
+async def test_generate_structure_preview_dedupes_inflight_requests(monkeypatch):
+    service = PKMAgentLabService()
+
+    monkeypatch.setattr(
+        service,
+        "_load_domain_registry_choices",
+        AsyncMock(return_value=_registry_choices()),
+    )
+    monkeypatch.setattr(
+        service,
+        "_run_agent_contract",
+        AsyncMock(return_value=_single_segment("Remember that I prefer short city breaks.")),
+    )
+    preview_stub = AsyncMock(
+        return_value={
+            "agent_id": "pkm_structure_agent",
+            "agent_name": "PKM Structure Agent",
+            "model": "test-model",
+            "used_fallback": True,
+            "intent_used_fallback": True,
+            "structure_used_fallback": True,
+            "error": None,
+            "routing_decision": "non_financial_or_ephemeral",
+            "intent_frame": {
+                "save_class": "durable",
+                "intent_class": "travel",
+                "mutation_intent": "create",
+                "requires_confirmation": False,
+                "confirmation_reason": "",
+                "candidate_domain_choices": [{"domain_key": "travel", "recommended": True}],
+                "confidence": 0.9,
+                "source_agent": "memory_intent_agent",
+                "contract_version": 1,
+            },
+            "merge_decision": {
+                "merge_mode": "create_entity",
+                "target_domain": "travel",
+                "target_entity_id": "mem_travel_pref",
+                "target_entity_path": "preferences.entities.mem_travel_pref",
+                "match_confidence": 0.9,
+                "match_reason": "New travel preference.",
+                "source_agent": "memory_merge_agent",
+                "contract_version": 1,
+            },
+            "candidate_payload": {
+                "preferences": {
+                    "entities": {
+                        "mem_travel_pref": {
+                            "entity_id": "mem_travel_pref",
+                            "summary": "Remember that I prefer short city breaks.",
+                            "status": "active",
+                        }
+                    }
+                }
+            },
+            "structure_decision": {
+                "action": "create_domain",
+                "target_domain": "travel",
+                "json_paths": ["preferences"],
+                "top_level_scope_paths": ["preferences"],
+                "externalizable_paths": ["preferences"],
+                "summary_projection": {},
+                "sensitivity_labels": {},
+                "confidence": 0.9,
+                "source_agent": "pkm_structure_agent",
+                "contract_version": 1,
+            },
+            "write_mode": "can_save",
+            "primary_json_path": "preferences",
+            "target_entity_scope": "preferences",
+            "validation_hints": [],
+            "manifest_draft": {
+                "domain": "travel",
+                "paths": [],
+                "structure_decision": {},
+                "summary_projection": {},
+            },
+        }
+    )
+    monkeypatch.setattr(service, "_generate_single_structure_preview", preview_stub)
+
+    first, second = await asyncio.gather(
+        service.generate_structure_preview(
+            user_id="user-async",
+            message="Remember that I prefer short city breaks.",
+            current_domains=["travel"],
+        ),
+        service.generate_structure_preview(
+            user_id="user-async",
+            message="Remember that I prefer short city breaks.",
+            current_domains=["travel"],
+        ),
+    )
+
+    assert first["structure_decision"]["target_domain"] == "travel"
+    assert second["structure_decision"]["target_domain"] == "travel"
+    assert preview_stub.await_count == 1
+
+
+# ---------------------------------------------------------------------------
+# _strip_pii_from_payload_keys — unit tests
+# ---------------------------------------------------------------------------
+
+
+def test_strip_pii_from_payload_keys_removes_dollar_amount_keys():
+    payload = {
+        "account_$50000": True,
+        "view_$1000": "confirmed",
+        "preferences": {"food": "Chinese"},
+    }
+    result = PKMAgentLabService._strip_pii_from_payload_keys(payload)
+    assert "account_$50000" not in result
+    assert "view_$1000" not in result
+    assert result["preferences"] == {"food": "Chinese"}
+
+
+def test_strip_pii_from_payload_keys_removes_large_numeric_keys():
+    payload = {
+        "100000_balance": True,
+        "transaction_75000": 3,
+        "status": "active",
+    }
+    result = PKMAgentLabService._strip_pii_from_payload_keys(payload)
+    assert "100000_balance" not in result
+    assert "transaction_75000" not in result
+    assert result["status"] == "active"
+
+
+def test_strip_pii_from_payload_keys_removes_ssn_keys():
+    payload = {
+        "ssn_123-45-6789": True,
+        "id_987_65_4321_record": True,
+        "entity_id": "mem_abc",
+    }
+    result = PKMAgentLabService._strip_pii_from_payload_keys(payload)
+    assert "ssn_123-45-6789" not in result
+    assert "id_987_65_4321_record" not in result
+    assert result["entity_id"] == "mem_abc"
+
+
+def test_strip_pii_from_payload_keys_removes_phone_number_keys():
+    payload = {
+        "9876543210_contact": "primary",
+        "phone_14155552671": True,
+        "summary": "User contact info",
+    }
+    result = PKMAgentLabService._strip_pii_from_payload_keys(payload)
+    assert "9876543210_contact" not in result
+    assert "phone_14155552671" not in result
+    assert result["summary"] == "User contact info"
+
+
+def test_strip_pii_from_payload_keys_removes_email_keys():
+    payload = {
+        "user@example.com_prefs": {"notify": True},
+        "john.doe@gmail.com": True,
+        "kind": "preference",
+    }
+    result = PKMAgentLabService._strip_pii_from_payload_keys(payload)
+    assert "user@example.com_prefs" not in result
+    assert "john.doe@gmail.com" not in result
+    assert result["kind"] == "preference"
+
+
+def test_strip_pii_from_payload_keys_preserves_safe_keys():
+    payload = {
+        "preferences": {"statements": [{"value": "I like hiking"}]},
+        "entity_id": "mem_travel_001",
+        "status": "active",
+        "kind": "routine",
+        "confidence": 0.92,
+    }
+    result = PKMAgentLabService._strip_pii_from_payload_keys(payload)
+    assert result == payload
+
+
+def test_strip_pii_from_payload_keys_handles_nested_dicts():
+    payload = {
+        "financial": {
+            "account_$75000": True,
+            "risk_profile": "moderate",
+            "nested": {
+                "ssn_123-45-6789": "leaked",
+                "label": "safe",
+            },
+        }
+    }
+    result = PKMAgentLabService._strip_pii_from_payload_keys(payload)
+    assert "account_$75000" not in result["financial"]
+    assert result["financial"]["risk_profile"] == "moderate"
+    assert "ssn_123-45-6789" not in result["financial"]["nested"]
+    assert result["financial"]["nested"]["label"] == "safe"
+
+
+def test_strip_pii_from_payload_keys_handles_lists_of_dicts():
+    payload = {
+        "items": [
+            {"account_$5000": True, "name": "savings"},
+            {"name": "checking", "balance_99999": True},
+        ]
+    }
+    result = PKMAgentLabService._strip_pii_from_payload_keys(payload)
+    assert "account_$5000" not in result["items"][0]
+    assert result["items"][0]["name"] == "savings"
+    assert "balance_99999" not in result["items"][1]
+    assert result["items"][1]["name"] == "checking"
+
+
+def test_strip_pii_from_payload_keys_values_are_never_modified():
+    payload = {
+        "observations": ["My account has $50000", "SSN: 123-45-6789"],
+        "summary": "Balance is $75000",
+    }
+    result = PKMAgentLabService._strip_pii_from_payload_keys(payload)
+    assert result["observations"] == ["My account has $50000", "SSN: 123-45-6789"]
+    assert result["summary"] == "Balance is $75000"
+
+
+def test_sanitize_candidate_payload_applies_key_sanitization():
+    raw_llm_output = {
+        "account_$50000": True,
+        "preferences": {"food": "Chinese"},
+        "phone_9876543210": "primary",
+    }
+    result = PKMAgentLabService._sanitize_candidate_payload(
+        raw_llm_output,
+        message="I have 50000 in savings",
+        intent_frame={
+            "intent_class": "financial_event",
+            "mutation_intent": "create",
+            "save_class": "durable",
+        },
+        merge_decision={
+            "merge_mode": "create_entity",
+            "target_domain": "financial",
+            "target_entity_id": "",
+            "target_entity_path": "",
+        },
+        target_domain="financial",
+    )
+    assert "account_$50000" not in result
+    assert "phone_9876543210" not in result
+    assert result.get("preferences") == {"food": "Chinese"}
+
+
+# ---------------------------------------------------------------------------
+# Phase 02-01 Task 2: identity classifier routing (hint set + intent defaults)
+# ---------------------------------------------------------------------------
+
+
+def test_keyword_ranked_domains_address_ranks_identity_first():
+    ranked = PKMAgentLabService._keyword_ranked_domains(
+        message="update my address",
+        current_domains=[],
+    )
+    assert ranked, "expected at least one ranked domain"
+    assert ranked[0] == "identity"
+
+
+def test_keyword_ranked_domains_name_includes_identity():
+    ranked = PKMAgentLabService._keyword_ranked_domains(
+        message="my name is now Jane Doe",
+        current_domains=[],
+    )
+    assert "identity" in ranked
+
+
+def test_keyword_ranked_domains_email_includes_identity():
+    ranked = PKMAgentLabService._keyword_ranked_domains(
+        message="change my email to jane@example.com",
+        current_domains=[],
+    )
+    assert "identity" in ranked
+
+
+def test_intent_domain_defaults_profile_fact_identity_first():
+    from hushh_mcp.services.pkm_agent_lab_service import _INTENT_DOMAIN_DEFAULTS
+
+    assert _INTENT_DOMAIN_DEFAULTS["profile_fact"][0] == "identity"
+
+
+def test_identity_hints_contain_no_ssn_tokens():
+    from hushh_mcp.services.pkm_agent_lab_service import _IDENTITY_HINTS
+
+    blob = " ".join(_IDENTITY_HINTS).lower()
+    assert "ssn" not in blob
+    assert "social_security" not in blob
+    assert "social security" not in blob
+
+
+# ---------------------------------------------------------------------------
+# Phase 02-01 Task 4: identity routing + confirm_first regression (UAT)
+# ---------------------------------------------------------------------------
+
+
+# Mirrors the phase-01 reality: the user already has identity attributes stored,
+# so an "update my address" correction has a stable target to correct.
+IDENTITY_SIMULATED_STATE = {
+    "domains": ["identity", "financial"],
+    "memories": [
+        {
+            "domain": "identity",
+            "entity_id": "identity_profile_001",
+            "entity_scope": "profile",
+            "intent_class": "profile_fact",
+            "message": "My address is 1 Old Street, Seattle.",
+            "active": True,
+        }
+    ],
+}
+
+
+def _identity_agent_calls(
+    message: str,
+    *,
+    save_class: str = "durable",
+    mutation_intent: str = "update",
+    structure_write_mode: str = "can_save",
+    merge_mode: str = "correct_entity",
+):
+    """Build the 5-call _run_agent_contract side_effect for an identity message."""
+    return [
+        _single_segment(message),
+        {
+            "routing_decision": "non_financial_or_ephemeral",
+            "confidence": 0.95,
+            "reason": "Identity PII, not finance.",
+            "source_agent": "financial_guard_agent",
+            "contract_version": 1,
+        },
+        {
+            "save_class": save_class,
+            "intent_class": "profile_fact",
+            "mutation_intent": mutation_intent,
+            "requires_confirmation": False,
+            "confirmation_reason": "",
+            "candidate_domain_choices": [
+                {"domain_key": "identity", "recommended": True},
+            ],
+            "confidence": 0.92,
+            "source_agent": "memory_intent_agent",
+            "contract_version": 1,
+        },
+        {
+            "merge_mode": merge_mode,
+            "target_domain": "identity",
+            "target_entity_id": "identity_profile_001",
+            "target_entity_path": "profile.entities.identity_profile_001",
+            "match_confidence": 0.9,
+            "match_reason": "Identity profile attribute.",
+            "source_agent": "memory_merge_agent",
+            "contract_version": 1,
+        },
+        {
+            "candidate_payload": {"profile": {"value": message}},
+            "structure_decision": {
+                "action": "create_domain",
+                "target_domain": "identity",
+                "json_paths": ["profile", "profile.value"],
+                "top_level_scope_paths": ["profile"],
+                "externalizable_paths": ["profile.value"],
+                "summary_projection": {},
+                "sensitivity_labels": {},
+                "confidence": 0.88,
+                "source_agent": "pkm_structure_agent",
+                "contract_version": 1,
+            },
+            "write_mode": structure_write_mode,
+            "target_entity_scope": "profile",
+            "validation_hints": [],
+        },
+    ]
+
+
+@pytest.mark.asyncio
+async def test_generate_structure_preview_routes_update_address_to_identity(monkeypatch):
+    """Exact phase-01 UAT regression: 'update my address' -> identity + confirm_first."""
+    service = PKMAgentLabService()
+    monkeypatch.setattr(
+        service,
+        "_load_domain_registry_choices",
+        AsyncMock(return_value=_registry_choices()),
+    )
+    monkeypatch.setattr(
+        service,
+        "_run_agent_contract",
+        AsyncMock(
+            side_effect=_identity_agent_calls("update my address to 500 Market St, San Francisco")
+        ),
+    )
+
+    result = await service.generate_structure_preview(
+        user_id="uat-user",
+        message="update my address to 500 Market St, San Francisco",
+        current_domains=["identity", "financial"],
+        simulated_state=IDENTITY_SIMULATED_STATE,
+    )
+
+    assert result["structure_decision"]["target_domain"] == "identity"
+    assert result["structure_decision"]["target_domain"] != "financial"
+    assert result["write_mode"] == "confirm_first"
+    assert "identity_domain_requires_confirmation" in result["validation_hints"]
+
+
+@pytest.mark.asyncio
+async def test_generate_structure_preview_routes_name_to_identity(monkeypatch):
+    service = PKMAgentLabService()
+    monkeypatch.setattr(
+        service,
+        "_load_domain_registry_choices",
+        AsyncMock(return_value=_registry_choices()),
+    )
+    monkeypatch.setattr(
+        service,
+        "_run_agent_contract",
+        AsyncMock(
+            side_effect=_identity_agent_calls(
+                "my name is now Jane Doe",
+                mutation_intent="create",
+                merge_mode="create_entity",
+            )
+        ),
+    )
+
+    result = await service.generate_structure_preview(
+        user_id="uat-user",
+        message="my name is now Jane Doe",
+        current_domains=["identity"],
+    )
+
+    assert result["structure_decision"]["target_domain"] == "identity"
+    assert result["write_mode"] == "confirm_first"
+
+
+@pytest.mark.asyncio
+async def test_identity_write_mode_never_can_save(monkeypatch):
+    """An LLM-emitted can_save for an identity target is force-escalated to confirm_first."""
+    service = PKMAgentLabService()
+    monkeypatch.setattr(
+        service,
+        "_load_domain_registry_choices",
+        AsyncMock(return_value=_registry_choices()),
+    )
+    # Fresh create (no correction cue): the structure agent emits can_save and the
+    # normalizer must still force confirm_first purely because target is identity.
+    monkeypatch.setattr(
+        service,
+        "_run_agent_contract",
+        AsyncMock(
+            side_effect=_identity_agent_calls(
+                "my email address is jane@example.com",
+                mutation_intent="create",
+                merge_mode="create_entity",
+                structure_write_mode="can_save",
+            )
+        ),
+    )
+
+    result = await service.generate_structure_preview(
+        user_id="uat-user",
+        message="my email address is jane@example.com",
+        current_domains=["identity"],
+    )
+
+    assert result["write_mode"] == "confirm_first"
+    assert "identity_domain_requires_confirmation" in result["validation_hints"]
+
+
+@pytest.mark.asyncio
+async def test_identity_read_only_query_stays_do_not_save(monkeypatch):
+    """Read-only/ephemeral identity flow ('what's my address?') stays do_not_save."""
+    service = PKMAgentLabService()
+    monkeypatch.setattr(
+        service,
+        "_load_domain_registry_choices",
+        AsyncMock(return_value=_registry_choices()),
+    )
+    monkeypatch.setattr(
+        service,
+        "_run_agent_contract",
+        AsyncMock(
+            side_effect=_identity_agent_calls(
+                "what's my address?",
+                save_class="ephemeral",
+                mutation_intent="no_op",
+                merge_mode="no_op",
+                structure_write_mode="do_not_save",
+            )
+        ),
+    )
+
+    result = await service.generate_structure_preview(
+        user_id="uat-user",
+        message="what's my address?",
+        current_domains=["identity"],
+    )
+
+    assert result["write_mode"] == "do_not_save"
+    assert "identity_domain_requires_confirmation" not in result["validation_hints"]
+
+
+@pytest.mark.asyncio
+async def test_explicit_identity_update_intent_forces_confirm_first(monkeypatch):
+    """Deterministic confirm for explicit field updates (GAP 1 fix).
+
+    Reproduces the live UAT failure: the frontend update flow re-classifies a
+    machine-synthesized sentence ('Update identity - address: change from "" to
+    "..."') with the LLM. For the address phrasing the classifier resolves it to
+    no_op/do_not_save, so the identity force-confirm guard (which only fires on
+    can_save) never triggers, zero confirm cards survive, and no review panel
+    renders. When the caller supplies an explicit `update_intent` (domain +
+    field_path + proposed_value), routing and the confirm decision must be
+    derived deterministically from those structured slots, NOT re-derived by the
+    LLM from synthetic text: an explicit identity update is always confirm_first.
+    """
+    service = PKMAgentLabService()
+    monkeypatch.setattr(
+        service,
+        "_load_domain_registry_choices",
+        AsyncMock(return_value=_registry_choices()),
+    )
+    # Simulate the failing live path: synthetic update sentence -> LLM reads it as
+    # a no-op / do_not_save (the exact failure mode the investigation identified).
+    monkeypatch.setattr(
+        service,
+        "_run_agent_contract",
+        AsyncMock(
+            side_effect=_identity_agent_calls(
+                'Update identity - address: change from "" to "221B Baker Street, London"',
+                mutation_intent="no_op",
+                merge_mode="no_op",
+                structure_write_mode="do_not_save",
+            )
+        ),
+    )
+
+    result = await service.generate_structure_preview(
+        user_id="uat-user",
+        message='Update identity - address: change from "" to "221B Baker Street, London"',
+        current_domains=["identity", "financial"],
+        simulated_state=IDENTITY_SIMULATED_STATE,
+        update_intent={
+            "domain": "identity",
+            "field_path": "address",
+            "current_value": "",
+            "proposed_value": "221B Baker Street, London",
+        },
+    )
+
+    assert result["structure_decision"]["target_domain"] == "identity"
+    assert result["write_mode"] == "confirm_first"
+    assert "identity_domain_requires_confirmation" in result["validation_hints"]
+    assert "explicit_update_confirmation" in result["validation_hints"]
+
+
+# ---------------------------------------------------------------------------
+# Identity PII sensitivity classification (Wave 2 / D-09)
+# ---------------------------------------------------------------------------
+
+
+class TestInferSensitivityIdentityPII:
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "identity.passport_number",
+            "identity.national_id",
+            "identity.ssn",
+            "identity.social_security",
+        ],
+    )
+    def test_restricted_identity_tokens(self, path: str):
+        assert PKMAgentLabService._infer_sensitivity(path) == "restricted"
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "identity.full_name",
+            "identity.first_name",
+            "identity.last_name",
+            "identity.address.line1",
+            "identity.date_of_birth",
+            "identity.dob",
+            "identity.phone_number",
+            "identity.nationality",
+        ],
+    )
+    def test_confidential_identity_tokens(self, path: str):
+        assert PKMAgentLabService._infer_sensitivity(path) == "confidential"
+
+    def test_existing_restricted_tokens_preserved(self):
+        assert PKMAgentLabService._infer_sensitivity("financial.tax_id") == "restricted"
+        assert PKMAgentLabService._infer_sensitivity("financial.account_number") == "restricted"
+
+    def test_existing_confidential_tokens_preserved(self):
+        assert PKMAgentLabService._infer_sensitivity("financial.portfolio") == "confidential"
+        assert PKMAgentLabService._infer_sensitivity("health.allergy") == "confidential"
+
+    def test_non_pii_path_unclassified(self):
+        assert PKMAgentLabService._infer_sensitivity("food.favorite_cuisine") is None

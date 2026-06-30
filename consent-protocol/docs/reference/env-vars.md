@@ -1,0 +1,329 @@
+# Environment Variables
+
+> Backend environment variables and secrets reference. See `.env.example` for the template.
+
+
+## Visual Context
+
+Canonical visual owner: [consent-protocol](../README.md). Use that map for the top-down system view; this page is the narrower detail beneath it.
+
+---
+
+## Parity Rule
+
+What is in `.env` / GCP Secret Manager must match exactly what the code reads -- no extra keys, no missing keys.
+
+- **Local:** `.env` must contain exactly the keys the application code reads. Use `.env.example` as the template.
+- **Production:** GCP Secret Manager must hold exactly the secrets the code expects. Cloud Run config injects only these.
+
+---
+
+## Variables
+
+| Variable | Where Read | Required | Notes |
+|----------|------------|----------|-------|
+| `APP_SIGNING_KEY` | `hushh_mcp/config.py` | Yes | Min 32 chars (64-char hex recommended). HMAC signing and state integrity only. |
+| `VAULT_DATA_KEY` | `hushh_mcp/config.py` | Yes | Exactly 64-char hex. Vault/PKM data encryption only. |
+| `DB_USER` | `db/connection.py`, `db/db_client.py` | Yes | Supabase pooler username. |
+| `DB_PASSWORD` | same | Yes | Database password. |
+| `DB_HOST` | same | Yes | Supabase session pooler host. |
+| `DB_PORT` | same | No | Default: 5432. |
+| `DB_NAME` | same | No | Default: postgres. |
+| `REQUIRE_DATABASE_ON_STARTUP` | `server.py` | No | Optional startup strictness override. Defaults to `true` in production and `false` in development; when `false`, local startup warns instead of failing if the DB is offline, but schema mismatches still fail. |
+| `APP_FRONTEND_ORIGIN` | `server.py` | Yes (prod) | Backend-owned app origin for CORS and user-facing links. Not part of the public MCP host setup. |
+| `FIREBASE_ADMIN_CREDENTIALS_JSON` | `api/utils/firebase_admin.py`, `hushh_mcp/runtime_settings.py` | Yes | Canonical Firebase Admin credential for server operations, Workspace-delegated Gmail send, and future One mailbox tasks. The approved Workspace DWD client is `109021324828349644970`. |
+| `FIREBASE_SERVICE_ACCOUNT_JSON` | `hushh_mcp/runtime_settings.py` | Optional alias | Runtime compatibility alias for `FIREBASE_ADMIN_CREDENTIALS_JSON`. Prefer the canonical name for new config. |
+| `GOOGLE_API_KEY` | `hushh_mcp/config.py`, `hushh_mcp/services/agent_chat_service.py`, services | Yes | Gemini / Vertex AI API key. Required for Agent text chat. |
+| `ONE_EMAIL_ADDRESS` | `hushh_mcp/services/support_email_service.py`, `hushh_mcp/services/one_email_kyc_service.py` | Optional | Canonical One mailbox identity. Default: `one@hushh.ai`. |
+| `ONE_EMAIL_SERVICE_ACCOUNT_JSON` | `hushh_mcp/services/one_email_kyc_service.py` | Optional override | Dedicated service account JSON for One mailbox intake. Prefer `FIREBASE_ADMIN_CREDENTIALS_JSON` unless an explicit exception is approved. |
+| `ONE_EMAIL_DELEGATED_USER` | `hushh_mcp/services/one_email_kyc_service.py` | Optional override | Workspace mailbox to impersonate for One intake. Default: `ONE_EMAIL_ADDRESS`. Must be a real user mailbox. |
+| `ONE_EMAIL_PUBSUB_TOPIC` | `hushh_mcp/services/one_email_kyc_service.py` | Yes (One email intake) | Gmail `users.watch` Pub/Sub topic for `one@hushh.ai`. |
+| `ONE_EMAIL_WEBHOOK_AUDIENCE` | `hushh_mcp/services/one_email_kyc_service.py` | Yes (hosted intake) | Expected audience for Pub/Sub push OIDC verification. Falls back to `GMAIL_WEBHOOK_AUDIENCE`. |
+| `ONE_EMAIL_WEBHOOK_SERVICE_ACCOUNT_EMAIL` | `hushh_mcp/services/one_email_kyc_service.py` | Recommended | Expected Pub/Sub push service-account email. Falls back to `GMAIL_WEBHOOK_SERVICE_ACCOUNT_EMAIL`. |
+| `ONE_EMAIL_WEBHOOK_AUTH_ENABLED` | `hushh_mcp/services/one_email_kyc_service.py` | Yes (hosted intake) | Must be `true` in UAT/production. Defaults on outside local/dev/test, including `HUSHH_DEPLOY_ENV=uat`, but hosted deploys set it explicitly. |
+| `ONE_EMAIL_WATCH_LABEL_IDS` | `hushh_mcp/services/one_email_kyc_service.py` | Optional | Comma-separated Gmail labels for watch registration. Default: `INBOX`. |
+| `ONE_EMAIL_WATCH_RENEW_TOKEN` | `api/routes/one/email.py` | Yes (hosted watch renewal) | Shared maintenance token required by `POST /api/one/email/watch/renew` outside local/dev/test. Send as `X-Hushh-Maintenance-Token`. |
+| `ONE_EMAIL_WATCH_RENEW_AUTH_ENABLED` | `api/routes/one/email.py` | Yes (hosted renewal) | Must be `true` in UAT/production. Defaults on outside local/dev/test, including `HUSHH_DEPLOY_ENV=uat`, but hosted deploys set it explicitly. |
+| `ONE_EMAIL_KYC_STRICT_CLIENT_ZK_ENABLED` | `hushh_mcp/services/one_email_kyc_service.py` | Optional | Defaults to `true`. Backend must not decrypt scoped exports or persist review draft plaintext. |
+| `ONE_EMAIL_KYC_DEFAULT_SCOPE` | `hushh_mcp/services/one_email_kyc_service.py` | Optional | Default least-privilege identity scope requested for broker KYC. Default: `attr.identity.*`. |
+| `SUPPORT_EMAIL_SERVICE_ACCOUNT_JSON` | `hushh_mcp/services/support_email_service.py` | Optional legacy override | Dedicated service account JSON for support mail. Prefer the canonical Firebase Admin credential unless an explicit exception is approved. |
+| `SUPPORT_EMAIL_DELEGATED_USER` | `hushh_mcp/services/support_email_service.py` | Optional override | Workspace mailbox to impersonate for Gmail send. Default: `ONE_EMAIL_ADDRESS` or `one@hushh.ai`. Must be a real user mailbox, not a group. |
+| `SUPPORT_EMAIL_FROM` | `hushh_mcp/services/support_email_service.py` | Optional | Visible `From` address for outgoing support mail. Defaults to `SUPPORT_EMAIL_DELEGATED_USER`. |
+| `SUPPORT_EMAIL_TO` | `hushh_mcp/services/support_email_service.py` | Optional | Live support inbox recipient. Default: `ONE_EMAIL_ADDRESS` or `one@hushh.ai`. |
+| `SUPPORT_EMAIL_TEST_TO` | `hushh_mcp/services/support_email_service.py` | Optional | Test-mode recipient override for non-production verification. |
+| `SUPPORT_EMAIL_MODE` | `hushh_mcp/services/support_email_service.py` | Optional | `live` or `test`. If unset, non-production defaults to `test` when `SUPPORT_EMAIL_TEST_TO` exists. |
+| `GMAIL_OAUTH_CLIENT_ID` | `hushh_mcp/services/gmail_receipts_service.py` | Yes (Gmail sync) | Gmail OAuth client id. Same key name across local, UAT, and production. |
+| `GMAIL_OAUTH_CLIENT_SECRET` | `hushh_mcp/services/gmail_receipts_service.py` | Yes (Gmail sync) | Gmail OAuth client secret. Same key name across local, UAT, and production. |
+| `GMAIL_OAUTH_REDIRECT_URI` | `hushh_mcp/services/gmail_receipts_service.py` | Yes (Gmail sync) | Gmail OAuth redirect URI. Same key name across local, UAT, and production. |
+| `GMAIL_OAUTH_TOKEN_KEY` | `hushh_mcp/services/gmail_receipts_service.py` | Yes (Gmail sync) | Encryption key for persisted Gmail OAuth tokens. Same key name across local, UAT, and production. |
+| `OPENAI_API_KEY` | `api/routes/kai/agent_realtime.py`, `hushh_mcp/services/voice_intent_service.py` | Yes (voice/agent) | Required for Agent Realtime text sessions and realtime voice transcription, planning/composition, TTS, and session creation. |
+| `VOICE_RUNTIME_CONFIG_JSON` | `hushh_mcp/runtime_settings.py`, `api/routes/kai/voice.py`, `hushh_mcp/services/voice_intent_service.py` | Yes (voice) | Structured runtime config for rollout, allowlists/canary, fail-fast policy, and model defaults. |
+| `DEFAULT_CONSENT_TOKEN_EXPIRY_MS` | `hushh_mcp/config.py` | No | Token TTL (default: 24h). |
+| `DEFAULT_TRUST_LINK_EXPIRY_MS` | `hushh_mcp/config.py` | No | TrustLink TTL. |
+| `ENVIRONMENT` | `hushh_mcp/config.py` | No | `production` or `development` (default). |
+| `AGENT_ID` | `hushh_mcp/config.py` | No | Default: `agent_hushh_default`. |
+| `HUSHH_HACKATHON` | `hushh_mcp/config.py` | No | Feature flag (default: disabled). |
+| `CONSENT_TIMEOUT_SECONDS` | `api/routes/sse.py`, `developer.py` | No | Consent wait timeout. |
+| `CONSENT_SSE_ENABLED` | `api/routes/sse.py` | No | Defaults off in production. |
+| `DEVELOPER_API_ENABLED` | `api/routes/developer.py`, `server.py` | No | Enables `/api/v1/*`; defaults false in production unless explicitly enabled. |
+| `REMOTE_MCP_ENABLED` | `api/developer_auth.py`, `mcp_remote.py` | No | Enables hosted remote MCP transport at `/mcp`. |
+| `SYNC_REMOTE_ENABLED` | deploy/runtime env contract | No | Legacy deploy flag; keep false unless the runtime reintroduces an active reader. |
+| `HUSHH_DEVELOPER_TOKEN` | `api/routes/session.py`, `mcp_server.py` | Optional | Self-serve developer token used by stdio MCP and token-auth `/api/user/lookup`. It is not part of the normal hosted runtime contract. |
+| `HUSHH_UAT_PHONE_TEST_NUMBERS` | `api/routes/account.py` | UAT test only | Comma-separated E.164 allowlist for fixed-code phone verification; only honored when `ENVIRONMENT=uat`. Store in UAT Secret Manager. |
+| `HUSHH_UAT_PHONE_TEST_CODE` | `api/routes/account.py` | UAT test only | Fixed OTP for the UAT phone allowlist. Store in UAT Secret Manager and never expose as `NEXT_PUBLIC_*`. |
+| `HUSHH_UAT_PHONE_TEST_CHALLENGE_SECRET` | `api/routes/account.py` | Optional | Optional HMAC key for stateless UAT phone challenge IDs; falls back to `APP_SIGNING_KEY`. |
+| `ROOT_PATH` | `server.py` | No | FastAPI root path for reverse proxy. |
+| `AGENT_GEMINI_MODEL` | `hushh_mcp/services/agent_chat_service.py` | No | Optional Agent text chat model override. Defaults to stable `gemini-2.5-pro`. |
+| `AGENT_GEMINI_VOICE_ENABLED` | `api/routes/kai/agent_voice.py` | No | Agent chained voice kill switch. Defaults enabled; set a disabled flag value to turn off Gemini STT/TTS adapters. |
+| `AGENT_GEMINI_STT_MODEL` | `hushh_mcp/services/agent_voice_service.py` | No | Optional Agent voice STT model override. Defaults to `gemini-2.5-flash`. |
+| `AGENT_GEMINI_STT_TIMEOUT_SECONDS` | `hushh_mcp/services/agent_voice_service.py` | No | Optional Agent voice STT Gemini timeout. Defaults to `30`. |
+| `AGENT_GEMINI_TTS_MODEL` | `hushh_mcp/services/agent_voice_service.py` | No | Optional Agent voice TTS model override. Defaults to `gemini-2.5-flash-preview-tts`. |
+| `AGENT_GEMINI_TTS_VOICE` | `hushh_mcp/services/agent_voice_service.py` | No | Optional backend default Agent TTS voice. Defaults to `Sulafat`. |
+| `AGENT_GEMINI_TTS_TIMEOUT_SECONDS` | `hushh_mcp/services/agent_voice_service.py` | No | Optional Agent voice TTS Gemini timeout per attempt. Defaults to `45`. |
+| `AGENT_GEMINI_TTS_MAX_ATTEMPTS` | `hushh_mcp/services/agent_voice_service.py` | No | Optional Agent voice TTS retry cap. Defaults to `2`; bounded from `1` to `4`. |
+| `GOOGLE_GENAI_USE_VERTEXAI` | Cloud Run env | No | Set `True` for Vertex AI in production. |
+| `PLAID_ENV` / `PLAID_ENVIRONMENT` | `hushh_mcp/services/plaid_portfolio_service.py` | No | Plaid environment. Defaults to `sandbox`. |
+| `PLAID_CLIENT_ID` | `hushh_mcp/services/plaid_portfolio_service.py` | If Plaid enabled | Plaid client ID. |
+| `PLAID_SECRET` | `hushh_mcp/services/plaid_portfolio_service.py` | If Plaid enabled | Plaid secret for the selected environment. |
+| `PLAID_CLIENT_NAME` | `hushh_mcp/services/plaid_portfolio_service.py` | No | Link display name. Defaults to `Hushh Kai`. |
+| `PLAID_COUNTRY_CODES` | `hushh_mcp/services/plaid_portfolio_service.py` | No | Comma-separated country codes, default `US`. |
+| `PLAID_WEBHOOK_URL` | `hushh_mcp/services/plaid_portfolio_service.py` | Recommended | Public webhook URL for `/api/kai/plaid/webhook`. Localhost must use a tunnel. Plaid webhook URLs are provided during Link token creation; they are not dashboard-allowlisted. |
+| `PLAID_REDIRECT_PATH` | `hushh_mcp/services/plaid_portfolio_service.py` | Recommended for OAuth | Relative callback path used with `APP_FRONTEND_ORIGIN`. Default: `/kai/plaid/oauth/return`. |
+| `PLAID_REDIRECT_URI` / `PLAID_OAUTH_REDIRECT_URI` | `hushh_mcp/services/plaid_portfolio_service.py` | Optional override | Full allowlisted redirect URI, including path. Use only when overriding `APP_FRONTEND_ORIGIN + PLAID_REDIRECT_PATH`. |
+| `PLAID_ACCESS_TOKEN_KEY` | `hushh_mcp/services/plaid_portfolio_service.py` | Recommended | Encryption key for stored Plaid access tokens. Keep the same value anywhere that must read/write the same Plaid item records, especially `local` and UAT when they share a DB. If omitted, backend derives a fallback key from Plaid credentials. |
+| `PLAID_TX_HISTORY_DAYS` | `hushh_mcp/services/plaid_portfolio_service.py` | No | Investment transaction lookback window. Default `730`. |
+| `PLAID_WEBHOOK_VERIFICATION_ENABLED` | `hushh_mcp/services/broker_funding_service.py` | Recommended | Enables Plaid webhook JWT signature verification (default `true`). |
+| `PLAID_WEBHOOK_MAX_SKEW_SECONDS` | `hushh_mcp/services/broker_funding_service.py` | No | Max allowed clock skew for Plaid webhook `iat` claim. Default `300`. |
+| `ALPACA_ENV` / `ALPACA_BROKER_ENV` | `hushh_mcp/integrations/alpaca/config.py` | No | Alpaca Broker environment. Defaults to `sandbox`. |
+| `ALPACA_BROKER_BASE_URL` / `BROKER_API_BASE` | `hushh_mcp/integrations/alpaca/config.py` | Optional | Override Alpaca Broker API base URL. |
+| `ALPACA_BROKER_AUTH_TOKEN` / `BROKER_TOKEN` / `ALPACA_AUTH_TOKEN` | `hushh_mcp/integrations/alpaca/config.py` | Optional | Pre-built Authorization header token (Basic or Bearer). |
+| `ALPACA_BROKER_KEY_ID` / `APCA_API_KEY_ID` / `ALPACA_API_KEY` | `hushh_mcp/integrations/alpaca/config.py` | If Alpaca enabled | Alpaca API key ID for Basic auth generation. |
+| `ALPACA_BROKER_SECRET` / `APCA_API_SECRET_KEY` / `ALPACA_API_SECRET` | `hushh_mcp/integrations/alpaca/config.py` | If Alpaca enabled | Alpaca API secret for Basic auth generation. |
+| `ALPACA_DEFAULT_ACCOUNT_ID` | `hushh_mcp/integrations/alpaca/config.py` | Recommended | Default Alpaca account ID for funding when user-specific mapping is absent. |
+| `ALPACA_CONNECT_CLIENT_ID` | `hushh_mcp/services/broker_funding_service.py` | If Alpaca OAuth connect enabled | Alpaca OAuth app client ID for user login flow. |
+| `ALPACA_CONNECT_CLIENT_SECRET` | `hushh_mcp/services/broker_funding_service.py` | If Alpaca OAuth connect enabled | Alpaca OAuth app client secret. |
+| `ALPACA_CONNECT_REDIRECT_URI` / `ALPACA_OAUTH_REDIRECT_URI` | `hushh_mcp/services/broker_funding_service.py` | If Alpaca OAuth connect enabled | HTTPS callback URI for Alpaca OAuth code exchange. |
+| `ALPACA_CONNECT_AUTHORIZE_URL` | `hushh_mcp/services/broker_funding_service.py` | No | Override OAuth authorize endpoint. Default `https://app.alpaca.markets/oauth/authorize`. |
+| `ALPACA_CONNECT_TOKEN_URL` | `hushh_mcp/services/broker_funding_service.py` | No | Override OAuth token endpoint. Default `https://api.alpaca.markets/oauth/token`. |
+| `ALPACA_CONNECT_ACCOUNT_URL` | `hushh_mcp/services/broker_funding_service.py` | No | OAuth Bearer account profile endpoint. Default `https://api.alpaca.markets/v2/account`. |
+| `ALPACA_CONNECT_SCOPES` | `hushh_mcp/services/broker_funding_service.py` | No | Space-delimited OAuth scopes for authorize URL. Default `account:write trading`. |
+| `ALPACA_CONNECT_ENV` | `hushh_mcp/services/broker_funding_service.py` | No | Authorize URL env hint (`paper` or `live`). Defaults by Alpaca runtime env. |
+| `ALPACA_CONNECT_STATE_TTL_SECONDS` | `hushh_mcp/services/broker_funding_service.py` | No | OAuth state/session TTL in seconds. Default `900`. |
+| `FUNDING_SECRET_ENCRYPTION_KEY` | `hushh_mcp/services/broker_funding_service.py` | Recommended | Encryption key for stored Plaid access tokens and processor tokens in funding tables. |
+| `FUNDING_ACH_RELATIONSHIP_POLL_SECONDS` | `hushh_mcp/services/broker_funding_service.py` | No | Max seconds to poll Alpaca ACH relationship approval. Default `15`. |
+| `FUNDING_ACH_RELATIONSHIP_POLL_INTERVAL_SECONDS` | `hushh_mcp/services/broker_funding_service.py` | No | Poll interval for ACH approval status. Default `2`. |
+| `FUNDING_TRANSFER_MAX_INCOMING_USD` | `hushh_mcp/services/broker_funding_service.py` | No | Max allowed incoming funding transfer amount. Default `250000`. |
+| `FUNDING_TRANSFER_MAX_OUTGOING_USD` | `hushh_mcp/services/broker_funding_service.py` | No | Max allowed outgoing funding transfer amount. Default `250000`. |
+| `FUNDING_STALE_PENDING_SECONDS` | `hushh_mcp/services/broker_funding_service.py` | No | Reconciliation stale-pending threshold. Default `172800` (48h). |
+
+---
+
+## MCP Server Variables
+
+These are read by `mcp_server.py` (separate from the main FastAPI server):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CONSENT_API_URL` | `http://127.0.0.1:8000` | FastAPI backend URL. Defaults to loopback + `PORT` when unset. |
+| `APP_FRONTEND_ORIGIN` | `http://localhost:3000` | Backend-owned app origin for user-facing links. Do not add this to public MCP host configs. |
+| `PRODUCTION_MODE` | `true` | Require real user approval via Hussh app. |
+| `HUSHH_DEVELOPER_TOKEN` | _(none)_ | Self-serve developer token for stdio MCP. |
+| `CONSENT_TIMEOUT_SECONDS` | `120` | Max wait for user consent approval. |
+
+---
+
+## Migrations and Scripts
+
+Migration scripts use `DB_*` variables only (same as runtime). `db/migrate.py` uses `db.connection.get_database_url()` and `get_database_ssl()`. There is no `DATABASE_URL` variable.
+
+## Kai Portfolio Import Model Policy
+
+Kai portfolio import defaults to `KAI_PORTFOLIO_IMPORT_PRIMARY_MODEL = "gemini-3.5-flash"` in `hushh_mcp/constants.py`. Runtime can override the import model with `KAI_PORTFOLIO_IMPORT_MODEL` or `KAI_PORTFOLIO_IMPORT_PRIMARY_MODEL`; provider/auth still come from `GOOGLE_GENAI_USE_VERTEXAI`, Vertex project/location credentials, or API key.
+
+## Kai Portfolio Import Upload Limits
+
+Portfolio import endpoints accept statement uploads up to **25MB** (`/api/kai/portfolio/import`, `/api/kai/portfolio/import/run/start`, `/api/kai/portfolio/import/stream`).
+This accommodates longer brokerage statements while preserving relevance/quality gates.
+
+Kai generation behavior for import/optimize/debate is also constants-driven (not `.env` toggles):
+
+- `KAI_LLM_TEMPERATURE=0.0` (deterministic)
+- `KAI_LLM_THINKING_ENABLED`
+- `KAI_LLM_THINKING_LEVEL`
+- `KAI_LLM_STREAM_INCLUDE_THOUGHTS`
+- `KAI_OPTIMIZE_STREAM_TIMEOUT_SECONDS`
+
+Maintainer-only overlay vars used by release verification, migration/reset utilities, and review flows:
+
+- `APP_REVIEW_MODE`
+- `REVIEWER_UID`
+- `REVIEWER_VAULT_PASSPHRASE`
+
+Notes:
+
+- These maintainer-only overlay vars are loaded by backend scripts and release verification at process start.
+- Changing them requires restarting the backend or rerunning the script; they are not hot-reloaded into an already running process.
+- `REVIEWER_UID` is the canonical non-production reviewer/test user id. The current fixture resolves to `UWHGeUyfUAbmEl5xwIPoWJ7Cyft2` from Firebase Auth email `kushaltrivedi1711@gmail.com`.
+- `REVIEWER_VAULT_PASSPHRASE` is the canonical vault unlock secret for reviewer smoke and must remain in ignored local env files or Secret Manager/runtime overlays.
+- `UAT_SMOKE_*` and `KAI_TEST_*` are deprecated one-release aliases for existing maintainer scripts.
+- UAT analytics smoke reuses the existing reviewer test fixture; do not create new Firebase users, reviewer users, app environments, or one-off analytics fixtures for validation.
+- If the reviewer test fixture lacks seeded portfolio or recommendation state, repair or reseed that same user rather than minting another account.
+
+Maintainer-only non-production bypass overlay:
+
+- `ADVISORY_VERIFICATION_BYPASS_ENABLED`
+  - enables non-production advisory bypass for the professional onboarding flow
+  - has no effect in `production`
+- `BROKER_VERIFICATION_BYPASS_ENABLED`
+  - enables non-production broker-capability bypass
+  - has no effect in `production`
+- `RIA_DEV_BYPASS_ENABLED`
+  - legacy compatibility alias for advisory bypass only
+  - prefer `ADVISORY_VERIFICATION_BYPASS_ENABLED` in new configs
+
+Professional verification providers:
+
+- `RIA_INTELLIGENCE_VERIFY_BASE_URL`
+- `RIA_INTELLIGENCE_VERIFY_ENDPOINT_PATH`
+- `RIA_INTELLIGENCE_VERIFY_URL`
+- `RIA_INTELLIGENCE_VERIFY_API_KEY`
+- `RIA_INTELLIGENCE_VERIFY_TIMEOUT_SECONDS`
+- `IAPD_VERIFY_BASE_URL`
+- `IAPD_VERIFY_API_KEY`
+- `IAPD_VERIFY_TIMEOUT_SECONDS`
+- `BROKER_CAPABILITY_ENABLED`
+- `BROKER_VERIFY_BASE_URL`
+- `BROKER_VERIFY_API_KEY`
+- `BROKER_VERIFY_TIMEOUT_SECONDS`
+- `BROKER_PUBLIC_FALLBACK_ENABLED`
+
+## Kai Brokerage Boundary
+
+Kai now supports embedded bank funding orchestration using:
+
+- Plaid Link/Auth + processor token creation (`processor=alpaca`)
+- Alpaca Broker ACH relationship creation and approval tracking
+- Alpaca Broker transfer create/get/cancel orchestration
+- webhook verification + replay protection for Plaid funding webhooks
+- reconciliation and support escalation tables for transfer lifecycle auditing
+
+Existing Plaid investment-sync variables remain valid for read-only holdings/transactions refresh flows.
+
+Webhook maintenance:
+
+- If `PLAID_WEBHOOK_URL` changes after users have already linked institutions, existing Items will need a one-time `/item/webhook/update` maintenance pass from an operator.
+- UAT value: `https://uat.kai.hushh.ai/api/kai/plaid/webhook`
+- Localhost value: `https://<your-current-tunnel>/api/kai/plaid/webhook`
+
+## Profile Support Messaging
+
+Profile support / bug-report emails are sent through Gmail API using a delegated
+Workspace mailbox. RIA invite emails reuse the same authorization path.
+
+Canonical Workspace delegation:
+
+- client ID: `109021324828349644970`
+- service account: `firebase-adminsdk-fbsvc@hushh-pda.iam.gserviceaccount.com`
+- delegated mailbox default: `one@hushh.ai`
+- required scope for send: `https://www.googleapis.com/auth/gmail.send`
+
+The service account source is:
+
+- `FIREBASE_ADMIN_CREDENTIALS_JSON`
+- `FIREBASE_SERVICE_ACCOUNT_JSON` as a runtime compatibility alias
+- `SUPPORT_EMAIL_SERVICE_ACCOUNT_JSON` only as a legacy override
+
+- delegated sender: `SUPPORT_EMAIL_DELEGATED_USER` (must be a real mailbox user)
+- visible From address: `SUPPORT_EMAIL_FROM` (default matches delegated user)
+- live inbox: `SUPPORT_EMAIL_TO`
+- optional non-production test inbox: `SUPPORT_EMAIL_TEST_TO`
+
+The recipient becomes the investor invite target for invite emails, but the
+Workspace delegation requirements stay the same. `GMAIL_OAUTH_*` is unrelated;
+that path is only for user-consented Gmail receipts.
+
+Recommended local testing:
+
+- `ONE_EMAIL_ADDRESS=one@hushh.ai`
+- `SUPPORT_EMAIL_DELEGATED_USER=one@hushh.ai`
+- `SUPPORT_EMAIL_FROM=one@hushh.ai`
+- `SUPPORT_EMAIL_TO=one@hushh.ai`
+- `SUPPORT_EMAIL_TEST_TO=kushal@hushh.ai`
+- `SUPPORT_EMAIL_MODE=test`
+
+This path requires Workspace domain-wide delegation for client ID `109021324828349644970` with:
+
+- `https://www.googleapis.com/auth/gmail.send`
+
+`SUPPORT_EMAIL_DELEGATED_USER` cannot be a Google Group. A group can be a
+recipient or visible alias only if Gmail send-as policy allows it; the delegated
+subject itself must be a real user mailbox.
+
+## One Email KYC
+
+`one@hushh.ai` is the inbound mailbox for One-led email workflows. The roadmap
+and rollout gates live in [One Email KYC](../../../docs/reference/architecture/one-email-kyc.md).
+The repo now includes metadata-only Gmail Pub/Sub intake, watch renewal,
+workflow state, scoped KYC consent requests, `/one/kyc`, and approval-gated
+same-thread send. Hosted current-state still requires Pub/Sub subscription,
+watch renewal schedule, strict client-side ZK env parity, and a real UAT smoke.
+
+Local runtime bootstrap:
+
+- `bash scripts/env/bootstrap_profiles.sh` hydrates Gmail and voice backend secrets into `consent-protocol/.env` from the selected cloud project when those secrets are available.
+- The key names are identical across local, UAT, and production. Only the secret values differ by project.
+- Missing Gmail/voice values are warnings by default and become failures only when bootstrap is run with `--strict`.
+
+---
+
+## Secrets in Production
+
+| Variable | Secret | Where Set |
+|----------|--------|-----------|
+| `APP_SIGNING_KEY` | Yes | GCP Secret Manager |
+| `VAULT_DATA_KEY` | Yes | GCP Secret Manager |
+| `DB_USER` | Yes | GCP Secret Manager |
+| `DB_PASSWORD` | Yes | GCP Secret Manager |
+| `APP_FRONTEND_ORIGIN` | Yes | GCP Secret Manager |
+| `GOOGLE_API_KEY` | Yes | GCP Secret Manager |
+| `FIREBASE_ADMIN_CREDENTIALS_JSON` | Yes | GCP Secret Manager |
+| `FIREBASE_SERVICE_ACCOUNT_JSON` | Alias only | GCP Secret Manager, if legacy runtime still mounts it |
+| `ONE_EMAIL_ADDRESS` | No | Cloud Run env var or default |
+| `ONE_EMAIL_SERVICE_ACCOUNT_JSON` | Optional override | GCP Secret Manager, only by exception |
+| `ONE_EMAIL_DELEGATED_USER` | No | Cloud Run env var or default |
+| `ONE_EMAIL_PUBSUB_TOPIC` | No | Cloud Run env var |
+| `ONE_EMAIL_WEBHOOK_AUDIENCE` | No | Cloud Run env var |
+| `ONE_EMAIL_WEBHOOK_SERVICE_ACCOUNT_EMAIL` | No | Cloud Run env var |
+| `ONE_EMAIL_WEBHOOK_AUTH_ENABLED` | No | Cloud Run env var |
+| `ONE_EMAIL_WATCH_RENEW_TOKEN` | Yes | Secret Manager |
+| `ONE_EMAIL_WATCH_RENEW_AUTH_ENABLED` | No | Cloud Run env var |
+| `ONE_EMAIL_KYC_STRICT_CLIENT_ZK_ENABLED` | No | Cloud Run env var |
+| `ONE_EMAIL_KYC_DEFAULT_SCOPE` | No | Cloud Run env var |
+| `GMAIL_OAUTH_CLIENT_ID` | Yes | GCP Secret Manager |
+| `GMAIL_OAUTH_CLIENT_SECRET` | Yes | GCP Secret Manager |
+| `GMAIL_OAUTH_REDIRECT_URI` | Yes | GCP Secret Manager |
+| `GMAIL_OAUTH_TOKEN_KEY` | Yes | GCP Secret Manager |
+| `OPENAI_API_KEY` | Yes | GCP Secret Manager |
+| `BACKEND_RUNTIME_CONFIG_JSON` | Yes | GCP Secret Manager |
+| `VOICE_RUNTIME_CONFIG_JSON` | Yes | GCP Secret Manager |
+| `DB_HOST` | No | Cloud Run env var |
+| `DB_PORT` | No | Cloud Run env var |
+| `DB_NAME` | No | Cloud Run env var |
+| `ENVIRONMENT` | No | Cloud Run env var |
+| `AGENT_GEMINI_MODEL` | No | Cloud Run env var |
+| `AGENT_GEMINI_VOICE_ENABLED` | No | Cloud Run env var |
+| `AGENT_GEMINI_STT_MODEL` | No | Cloud Run env var |
+| `AGENT_GEMINI_STT_TIMEOUT_SECONDS` | No | Cloud Run env var |
+| `AGENT_GEMINI_TTS_MODEL` | No | Cloud Run env var |
+| `AGENT_GEMINI_TTS_VOICE` | No | Cloud Run env var |
+| `AGENT_GEMINI_TTS_TIMEOUT_SECONDS` | No | Cloud Run env var |
+| `AGENT_GEMINI_TTS_MAX_ATTEMPTS` | No | Cloud Run env var |
+| `GOOGLE_GENAI_USE_VERTEXAI` | No | Cloud Run env var |
+
+---
+
+## See Also
+
+- [FCM Notifications](./fcm-notifications.md) -- Firebase push notification setup
+- [Consent Protocol](./consent-protocol.md) -- Token lifecycle
+- [.env.example](../../.env.example) -- Template file

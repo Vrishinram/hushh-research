@@ -1,0 +1,64 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Runtime: Visible Local Backend",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "./bin/hushh terminal backend --mode local --reload",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Runtime: Visible Local Frontend",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "./bin/hushh terminal web --mode local",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Runtime: Visible UAT Frontend",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "./bin/hushh terminal web --mode uat",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Runtime: Visible Production Frontend",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "./bin/hushh terminal web --mode prod",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Runtime: Visible Local Stack",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "./bin/hushh terminal stack --mode local",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Native: Android Local",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "./bin/hushh native android --mode local --fresh",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Native: iOS Local",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "./bin/hushh native ios --mode local --fresh",
+      "cwd": "${workspaceFolder}"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Runtime: Visible Local Dev",
+      "configurations": [
+        "Runtime: Visible Local Backend",
+        "Runtime: Visible Local Frontend"
+      ],
+      "stopAll": true
+    }
+  ]
+}

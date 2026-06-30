@@ -1,0 +1,13 @@
+#!/bin/sh
+# .githooks/pre-push
+# Wrapper that delegates to consent-protocol's shared monorepo hook logic.
+
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+DELEGATE="$REPO_ROOT/consent-protocol/ops/monorepo/pre-push.sh"
+
+if [ ! -f "$DELEGATE" ]; then
+  echo "[pre-push] Missing delegate script: consent-protocol/ops/monorepo/pre-push.sh"
+  exit 1
+fi
+
+exec sh "$DELEGATE" "$@"

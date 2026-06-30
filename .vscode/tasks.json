@@ -1,0 +1,68 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Runtime: Visible Local Backend",
+      "type": "shell",
+      "command": "./bin/hushh terminal backend --mode local --reload",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Runtime: Visible Local Frontend",
+      "type": "shell",
+      "command": "./bin/hushh terminal web --mode local",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Runtime: Visible UAT Frontend",
+      "type": "shell",
+      "command": "./bin/hushh terminal web --mode uat",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Runtime: Visible Production Frontend",
+      "type": "shell",
+      "command": "./bin/hushh terminal web --mode prod",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Runtime: Visible Local Stack",
+      "type": "shell",
+      "command": "./bin/hushh terminal stack --mode local",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Native: Android Local",
+      "type": "shell",
+      "command": "./bin/hushh native android --mode local --fresh",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Native: iOS Local",
+      "type": "shell",
+      "command": "./bin/hushh native ios --mode local --fresh",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    }
+  ]
+}
