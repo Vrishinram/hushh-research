@@ -1,4 +1,13 @@
-"""One mailbox KYC intake and workflow routes."""
+"""One mailbox KYC intake and workflow routes.
+
+Canonical attach points for the CWE-209 fix in _to_http_exception():
+  _to_http_exception() is called from every route handler in this module that
+  invokes _service() methods, including:
+    POST /api/one/email/webhook          -> one_email_webhook
+    POST /api/one/email/workflows        -> start_email_kyc_workflow
+    GET  /api/one/email/workflows        -> list_email_kyc_workflows
+    POST /api/one/email/workflows/{id}/  -> (all workflow action routes)
+"""
 
 from __future__ import annotations
 
@@ -7,7 +16,7 @@ import logging
 import os
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
 from api.middleware import require_vault_owner_token
@@ -22,7 +31,7 @@ router = APIRouter(prefix="/api/one", tags=["One Email KYC"])
 
 
 class WorkflowUserRequest(BaseModel):
-    user_id: str = Field(min_length=1)
+    user_id: str = Field(min_length=1, max_length=128)
 
 
 class ClientConnectorRequest(WorkflowUserRequest):
@@ -34,10 +43,15 @@ class ClientConnectorRequest(WorkflowUserRequest):
 
 class ApprovedReplyRequest(WorkflowUserRequest):
     approved_subject: str | None = Field(default=None, max_length=500)
-    approved_body: str = Field(min_length=1, max_length=6000)
+    approved_body: str = Field(min_length=1, max_length=12000)
+    approved_html: str | None = Field(default=None, max_length=50000)
     client_draft_hash: str | None = Field(default=None, max_length=128)
     consent_export_revision: int | None = Field(default=None, ge=1)
     pkm_writeback_artifact_hash: str = Field(pattern="^[a-f0-9]{64}$")
+
+
+class ScopeSelectionRequest(WorkflowUserRequest):
+    selected_scopes: list[str] = Field(min_length=1, max_length=8)
 
 
 class WritebackCompleteRequest(WorkflowUserRequest):
@@ -53,6 +67,15 @@ class DraftRejectRequest(WorkflowUserRequest):
 class DraftRedraftRequest(WorkflowUserRequest):
     instructions: str = Field(min_length=1, max_length=1000)
     source: str = Field(default="text", pattern="^(text|voice)$")
+
+
+class LlmRedraftRequest(WorkflowUserRequest):
+    tokenized_template: str = Field(min_length=1, max_length=20000)
+    instruction: str = Field(min_length=1, max_length=1000)
+
+
+class RecentMailboxSyncRequest(WorkflowUserRequest):
+    max_results: int = Field(default=12, ge=1, le=25)
 
 
 _DEPENDENCY_ERROR_PATTERNS = (
@@ -88,6 +111,15 @@ def _is_dependency_unavailable_error(exc: Exception) -> bool:
     return False
 
 
+# Codes whose default message string contains infrastructure details (env var names,
+# internal script paths, etc.) that must not be forwarded to HTTP clients.
+_OPAQUE_MESSAGE_CODES: frozenset[str] = frozenset(
+    {
+        "ONE_EMAIL_KYC_NOT_CONFIGURED",
+    }
+)
+
+
 def _to_http_exception(exc: Exception, *, operation: str) -> HTTPException:
     if _is_dependency_unavailable_error(exc):
         return HTTPException(
@@ -100,13 +132,22 @@ def _to_http_exception(exc: Exception, *, operation: str) -> HTTPException:
             },
         )
     if isinstance(exc, OneEmailKycError):
-        detail: dict[str, Any] = {
-            "code": exc.code,
-            "message": str(exc),
-        }
         if exc.payload:
-            detail["payload"] = exc.payload
-        return HTTPException(status_code=exc.status_code, detail=detail)
+            logger.warning(
+                "one_email_kyc.%s operation=%s payload=%s",
+                exc.code,
+                operation,
+                exc.payload,
+            )
+        client_message = (
+            "One email KYC is temporarily unavailable. Please try again later."
+            if exc.code in _OPAQUE_MESSAGE_CODES
+            else str(exc)
+        )
+        return HTTPException(
+            status_code=exc.status_code,
+            detail={"code": exc.code, "message": client_message},
+        )
     return HTTPException(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         detail={
@@ -185,9 +226,13 @@ async def one_email_webhook(request: Request):
     try:
         payload = await request.json()
     except Exception as exc:
+        logger.warning("one_email.webhook.invalid_json: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "ONE_EMAIL_WEBHOOK_INVALID_JSON", "message": str(exc)},
+            detail={
+                "code": "ONE_EMAIL_WEBHOOK_INVALID_JSON",
+                "message": "Webhook payload is not valid JSON.",
+            },
         ) from exc
     if not isinstance(payload, dict):
         raise HTTPException(
@@ -214,14 +259,40 @@ async def one_email_watch_renew(request: Request):
         raise _to_http_exception(exc, operation="watch_renew") from exc
 
 
+@router.post("/email/sync/recent")
+async def one_email_sync_recent(
+    payload: RecentMailboxSyncRequest,
+    token_data: dict = Depends(require_vault_owner_token),
+):
+    _verified_vault_user_id(token_data, payload.user_id)
+    try:
+        return await _service().sync_recent_messages(
+            user_id=payload.user_id,
+            max_results=payload.max_results,
+        )
+    except Exception as exc:
+        logger.exception("one.email.sync_recent_failed user_id=%s", payload.user_id)
+        raise _to_http_exception(exc, operation="sync_recent") from exc
+
+
 @router.get("/kyc/workflows")
 async def one_kyc_list_workflows(
     user_id: str,
+    limit: int = Query(default=25, ge=1, le=100),
+    cursor: str | None = Query(default=None, max_length=500),
+    status_filter: str | None = Query(default=None, alias="status", max_length=64),
+    include_archived: bool = Query(default=False),
     token_data: dict = Depends(require_vault_owner_token),
 ):
     _verified_vault_user_id(token_data, user_id)
     try:
-        return await _service().list_workflows(user_id=user_id)
+        return await _service().list_workflows(
+            user_id=user_id,
+            limit=limit,
+            cursor=cursor,
+            status_filter=status_filter,
+            include_archived=include_archived,
+        )
     except Exception as exc:
         logger.exception("one.kyc.list_failed user_id=%s", user_id)
         raise _to_http_exception(exc, operation="list_workflows") from exc
@@ -241,6 +312,24 @@ async def one_kyc_get_workflow(
         raise _to_http_exception(exc, operation="get_workflow") from exc
 
 
+@router.delete("/kyc/workflows/{workflow_id}")
+async def one_kyc_archive_workflow(
+    workflow_id: str,
+    user_id: str,
+    token_data: dict = Depends(require_vault_owner_token),
+):
+    _verified_vault_user_id(token_data, user_id)
+    try:
+        return await _service().archive_workflow(user_id=user_id, workflow_id=workflow_id)
+    except Exception as exc:
+        logger.exception(
+            "one.kyc.archive_failed user_id=%s workflow_id=%s",
+            user_id,
+            workflow_id,
+        )
+        raise _to_http_exception(exc, operation="archive_workflow") from exc
+
+
 @router.post("/kyc/workflows/{workflow_id}/refresh")
 async def one_kyc_refresh_workflow(
     workflow_id: str,
@@ -257,6 +346,28 @@ async def one_kyc_refresh_workflow(
             workflow_id,
         )
         raise _to_http_exception(exc, operation="refresh_workflow") from exc
+
+
+@router.post("/kyc/workflows/{workflow_id}/scope-selection")
+async def one_kyc_select_scopes(
+    workflow_id: str,
+    payload: ScopeSelectionRequest,
+    token_data: dict = Depends(require_vault_owner_token),
+):
+    _verified_vault_user_id(token_data, payload.user_id)
+    try:
+        return await _service().select_scopes(
+            user_id=payload.user_id,
+            workflow_id=workflow_id,
+            selected_scopes=payload.selected_scopes,
+        )
+    except Exception as exc:
+        logger.exception(
+            "one.kyc.scope_selection_failed user_id=%s workflow_id=%s",
+            payload.user_id,
+            workflow_id,
+        )
+        raise _to_http_exception(exc, operation="scope_selection") from exc
 
 
 @router.post("/kyc/workflows/{workflow_id}/approve-draft")
@@ -322,6 +433,7 @@ async def one_kyc_send_approved_reply(
             workflow_id=workflow_id,
             approved_subject=payload.approved_subject,
             approved_body=payload.approved_body,
+            approved_html=payload.approved_html,
             client_draft_hash=payload.client_draft_hash,
             consent_export_revision=payload.consent_export_revision,
             pkm_writeback_artifact_hash=payload.pkm_writeback_artifact_hash,
@@ -354,6 +466,27 @@ async def one_kyc_get_workflow_consent_export(
             workflow_id,
         )
         raise _to_http_exception(exc, operation="workflow_consent_export") from exc
+
+
+@router.get("/kyc/workflows/{workflow_id}/consent-exports")
+async def one_kyc_get_workflow_consent_exports(
+    workflow_id: str,
+    user_id: str,
+    token_data: dict = Depends(require_vault_owner_token),
+):
+    _verified_vault_user_id(token_data, user_id)
+    try:
+        return await _service().get_workflow_consent_exports(
+            user_id=user_id,
+            workflow_id=workflow_id,
+        )
+    except Exception as exc:
+        logger.exception(
+            "one.kyc.workflow_consent_exports_failed user_id=%s workflow_id=%s",
+            user_id,
+            workflow_id,
+        )
+        raise _to_http_exception(exc, operation="workflow_consent_exports") from exc
 
 
 @router.post("/kyc/workflows/{workflow_id}/writeback-complete")
@@ -423,6 +556,34 @@ async def one_kyc_redraft(
             workflow_id,
         )
         raise _to_http_exception(exc, operation="redraft") from exc
+
+
+@router.post("/kyc/workflows/{workflow_id}/redraft-llm")
+async def one_kyc_redraft_llm(
+    workflow_id: str,
+    payload: LlmRedraftRequest,
+    token_data: dict = Depends(require_vault_owner_token),
+):
+    _verified_vault_user_id(token_data, payload.user_id)
+    try:
+        # The PII-free tokenized template and instruction transit to server-side
+        # Gemini Vertex. The body is never persisted or logged here; only the
+        # workflow_id and user_id are logged, and the service logs the instruction
+        # hash (no template body). draft_body stays NULL.
+        return await _service().redraft_llm(
+            user_id=payload.user_id,
+            workflow_id=workflow_id,
+            tokenized_template=payload.tokenized_template,
+            instruction=payload.instruction,
+            consent_token=token_data.get("token", ""),
+        )
+    except Exception as exc:
+        logger.exception(
+            "one.kyc.redraft_llm_failed user_id=%s workflow_id=%s",
+            payload.user_id,
+            workflow_id,
+        )
+        raise _to_http_exception(exc, operation="redraft_llm") from exc
 
 
 @router.post("/kyc/retention/purge")
