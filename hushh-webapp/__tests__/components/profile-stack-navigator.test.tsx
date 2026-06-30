@@ -36,4 +36,50 @@ describe("ProfileStackNavigator", () => {
     expect(screen.queryByText("Checking your saved domains")).toBeNull();
     expect(screen.getByText("Financial domain ready")).toBeTruthy();
   });
+    it("preserves root rendering stability with empty stack entries", () => {
+    render(
+      <ProfileStackNavigator
+        rootContent={<div>Root workspace</div>}
+        entries={[]}
+      />
+    );
+
+    expect(screen.getByText("Root workspace")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /back/i })).toBeNull();
+  });
+
+  it("covers navigation item selection state", () => {
+    const { rerender } = render(
+      <ProfileStackNavigator
+        rootContent={<div>Root workspace</div>}
+        entries={[
+          {
+            key: "detail:overview",
+            title: "Overview",
+            content: <div>Overview content</div>,
+          },
+        ]}
+      />
+    );
+
+    expect(screen.getByText("Overview")).toBeTruthy();
+    expect(screen.getByText("Overview content")).toBeTruthy();
+
+    rerender(
+      <ProfileStackNavigator
+        rootContent={<div>Root workspace</div>}
+        entries={[
+          {
+            key: "detail:privacy",
+            title: "Privacy",
+            content: <div>Privacy content</div>,
+          },
+        ]}
+      />
+    );
+
+    expect(screen.queryByText("Overview content")).toBeNull();
+    expect(screen.getByText("Privacy")).toBeTruthy();
+    expect(screen.getByText("Privacy content")).toBeTruthy();
+  });
 });
